@@ -258,6 +258,7 @@ async function runMake(clean) {
   }
 
   const c = cfg();
+  warnHardcodedMakeTools(makeDir);
   const env = makeEnv(c);
   const args = clean ? ['clean', ...c.makeArgs] : c.makeArgs;
   const exports = Object.entries(env)
@@ -288,6 +289,39 @@ function findMakeDir(start, root) {
   }
 
   return null;
+}
+
+function warnHardcodedMakeTools(makeDir) {
+  const makefile = ['Makefile', 'makefile']
+    .map((name) => path.join(makeDir, name))
+    .find((candidate) => fs.existsSync(candidate));
+
+  if (!makefile) {
+    return;
+  }
+
+  let text;
+  try {
+    text = fs.readFileSync(makefile, 'utf8');
+  } catch {
+    return;
+  }
+
+  const hardcoded = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\t\s*(cc|gcc)\b/.test(line)) hardcoded.push('cc');
+    if (/^\t\s*ld\b/.test(line)) hardcoded.push('ld');
+    if (/^\t\s*ar\b/.test(line)) hardcoded.push('ar');
+  }
+
+  const unique = [...new Set(hardcoded)];
+  if (unique.length === 0) {
+    return;
+  }
+
+  vscode.window.showWarningMessage(
+    `AMIX Makefile uses hardcoded ${unique.join(', ')} in recipes. Prefer $(CC), $(LD), and $(AR) for cross builds.`
+  );
 }
 
 function writeJson(file, value) {

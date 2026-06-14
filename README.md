@@ -93,6 +93,18 @@ The generated `tasks.json` also includes make tasks, but VS Code tasks run in
 the active file directory. For nested source trees, prefer the command palette
 command above because it searches parent directories.
 
+If the Makefile recipe hardcodes native tools such as `cc`, `ld`, or `ar`, the
+extension shows a warning. Use make variables for cross builds:
+
+```make
+CC ?= cc
+LD ?= ld
+AR ?= ar
+
+exp: $(OBJ)
+	$(LD) -r -o exp $(OBJ)
+```
+
 ```text
 CC=m68k-cbm-sysv4-gcc
 AS=m68k-cbm-sysv4-as

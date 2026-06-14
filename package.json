@@ -2,7 +2,7 @@
   "name": "vscode-amix",
   "displayName": "AMIX Development Tools",
   "description": "VS Code helpers for building AMIX m68k-cbm-sysv4 C programs with gcc-cross-amix.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "isoriano1968",
   "engines": {
     "vscode": "^1.85.0"
