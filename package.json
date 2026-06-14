@@ -1,0 +1,152 @@
+{
+  "name": "vscode-amix",
+  "displayName": "AMIX Development Tools",
+  "description": "VS Code helpers for building AMIX m68k-cbm-sysv4 C programs with gcc-cross-amix.",
+  "version": "0.1.0",
+  "publisher": "isoriano1968",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:amix.configureWorkspace",
+    "onCommand:amix.buildCurrentExecutable",
+    "onCommand:amix.compileCurrentObject",
+    "onCommand:amix.compileDriverObject"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "amix.configureWorkspace",
+        "title": "AMIX: Configure Workspace"
+      },
+      {
+        "command": "amix.buildCurrentExecutable",
+        "title": "AMIX: Build Current C File as Executable"
+      },
+      {
+        "command": "amix.compileCurrentObject",
+        "title": "AMIX: Compile Current C File to Object"
+      },
+      {
+        "command": "amix.compileDriverObject",
+        "title": "AMIX: Compile Current C File as Kernel/Driver Object"
+      }
+    ],
+    "configuration": {
+      "title": "AMIX",
+      "properties": {
+        "amix.toolchainPath": {
+          "type": "string",
+          "default": "${env:HOME}/opt/amix-cross/bin",
+          "description": "Directory containing m68k-cbm-sysv4-gcc, as, ld, nm, and related tools."
+        },
+        "amix.target": {
+          "type": "string",
+          "default": "m68k-cbm-sysv4",
+          "description": "AMIX cross target triple."
+        },
+        "amix.sysroot": {
+          "type": "string",
+          "default": "${env:HOME}/opt/amix-cross/m68k-cbm-sysv4/sysroot",
+          "description": "AMIX sysroot copied from a local AMIX installation."
+        },
+        "amix.crtDir": {
+          "type": "string",
+          "default": "${config:amix.sysroot}/usr/ccs/lib",
+          "description": "Directory containing crt1.o, crti.o, and crtn.o."
+        },
+        "amix.cpu": {
+          "type": "string",
+          "default": "68020",
+          "enum": [
+            "68020",
+            "68030",
+            "68040"
+          ],
+          "description": "Target m68k CPU option passed as -m68020, -m68030, or -m68040."
+        },
+        "amix.extraCFlags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "-O",
+            "-traditional",
+            "-fno-builtin"
+          ],
+          "description": "Extra C compiler flags for userland AMIX builds."
+        },
+        "amix.kernelDefines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "-D_KERNEL",
+            "-DSVR40",
+            "-DSVR4",
+            "-Dinline=__inline__"
+          ],
+          "description": "Preprocessor defines used for AMIX kernel/driver objects."
+        }
+      }
+    },
+    "languages": [
+      {
+        "id": "amix-m68k-asm",
+        "aliases": [
+          "AMIX m68k Assembly",
+          "amix-m68k"
+        ],
+        "extensions": [
+          ".m68k",
+          ".68k",
+          ".amixs"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "amix-m68k-asm",
+        "scopeName": "source.m68k.amix",
+        "path": "./syntaxes/m68k.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "c",
+        "path": "./snippets/c.json"
+      },
+      {
+        "language": "amix-m68k-asm",
+        "path": "./snippets/m68k.json"
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "amix-gcc",
+        "owner": "c",
+        "fileLocation": [
+          "relative",
+          "${workspaceFolder}"
+        ],
+        "pattern": {
+          "regexp": "^(.*):(\\d+):(?:(\\d+):)?\\s*(warning|error)?:?\\s*(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
+      }
+    ]
+  }
+}
+

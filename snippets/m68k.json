@@ -1,0 +1,14 @@
+{
+  "Function label": {
+    "prefix": "func",
+    "body": [
+      "\t.globl ${1:name}",
+      "${1:name}:",
+      "\tlink %fp,&0",
+      "\tunlk %fp",
+      "\trts"
+    ],
+    "description": "m68k function skeleton"
+  }
+}
+
