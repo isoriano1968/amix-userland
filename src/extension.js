@@ -78,7 +78,7 @@ async function configureWorkspace() {
       {
         label: 'AMIX: build current executable',
         type: 'shell',
-        command: quote(c.gcc),
+        command: 'bash',
         options: {
           env: {
             AMIX_SYSROOT: c.sysroot,
@@ -86,10 +86,8 @@ async function configureWorkspace() {
           }
         },
         args: [
-          `-m${c.cpu}`,
-          '${file}',
-          '-o',
-          '${fileDirname}/${fileBasenameNoExtension}'
+          '-lc',
+          `case "\${file}" in *.c) exec ${quote(c.gcc)} -m${c.cpu} "\${file}" -o "\${fileDirname}/\${fileBasenameNoExtension}" ;; *) echo "AMIX: active file must be a .c source file, not \${fileBasename}" >&2; exit 2 ;; esac`
         ],
         group: {
           kind: 'build',
@@ -100,7 +98,7 @@ async function configureWorkspace() {
       {
         label: 'AMIX: compile current object',
         type: 'shell',
-        command: quote(c.gcc),
+        command: 'bash',
         options: {
           env: {
             AMIX_SYSROOT: c.sysroot,
@@ -108,12 +106,8 @@ async function configureWorkspace() {
           }
         },
         args: [
-          '-c',
-          `-m${c.cpu}`,
-          ...c.extraCFlags,
-          '${file}',
-          '-o',
-          '${fileDirname}/${fileBasenameNoExtension}.o'
+          '-lc',
+          `case "\${file}" in *.c) exec ${quote(c.gcc)} -c -m${c.cpu} ${c.extraCFlags.map(quote).join(' ')} "\${file}" -o "\${fileDirname}/\${fileBasenameNoExtension}.o" ;; *) echo "AMIX: active file must be a .c source file, not \${fileBasename}" >&2; exit 2 ;; esac`
         ],
         group: 'build',
         problemMatcher: '$amix-gcc'
@@ -121,7 +115,7 @@ async function configureWorkspace() {
       {
         label: 'AMIX: compile current driver object',
         type: 'shell',
-        command: quote(c.gcc),
+        command: 'bash',
         options: {
           env: {
             AMIX_SYSROOT: c.sysroot,
@@ -129,16 +123,14 @@ async function configureWorkspace() {
           }
         },
         args: [
-          '-c',
-          `-m${c.cpu}`,
-          ...c.extraCFlags,
-          ...c.kernelDefines,
-          `-I${path.join(c.sysroot, 'usr/include')}`,
-          `-I${path.join(c.sysroot, 'usr/sys')}`,
-          `-I${path.join(c.sysroot, 'usr/sys/amiga/inc')}`,
-          '${file}',
-          '-o',
-          '${fileDirname}/${fileBasenameNoExtension}.o'
+          '-lc',
+          `case "\${file}" in *.c) exec ${quote(c.gcc)} -c -m${c.cpu} ${[
+            ...c.extraCFlags,
+            ...c.kernelDefines,
+            `-I${path.join(c.sysroot, 'usr/include')}`,
+            `-I${path.join(c.sysroot, 'usr/sys')}`,
+            `-I${path.join(c.sysroot, 'usr/sys/amiga/inc')}`
+          ].map(quote).join(' ')} "\${file}" -o "\${fileDirname}/\${fileBasenameNoExtension}.o" ;; *) echo "AMIX: active file must be a .c source file, not \${fileBasename}" >&2; exit 2 ;; esac`
         ],
         group: 'build',
         problemMatcher: '$amix-gcc'
@@ -170,6 +162,10 @@ async function buildCurrent(kind) {
   }
 
   const file = editor.document.uri.fsPath;
+  if (path.extname(file).toLowerCase() !== '.c') {
+    vscode.window.showErrorMessage('AMIX build commands require an active .c source file.');
+    return;
+  }
   const parsed = path.parse(file);
   const c = cfg();
   const cpu = `-m${c.cpu}`;
