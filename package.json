@@ -2,7 +2,7 @@
   "name": "vscode-amix",
   "displayName": "AMIX Development Tools",
   "description": "VS Code helpers for building AMIX m68k-cbm-sysv4 C programs with gcc-cross-amix.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "isoriano1968",
   "engines": {
     "vscode": "^1.85.0"
@@ -15,7 +15,9 @@
     "onCommand:amix.configureWorkspace",
     "onCommand:amix.buildCurrentExecutable",
     "onCommand:amix.compileCurrentObject",
-    "onCommand:amix.compileDriverObject"
+    "onCommand:amix.compileDriverObject",
+    "onCommand:amix.make",
+    "onCommand:amix.makeClean"
   ],
   "main": "./src/extension.js",
   "contributes": {
@@ -35,6 +37,14 @@
       {
         "command": "amix.compileDriverObject",
         "title": "AMIX: Compile Current C File as Kernel/Driver Object"
+      },
+      {
+        "command": "amix.make",
+        "title": "AMIX: Run Make in AMIX Project"
+      },
+      {
+        "command": "amix.makeClean",
+        "title": "AMIX: Run Make Clean in AMIX Project"
       }
     ],
     "configuration": {
@@ -94,6 +104,19 @@
             "-Dinline=__inline__"
           ],
           "description": "Preprocessor defines used for AMIX kernel/driver objects."
+        },
+        "amix.makeCommand": {
+          "type": "string",
+          "default": "make",
+          "description": "Make command used for AMIX project builds."
+        },
+        "amix.makeArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional arguments passed to make for AMIX project builds."
         }
       }
     },

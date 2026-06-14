@@ -7,7 +7,9 @@ function activate(context) {
     vscode.commands.registerCommand('amix.configureWorkspace', configureWorkspace),
     vscode.commands.registerCommand('amix.buildCurrentExecutable', () => buildCurrent('exe')),
     vscode.commands.registerCommand('amix.compileCurrentObject', () => buildCurrent('object')),
-    vscode.commands.registerCommand('amix.compileDriverObject', () => buildCurrent('driver'))
+    vscode.commands.registerCommand('amix.compileDriverObject', () => buildCurrent('driver')),
+    vscode.commands.registerCommand('amix.make', () => runMake(false)),
+    vscode.commands.registerCommand('amix.makeClean', () => runMake(true))
   );
 }
 
@@ -37,7 +39,9 @@ function cfg() {
     gcc: path.join(toolchainPath, `${target}-gcc`),
     nm: path.join(toolchainPath, `${target}-nm`),
     extraCFlags: c.get('extraCFlags') || [],
-    kernelDefines: c.get('kernelDefines') || []
+    kernelDefines: c.get('kernelDefines') || [],
+    makeCommand: c.get('makeCommand') || 'make',
+    makeArgs: c.get('makeArgs') || []
   };
 }
 
@@ -144,6 +148,35 @@ async function configureWorkspace() {
           '${fileDirname}/${fileBasenameNoExtension}'
         ],
         problemMatcher: []
+      },
+      {
+        label: 'AMIX: make project',
+        type: 'shell',
+        command: c.makeCommand,
+        args: c.makeArgs,
+        options: {
+          cwd: '${fileDirname}',
+          env: makeEnv(c)
+        },
+        group: {
+          kind: 'build',
+          isDefault: false
+        },
+        problemMatcher: '$amix-gcc'
+      },
+      {
+        label: 'AMIX: make clean',
+        type: 'shell',
+        command: c.makeCommand,
+        args: [
+          'clean',
+          ...c.makeArgs
+        ],
+        options: {
+          cwd: '${fileDirname}',
+          env: makeEnv(c)
+        },
+        problemMatcher: []
       }
     ]
   };
@@ -213,6 +246,50 @@ async function buildCurrent(kind) {
   terminal.sendText(command);
 }
 
+async function runMake(clean) {
+  const root = workspaceRoot();
+  const editor = vscode.window.activeTextEditor;
+  const start = editor ? path.dirname(editor.document.uri.fsPath) : root;
+  const makeDir = findMakeDir(start, root);
+
+  if (!makeDir) {
+    vscode.window.showErrorMessage('No Makefile found in the active file directory or workspace parents.');
+    return;
+  }
+
+  const c = cfg();
+  const env = makeEnv(c);
+  const args = clean ? ['clean', ...c.makeArgs] : c.makeArgs;
+  const exports = Object.entries(env)
+    .map(([k, v]) => `${k}=${quote(v)}`)
+    .join(' ');
+  const command = [
+    `cd ${quote(makeDir)}`,
+    `${exports} ${quote(c.makeCommand)} ${args.map(quote).join(' ')}`.trim()
+  ].join(' && ');
+
+  const terminal = vscode.window.createTerminal('AMIX Make');
+  terminal.show();
+  terminal.sendText(command);
+}
+
+function findMakeDir(start, root) {
+  let dir = start;
+  const stop = path.parse(root).root;
+
+  while (dir && dir !== stop) {
+    if (fs.existsSync(path.join(dir, 'Makefile')) || fs.existsSync(path.join(dir, 'makefile'))) {
+      return dir;
+    }
+    if (dir === root) {
+      break;
+    }
+    dir = path.dirname(dir);
+  }
+
+  return null;
+}
+
 function writeJson(file, value) {
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
 }
@@ -226,6 +303,23 @@ function quote(value) {
 
 function envPrefix(c) {
   return `AMIX_SYSROOT=${quote(c.sysroot)} AMIX_CRT_DIR=${quote(c.crtDir)}`;
+}
+
+function makeEnv(c) {
+  const existingPath = process.env.PATH || '';
+  return {
+    PATH: `${c.toolchainPath}${path.delimiter}${existingPath}`,
+    AMIX_SYSROOT: c.sysroot,
+    AMIX_CRT_DIR: c.crtDir,
+    AMIX_CROSS_TARGET: c.target,
+    AMIX_CROSS_PREFIX: path.dirname(c.toolchainPath),
+    CC: `${c.target}-gcc`,
+    AS: `${c.target}-as`,
+    LD: `${c.target}-ld`,
+    AR: `${c.target}-ar`,
+    NM: `${c.target}-nm`,
+    RANLIB: `${c.target}-ranlib`
+  };
 }
 
 module.exports = {

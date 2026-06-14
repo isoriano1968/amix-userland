@@ -5,7 +5,7 @@ VS Code helpers for AMIX C development with the `gcc-cross-amix` toolchain.
 ## Features
 
 - Commands for building the current C file as an AMIX executable or object.
-- Workspace task generation for userland and kernel/driver builds.
+- Workspace task generation for userland, kernel/driver, and Makefile builds.
 - AMIX sysroot include paths for C/C++ language tooling.
 - GCC 2.7 style problem matcher.
 - Basic m68k assembly highlighting for `.m68k`, `.68k`, and `.amixs`.
@@ -73,6 +73,44 @@ Update the `amix.*` settings if your toolchain is elsewhere.
 - `AMIX: Build Current C File as Executable`
 - `AMIX: Compile Current C File to Object`
 - `AMIX: Compile Current C File as Kernel/Driver Object`
+- `AMIX: Run Make in AMIX Project`
+- `AMIX: Run Make Clean in AMIX Project`
+
+## Makefile Builds
+
+For larger projects such as drivers, open any file inside the project tree and
+run:
+
+```text
+AMIX: Run Make in AMIX Project
+```
+
+The extension searches from the active file directory upward until it finds a
+`Makefile`. It then runs `make` in that directory with the cross-toolchain in
+`PATH` and these variables set:
+
+The generated `tasks.json` also includes make tasks, but VS Code tasks run in
+the active file directory. For nested source trees, prefer the command palette
+command above because it searches parent directories.
+
+```text
+CC=m68k-cbm-sysv4-gcc
+AS=m68k-cbm-sysv4-as
+LD=m68k-cbm-sysv4-ld
+AR=m68k-cbm-sysv4-ar
+NM=m68k-cbm-sysv4-nm
+RANLIB=m68k-cbm-sysv4-ranlib
+AMIX_SYSROOT=<configured sysroot>
+AMIX_CRT_DIR=<configured crt directory>
+```
+
+Additional make arguments can be configured with:
+
+```json
+{
+  "amix.makeArgs": ["CPUFLAGS=-m68020"]
+}
+```
 
 ## Notes
 
