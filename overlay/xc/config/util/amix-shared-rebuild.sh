@@ -5,7 +5,7 @@ set -e
 TOP=${1-/usr/x11r6/xc}
 MODE=${2-all}
 LIBRARIES="X11 Xext ICE SM Xt Xmu Xaw"
-PROGRAMS="xclock xterm twm"
+PROGRAMS="xinit xsetroot xclock xterm twm"
 
 cd "$TOP"
 

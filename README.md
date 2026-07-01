@@ -60,7 +60,7 @@ sh config/util/amix-shared-rebuild.sh /usr/x11r6/xc libs \
 
 Use mode `all` when configuration changed and every Makefile must be
 regenerated. Mode `clients` validates existing libraries and only relinks
-`xclock`, `xterm`, and `twm`.
+the test-session programs: `xinit`, `xsetroot`, `xclock`, `xterm`, and `twm`.
 
 Mode `shdata` regenerates the Makefiles and rebuilds only Xt, Xmu, and Xaw
 with the AMIX/X11R5 shared-data ABI. It is the migration path from an older
