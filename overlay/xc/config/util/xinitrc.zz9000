@@ -1,0 +1,24 @@
+#!/bin/sh
+
+XSETROOT=$TOP/programs/xsetroot/xsetroot
+XCLOCK=$TOP/programs/xclock/xclock
+XTERM=$TOP/programs/xterm/xterm
+TWM=$TOP/programs/twm/twm
+
+for file in "$XSETROOT" "$XCLOCK" "$XTERM" "$TWM"
+do
+    if test -f "$file"
+    then
+        :
+    else
+        echo "xinitrc.zz9000: missing $file" >&2
+        exit 1
+    fi
+done
+
+"$XSETROOT" -solid '#1b365d'
+"$XCLOCK" -geometry 220x220-20+20 &
+"$XTERM" -geometry 100x30+40+40 -title 'AMIX X11R6.3 on ZZ9000' &
+
+exec "$TWM"
+

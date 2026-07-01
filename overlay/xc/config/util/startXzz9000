@@ -1,0 +1,62 @@
+#!/bin/sh
+
+TOP=${X11R6_TOP-/usr/x11r6/xc}
+DISPLAY_NUMBER=${1-:0}
+MODE=${ZZ9K_MODE-1920x800}
+FONT_PATH=${ZZ9K_FONT_PATH-$TOP/fonts/bdf/misc}
+
+XINIT=$TOP/programs/xinit/xinit
+SERVER=$TOP/programs/Xserver/Xzz9000
+CLIENT=$TOP/config/util/xinitrc.zz9000
+
+case "$DISPLAY_NUMBER" in
+:[0-9]*) ;;
+*)
+    echo "usage: $0 [:display]" >&2
+    exit 1
+    ;;
+esac
+
+for file in "$XINIT" "$SERVER" "$CLIENT"
+do
+    if test -f "$file"
+    then
+        :
+    else
+        echo "startXzz9000: missing $file" >&2
+        exit 1
+    fi
+done
+
+if test "x$LD_LIBRARY_PATH" = x
+then
+    LD_LIBRARY_PATH=$TOP/exports/lib
+else
+    LD_LIBRARY_PATH=$TOP/exports/lib:$LD_LIBRARY_PATH
+fi
+export LD_LIBRARY_PATH TOP
+
+RGB_PATH=
+if test -s /usr/x11r6/lib/X11/rgb.dir
+then
+    RGB_PATH=/usr/x11r6/lib/X11/rgb
+else
+    if test -s "$TOP/programs/rgb/rgb.dir"
+    then
+        RGB_PATH=$TOP/programs/rgb/rgb
+    fi
+fi
+
+echo "Starting Xzz9000 on $DISPLAY_NUMBER at $MODE"
+echo "Exit twm to stop the X server."
+
+if test "x$RGB_PATH" = x
+then
+    exec "$XINIT" "$CLIENT" -- "$SERVER" "$DISPLAY_NUMBER" \
+        -mode "$MODE" -fp "$FONT_PATH" -ac -kb -terminate
+else
+    exec "$XINIT" "$CLIENT" -- "$SERVER" "$DISPLAY_NUMBER" \
+        -mode "$MODE" -fp "$FONT_PATH" -co "$RGB_PATH" \
+        -ac -kb -terminate
+fi
+

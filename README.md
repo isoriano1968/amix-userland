@@ -66,16 +66,21 @@ and PIC objects must never be mixed on AMIX.
 
 ## Running Xzz9000
 
-With a valid font path and the ZZ9000 console released:
+The included `xinit` wrapper starts a 1920x800 session with `twm`, `xterm`,
+and `xclock` from the build tree:
 
 ```sh
-FP=/usr/x11r6/xc/fonts/bdf/misc
-export FP
-/usr/x11r6/xc/programs/Xserver/Xzz9000 \
-  :1 -mode 1920x800 -fp "$FP" -ac -kb -terminate
+cd /usr/x11r6/xc
+sh config/util/startXzz9000 :0
 ```
 
-The `-kb` option currently avoids the unfinished XKB device path.
+Choose `Exit` from the twm root menu to terminate the session and X server.
+Use `:1` instead if display `:0` is occupied. The launcher supports
+`ZZ9K_MODE`, `ZZ9K_FONT_PATH`, and `X11R6_TOP` environment overrides.
+
+The launcher uses `-ac` for the initial local test and `-kb` to avoid the
+unfinished XKB device path. Do not expose this test server to an untrusted
+network.
 
 ## Source and licensing
 
