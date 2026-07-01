@@ -1,6 +1,35 @@
 /* AMIX-specific imake rules. */
 
 /*
+ * AMIX follows the X11R5 SVR4 hybrid shared-data model.  For libraries such
+ * as Xt, Xmu, and Xaw, -lfoo must find an archive named libfoo.so containing
+ * the versioned shared object plus the data/stub objects that must live in
+ * each executable.  The versioned libfoo.so.N remains the runtime image.
+ */
+#ifndef SharedLibraryDataTarget
+#define SharedLibraryDataTarget(libname,rev,objlist)                    @@\
+AllTarget(Concat(lib,libname.so))                                       @@\
+                                                                        @@\
+Concat(lib,libname.so): Concat(lib,libname.so.rev) objlist AMIXSHLIBFORCE @@\
+	$(RM) $@                                                              @@\
+	$(AR) $@ Concat(lib,libname.so.rev) objlist                           @@\
+	LinkBuildLibrary($@)                                                  @@\
+                                                                        @@\
+AMIXSHLIBFORCE:                                                         @@\
+                                                                        @@\
+clean::                                                                 @@\
+	$(RM) Concat(lib,libname.so)
+#endif /* SharedLibraryDataTarget */
+
+#ifndef InstallSharedLibraryData
+#define InstallSharedLibraryData(libname,rev,dest)                      @@\
+install:: Concat(lib,libname.so)                                        @@\
+	MakeDir($(DESTDIR)dest)                                               @@\
+	$(RM) Concat($(DESTDIR)dest/lib,libname.so)                           @@\
+	$(INSTALL) $(INSTALLFLAGS) $(INSTLIBFLAGS) Concat(lib,libname.so) $(DESTDIR)dest
+#endif /* InstallSharedLibraryData */
+
+/*
  * gcc-cpp loses the build-directory argument when the stock
  * ProjectUnsharedLibReferences macro pastes it to "/lib".  All X11 project
  * libraries are exported through BUILDLIBDIR, so construct the dependency

@@ -11,7 +11,8 @@ sources are downloaded from the official X.Org archive by `install.sh`.
 - X11R6.3 builds with GCC 2.7.2.3 and the AMIX GNU preprocessor.
 - The `Xzz9000` server links and starts at 16-bit modes including 1920x800.
 - The software cursor and ZZ9000 framebuffer are operational.
-- Shared libraries use the working X11R5 AMIX model: `gcc -fpic` and `ld -G`.
+- Shared libraries use the working X11R5 AMIX model: `gcc -fpic`, `ld -G`,
+  and per-executable data archives for Xt, Xmu, and Xaw.
 - MIT-SHM is disabled independently because it is not safe on AMIX.
 - Dynamic `xclock`, `xterm`, and `twm` are the current validation targets.
 - GLX and Mesa are not included yet.
@@ -60,6 +61,10 @@ sh config/util/amix-shared-rebuild.sh /usr/x11r6/xc libs \
 Use mode `all` when configuration changed and every Makefile must be
 regenerated. Mode `clients` validates existing libraries and only relinks
 `xclock`, `xterm`, and `twm`.
+
+Mode `shdata` regenerates the Makefiles and rebuilds only Xt, Xmu, and Xaw
+with the AMIX/X11R5 shared-data ABI. It is the migration path from an older
+port checkout that already has valid X11, Xext, ICE, and SM shared objects.
 
 The script deliberately removes old library objects before rebuilding. Static
 and PIC objects must never be mixed on AMIX.

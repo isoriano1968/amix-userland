@@ -22,6 +22,9 @@ for setting in \
     'SeparateSharedCompile YES' \
     'PositionIndependentCFlags -fpic' \
     'SharedLibraryLoadFlags -G' \
+    'SharedDataSeparation YES' \
+    'SharedCodeDef -DSHAREDCODE' \
+    'SharedLibraryDef -DSUNSHLIB' \
     'HasShm NO'
 do
     if grep "^#define $setting" config/cf/amix.cf >/dev/null
@@ -42,6 +45,7 @@ fi
 export LD_LIBRARY_PATH
 
 BUILD_LIBRARIES=no
+BUILD_SET=
 
 if test "$MODE" = all
 then
@@ -51,24 +55,37 @@ then
     test -s xmakefile
     make -f xmakefile Makefiles
     BUILD_LIBRARIES=yes
+    BUILD_SET=$LIBRARIES
 else
-    if test "$MODE" = libs
+    if test "$MODE" = shdata
     then
+        echo "=== regenerate Makefiles for shared-data ABI ==="
+        rm -f xmakefile
+        make Makefile
+        test -s xmakefile
+        make -f xmakefile Makefiles
         BUILD_LIBRARIES=yes
+        BUILD_SET="Xt Xmu Xaw"
     else
-        if test "$MODE" = clients
+        if test "$MODE" = libs
         then
-            :
+            BUILD_LIBRARIES=yes
+            BUILD_SET=$LIBRARIES
         else
-            echo "usage: $0 [source-tree [all|libs|clients]]" >&2
-            exit 1
+            if test "$MODE" = clients
+            then
+                :
+            else
+                echo "usage: $0 [source-tree [all|shdata|libs|clients]]" >&2
+                exit 1
+            fi
         fi
     fi
 fi
 
 if test "$BUILD_LIBRARIES" = yes
 then
-    for library in $LIBRARIES
+    for library in $BUILD_SET
     do
         dir="$TOP/lib/$library"
         echo "=== clean PIC rebuild of shared lib$library ==="
@@ -95,6 +112,19 @@ do
     if test "$found" = no
     then
         echo "amix-shared-rebuild: no valid lib$library shared image" >&2
+        exit 1
+    fi
+done
+
+echo "=== validate AMIX shared-data archives ==="
+for library in Xt Xmu Xaw
+do
+    cd "$TOP/lib/$library"
+    if ar t "lib$library.so" >/dev/null 2>&1
+    then
+        echo "lib$library.so: AMIX shared-data archive"
+    else
+        echo "amix-shared-rebuild: lib$library.so is not an archive" >&2
         exit 1
     fi
 done

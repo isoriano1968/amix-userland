@@ -36,6 +36,9 @@ XCOMM operating system: OSName OSVendor
 #define PositionIndependentCFlags -fpic
 /* Match the working X11R5 AMIX shared-library ABI. */
 #define SharedLibraryLoadFlags -G
+#define SharedDataSeparation YES
+#define SharedCodeDef -DSHAREDCODE
+#define SharedLibraryDef -DSUNSHLIB
 /* MIT-SHM is independent of shared libraries and is unsafe on AMIX. */
 #define HasShm NO
 #define CcCmd gcc
