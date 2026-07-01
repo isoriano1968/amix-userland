@@ -67,6 +67,16 @@ else
         BUILD_LIBRARIES=yes
         BUILD_SET="Xt Xmu Xaw"
     else
+        if test "$MODE" = shdata-fix
+        then
+            echo "=== regenerate Makefiles for Xt/Xaw shared-data objects ==="
+            rm -f xmakefile
+            make Makefile
+            test -s xmakefile
+            make -f xmakefile Makefiles
+            BUILD_LIBRARIES=yes
+            BUILD_SET="Xt Xaw"
+        else
         if test "$MODE" = libs
         then
             BUILD_LIBRARIES=yes
@@ -76,15 +86,44 @@ else
             then
                 :
             else
-                echo "usage: $0 [source-tree [all|shdata|libs|clients]]" >&2
+                echo "usage: $0 [source-tree [all|shdata|shdata-fix|libs|clients]]" >&2
                 exit 1
             fi
+        fi
         fi
     fi
 fi
 
 if test "$BUILD_LIBRARIES" = yes
 then
+    if echo " $BUILD_SET " | grep ' Xt ' >/dev/null
+    then
+        grep 'UNSHAREDOBJS.*unshared/StringDefs.o.*sharedlib.o' \
+            "$TOP/lib/Xt/Makefile" >/dev/null || {
+            echo "amix-shared-rebuild: Xt Makefile does not use the normal StringDefs object" >&2
+            exit 1
+        }
+        grep '^unshared/StringDefs.o.*StringDefs.o' \
+            "$TOP/lib/Xt/Makefile" >/dev/null || {
+            echo "amix-shared-rebuild: Xt normal-object dependency is missing" >&2
+            exit 1
+        }
+    fi
+
+    if echo " $BUILD_SET " | grep ' Xaw ' >/dev/null
+    then
+        grep 'UNSHAREDOBJS.*unshared/AllWidgets.o.*sharedlib.o' \
+            "$TOP/lib/Xaw/Makefile" >/dev/null || {
+            echo "amix-shared-rebuild: Xaw Makefile does not use the normal AllWidgets object" >&2
+            exit 1
+        }
+        grep '^unshared/AllWidgets.o.*AllWidgets.o' \
+            "$TOP/lib/Xaw/Makefile" >/dev/null || {
+            echo "amix-shared-rebuild: Xaw normal-object dependency is missing" >&2
+            exit 1
+        }
+    fi
+
     for library in $BUILD_SET
     do
         dir="$TOP/lib/$library"
