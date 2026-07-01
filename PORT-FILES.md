@@ -10,6 +10,7 @@
 - `config/imake/Makefile.ini`, `config/imake/imakemdep.h`: bootstrap compiler/cpp
 - `config/util/amix-shared-rebuild.sh`: clean PIC library and client rebuild
 - `programs/Imakefile`, `programs/rstart/Imakefile`: old cpp/make compatibility
+- `programs/twm/lex.l`: AMIX lex compatibility for the revision comment
 
 ## X server
 
@@ -21,4 +22,3 @@
 
 Generated Makefiles, object files, libraries, executables, fonts, and the
 upstream X11R6.3 distribution are intentionally not tracked.
-

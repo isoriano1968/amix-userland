@@ -103,6 +103,10 @@ echo "=== rebuild dynamic clients ==="
 for program in $PROGRAMS
 do
     cd "$TOP/programs/$program"
+    if test "$program" = twm
+    then
+        rm -f lex.c lex.yy.c lex.o
+    fi
     rm -f "$program"
     make "$program"
     test -s "$program"
