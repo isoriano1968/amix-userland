@@ -1,0 +1,98 @@
+/* AMIX-specific imake rules. */
+
+/*
+ * gcc-cpp loses the build-directory argument when the stock
+ * ProjectUnsharedLibReferences macro pastes it to "/lib".  All X11 project
+ * libraries are exported through BUILDLIBDIR, so construct the dependency
+ * from that stable make variable and only paste the library filename.
+ */
+#if defined(UseInstalled) || UseInstalledX11
+#define AmixProjectDepLib(name) $(USRLIBDIR)/LibraryTargetName(name)
+#else
+#define AmixProjectDepLib(name) $(BUILDLIBDIR)/LibraryTargetName(name)
+#endif
+
+#ifndef ProjectUnsharedLibReferences
+#define ProjectUnsharedLibReferences(varname,libname,libsource,buildlibdir) @@\
+Concat3(DEP,varname,LIB) = AmixProjectDepLib(libname)                     @@\
+Concat(varname,LIB) = LoaderLibPrefix Concat(-l,libname)                  @@\
+LintLibReferences(varname,libname,libsource)
+#endif /* ProjectUnsharedLibReferences */
+
+/*
+ * AMIX SVR4 ar maintains the symbol table with ar cq.  On this tree the
+ * default library macro can expand an empty/undefined RANLIB command into a
+ * shell error, so keep normal library creation to rm + ar.
+ */
+#ifndef NormalLibraryTarget
+#define NormalLibraryTarget(libname,objlist)                             @@\
+AllTarget(LibraryTargetName(libname))                                    @@\
+                                                                        @@\
+LibraryTargetName(libname): objlist $(EXTRALIBRARYDEPS)                 @@\
+	$(RM) $@                                                              @@\
+	$(AR) $@ objlist                                                     @@\
+	_LinkBuildLibrary($@)
+#endif /* NormalLibraryTarget */
+
+#ifndef NormalLibraryTarget2
+#define NormalLibraryTarget2(libname,objlist1,objlist2)                  @@\
+AllTarget(LibraryTargetName(libname))                                    @@\
+                                                                        @@\
+LibraryTargetName(libname): objlist1 objlist2 $(EXTRALIBRARYDEPS)       @@\
+	$(RM) $@                                                              @@\
+	$(AR) $@ objlist1 objlist2                                           @@\
+	_LinkBuildLibrary($@)
+#endif /* NormalLibraryTarget2 */
+
+/*
+ * The same cpp whitespace issue affects include export paths such as
+ * IncSubdir/IncSubSubdir, producing "X11 /ICE".  Normalize the generated path
+ * in the shell before creating the export directory and header links.
+ */
+#ifdef BuildIncludesTop
+#undef BuildIncludesTop
+#endif
+#define BuildIncludesTop(list)                                         @@\
+includes:: list                                                        @@\
+	@dst=`echo $(BUILDINCDIR) | sed 's/[ 	]*\/[ 	]*/\//g'`; \       @@\
+	$(MKDIRHIER) $$dst; \                                              @@\
+	set -x; cd $$dst; for i in list; do \                              @@\
+		RemoveFile($$i); \                                            @@\
+		src=`echo $(BUILDINCTOP)/$(CURRENT_DIR)/$$i | sed 's/[ 	]*\/[ 	]*/\//g'`; \ @@\
+		$(LN) $$src .; \                                              @@\
+	done
+
+#ifdef BuildIncludes
+#undef BuildIncludes
+#endif
+#define BuildIncludes(list,sub,up)                                     @@\
+includes:: list                                                        @@\
+	@dst=`echo $(BUILDINCDIR)/sub | sed 's/[ 	]*\/[ 	]*/\//g'`; \   @@\
+	$(MKDIRHIER) $$dst; \                                              @@\
+	set -x; cd $$dst; for i in list; do \                              @@\
+		RemoveFile($$i); \                                            @@\
+		src=`echo $(BUILDINCTOP)/up/$(CURRENT_DIR)/$$i | sed 's/[ 	]*\/[ 	]*/\//g'`; \ @@\
+		$(LN) $$src .; \                                              @@\
+	done
+
+/*
+ * AMIX/gcc-cpp can expand a macro fragment like "dir/src" as
+ * "dir /src".  That makes generated link-source dependencies refer to
+ * absolute paths such as /cfb.h.  Avoid path concatenation in the make
+ * dependency and do the source-directory join in the shell instead.
+ */
+#ifndef LinkSourceFile
+#define LinkSourceFile(src,dir)                                         @@\
+src:                                                                   @@\
+	RemoveFile($@)                                                     @@\
+	@srcdir=`cd dir; pwd`; (set -x; $(LN) $$srcdir/src $@)             @@\
+                                                                        @@\
+NoConfigRec(src)                                                       @@\
+                                                                        @@\
+includes:: src                                                         @@\
+                                                                        @@\
+depend:: src                                                           @@\
+                                                                        @@\
+clean::                                                                @@\
+	RemoveFile(src)
+#endif /* LinkSourceFile */

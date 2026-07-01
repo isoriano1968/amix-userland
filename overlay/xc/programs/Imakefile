@@ -1,0 +1,54 @@
+XCOMM $XConsortium: Imakefile /main/83 1996/12/18 16:29:30 lehors $
+#define IHaveSubdirs
+#define PassCDebugFlags CDEBUGFLAGS="$(CDEBUGFLAGS)"
+
+#if BuildServer
+       RGBSRCDIR = rgb
+        XSSRCDIR = Xserver
+#endif
+#ifndef Win32Architecture
+#if HasXServer
+     XINITSRCDIR = xinit
+#endif
+#if BuildFontServer
+       XFSSRCDIR = xfs
+#endif
+#if BuildXKBlib
+      XKBSRCDIRS = xkbcomp xkbevd xkbprint xkbutils
+#endif
+#if BuildXAServer
+       XASSRCDIR = Xaserver
+#endif
+#if BuildLBX
+  LBXPROXYSRCDIR = lbxproxy
+#endif
+  PROXYMGRSRCDIR = proxymngr
+    RSTARTSRCDIR =
+   SMPROXYSRCDIR =
+       TWMSRCDIR =
+  XCONSOLESRCDIR = xconsole
+       XDMSRCDIR = xdm
+XFINDPROXYSRCDIR = xfindproxy
+      XFWPSRCDIR = xfwp
+     XHOSTSRCDIR = xhost
+       XMHSRCDIR = xmh
+       XRXSRCDIR = xrx
+       XSMSRCDIR = xsm
+     XTERMSRCDIR = xterm
+      SCRIPTSDIR = scripts
+#endif
+
+SUBDIRS = \
+	appres bdftopcf bitmap editres fsinfo fslsfonts fstobdf \
+	iceauth mkfontdir oclock $(PROXYMGRSRCDIR) \
+	$(RGBSRCDIR) $(RSTARTSRCDIR) $(SMPROXYSRCDIR) $(TWMSRCDIR) x11perf \
+	xauth xclipboard xclock xcmsdb $(XCONSOLESRCDIR) $(XDMSRCDIR) \
+	xdpyinfo xfd $(XFSSRCDIR) $(XFINDPROXYSRCDIR) $(XFWPSRCDIR) \
+	$(XHOSTSRCDIR) xieperf $(XINITSRCDIR) $(XKBSRCDIRS) xkill xlogo \
+	xlsatoms xlsclients xlsfonts xmag $(XMHSRCDIR) xmodmap xprop \
+	xrdb xrefresh $(XRXSRCDIR) xset xsetroot $(XSMSRCDIR) xstdcmap \
+	$(XTERMSRCDIR) xwd xwininfo xwud $(XSSRCDIR) $(XASSRCDIR) \
+	$(LBXPROXYSRCDIR) $(SCRIPTSDIR)
+
+MakeSubdirs($(SUBDIRS))
+DependSubdirs($(SUBDIRS))

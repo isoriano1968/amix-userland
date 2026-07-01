@@ -1,0 +1,8 @@
+/distfiles/
+/work/
+*.log
+*.o
+*.a
+*.so
+*.so.*
+
