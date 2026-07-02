@@ -196,7 +196,7 @@ OBJS = \
 	Vendor.o
 
 #if SharedDataSeparation
-#if defined(AMIX)
+#if defined(AMIXArchitecture)
 UNSHAREDOBJS = unshared/StringDefs.o sharedlib.o
 #else
 UNSHAREDOBJS = StringDefs.o sharedlib.o
@@ -207,7 +207,7 @@ UNSHAREDOBJS = sharedlib.o
 
 #include <Library.tmpl>
 
-#if defined(AMIX) && SharedDataSeparation
+#if defined(AMIXArchitecture) && SharedDataSeparation
 /* Library.tmpl creates the normal object as a side effect of StringDefs.o. */
 unshared/StringDefs.o: StringDefs.o
 	@:

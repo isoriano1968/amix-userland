@@ -130,7 +130,7 @@ SRCS = \
 	sharedlib.c
 
 #if SharedDataSeparation
-#if defined(AMIX)
+#if defined(AMIXArchitecture)
 UNSHAREDOBJS = unshared/AllWidgets.o sharedlib.o
 #else
 UNSHAREDOBJS = AllWidgets.o sharedlib.o
@@ -179,7 +179,7 @@ OBJS = \
 
 #include <Library.tmpl>
 
-#if defined(AMIX) && SharedDataSeparation
+#if defined(AMIXArchitecture) && SharedDataSeparation
 /* Library.tmpl creates the normal object as a side effect of AllWidgets.o. */
 unshared/AllWidgets.o: AllWidgets.o
 	@:
