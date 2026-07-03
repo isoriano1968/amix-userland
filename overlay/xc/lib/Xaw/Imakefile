@@ -3,7 +3,11 @@ XCOMM $XConsortium: Imakefile /main/87 1996/09/28 16:43:34 rws $
 #define DoSharedLib SharedLibXaw
 #define DoDebugLib DebugLibXaw 
 #define DoProfileLib ProfileLibXaw 
+#if defined(AMIXArchitecture)
+#define HasSharedData NO
+#else
 #define HasSharedData YES
+#endif
 #define LibName Xaw
 #define SoRev SOXAWREV
 #define IncSubdir X11
@@ -130,11 +134,7 @@ SRCS = \
 	sharedlib.c
 
 #if SharedDataSeparation
-#if defined(AMIXArchitecture)
-UNSHAREDOBJS = unshared/AllWidgets.o sharedlib.o
-#else
 UNSHAREDOBJS = AllWidgets.o sharedlib.o
-#endif
 #endif
 
 OBJS = \
@@ -179,13 +179,7 @@ OBJS = \
 
 #include <Library.tmpl>
 
-#if defined(AMIXArchitecture) && SharedDataSeparation
-/* Library.tmpl creates the normal object as a side effect of AllWidgets.o. */
-unshared/AllWidgets.o: AllWidgets.o
-	@:
-#endif
-
-#if DoSharedLib && SharedDataSeparation
+#if DoSharedLib && SharedDataSeparation && !defined(AMIXArchitecture)
 SpecialCObjectRule(sharedlib,NullParameter,$(SHLIBDEF))
 #endif
 

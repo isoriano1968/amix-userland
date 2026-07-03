@@ -1,33 +1,61 @@
 /* AMIX-specific imake rules. */
 
 /*
- * AMIX follows the X11R5 SVR4 hybrid shared-data model.  For libraries such
- * as Xt, Xmu, and Xaw, -lfoo must find an archive named libfoo.so containing
- * the versioned shared object plus the data/stub objects that must live in
- * each executable.  The versioned libfoo.so.N remains the runtime image.
+ * AMIX keeps the runtime image in libfoo.so and executable-resident stubs in
+ * a companion libfoo.sa archive.  The native link editor consumes both when
+ * resolving -lfoo.
  */
 #ifndef SharedLibraryDataTarget
 #define SharedLibraryDataTarget(libname,rev,objlist)                    @@\
-AllTarget(Concat(lib,libname.so))                                       @@\
+AllTarget(Concat(lib,libname.sa))                                       @@\
                                                                         @@\
-Concat(lib,libname.so): Concat(lib,libname.so.rev) objlist AMIXSHLIBFORCE @@\
+Concat(lib,libname.sa): objlist AMIXSHLIBFORCE                          @@\
 	$(RM) $@                                                              @@\
-	$(AR) $@ Concat(lib,libname.so.rev) objlist                           @@\
+	$(AR) $@ objlist                                                      @@\
 	LinkBuildLibrary($@)                                                  @@\
                                                                         @@\
 AMIXSHLIBFORCE:                                                         @@\
                                                                         @@\
 clean::                                                                 @@\
-	$(RM) Concat(lib,libname.so)
+	$(RM) Concat(lib,libname.sa)
 #endif /* SharedLibraryDataTarget */
 
 #ifndef InstallSharedLibraryData
 #define InstallSharedLibraryData(libname,rev,dest)                      @@\
-install:: Concat(lib,libname.so)                                        @@\
+install:: Concat(lib,libname.sa)                                        @@\
 	MakeDir($(DESTDIR)dest)                                               @@\
-	$(RM) Concat($(DESTDIR)dest/lib,libname.so)                           @@\
-	$(INSTALL) $(INSTALLFLAGS) $(INSTLIBFLAGS) Concat(lib,libname.so) $(DESTDIR)dest
+	$(RM) Concat($(DESTDIR)dest/lib,libname.sa)                           @@\
+	$(INSTALL) $(INSTALLFLAGS) $(INSTLIBFLAGS) Concat(lib,libname.sa) $(DESTDIR)dest
 #endif /* InstallSharedLibraryData */
+
+/*
+ * GCC's link driver does not add AMIX companion .sa archives implicitly.
+ * Put each required archive immediately after its ELF shared library.
+ */
+#if defined(UseInstalled) || UseInstalledX11
+#define AmixSALibXt $(USRLIBDIR)/libXt.sa
+#define AmixSALibXmu $(USRLIBDIR)/libXmu.sa
+#else
+#define AmixSALibXt $(BUILDLIBDIR)/libXt.sa
+#define AmixSALibXmu $(BUILDLIBDIR)/libXmu.sa
+#endif
+#define AmixSALibXaw /**/
+#define AmixSALib(libname) Concat(AmixSALib,libname)
+
+/* sv4Lib.tmpl otherwise replaces XMU with a bare -lXmu. */
+#ifndef FixupLibReferences
+#define FixupLibReferences()                                            @@\
+XMULIBONLY = -lXmu AmixSALibXmu                                        @@\
+XMULIB = $(XMULIBONLY) -z nodefs
+#endif
+
+#ifndef SharedDSLibReferences
+#define SharedDSLibReferences(varname,libname,libsource,revname,rev)     @@\
+revname = rev                                                           @@\
+Concat3(DEP,varname,LIB) = AmixSALib(libname)                           @@\
+Concat(varname,LIB) = LoaderLibPrefix Concat(-l,libname) AmixSALib(libname) @@\
+LintLibReferences(varname,libname,libsource)
+#endif
 
 /*
  * gcc-cpp loses the build-directory argument when the stock

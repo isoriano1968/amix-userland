@@ -197,7 +197,7 @@ OBJS = \
 
 #if SharedDataSeparation
 #if defined(AMIXArchitecture)
-UNSHAREDOBJS = unshared/StringDefs.o sharedlib.o
+UNSHAREDOBJS = sharedlib.o
 #else
 UNSHAREDOBJS = StringDefs.o sharedlib.o
 #endif
@@ -206,12 +206,6 @@ UNSHAREDOBJS = sharedlib.o
 #endif
 
 #include <Library.tmpl>
-
-#if defined(AMIXArchitecture) && SharedDataSeparation
-/* Library.tmpl creates the normal object as a side effect of StringDefs.o. */
-unshared/StringDefs.o: StringDefs.o
-	@:
-#endif
 
 SpecialCLibObjectRule(Intrinsic,$(ICONFIGFILES),$(SRCH_DEFINES))
 SpecialCLibObjectRule(Error,$(ICONFIGFILES),$(DB_DEFINES))
@@ -223,7 +217,11 @@ SpecialCLibObjectRule(TMaction,$(_NOOP_),$(RCONST_DEFINES))
 SpecialCLibObjectRule(TMkey,$(_NOOP_),-DXKB)
 #endif
 #if DoSharedLib
+#if defined(AMIXArchitecture)
+SpecialCObjectRule(sharedlib,$(_NOOP_),$(SHLIBDEF) -DAMIXSHLIB)
+#else
 SpecialCObjectRule(sharedlib,$(_NOOP_),$(SHLIBDEF))
+#endif
 #endif
 
 STRINGS_FILES = StringDefs.c StringDefs.h Shell.h

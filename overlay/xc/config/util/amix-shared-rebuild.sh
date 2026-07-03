@@ -46,6 +46,7 @@ export LD_LIBRARY_PATH
 
 BUILD_LIBRARIES=no
 BUILD_SET=
+REPAIR_SHDATA=no
 
 if test "$MODE" = all
 then
@@ -69,13 +70,32 @@ else
     else
         if test "$MODE" = shdata-fix
         then
-            echo "=== regenerate Makefiles for Xt/Xaw shared-data objects ==="
-            rm -f xmakefile
-            make Makefile
-            test -s xmakefile
-            make -f xmakefile Makefiles
+            echo "=== regenerate affected library Makefiles ==="
+            for library in Xt Xmu Xaw
+            do
+                cd "$TOP/lib/$library"
+                rm -f Makefile.new
+                ../../config/imake/imake -I../../config/cf \
+                    -s Makefile.new -f Imakefile \
+                    -DTOPDIR=../.. -DCURDIR=lib/$library
+                test -s Makefile.new
+                mv Makefile.new Makefile
+            done
+
+            echo "=== regenerate affected client Makefiles ==="
+            for program in $PROGRAMS
+            do
+                cd "$TOP/programs/$program"
+                rm -f Makefile.new
+                ../../config/imake/imake -I../../config/cf \
+                    -s Makefile.new -f Imakefile \
+                    -DTOPDIR=../.. -DCURDIR=programs/$program
+                test -s Makefile.new
+                mv Makefile.new Makefile
+            done
             BUILD_LIBRARIES=yes
-            BUILD_SET="Xt Xaw"
+            BUILD_SET="Xt Xmu Xaw"
+            REPAIR_SHDATA=yes
         else
         if test "$MODE" = libs
         then
@@ -98,40 +118,90 @@ if test "$BUILD_LIBRARIES" = yes
 then
     if echo " $BUILD_SET " | grep ' Xt ' >/dev/null
     then
-        grep 'UNSHAREDOBJS.*unshared/StringDefs.o.*sharedlib.o' \
+        grep 'UNSHAREDOBJS *= *sharedlib.o' \
             "$TOP/lib/Xt/Makefile" >/dev/null || {
-            echo "amix-shared-rebuild: Xt Makefile does not use the normal StringDefs object" >&2
+            echo "amix-shared-rebuild: Xt Makefile does not use the native stub-only layout" >&2
             exit 1
         }
-        grep '^unshared/StringDefs.o.*StringDefs.o' \
-            "$TOP/lib/Xt/Makefile" >/dev/null || {
-            echo "amix-shared-rebuild: Xt normal-object dependency is missing" >&2
+        grep 'AMIXSHLIB' "$TOP/lib/Xt/Makefile" >/dev/null || {
+            echo "amix-shared-rebuild: Xt AMIX wrapper rule is missing" >&2
             exit 1
         }
     fi
 
-    if echo " $BUILD_SET " | grep ' Xaw ' >/dev/null
+    if echo " $BUILD_SET " | grep ' Xmu ' >/dev/null
     then
-        grep 'UNSHAREDOBJS.*unshared/AllWidgets.o.*sharedlib.o' \
-            "$TOP/lib/Xaw/Makefile" >/dev/null || {
-            echo "amix-shared-rebuild: Xaw Makefile does not use the normal AllWidgets object" >&2
-            exit 1
-        }
-        grep '^unshared/AllWidgets.o.*AllWidgets.o' \
-            "$TOP/lib/Xaw/Makefile" >/dev/null || {
-            echo "amix-shared-rebuild: Xaw normal-object dependency is missing" >&2
+        grep 'UNSHAREDOBJS *= *sharedlib.o' \
+            "$TOP/lib/Xmu/Makefile" >/dev/null || {
+            echo "amix-shared-rebuild: Xmu Makefile does not use the native stub-only layout" >&2
             exit 1
         }
     fi
 
-    for library in $BUILD_SET
-    do
-        dir="$TOP/lib/$library"
-        echo "=== clean PIC rebuild of shared lib$library ==="
-        cd "$dir"
-        rm -f lib$library.so lib$library.so.* *.o shared/*.o unshared/*.o
-        make
-    done
+    if grep '^libXaw.sa:' "$TOP/lib/Xaw/Makefile" >/dev/null
+    then
+        echo "amix-shared-rebuild: Xaw must not generate a shared-data archive on AMIX" >&2
+        exit 1
+    fi
+
+    grep 'libXt.sa' "$TOP/programs/xclock/Makefile" >/dev/null || {
+        echo "amix-shared-rebuild: xclock link does not include libXt.sa" >&2
+        exit 1
+    }
+    grep 'XMULIBONLY.*libXmu.sa' "$TOP/programs/xsetroot/Makefile" >/dev/null || {
+        echo "amix-shared-rebuild: xsetroot link does not include libXmu.sa" >&2
+        exit 1
+    }
+
+    if test "$REPAIR_SHDATA" = yes
+    then
+        echo "=== restore native ELF .so links ==="
+        for library in Xt Xmu Xaw
+        do
+            cd "$TOP/lib/$library"
+            image=
+            for candidate in lib$library.so.*
+            do
+                if test -f "$candidate" && test -s "$candidate"
+                then
+                    image=$candidate
+                    break
+                fi
+            done
+            if test "x$image" = x
+            then
+                echo "amix-shared-rebuild: missing versioned lib$library ELF image" >&2
+                exit 1
+            fi
+            rm -f lib$library.so
+            ln -s "$image" lib$library.so
+            rm -f "$TOP/exports/lib/lib$library.so"
+            cd "$TOP/exports/lib"
+            ln -s ../../lib/$library/lib$library.so .
+        done
+
+        echo "=== repair native Xt shared-data archive ==="
+        cd "$TOP/lib/Xt"
+        rm -f libXt.sa sharedlib.o
+        make libXt.sa
+
+        echo "=== repair native Xmu shared-data archive ==="
+        cd "$TOP/lib/Xmu"
+        rm -f libXmu.sa sharedlib.o
+        make libXmu.sa
+
+        rm -f "$TOP/lib/Xaw/libXaw.sa" "$TOP/exports/lib/libXaw.sa"
+    else
+        for library in $BUILD_SET
+        do
+            dir="$TOP/lib/$library"
+            echo "=== clean PIC rebuild of shared lib$library ==="
+            cd "$dir"
+            rm -f lib$library.so lib$library.so.* lib$library.sa \
+                *.o shared/*.o unshared/*.o
+            make
+        done
+    fi
 fi
 
 echo "=== validate shared libraries ==="
@@ -153,20 +223,29 @@ do
         echo "amix-shared-rebuild: no valid lib$library shared image" >&2
         exit 1
     fi
+    file "lib$library.so"
+    dump -Lv "lib$library.so" >/dev/null
 done
 
 echo "=== validate AMIX shared-data archives ==="
-for library in Xt Xmu Xaw
+for library in Xt Xmu
 do
     cd "$TOP/lib/$library"
-    if ar t "lib$library.so" >/dev/null 2>&1
+    members=`ar t "lib$library.sa"`
+    if test "x$members" = xsharedlib.o
     then
-        echo "lib$library.so: AMIX shared-data archive"
+        echo "lib$library.sa: native AMIX stub archive"
     else
-        echo "amix-shared-rebuild: lib$library.so is not an archive" >&2
+        echo "amix-shared-rebuild: unexpected lib$library.sa members: $members" >&2
         exit 1
     fi
 done
+
+if test -f "$TOP/lib/Xaw/libXaw.sa"
+then
+    echo "amix-shared-rebuild: Xaw unexpectedly has a .sa archive" >&2
+    exit 1
+fi
 
 echo "=== rebuild dynamic clients ==="
 for program in $PROGRAMS

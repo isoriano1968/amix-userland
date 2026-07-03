@@ -21,5 +21,8 @@
 - `programs/Xserver/hw/amix/rtg`: generic AMIX RTG screen layer
 - `programs/Xserver/hw/amix/rtg/zz9000`: ZZ9000 16-bit framebuffer DDX
 
+`SHARED-LIBRARIES.md` documents the native AMIX `.so`/`.sa` ABI and required
+left-to-right client link order.
+
 Generated Makefiles, object files, libraries, executables, fonts, and the
 upstream X11R6.3 distribution are intentionally not tracked.

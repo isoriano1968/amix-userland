@@ -2,9 +2,8 @@
 ** ZZ9000pix.c - Pixmap and font operations for ZZ9000 RTG.
 **
 ** Off-screen pixmaps live entirely in host memory (not in VRAM).
-** The PixmapRec and its pixel data are allocated in a single xalloc
-** call - the same layout as cfb - so that devPrivate.ptr = pPixmap + 1
-** and devKind = padded bytes per scanline.
+** The PixmapRec, R6 pixmap-private records, and pixel data are allocated
+** together through AllocatePixmap(), using the same layout as mfb/cfb.
 **
 ** Supported depths: 16 (native TrueColor) and 1 (bitmaps for fonts).
 **
@@ -14,6 +13,7 @@
 
 #include "X.h"
 #include "scrnintstr.h"
+#include "pixmap.h"
 #include "pixmapstr.h"
 #include "servermd.h"
 #include "dixfont.h"
@@ -24,10 +24,10 @@
 /*
 ** ZZ9000CreatePixmap - allocate a host-memory pixmap.
 **
-** PixmapRec and pixel data are allocated in one block; devPrivate.ptr
-** points just past the PixmapRec header.  devKind is the scanline size
-** in bytes, padded to BITMAP_SCANLINE_PAD bits (32 bits on all AMIX
-** platforms).
+** PixmapRec, pixmap-private records, and pixel data are allocated in one
+** block.  With PIXPRIV, pixel data starts at pScreen->totalPixmapSize;
+** otherwise it starts immediately after PixmapRec.  devKind is the
+** scanline size in bytes, padded to BITMAP_SCANLINE_PAD bits.
 **
 ** Returns NullPixmap on unsupported depth or allocation failure.
 */
@@ -40,12 +40,14 @@ int       depth;
 {
     PixmapPtr pPixmap;
     int       size;
+    int       datasize;
 
     if (depth != ZZ9000_DEPTH && depth != 1)
         return NullPixmap;
 
-    size    = PixmapBytePad(width, depth);
-    pPixmap = (PixmapPtr) xalloc(sizeof(PixmapRec) + height * size);
+    size     = PixmapBytePad(width, depth);
+    datasize = height * size;
+    pPixmap  = AllocatePixmap(pScreen, datasize);
     if (!pPixmap)
         return NullPixmap;
 
@@ -62,7 +64,12 @@ int       depth;
     pPixmap->drawable.height       = height;
     pPixmap->devKind               = size;
     pPixmap->refcnt                = 1;
-    pPixmap->devPrivate.ptr        = (pointer)(pPixmap + 1);
+#ifdef PIXPRIV
+    pPixmap->devPrivate.ptr = datasize ?
+        (pointer)((char *)pPixmap + pScreen->totalPixmapSize) : NULL;
+#else
+    pPixmap->devPrivate.ptr = (pointer)(pPixmap + 1);
+#endif
 
     return pPixmap;
 }
