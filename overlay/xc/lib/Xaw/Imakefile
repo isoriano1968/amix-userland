@@ -1,8 +1,8 @@
 XCOMM $XConsortium: Imakefile /main/87 1996/09/28 16:43:34 rws $
 #define DoNormalLib NormalLibXaw
 #define DoSharedLib SharedLibXaw
-#define DoDebugLib DebugLibXaw 
-#define DoProfileLib ProfileLibXaw 
+#define DoDebugLib DebugLibXaw
+#define DoProfileLib ProfileLibXaw
 #if defined(AMIXArchitecture)
 #define HasSharedData NO
 #else

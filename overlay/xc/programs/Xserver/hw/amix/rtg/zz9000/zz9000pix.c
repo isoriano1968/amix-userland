@@ -2,8 +2,9 @@
 ** ZZ9000pix.c - Pixmap and font operations for ZZ9000 RTG.
 **
 ** Off-screen pixmaps live entirely in host memory (not in VRAM).
-** The PixmapRec, R6 pixmap-private records, and pixel data are allocated
-** together through AllocatePixmap(), using the same layout as mfb/cfb.
+** Native 16-bit pixmaps use the X11R6 AllocatePixmap() layout.  Depth-1
+** bitmap pixmaps use the VA2000/XRTG layout (PixmapRec followed directly
+** by pixels) because these are the glyph/cursor masks consumed by mfb.
 **
 ** Supported depths: 16 (native TrueColor) and 1 (bitmaps for fonts).
 **
@@ -47,7 +48,12 @@ int       depth;
 
     size     = PixmapBytePad(width, depth);
     datasize = height * size;
-    pPixmap  = AllocatePixmap(pScreen, datasize);
+
+    if (depth == 1)
+        pPixmap = (PixmapPtr) xalloc(sizeof(PixmapRec) + datasize);
+    else
+        pPixmap = AllocatePixmap(pScreen, datasize);
+
     if (!pPixmap)
         return NullPixmap;
 
@@ -64,12 +70,17 @@ int       depth;
     pPixmap->drawable.height       = height;
     pPixmap->devKind               = size;
     pPixmap->refcnt                = 1;
+    if (depth == 1)
+        pPixmap->devPrivate.ptr = (pointer)(pPixmap + 1);
+    else
+    {
 #ifdef PIXPRIV
-    pPixmap->devPrivate.ptr = datasize ?
-        (pointer)((char *)pPixmap + pScreen->totalPixmapSize) : NULL;
+        pPixmap->devPrivate.ptr = datasize ?
+            (pointer)((char *)pPixmap + pScreen->totalPixmapSize) : NULL;
 #else
-    pPixmap->devPrivate.ptr = (pointer)(pPixmap + 1);
+        pPixmap->devPrivate.ptr = (pointer)(pPixmap + 1);
 #endif
+    }
 
     return pPixmap;
 }

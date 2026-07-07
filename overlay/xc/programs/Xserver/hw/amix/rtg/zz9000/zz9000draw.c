@@ -162,7 +162,8 @@ pointer        pdstLine;
 **
 ** Called by DIX for FillSolid fill style.  Spans in ppts are in absolute
 ** screen coordinates (DIX translates when miTranslate=TRUE).
-** miClipSpans clips the array in-place against the GC composite clip.
+** miClipSpans may split one input span across several clip boxes, so its
+** output must use separately allocated arrays sized for the widest band.
 */
 void
 ZZ9000FillSpans(pDraw, pGC, nspans, ppts, pwidths, fSorted)
@@ -178,19 +179,42 @@ int         fSorted;
     int             alu    = pGC->alu;
     unsigned short *base   = drawBase(pDraw, pRTG);
     int             stride = drawStride(pDraw);
+    RegionPtr       clip   = rtgGCClip(pGC);
+    DDXPointPtr     clippedPts;
+    int            *clippedWidths;
+    int             maxSpans;
     unsigned short *p;
     int             i, w;
 
-    nspans = miClipSpans(rtgGCClip(pGC),
+    if (nspans <= 0)
+        return;
+
+    maxSpans = nspans * miFindMaxBand(clip);
+    if (maxSpans <= 0)
+        return;
+
+    clippedPts = (DDXPointPtr)
+        ALLOCATE_LOCAL(maxSpans * sizeof(DDXPointRec));
+    clippedWidths = (int *) ALLOCATE_LOCAL(maxSpans * sizeof(int));
+    if (!clippedPts || !clippedWidths)
+    {
+        if (clippedPts)
+            DEALLOCATE_LOCAL(clippedPts);
+        if (clippedWidths)
+            DEALLOCATE_LOCAL(clippedWidths);
+        return;
+    }
+
+    nspans = miClipSpans(clip,
                          ppts, pwidths, nspans,
-                         ppts, pwidths, fSorted);
+                         clippedPts, clippedWidths, fSorted);
 
     for (i = 0; i < nspans; i++)
     {
-        w = pwidths[i];
+        w = clippedWidths[i];
         if (w <= 0)
             continue;
-        p = base + ppts[i].y * stride + ppts[i].x;
+        p = base + clippedPts[i].y * stride + clippedPts[i].x;
 
         switch (alu)
         {
@@ -213,6 +237,9 @@ int         fSorted;
         default:             while (w-->0)  *p++ = pixel;              break;
         }
     }
+
+    DEALLOCATE_LOCAL(clippedWidths);
+    DEALLOCATE_LOCAL(clippedPts);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -221,9 +248,9 @@ int         fSorted;
 /*
 ** ZZ9000SetSpans - write packed 16-bit pixel data to the framebuffer.
 **
-** pcharsrc is a contiguous buffer of 16-bit pixels, one span after
-** another.  For each input span we clip each clip-box intersection
-** and copy the appropriate slice of the source.
+** Each source scanline is padded according to PixmapBytePad(), as required
+** by the DDX SetSpans contract.  For each input span we clip each clip-box
+** intersection and copy the appropriate slice of the source.
 */
 void
 ZZ9000SetSpans(pDraw, pGC, pcharsrc, ppt, pwidths, nspans, fSorted)
@@ -241,19 +268,23 @@ int         fSorted;
     RegionPtr       clip   = rtgGCClip(pGC);
     BoxPtr          pbox;
     int             nbox;
+    char           *psrcLine;
     unsigned short *psrc;
+    int             srcBytes;
     int             i, cx1, cx2, sw;
 
-    psrc = (unsigned short *) pcharsrc;
+    psrcLine = pcharsrc;
 
     for (i = 0; i < nspans; i++, ppt++, pwidths++)
     {
         sw = *pwidths;
+        srcBytes = sw > 0 ? PixmapBytePad(sw, pDraw->depth) : 0;
         if (sw <= 0)
         {
-            psrc += (sw < 0 ? -sw : 0);
             continue;
         }
+
+        psrc = (unsigned short *) psrcLine;
 
         nbox = REGION_NUM_RECTS(clip);
         pbox = REGION_RECTS(clip);
@@ -275,7 +306,7 @@ int         fSorted;
                        (size_t)((cx2 - cx1) * 2));
             pbox++;
         }
-        psrc += sw;
+        psrcLine += srcBytes;
     }
 }
 
@@ -285,8 +316,8 @@ int         fSorted;
 /*
 ** ZZ9000GetSpans - read pixel data from the drawable into pdstStart.
 **
-** No clipping: DIX clips before calling GetSpans.
-** The output buffer is treated as a flat array of unsigned short.
+** No clipping: DIX clips before calling GetSpans.  Every returned scanline
+** is padded independently according to PixmapBytePad().
 */
 void
 ZZ9000GetSpans(pDraw, wMax, ppt, pwidth, nspans, pdstStart)
@@ -300,8 +331,8 @@ unsigned long *pdstStart;
     rtgScreenPtr    pRTG;
     unsigned short *base;
     int             stride;
-    unsigned short *dst;
-    int             i, w;
+    char           *dst;
+    int             i, w, dstBytes;
 
     if (pDraw->depth == 1)
     {
@@ -312,17 +343,19 @@ unsigned long *pdstStart;
     pRTG   = GetRTGScreen(pDraw->pScreen);
     base   = drawBase(pDraw, pRTG);
     stride = drawStride(pDraw);
-    dst    = (unsigned short *) pdstStart;
+    dst    = (char *) pdstStart;
 
     for (i = 0; i < nspans; i++, ppt++, pwidth++)
     {
         w = min(*pwidth, wMax);
         if (w <= 0)
             continue;
-        memcpy((char *)dst,
+        dstBytes = PixmapBytePad(w, pDraw->depth);
+        memset(dst, 0, (size_t)dstBytes);
+        memcpy(dst,
                (char *)(base + ppt->y * stride + ppt->x),
                (size_t)(w * 2));
-        dst += w;
+        dst += dstBytes;
     }
 }
 

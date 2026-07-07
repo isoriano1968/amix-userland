@@ -13,7 +13,7 @@ XCOMM $TOG: Imakefile /main/119 1997/05/20 10:06:20 kaleb $
 #ifndef MotifBC
 #define MotifBC NO
 #endif
-				   
+
 /* "YES" allows illegal XtGetValues requests with NULL ArgVal to
    usually succeed, as R5 did.  Some applications erroneously rely on
    this behavior.  Support for this will be removed in a future release. */
