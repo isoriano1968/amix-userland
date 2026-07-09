@@ -5,7 +5,6 @@ DISPLAY_NUMBER=${1-:0}
 MODE=${ZZ9K_MODE-1920x800}
 FONT_PATH=${ZZ9K_FONT_PATH-$TOP/fonts/bdf/misc}
 
-XINIT=$TOP/programs/xinit/xinit
 SERVER=$TOP/programs/Xserver/Xzz9000
 CLIENT=$TOP/config/util/xinitrc.zz9000
 
@@ -17,7 +16,7 @@ case "$DISPLAY_NUMBER" in
     ;;
 esac
 
-for file in "$XINIT" "$SERVER" "$CLIENT"
+for file in "$SERVER" "$CLIENT"
 do
     if test -f "$file"
     then
@@ -50,13 +49,35 @@ fi
 echo "Starting Xzz9000 on $DISPLAY_NUMBER at $MODE"
 echo "Exit twm to stop the X server."
 
+DISPLAY=$DISPLAY_NUMBER
+export DISPLAY
+
 if test "x$RGB_PATH" = x
 then
-    exec "$XINIT" "$CLIENT" -- "$SERVER" "$DISPLAY_NUMBER" \
-        -mode "$MODE" -fp "$FONT_PATH" -ac -kb -terminate
+    "$SERVER" "$DISPLAY_NUMBER" -mode "$MODE" -fp "$FONT_PATH" \
+        -ac -kb &
 else
-    exec "$XINIT" "$CLIENT" -- "$SERVER" "$DISPLAY_NUMBER" \
-        -mode "$MODE" -fp "$FONT_PATH" -co "$RGB_PATH" \
-        -ac -kb -terminate
+    "$SERVER" "$DISPLAY_NUMBER" -mode "$MODE" -fp "$FONT_PATH" \
+        -co "$RGB_PATH" -ac -kb &
 fi
 
+SERVER_PID=$!
+
+cleanup()
+{
+    if test "x$SERVER_PID" != x
+    then
+        kill "$SERVER_PID" >/dev/null 2>&1
+        wait "$SERVER_PID" >/dev/null 2>&1
+    fi
+}
+
+trap 'cleanup; exit 1' 1 2 3 15
+
+sleep ${ZZ9K_START_DELAY-5}
+
+sh "$CLIENT"
+STATUS=$?
+
+cleanup
+exit $STATUS
