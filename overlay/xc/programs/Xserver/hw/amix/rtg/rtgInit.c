@@ -132,6 +132,79 @@ ScreenPtr pScreen;
 /* ------------------------------------------------------------------ */
 
 /*
+** rtgOpenInput - open the AMIX screen device for keyboard/mouse input.
+**
+** Extracted from rtgProbe() so it can also be re-run from rtgScreenInit().
+** amixInit.c's InitOutput() guards the probeProc loop (rtgProbe among
+** them) with the static, process-lifetime flag amixDevsProbed, so
+** rtgProbe() only ever runs on the very first server generation - not on
+** every server reset.  But rtgCloseScreen() above unconditionally closes
+** amixFbs[i].fd and clears amixFbs[i].mapped every time a generation's
+** screen is torn down.  Without re-opening it here, amixFbs[index].mapped
+** stays FALSE for the rest of the process after the first reset, which
+** makes rtgScreenInit() install the no-op rtgWakeupHandler instead of
+** amixWakeupHandler - i.e. mouse/keyboard input silently stops being
+** read at all, and the cursor appears permanently stuck.
+**
+** Same OpenScreen/SIOCACTIVATE/SIOCSETINPUTMODE sequence as before;
+** just callable from more than one place now.
+*/
+static void
+rtgOpenInput(index)
+int index;
+{
+    extern char *display;
+    char screenname[1024];
+    int  fd;
+
+    if (amixFbs[index].scrtype.dispz == 0)
+        amixFbs[index].scrtype = DefaultScrType;
+
+    if (sprintf(screenname, "Xrtg :%s.%d", display, index) < 0)
+        fd = OpenScreen("Xrtg", &amixFbs[index].scrtype, 0);
+    else
+        fd = OpenScreen(screenname, &amixFbs[index].scrtype, 0);
+
+    if (fd < 0)
+    {
+        ErrorF("rtgOpenInput: OpenScreen failed (%s); starting display-only\n",
+               ScreenError());
+        amixFbs[index].fd     = -1;
+        amixFbs[index].mapped = FALSE;
+        return;
+    }
+
+    if (fcntl(fd, F_SETFL, O_NDELAY) == -1)
+        ErrorF("rtgOpenInput: F_SETFL O_NDELAY failed (%s)\n",
+               strerror(errno));
+
+    /* SIOCACTIVATE (SelectScreen) makes our screen context the active
+    ** one for keyboard/mouse event delivery without calling DisplayScreen.
+    ** DisplayScreen would require NewBitmap (chip RAM for a native bitmap)
+    ** and would take over the ECS display, causing the screen manager to
+    ** send SIGHUP to the X server when the native console loses its screen.
+    ** SIOCACTIVATE selects our screen as the event target without switching
+    ** the displayed screen group, so the native Amiga display is unaffected
+    ** and no spurious SIGHUP is generated. */
+    if (ioctl(fd, SIOCACTIVATE, 0))
+        ErrorF("rtgOpenInput: SIOCACTIVATE failed (%s)\n", strerror(errno));
+
+    if (ioctl(fd, SIOCSETINPUTMODE, SIM_RAWKEY))
+        ErrorF("rtgOpenInput: SIOCSETINPUTMODE SIM_RAWKEY failed (%s)\n",
+               strerror(errno));
+
+    amixFbs[index].fd     = fd;
+    amixFbs[index].mapped = TRUE;
+    amixFbs[index].group  = ioctl(fd, SIOCGETGROUP, 0);
+
+    sysKbPriv.fd           = fd;
+    sysMousePriv.fd        = fd;
+    amixCurrentScreenIndex = index;
+
+    ErrorF("rtgOpenInput: input fd=%d group=%d\n", fd, amixFbs[index].group);
+}
+
+/*
 ** rtgScreenInit - AddScreen callback, called once per screen by DIX.
 **
 ** Allocates the rtgScreenRec, initialises hardware via ZZ9000InitHW(),
@@ -220,6 +293,14 @@ char    **argv;
     pScreen->CloseScreen = rtgCloseScreen;
     pScreen->SaveScreen  = rtgSaveScreen;
 
+    /* rtgProbe() only opens the input device on the very first server
+    ** generation (amixDevsProbed in amixInit.c gates the whole probeProc
+    ** loop to run once per process); rtgCloseScreen() closes it on every
+    ** reset.  Re-open it here whenever it isn't already mapped so input
+    ** keeps working past the first server reset. */
+    if (!amixFbs[index].mapped)
+        rtgOpenInput(index);
+
     /* Autorepeat handlers; use real amixWakeupHandler when input fd is open */
     pScreen->BlockHandler  = amixBlockHandler;
     pScreen->WakeupHandler = amixFbs[index].mapped
@@ -282,10 +363,6 @@ int         fbNum;
 int         argc;
 char      **argv;
 {
-    extern char *display;
-    char screenname[1024];
-    int  fd;
-
     ErrorF("rtgProbe: index=%d\n", index);
 
     if (!ZZ9000Probe())
@@ -294,59 +371,10 @@ char      **argv;
         return FALSE;
     }
 
-    /* Open the AMIX screen device for input events */
-    if (amixFbs[index].scrtype.dispz == 0)
-        amixFbs[index].scrtype = DefaultScrType;
-
-    if (sprintf(screenname, "Xrtg :%s.%d", display, index) < 0)
-        fd = OpenScreen("Xrtg", &amixFbs[index].scrtype, 0);
-    else
-        fd = OpenScreen(screenname, &amixFbs[index].scrtype, 0);
-
-    if (fd < 0)
-    {
-        ErrorF("rtgProbe: OpenScreen failed (%s); starting display-only\n",
-               ScreenError());
-        fd = -1;
-    }
-
-    if (fd >= 0)
-    {
-        if (fcntl(fd, F_SETFL, O_NDELAY) == -1)
-            ErrorF("rtgProbe: F_SETFL O_NDELAY failed (%s)\n",
-                   strerror(errno));
-
-        /* SIOCACTIVATE (SelectScreen) makes our screen context the active
-        ** one for keyboard/mouse event delivery without calling DisplayScreen.
-        ** DisplayScreen would require NewBitmap (chip RAM for a native bitmap)
-        ** and would take over the ECS display, causing the screen manager to
-        ** send SIGHUP to the X server when the native console loses its screen.
-        ** SIOCACTIVATE selects our screen as the event target without switching
-        ** the displayed screen group, so the native Amiga display is unaffected
-        ** and no spurious SIGHUP is generated. */
-        if (ioctl(fd, SIOCACTIVATE, 0))
-            ErrorF("rtgProbe: SIOCACTIVATE failed (%s)\n", strerror(errno));
-
-        if (ioctl(fd, SIOCSETINPUTMODE, SIM_RAWKEY))
-            ErrorF("rtgProbe: SIOCSETINPUTMODE SIM_RAWKEY failed (%s)\n",
-                   strerror(errno));
-
-        amixFbs[index].fd     = fd;
-        amixFbs[index].mapped = TRUE;
-        amixFbs[index].group  = ioctl(fd, SIOCGETGROUP, 0);
-
-        sysKbPriv.fd           = fd;
-        sysMousePriv.fd        = fd;
-        amixCurrentScreenIndex = index;
-
-        ErrorF("rtgProbe: input fd=%d group=%d\n",
-               fd, amixFbs[index].group);
-    }
-    else
-    {
-        amixFbs[index].fd     = -1;
-        amixFbs[index].mapped = FALSE;
-    }
+    /* Open the AMIX screen device for input events.  rtgScreenInit() also
+    ** calls this on later server generations, since this probeProc itself
+    ** only runs once per process (see rtgOpenInput's comment above). */
+    rtgOpenInput(index);
 
     amixFbs[index].bp.width  = ZZ9000_selected_mode->w;
     amixFbs[index].bp.height = ZZ9000_selected_mode->h;

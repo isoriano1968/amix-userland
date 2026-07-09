@@ -159,8 +159,22 @@ rtgScreenPtr pRTG;
     if (!pZZ)
         return;
 
+    /*
+    ** Restore RTG mode (not CAPTURE) on exit.  The zz9000 kernel driver's
+    ** own console (see zz9000.c:zz9000consoleputc/zz9k_console_test in the
+    ** zz9000-amix driver repo) lives in the card's own RTG-mode framebuffer
+    ** and reclaims the display by switching to ZZ9K_SWITCH_RTG on every
+    ** console write.  Forcing ZZ9K_SWITCH_CAPTURE here instead leaves the
+    ** hardware muxed to the native Amiga chipset passthrough, which is not
+    ** where the console lives when console redirection (S99zz9000 /
+    ** ZZ9K_CONSOLE_REDIRECT) is active - so the screen does not return to
+    ** the zz9000 console until something happens to write to it again, if
+    ** ever.  Leaving/restoring RTG mode here makes whatever is already in
+    ** the console framebuffer visible immediately, matching how the driver
+    ** itself reclaims the screen.
+    */
     if (pZZ->fd >= 0)
-        (void) ioctl(pZZ->fd, ZZ9KIOC_SETSWITCH, ZZ9K_SWITCH_CAPTURE);
+        (void) ioctl(pZZ->fd, ZZ9KIOC_SETSWITCH, ZZ9K_SWITCH_RTG);
     if (pZZ->mapBase)
         (void) munmap(pZZ->mapBase, pZZ->mapSize);
     if (pZZ->fd >= 0)
