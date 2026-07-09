@@ -7,6 +7,10 @@ FONT_PATH=${ZZ9K_FONT_PATH-$TOP/fonts/bdf/misc}
 
 SERVER=$TOP/programs/Xserver/Xzz9000
 CLIENT=$TOP/config/util/xinitrc.zz9000
+ZZ9K_DEV=${ZZ9K_DEV-/dev/zz9000}
+ZZ9K_TEST=${ZZ9K_TEST-/usr/amiga/bin/zz9k_test}
+ZZ9K_CONSOLE=${ZZ9K_CONSOLE-/usr/amiga/bin/zz9k_console}
+ZZ9K_EXIT_CMD=${ZZ9K_EXIT_CMD-redirect}
 
 case "$DISPLAY_NUMBER" in
 :[0-9]*) ;;
@@ -63,13 +67,43 @@ fi
 
 SERVER_PID=$!
 
+restore_console()
+{
+    case "$ZZ9K_EXIT_CMD" in
+    ''|none)
+        return
+        ;;
+    redirect|start)
+        if test -x "$ZZ9K_CONSOLE"
+        then
+            "$ZZ9K_CONSOLE" start >/dev/null 2>&1
+            return
+        fi
+        ;;
+    stop|noconsole)
+        if test -x "$ZZ9K_CONSOLE"
+        then
+            "$ZZ9K_CONSOLE" stop >/dev/null 2>&1
+            return
+        fi
+        ;;
+    esac
+
+    if test -x "$ZZ9K_TEST"
+    then
+        "$ZZ9K_TEST" "$ZZ9K_DEV" "$ZZ9K_EXIT_CMD" >/dev/null 2>&1
+    fi
+}
+
 cleanup()
 {
     if test "x$SERVER_PID" != x
     then
         kill "$SERVER_PID" >/dev/null 2>&1
         wait "$SERVER_PID" >/dev/null 2>&1
+        SERVER_PID=
     fi
+    restore_console
 }
 
 trap 'cleanup; exit 1' 1 2 3 15

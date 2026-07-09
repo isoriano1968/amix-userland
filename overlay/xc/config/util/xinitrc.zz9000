@@ -4,6 +4,7 @@ XSETROOT=$TOP/programs/xsetroot/xsetroot
 XCLOCK=$TOP/programs/xclock/xclock
 XTERM=$TOP/programs/xterm/xterm
 TWM=$TOP/programs/twm/twm
+ROOT_COLOR=${ZZ9K_ROOT_COLOR-'#1b365d'}
 
 for file in "$XSETROOT" "$XCLOCK" "$XTERM" "$TWM"
 do
@@ -16,9 +17,13 @@ do
     fi
 done
 
-"$XSETROOT" -solid '#1b365d'
+"$TWM" &
+TWM_PID=$!
+
+sleep ${ZZ9K_TWM_DELAY-2}
+
+"$XSETROOT" -solid "$ROOT_COLOR"
 "$XCLOCK" -geometry 220x220-20+20 &
 "$XTERM" -geometry 100x30+40+40 -title 'AMIX X11R6.3 on ZZ9000' &
 
-exec "$TWM"
-
+wait "$TWM_PID"
