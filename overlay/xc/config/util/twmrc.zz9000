@@ -4,6 +4,8 @@ DecorateTransients
 RandomPlacement
 ShowIconManager
 UsePPosition "on"
+NoDefaults
+IconDirectory "/usr/x11r6/xc/include/bitmaps"
 TitleFont "fixed"
 ResizeFont "fixed"
 MenuFont "fixed"
@@ -13,6 +15,10 @@ BorderWidth 2
 ButtonIndent 0
 FramePadding 2
 TitlePadding 4
+
+LeftTitleButton "menu12" = f.menu "window"
+RightTitleButton "icon" = f.iconify
+RightTitleButton "xlogo11" = f.delete
 
 Color
 {
@@ -61,6 +67,7 @@ menu "window"
     "resize"           f.resize
     "iconify"          f.iconify
     "delete"           f.delete
+    "destroy"          f.destroy
 }
 
 menu "windows"
