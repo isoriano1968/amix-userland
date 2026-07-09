@@ -80,6 +80,7 @@ valid, use the resumable program helper:
 
 ```sh
 cd /usr/x11r6/xc
+make -f xmakefile Makefiles
 sh config/util/amix-build-programs.sh /usr/x11r6/xc useful \
   >/tmp/x11r6-programs.log 2>&1
 ```

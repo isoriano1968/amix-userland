@@ -42,6 +42,23 @@ install:: Concat(lib,libname.sa)                                        @@\
 #define AmixSALibXaw /**/
 #define AmixSALib(libname) Concat(AmixSALib,libname)
 
+/*
+ * Stock SVR4 XawClientLibs can expand to bare -lXmu and -lXt.  On AMIX that
+ * drops the companion .sa archives required by the shared-data ABI, causing
+ * Athena clients such as xlogo and xmag to fail with unresolved Xt entry
+ * points.  Override the client rule so every Athena client gets the same
+ * known-good library order.
+ */
+#ifdef XawClientLibs
+#undef XawClientLibs
+#endif
+#define XawClientLibs $(XAWLIB) $(XMULIBONLY) $(XTOOLONLYLIB) AmixSALibXt $(SMLIB) $(ICELIB) $(XLIB)
+
+#ifdef XawClientDepLibs
+#undef XawClientDepLibs
+#endif
+#define XawClientDepLibs $(DEPXAWLIB) $(DEPXMULIB) $(DEPXTOOLLIB) $(DEPXLIB)
+
 /* sv4Lib.tmpl otherwise replaces XMU with a bare -lXmu. */
 #ifndef FixupLibReferences
 #define FixupLibReferences()                                            @@\

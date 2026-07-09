@@ -32,6 +32,11 @@ underscore-prefixed implementation symbols unresolved. Omitting `libXt.sa`
 causes failures such as an unresolved `XtOpenApplication` or
 `XtToolkitInitialize`.
 
+Do not use the stock SVR4 `XawClientLibs` expansion on AMIX. It can emit
+`-lXaw -lXmu -lXt ...` without `libXmu.sa` and `libXt.sa`, which is enough for
+some clients to link accidentally but fails for Athena clients that call Xt
+entry points directly, including `xlogo` and `xmag`.
+
 ## Building ELF images
 
 Compile shared objects with `gcc -fpic`, but link the runtime image directly
