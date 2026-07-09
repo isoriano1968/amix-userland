@@ -109,6 +109,21 @@ background refresh, and the Mesa gears demo. The gears menu entry looks first
 for `/usr/mesa3/Mesa-3.1/demos/gears` and then for
 `/usr/mesa/Mesa3.1/demos/gears`.
 
+The session loads `/usr/x11r6/xc/config/util/Xmodmap.de` by default when
+`xmodmap` is available. Override or disable it with `ZZ9K_XMODMAP`:
+
+```sh
+ZZ9K_XMODMAP=none sh config/util/startXzz9000 :1
+ZZ9K_XMODMAP=/path/to/Xmodmap sh config/util/startXzz9000 :1
+```
+
+Set `ZZ9K_SHELL` to choose the shell used by the initial xterm and by the twm
+menu xterm entry:
+
+```sh
+ZZ9K_SHELL=/usr/public/bin/bash sh config/util/startXzz9000 :1
+```
+
 The launcher uses `-ac` for the initial local test and `-kb` to avoid the
 unfinished XKB device path. Do not expose this test server to an untrusted
 network.

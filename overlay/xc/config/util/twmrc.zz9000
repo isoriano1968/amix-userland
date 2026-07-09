@@ -42,7 +42,7 @@ Button3 = : title : f.menu "window"
 menu "main"
 {
     "AMIX ZZ9000"       f.title
-    "xterm"            f.exec "/usr/x11r6/xc/programs/xterm/xterm -geometry 100x30+60+60 -title 'AMIX X11R6.3 on ZZ9000' &"
+    "xterm"            f.exec "/usr/x11r6/xc/programs/xterm/xterm -geometry 100x30+60+60 -title 'AMIX X11R6.3 on ZZ9000' -e ${ZZ9K_SHELL-/bin/sh} &"
     "xclock"           f.exec "/usr/x11r6/xc/programs/xclock/xclock -geometry 220x220-20+20 &"
     "Mesa gears"       f.exec "sh /usr/x11r6/xc/config/util/gears.zz9000 &"
     "blue background"  f.exec "/usr/x11r6/xc/programs/xsetroot/xsetroot -solid '#1b365d' &"
