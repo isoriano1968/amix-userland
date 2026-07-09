@@ -4,9 +4,10 @@ XSETROOT=$TOP/programs/xsetroot/xsetroot
 XCLOCK=$TOP/programs/xclock/xclock
 XTERM=$TOP/programs/xterm/xterm
 TWM=$TOP/programs/twm/twm
+TWMRC=$TOP/config/util/twmrc.zz9000
 ROOT_COLOR=${ZZ9K_ROOT_COLOR-'#1b365d'}
 
-for file in "$XSETROOT" "$XCLOCK" "$XTERM" "$TWM"
+for file in "$XSETROOT" "$XCLOCK" "$XTERM" "$TWM" "$TWMRC"
 do
     if test -f "$file"
     then
@@ -17,7 +18,7 @@ do
     fi
 done
 
-"$TWM" &
+"$TWM" -f "$TWMRC" &
 TWM_PID=$!
 
 sleep ${ZZ9K_TWM_DELAY-2}

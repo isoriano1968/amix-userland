@@ -75,6 +75,20 @@ AMIX library ordering and the distinction between ELF `.so` images and `.sa`
 stub archives are not optional details. See [SHARED-LIBRARIES.md](SHARED-LIBRARIES.md)
 before changing library rules or client link lines.
 
+To build additional X11R6 client programs after the shared libraries are
+valid, use the resumable program helper:
+
+```sh
+cd /usr/x11r6/xc
+sh config/util/amix-build-programs.sh /usr/x11r6/xc useful \
+  >/tmp/x11r6-programs.log 2>&1
+```
+
+Mode `common` builds the broader historical client set. Mode `all` also tries
+optional clients that may still need AMIX-specific attention. By default the
+script keeps going and reports all failed clients at the end; set
+`AMIX_PROGRAMS_KEEP_GOING=no` to stop on the first failure.
+
 ## Running Xzz9000
 
 The included `xinit` wrapper starts a 1920x800 session with `twm`, `xterm`,
@@ -88,6 +102,11 @@ sh config/util/startXzz9000 :0
 Choose `Exit` from the twm root menu to terminate the session and X server.
 Use `:1` instead if display `:0` is occupied. The launcher supports
 `ZZ9K_MODE`, `ZZ9K_FONT_PATH`, and `X11R6_TOP` environment overrides.
+
+The shipped `twmrc.zz9000` adds root-menu entries for `xterm`, `xclock`, root
+background refresh, and the Mesa gears demo. The gears menu entry looks first
+for `/usr/mesa3/Mesa-3.1/demos/gears` and then for
+`/usr/mesa/Mesa3.1/demos/gears`.
 
 The launcher uses `-ac` for the initial local test and `-kb` to avoid the
 unfinished XKB device path. Do not expose this test server to an untrusted
