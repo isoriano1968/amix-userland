@@ -9,7 +9,7 @@
 - `config/cf/Imake.cf`, `config/cf/site.def`: AMIX platform selection
 - `config/imake/Makefile.ini`, `config/imake/imakemdep.h`: bootstrap compiler/cpp
 - `config/util/amix-shared-rebuild.sh`: clean PIC library and client rebuild
-- `config/util/startXzz9000`, `xinitrc.zz9000`: build-tree twm test session without using crashing AMIX `xinit`; restores the ZZ9000 console path on exit
+- `config/util/startXzz9000`, `xinitrc.zz9000`: build-tree twm test session without using crashing AMIX `xinit`; detaches console output before X and restores the ZZ9000 console path on exit
 - `programs/Imakefile`, `programs/rstart/Imakefile`: old cpp/make compatibility
 - `programs/twm/lex.l`: AMIX lex compatibility for the revision comment
 

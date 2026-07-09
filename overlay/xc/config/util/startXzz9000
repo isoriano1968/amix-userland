@@ -10,7 +10,10 @@ CLIENT=$TOP/config/util/xinitrc.zz9000
 ZZ9K_DEV=${ZZ9K_DEV-/dev/zz9000}
 ZZ9K_TEST=${ZZ9K_TEST-/usr/amiga/bin/zz9k_test}
 ZZ9K_CONSOLE=${ZZ9K_CONSOLE-/usr/amiga/bin/zz9k_console}
+ZZ9K_PRE_X_CMD=${ZZ9K_PRE_X_CMD-noconsole}
 ZZ9K_EXIT_CMD=${ZZ9K_EXIT_CMD-redirect}
+ZZ9K_SERVER_LOG=${ZZ9K_SERVER_LOG-/tmp/Xzz9000.log}
+ZZ9K_CLIENT_LOG=${ZZ9K_CLIENT_LOG-/tmp/Xzz9000-clients.log}
 
 case "$DISPLAY_NUMBER" in
 :[0-9]*) ;;
@@ -52,24 +55,17 @@ fi
 
 echo "Starting Xzz9000 on $DISPLAY_NUMBER at $MODE"
 echo "Exit twm to stop the X server."
+echo "Server log: $ZZ9K_SERVER_LOG"
+echo "Client log: $ZZ9K_CLIENT_LOG"
 
 DISPLAY=$DISPLAY_NUMBER
 export DISPLAY
 
-if test "x$RGB_PATH" = x
-then
-    "$SERVER" "$DISPLAY_NUMBER" -mode "$MODE" -fp "$FONT_PATH" \
-        -ac -kb &
-else
-    "$SERVER" "$DISPLAY_NUMBER" -mode "$MODE" -fp "$FONT_PATH" \
-        -co "$RGB_PATH" -ac -kb &
-fi
-
-SERVER_PID=$!
-
-restore_console()
+run_zz9k_command()
 {
-    case "$ZZ9K_EXIT_CMD" in
+    ZZ9K_CMD=$1
+
+    case "$ZZ9K_CMD" in
     ''|none)
         return
         ;;
@@ -91,9 +87,22 @@ restore_console()
 
     if test -x "$ZZ9K_TEST"
     then
-        "$ZZ9K_TEST" "$ZZ9K_DEV" "$ZZ9K_EXIT_CMD" >/dev/null 2>&1
+        "$ZZ9K_TEST" "$ZZ9K_DEV" "$ZZ9K_CMD" >/dev/null 2>&1
     fi
 }
+
+run_zz9k_command "$ZZ9K_PRE_X_CMD"
+
+if test "x$RGB_PATH" = x
+then
+    "$SERVER" "$DISPLAY_NUMBER" -mode "$MODE" -fp "$FONT_PATH" \
+        -ac -kb >"$ZZ9K_SERVER_LOG" 2>&1 &
+else
+    "$SERVER" "$DISPLAY_NUMBER" -mode "$MODE" -fp "$FONT_PATH" \
+        -co "$RGB_PATH" -ac -kb >"$ZZ9K_SERVER_LOG" 2>&1 &
+fi
+
+SERVER_PID=$!
 
 cleanup()
 {
@@ -103,14 +112,14 @@ cleanup()
         wait "$SERVER_PID" >/dev/null 2>&1
         SERVER_PID=
     fi
-    restore_console
+    run_zz9k_command "$ZZ9K_EXIT_CMD"
 }
 
 trap 'cleanup; exit 1' 1 2 3 15
 
 sleep ${ZZ9K_START_DELAY-5}
 
-sh "$CLIENT"
+sh "$CLIENT" >"$ZZ9K_CLIENT_LOG" 2>&1
 STATUS=$?
 
 cleanup
