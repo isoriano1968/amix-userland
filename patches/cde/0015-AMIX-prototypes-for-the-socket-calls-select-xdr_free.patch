@@ -1,0 +1,120 @@
+From 4dfca1a7e695a52a76ededdfa10fac8ba8eb8881 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 11:56:02 +0200
+Subject: [PATCH 15/42] AMIX: prototypes for the socket calls, select,
+ xdr_free, nc_sperror; gettimeofday with an optional zone
+
+---
+ config/amix/include/netconfig.h  | 14 ++++++++++++++
+ config/amix/include/rpc/xdr.h    | 13 +++++++++++++
+ config/amix/include/sys/socket.h | 27 +++++++++++++++++++++++++++
+ config/amix/include/sys/time.h   | 22 ++++++++++++++++++++++
+ 4 files changed, 76 insertions(+)
+ create mode 100644 config/amix/include/netconfig.h
+ create mode 100644 config/amix/include/rpc/xdr.h
+ create mode 100644 config/amix/include/sys/socket.h
+ create mode 100644 config/amix/include/sys/time.h
+
+diff --git a/config/amix/include/netconfig.h b/config/amix/include/netconfig.h
+new file mode 100644
+index 00000000..69456b10
+--- /dev/null
++++ b/config/amix/include/netconfig.h
+@@ -0,0 +1,14 @@
++/* netconfig.h -- AMIX's, plus the netconfig error strings in libnsl.
++ * Part of the AMIX port of CDE. */
++#ifndef _AMIX_CDE_NETCONFIG_H
++#define _AMIX_CDE_NETCONFIG_H
++#include_next <netconfig.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++extern char *nc_sperror(void);
++extern void nc_perror(const char *);
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/config/amix/include/rpc/xdr.h b/config/amix/include/rpc/xdr.h
+new file mode 100644
+index 00000000..6353ad0d
+--- /dev/null
++++ b/config/amix/include/rpc/xdr.h
+@@ -0,0 +1,13 @@
++/* rpc/xdr.h -- AMIX's, plus xdr_free() (in libnsl, not declared on SVR4.0).
++ * Part of the AMIX port of CDE. */
++#ifndef _AMIX_CDE_RPC_XDR_H
++#define _AMIX_CDE_RPC_XDR_H
++#include_next <rpc/xdr.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++extern void xdr_free(xdrproc_t, char *);
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/config/amix/include/sys/socket.h b/config/amix/include/sys/socket.h
+new file mode 100644
+index 00000000..20b42e47
+--- /dev/null
++++ b/config/amix/include/sys/socket.h
+@@ -0,0 +1,27 @@
++/* sys/socket.h -- AMIX's, plus prototypes for the socket calls in libsocket
++ * (SVR4.0 declares none).  Part of the AMIX port of CDE. */
++#ifndef _AMIX_CDE_SYS_SOCKET_H
++#define _AMIX_CDE_SYS_SOCKET_H
++#include_next <sys/socket.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++extern int socket(int, int, int);
++extern int socketpair(int, int, int, int *);
++extern int bind(int, const struct sockaddr *, int);
++extern int connect(int, const struct sockaddr *, int);
++extern int listen(int, int);
++extern int accept(int, struct sockaddr *, int *);
++extern int getsockname(int, struct sockaddr *, int *);
++extern int getpeername(int, struct sockaddr *, int *);
++extern int getsockopt(int, int, int, char *, int *);
++extern int setsockopt(int, int, int, const char *, int);
++extern int send(int, const char *, int, int);
++extern int recv(int, char *, int, int);
++extern int sendto(int, const char *, int, int, const struct sockaddr *, int);
++extern int recvfrom(int, char *, int, int, struct sockaddr *, int *);
++extern int shutdown(int, int);
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/config/amix/include/sys/time.h b/config/amix/include/sys/time.h
+new file mode 100644
+index 00000000..b2b798e5
+--- /dev/null
++++ b/config/amix/include/sys/time.h
+@@ -0,0 +1,22 @@
++/* sys/time.h -- AMIX's (as repaired by gcc14-cross-amix), plus:
++ *  - select(), in libc but never declared on SVR4.0;
++ *  - gettimeofday() with an optional second argument.  The repaired header
++ *    declares the two-argument form (AMIX ignores the zone), while the X11R6.3
++ *    headers call it with one argument on SVR4 (Xos.h X_GETTIMEOFDAY).  The
++ *    macro supplies a 0 zone when there is none; the prototype itself still
++ *    reads correctly through it.
++ * Part of the AMIX port of CDE. */
++#ifndef _AMIX_CDE_SYS_TIME_H
++#define _AMIX_CDE_SYS_TIME_H
++#include_next <sys/time.h>
++#include <sys/select.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++extern int select(int, fd_set *, fd_set *, fd_set *, struct timeval *);
++#ifdef __cplusplus
++}
++#endif
++#define _AMIX_GTOD(t, z, ...)	(gettimeofday)((t), (z))
++#define gettimeofday(...)	_AMIX_GTOD(__VA_ARGS__, 0)
++#endif
+-- 
+2.47.3
+

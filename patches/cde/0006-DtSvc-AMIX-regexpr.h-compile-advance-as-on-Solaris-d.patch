@@ -1,0 +1,110 @@
+From b28f124d821f98485c64d0ba99c48db6cb3a190f Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 11:38:02 +0200
+Subject: [PATCH 06/42] DtSvc: AMIX -- regexpr.h (compile/advance) as on
+ Solaris, <dirent.h> for DIR, NL_CAT_LOCALE fallback, modern C++ in dynarray.h
+
+---
+ lib/DtSvc/DtUtil2/DtGetMessage.c      |  3 +++
+ lib/DtSvc/DtUtil2/FileUtil.h          |  3 +++
+ lib/DtSvc/DtUtil2/XlationSvc.c        | 10 +++++-----
+ lib/DtSvc/include/codelibs/dynarray.h |  4 ++--
+ 4 files changed, 13 insertions(+), 7 deletions(-)
+
+diff --git a/lib/DtSvc/DtUtil2/DtGetMessage.c b/lib/DtSvc/DtUtil2/DtGetMessage.c
+index ea67903c..e4dfebbb 100644
+--- a/lib/DtSvc/DtUtil2/DtGetMessage.c
++++ b/lib/DtSvc/DtUtil2/DtGetMessage.c
+@@ -79,6 +79,9 @@ Dt11GetMessage(
+ 	_DtSvcProcessLock();
+         if ( NULL == nlmsg_filename || 0 != strcmp(nlmsg_filename, filename) )
+         {
++#ifndef NL_CAT_LOCALE
++#define NL_CAT_LOCALE 0	/* XPG4; SVR4.0's catopen() knows only 0 */
++#endif
+ 		nlmsg_fd = catopen(filename, NL_CAT_LOCALE);
+ 		if (nlmsg_filename)
+ 		{
+diff --git a/lib/DtSvc/DtUtil2/FileUtil.h b/lib/DtSvc/DtUtil2/FileUtil.h
+index 5e0bb6a7..6a644971 100644
+--- a/lib/DtSvc/DtUtil2/FileUtil.h
++++ b/lib/DtSvc/DtUtil2/FileUtil.h
+@@ -35,6 +35,9 @@
+ #ifndef _FileUtil_h
+ #define _FileUtil_h
+ 
++#include <sys/types.h>
++#include <dirent.h>		/* DIR, for _DtIsOpenableDir... (not implied on SVR4.0) */
++
+ extern int _DtCreateDirs( char *path,
+                          int mode) ;
+ 
+diff --git a/lib/DtSvc/DtUtil2/XlationSvc.c b/lib/DtSvc/DtUtil2/XlationSvc.c
+index a7298c0a..4f8b27e7 100644
+--- a/lib/DtSvc/DtUtil2/XlationSvc.c
++++ b/lib/DtSvc/DtUtil2/XlationSvc.c
+@@ -40,7 +40,7 @@ $END$
+ #include <stdlib.h>
+ #include <string.h>
+ #include <unistd.h>
+-#if defined(sun)
++#if defined(sun) || defined(__amix__)
+ #include <sys/utsname.h>
+ #endif
+ #include <limits.h>           /* INT_MAX */
+@@ -54,7 +54,7 @@ $END$
+ #endif
+ #include <langinfo.h>       
+ 
+-#if defined(sun)
++#if defined(sun) || defined(__amix__)
+ #include <regexpr.h>          /* for compile,advance */
+ #else
+ #include <regex.h>            /* for regcomp,regexec */
+@@ -125,7 +125,7 @@ typedef enum {
+    __DtXLATE_TYPE_CONTAINS = 4
+ } __DtXlateType;
+ 
+-#if defined(sun)
++#if defined(sun) || defined(__amix__)
+ /* Sun doesn't support regcomp() and regexec() yet, so
+    define this here and fill it will the results of advance() */
+ typedef struct regmatch_t {
+@@ -1127,7 +1127,7 @@ Boolean CheckSearchOpValueMatchesSpec(
+        value or do a pure match */
+     if (srchData->curTransType == __DtXLATE_TYPE_REGEX)
+     {
+-#if defined(sun)
++#if defined(sun) || defined(__amix__)
+         char *     ex = NULL;
+ 
+         /* True: leave escape char in place */
+@@ -2199,7 +2199,7 @@ int _DtXlateGetXlateEnv(
+    /* then look up version number of execution host */
+    if (ret_AppExecEnvVersion) 
+    {
+-#if defined(sun) || defined(_AIX) || defined(__linux__) || defined(CSRG_BASED)
++#if defined(sun) || defined(_AIX) || defined(__linux__) || defined(CSRG_BASED) || defined(__amix__)
+       char version[SYS_NMLN+SYS_NMLN+2];
+ #else
+       char version[UTSLEN+UTSLEN+2];
+diff --git a/lib/DtSvc/include/codelibs/dynarray.h b/lib/DtSvc/include/codelibs/dynarray.h
+index 78560639..39c6fbc2 100644
+--- a/lib/DtSvc/include/codelibs/dynarray.h
++++ b/lib/DtSvc/include/codelibs/dynarray.h
+@@ -36,10 +36,10 @@
+ #ifndef __DYNARRAY_H_
+ #define __DYNARRAY_H_
+ 
+-#if !defined(__linux__) && !defined(CSRG_BASED) && !defined(sun)
++#if !defined(__linux__) && !defined(CSRG_BASED) && !defined(sun) && !defined(__amix__)
+ #include <generic.h>
+ #endif
+-#if defined(sun) || defined(__linux__) || defined(CSRG_BASED)
++#if defined(sun) || defined(__linux__) || defined(CSRG_BASED) || defined(__amix__)
+ #define _DELETE_ARRAY(sz) delete[]
+ #else
+ #define _DELETE_ARRAY(sz) delete[(sz)]
+-- 
+2.47.3
+

@@ -1,0 +1,44 @@
+From 5beb6fa942ce2824c45c6216ccd741ca51e0a39a Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 11:54:08 +0200
+Subject: [PATCH 14/42] host.def: absolute include paths (lib/tt sub-makes are
+ called with another TOP)
+
+---
+ config/cf/host.def | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/config/cf/host.def b/config/cf/host.def
+index e7299828..ed33ea66 100644
+--- a/config/cf/host.def
++++ b/config/cf/host.def
+@@ -12,6 +12,8 @@ XCOMM host.def -- cross-building CDE for AMIX on a Linux host (read before amix.
+  */
+ #define AmixCrossPrefix		/opt/m68k-amix
+ #define AmixSysroot		/opt/m68k-amix-sysroot
++/* the build tree; absolute, because some sub-makes (lib/tt) get another TOP */
++#define AmixBuildTop		/usr/src/cde-2.2.4a
+ 
+ #define AmixOldCWarnings	-Wno-error=implicit-function-declaration \
+ 				-Wno-error=int-conversion \
+@@ -33,7 +35,7 @@ XCOMM host.def -- cross-building CDE for AMIX on a Linux host (read before amix.
+ #define RanlibCmd		AmixCrossPrefix/bin/m68k-elf-ranlib
+ #define DoRanlibCmd		YES
+ /* config/amix/include: CDE-owned stand-ins for headers SVR4.0 lacks (wctype.h) */
+-#define DefaultCCOptions	-fno-strict-aliasing -fcommon AmixOldCWarnings -isystem $(TOP)/config/amix/include
++#define DefaultCCOptions	-fno-strict-aliasing -fcommon AmixOldCWarnings -isystem AmixBuildTop/config/amix/include
+ /*
+  * C++ sees AMIX's K&R declarations through amix-cxxfix/: copies of the
+  * affected headers with "()" turned into "(...)" (ABI-neutral on m68k),
+@@ -44,7 +46,7 @@ XCOMM host.def -- cross-building CDE for AMIX on a Linux host (read before amix.
+ #define DefaultCDebugFlags	-O2
+ /* in the debug flags because some trees (lib/tt) set CXXOPTIONS themselves */
+ /* config/amix/include first: its wrappers #include_next the amix-cxxfix copies */
+-#define DefaultCplusplusDebugFlags -O2 -isystem $(TOP)/config/amix/include -isystem $(TOP)/amix-cxxfix
++#define DefaultCplusplusDebugFlags -O2 -isystem AmixBuildTop/config/amix/include -isystem AmixBuildTop/amix-cxxfix
+ 
+ /*
+  * Host tools: imake's cpp (and CppCmd for data files) is the host cpp,
+-- 
+2.47.3
+

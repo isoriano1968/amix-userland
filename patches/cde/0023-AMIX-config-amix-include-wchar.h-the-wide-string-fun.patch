@@ -1,0 +1,84 @@
+From 30cde0fc73396ec8ab5b645fc44d63901eb67c0e Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:14:00 +0200
+Subject: [PATCH 23/42] AMIX: config/amix/include/wchar.h -- the wide-string
+ functions CDE uses, for the C locale
+
+---
+ config/amix/include/wchar.h | 64 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 64 insertions(+)
+ create mode 100644 config/amix/include/wchar.h
+
+diff --git a/config/amix/include/wchar.h b/config/amix/include/wchar.h
+new file mode 100644
+index 00000000..84c28676
+--- /dev/null
++++ b/config/amix/include/wchar.h
+@@ -0,0 +1,64 @@
++/*
++ * wchar.h -- the wide-character string functions CDE uses, for AMIX
++ * (SVR4.0), which has no <wchar.h>.  CDE on AMIX runs in the C locale: a
++ * wide character is a byte value, one column wide when printable.
++ * wchar_t, mbtowc() and wcstombs() are AMIX's own (<stdlib.h>).
++ * Part of the AMIX port of CDE (config/cf/amix.cf); not a vendor header.
++ */
++#ifndef _AMIX_CDE_WCHAR_H
++#define _AMIX_CDE_WCHAR_H
++
++#include <stdlib.h>
++#include <stdio.h>
++#include <wctype.h>		/* wint_t, WEOF, isw*() */
++
++static __inline__ size_t wcslen(const wchar_t *s)
++{ const wchar_t *p = s; while (*p) p++; return (size_t)(p - s); }
++
++static __inline__ wchar_t *wcscpy(wchar_t *d, const wchar_t *s)
++{ wchar_t *r = d; while ((*d++ = *s++) != 0) ; return r; }
++
++static __inline__ wchar_t *wcsncpy(wchar_t *d, const wchar_t *s, size_t n)
++{ wchar_t *r = d; while (n && (*d = *s) != 0) d++, s++, n--; while (n--) *d++ = 0; return r; }
++
++static __inline__ wchar_t *wcscat(wchar_t *d, const wchar_t *s)
++{ wcscpy(d + wcslen(d), s); return d; }
++
++static __inline__ int wcscmp(const wchar_t *a, const wchar_t *b)
++{ while (*a && *a == *b) a++, b++; return (*a > *b) - (*a < *b); }
++
++static __inline__ int wcsncmp(const wchar_t *a, const wchar_t *b, size_t n)
++{ if (!n) return 0; while (--n && *a && *a == *b) a++, b++; return (*a > *b) - (*a < *b); }
++
++static __inline__ wchar_t *wcschr(const wchar_t *s, wchar_t c)
++{ for (;; s++) { if (*s == c) return (wchar_t *)s; if (!*s) return 0; } }
++
++static __inline__ wchar_t *wcsrchr(const wchar_t *s, wchar_t c)
++{ const wchar_t *r = 0; for (;; s++) { if (*s == c) r = s; if (!*s) return (wchar_t *)r; } }
++
++static __inline__ wchar_t *wcsstr(const wchar_t *h, const wchar_t *n)
++{
++	size_t k = wcslen(n);
++	if (!k) return (wchar_t *)h;
++	for (; *h; h++) if (*h == *n && !wcsncmp(h, n, k)) return (wchar_t *)h;
++	return 0;
++}
++#define wcswcs(h, n)	wcsstr((h), (n))	/* the XPG4 name */
++
++/* columns: 0 for NUL, 1 for a printable byte, -1 otherwise */
++static __inline__ int wcwidth(wchar_t c)
++{ return c == 0 ? 0 : (c > 0 && c < 256 && isprint((int)c)) ? 1 : -1; }
++
++static __inline__ int wcswidth(const wchar_t *s, size_t n)
++{ int w = 0, k; while (n-- && *s) { if ((k = wcwidth(*s++)) < 0) return -1; w += k; } return w; }
++
++static __inline__ wint_t fputwc(wint_t c, FILE *f) { return putc((int)c, f) == EOF ? WEOF : c; }
++static __inline__ wint_t fgetwc(FILE *f) { int c = getc(f); return c == EOF ? WEOF : (wint_t)c; }
++#ifndef putwc
++#define putwc(c, f)	fputwc((c), (f))
++#endif
++#ifndef getwc
++#define getwc(f)	fgetwc(f)
++#endif
++
++#endif
+-- 
+2.47.3
+

@@ -1,0 +1,27 @@
+From 8ef45b9f12a21ae7cf413cce3489bb064b49b718 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:22:38 +0200
+Subject: [PATCH 30/42] dtfile: types and param before AMIX's ufs_fs.h
+
+---
+ programs/dtfile/FileManip.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/programs/dtfile/FileManip.c b/programs/dtfile/FileManip.c
+index 105c574b..3963f2c2 100644
+--- a/programs/dtfile/FileManip.c
++++ b/programs/dtfile/FileManip.c
+@@ -52,6 +52,10 @@
+  ************************************<+>*************************************/
+ 
+ #if defined(SVR4)
++#  if defined(__amix__)
++#    include <sys/types.h>	/* AMIX's ufs_fs.h is not self-contained */
++#    include <sys/param.h>
++#  endif
+ #    include <sys/fs/ufs_fs.h>
+ #    define ROOTINO UFSROOTINO
+ #else
+-- 
+2.47.3
+

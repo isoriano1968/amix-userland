@@ -1,0 +1,149 @@
+From c6db10238dd2669b529569676a0fe44b385214ad Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 11:52:24 +0200
+Subject: [PATCH 12/42] AMIX: tiuser.h with TLI prototypes and t_strerror;
+ S_ISLNK, INADDR_NONE, MNTTYPE_NFS wrappers; include order for C++
+
+---
+ config/amix/include/netinet/in.h |  9 ++++++
+ config/amix/include/sys/mnttab.h | 12 ++++++++
+ config/amix/include/sys/stat.h   | 16 ++++++++++
+ config/amix/include/tiuser.h     | 53 ++++++++++++++++++++++++++++++++
+ config/cf/host.def               |  3 +-
+ 5 files changed, 92 insertions(+), 1 deletion(-)
+ create mode 100644 config/amix/include/netinet/in.h
+ create mode 100644 config/amix/include/sys/mnttab.h
+ create mode 100644 config/amix/include/sys/stat.h
+ create mode 100644 config/amix/include/tiuser.h
+
+diff --git a/config/amix/include/netinet/in.h b/config/amix/include/netinet/in.h
+new file mode 100644
+index 00000000..c62cdc41
+--- /dev/null
++++ b/config/amix/include/netinet/in.h
+@@ -0,0 +1,9 @@
++/* netinet/in.h -- AMIX's, plus INADDR_NONE (inet_addr()'s error value,
++ * not named in SVR4.0).  Part of the AMIX port of CDE. */
++#ifndef _AMIX_CDE_NETINET_IN_H
++#define _AMIX_CDE_NETINET_IN_H
++#include_next <netinet/in.h>
++#ifndef INADDR_NONE
++#define INADDR_NONE	((unsigned long)0xffffffff)
++#endif
++#endif
+diff --git a/config/amix/include/sys/mnttab.h b/config/amix/include/sys/mnttab.h
+new file mode 100644
+index 00000000..dec7e240
+--- /dev/null
++++ b/config/amix/include/sys/mnttab.h
+@@ -0,0 +1,12 @@
++/* sys/mnttab.h -- AMIX's, plus the mount type names SVR4.0 does not define
++ * (the strings its mnttab uses).  Part of the AMIX port of CDE. */
++#ifndef _AMIX_CDE_SYS_MNTTAB_H
++#define _AMIX_CDE_SYS_MNTTAB_H
++#include_next <sys/mnttab.h>
++#ifndef MNTTYPE_NFS
++#define MNTTYPE_NFS	"nfs"
++#endif
++#ifndef MNTTYPE_UFS
++#define MNTTYPE_UFS	"ufs"
++#endif
++#endif
+diff --git a/config/amix/include/sys/stat.h b/config/amix/include/sys/stat.h
+new file mode 100644
+index 00000000..004fd185
+--- /dev/null
++++ b/config/amix/include/sys/stat.h
+@@ -0,0 +1,16 @@
++/* sys/stat.h -- AMIX's, plus S_ISLNK (SVR4.0 has S_IFLNK but not the macro).
++ * Part of the AMIX port of CDE. */
++#ifndef _AMIX_CDE_SYS_STAT_H
++#define _AMIX_CDE_SYS_STAT_H
++#include_next <sys/stat.h>
++#ifndef S_ISLNK
++#define S_ISLNK(m)	(((m) & S_IFMT) == S_IFLNK)
++#endif
++#ifndef S_ISSOCK
++#ifdef S_IFSOCK
++#define S_ISSOCK(m)	(((m) & S_IFMT) == S_IFSOCK)
++#else
++#define S_ISSOCK(m)	0
++#endif
++#endif
++#endif
+diff --git a/config/amix/include/tiuser.h b/config/amix/include/tiuser.h
+new file mode 100644
+index 00000000..f7b4e66a
+--- /dev/null
++++ b/config/amix/include/tiuser.h
+@@ -0,0 +1,53 @@
++/*
++ * tiuser.h -- AMIX's TLI header plus the function prototypes SVR4.0 never
++ * declared (its programs called t_open() & co. without them; C++ cannot).
++ * The functions are in AMIX's libnsl; t_strerror() came with SVR4.2 and is
++ * built here from libnsl's t_errlist.  Part of the AMIX port of CDE.
++ */
++#ifndef _AMIX_CDE_TIUSER_H
++#define _AMIX_CDE_TIUSER_H
++
++#include_next <tiuser.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++extern int t_errno;
++extern char *t_errlist[];
++extern int t_nerr;
++
++extern int   t_accept(int, int, struct t_call *);
++extern char *t_alloc(int, int, int);
++extern int   t_bind(int, struct t_bind *, struct t_bind *);
++extern int   t_close(int);
++extern int   t_connect(int, struct t_call *, struct t_call *);
++extern void  t_error(char *);
++extern int   t_free(char *, int);
++extern int   t_getinfo(int, struct t_info *);
++extern int   t_getstate(int);
++extern int   t_listen(int, struct t_call *);
++extern int   t_look(int);
++extern int   t_open(char *, int, struct t_info *);
++extern int   t_optmgmt(int, struct t_optmgmt *, struct t_optmgmt *);
++extern int   t_rcv(int, char *, unsigned, int *);
++extern int   t_rcvconnect(int, struct t_call *);
++extern int   t_rcvdis(int, struct t_discon *);
++extern int   t_rcvrel(int);
++extern int   t_rcvudata(int, struct t_unitdata *, int *);
++extern int   t_rcvuderr(int, struct t_uderr *);
++extern int   t_snd(int, char *, unsigned, int);
++extern int   t_snddis(int, struct t_call *);
++extern int   t_sndrel(int);
++extern int   t_sndudata(int, struct t_unitdata *);
++extern int   t_sync(int);
++extern int   t_unbind(int);
++
++static __inline__ const char *t_strerror(int e)
++{
++	return (e >= 0 && e < t_nerr) ? t_errlist[e] : "unknown TLI error";
++}
++#ifdef __cplusplus
++}
++#endif
++
++#endif
+diff --git a/config/cf/host.def b/config/cf/host.def
+index 45b42958..e7299828 100644
+--- a/config/cf/host.def
++++ b/config/cf/host.def
+@@ -43,7 +43,8 @@ XCOMM host.def -- cross-building CDE for AMIX on a Linux host (read before amix.
+ #define DefaultCplusplusOptions	-fno-strict-aliasing AmixOldCWarnings
+ #define DefaultCDebugFlags	-O2
+ /* in the debug flags because some trees (lib/tt) set CXXOPTIONS themselves */
+-#define DefaultCplusplusDebugFlags -O2 -isystem $(TOP)/amix-cxxfix -isystem $(TOP)/config/amix/include
++/* config/amix/include first: its wrappers #include_next the amix-cxxfix copies */
++#define DefaultCplusplusDebugFlags -O2 -isystem $(TOP)/config/amix/include -isystem $(TOP)/amix-cxxfix
+ 
+ /*
+  * Host tools: imake's cpp (and CppCmd for data files) is the host cpp,
+-- 
+2.47.3
+

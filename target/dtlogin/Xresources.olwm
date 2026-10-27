@@ -1,0 +1,6 @@
+!! /etc/dt/config/C/Xresources.d/Xresources.olwm -- AMIX: "OpenLook (olwm)" in dtlogin's
+!! Options > Session menu; /opt/amix/lib/dt/Xsession.wm starts it
+Dtlogin*altDtsIncrement:	True
+Dtlogin*altDtName:	OpenLook (olwm)
+Dtlogin*altDtKey:	/usr/X/bin/olwm
+Dtlogin*altDtStart:	/opt/amix/lib/dt/Xsession.wm olwm

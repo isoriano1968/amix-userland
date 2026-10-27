@@ -1,0 +1,113 @@
+From 5d9e4604ac37671a0cdc97796f021d17969d780b Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 11:41:25 +0200
+Subject: [PATCH 08/42] tt: AMIX section in tt_options.h (SVR4.0: TLI RPC,
+ POSIX signals, catgets, SVR4 getmntent, sysinfo); stdarg in mini_isam
+
+---
+ lib/DtTerm/TermPrim/TermPrimDebug.c |  2 +-
+ lib/tt/lib/tt_options.h             | 41 ++++++++++++++++++++++++++++-
+ lib/tt/mini_isam/iscntl.c           |  6 ++---
+ 3 files changed, 44 insertions(+), 5 deletions(-)
+
+diff --git a/lib/DtTerm/TermPrim/TermPrimDebug.c b/lib/DtTerm/TermPrim/TermPrimDebug.c
+index 42fe1780..c220c53c 100644
+--- a/lib/DtTerm/TermPrim/TermPrimDebug.c
++++ b/lib/DtTerm/TermPrim/TermPrimDebug.c
+@@ -39,7 +39,7 @@ static char rcs_id[] = "$XConsortium: TermPrimDebug.c /main/4 1996/11/21 19:58:1
+ #include <stdio.h>
+ #include <unistd.h>
+ #include <stdlib.h>
+-#if defined(__linux__) || defined(CSRG_BASED) || defined(sun)
++#if defined(__linux__) || defined(CSRG_BASED) || defined(sun) || defined(__amix__)
+ # include <stdarg.h>
+ #else
+ # include <varargs.h>
+diff --git a/lib/tt/lib/tt_options.h b/lib/tt/lib/tt_options.h
+index 0bbbef18..d927ff32 100644
+--- a/lib/tt/lib/tt_options.h
++++ b/lib/tt/lib/tt_options.h
+@@ -408,9 +408,48 @@
+ # undef  OPT_TAR_HAS_EXCLUDE_OPTION
+ # define OPT_BUG_RPCINTR
+ 
++#elif defined(__amix__)
++
++/*
++ * Amiga UNIX (AMIX) 2.1: AT&T SVR4.0 on m68k.  Closest to Solaris 2 (TLI
++ * RPC from libnsl, SVR4 getmntent, sysinfo), but without threads, DES RPC
++ * or clnt_create_timed.  realpath, sysinfo and getmntent are in the static
++ * libc.a; gethostname is in libnsl.
++ */
++# undef  OPT_UNIX_SOCKET_RPC
++# define OPT_TLI
++# undef  OPT_DLOPEN_X11
++# undef  OPT_DLOPEN_CE
++# undef  OPT_ADDMSG_DIRECT
++# undef  OPT_SECURE_RPC
++# undef  OPT_CLASSING_ENGINE
++# undef  OPT_PATCH
++# undef  OPT_BSD_SIGNAL
++# define OPT_POSIX_SIGNAL
++# undef  OPT_BSD_WAIT
++# undef  OPT_DGETTEXT
++# define OPT_CATGETS
++# undef  OPT_GETDTABLESIZE
++# define OPT_SYSINFO
++# define OPT_STRERROR
++# define OPT_CPP_PATH		"/usr/ccs/lib/cpp"
++# define OPT_CPP_OPTIONS	""
++# define OPT_SVR4_GETMNTENT
++# define OPT_LOCKF_MNTENT
++# define OPT_LOCAL_MOUNT_TYPE	"ufs"
++# define OPT_DEFINE_SIG_PF
++# undef  OPT_TAR_HAS_EXCLUDE_OPTION
++# define OPT_HAS_REALPATH
++# undef  OPT_AUTOMOUNT_PATH_FIX
++# undef  OPT_BUG_RPCINTR
++# undef  OPT_XTHREADS
++# undef  OPT_SOLARIS_THREADS
++# undef  OPT_GARBAGE_THREADS
++# define OPT_GARBAGE_IN_PARALLEL	0	/* used as a const */
++
+ #elif defined(__linux__)
+ 
+-# undef  OPT_UNIX_SOCKET_RPC 
++# undef  OPT_UNIX_SOCKET_RPC
+ # undef  OPT_TLI 
+ # undef  OPT_DLOPEN_X11 
+ # undef  OPT_DLOPEN_CE 
+diff --git a/lib/tt/mini_isam/iscntl.c b/lib/tt/mini_isam/iscntl.c
+index 780eec56..bb1a0bec 100644
+--- a/lib/tt/mini_isam/iscntl.c
++++ b/lib/tt/mini_isam/iscntl.c
+@@ -39,7 +39,7 @@ static char sccsid[] = "@(#)iscntl.c	1.8 94/11/17";
+  *	Generic control function
+  */
+ 
+-#if defined(__linux__) || defined(CSRG_BASED) || defined(sun)
++#if defined(__linux__) || defined(CSRG_BASED) || defined(sun) || defined(__amix__)
+ #include <stdarg.h>
+ #else
+ #include <varargs.h>
+@@ -79,7 +79,7 @@ static char sccsid[] = "@(#)iscntl.c	1.8 94/11/17";
+ 
+ typedef int (* intfunc)();
+ 
+-#if defined(__linux__) || defined(CSRG_BASED) || defined(sun)
++#if defined(__linux__) || defined(CSRG_BASED) || defined(sun) || defined(__amix__)
+ int 
+ iscntl(int isfd, int func, ...)
+ #else
+@@ -94,7 +94,7 @@ iscntl(isfd, func, va_alist)
+     va_list		pvar;
+     int			ret;
+ 
+-#if defined(__linux__) || defined(CSRG_BASED) || defined(sun)
++#if defined(__linux__) || defined(CSRG_BASED) || defined(sun) || defined(__amix__)
+     va_start(pvar, func);
+ #else
+     va_start(pvar);
+-- 
+2.47.3
+

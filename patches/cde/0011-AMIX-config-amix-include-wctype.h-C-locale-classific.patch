@@ -1,0 +1,95 @@
+From d34891c0262ac42efd07dd86e04f6493d1a47bc6 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 11:49:49 +0200
+Subject: [PATCH 11/42] AMIX: config/amix/include/wctype.h (C locale
+ classification), used by tt_string.C
+
+---
+ config/amix/include/wctype.h | 37 ++++++++++++++++++++++++++++++++++++
+ config/cf/host.def           |  5 +++--
+ lib/tt/lib/util/tt_string.C  |  2 +-
+ 3 files changed, 41 insertions(+), 3 deletions(-)
+ create mode 100644 config/amix/include/wctype.h
+
+diff --git a/config/amix/include/wctype.h b/config/amix/include/wctype.h
+new file mode 100644
+index 00000000..7f2a0e3a
+--- /dev/null
++++ b/config/amix/include/wctype.h
+@@ -0,0 +1,37 @@
++/*
++ * wctype.h -- wide-character classification for AMIX (SVR4.0), which has
++ * none.  CDE on AMIX runs in the C locale only, where a wide character is
++ * a byte value: classification is <ctype.h>'s for 0..255, false above.
++ * Part of the AMIX port of CDE (config/cf/amix.cf); not a vendor header.
++ */
++#ifndef _AMIX_CDE_WCTYPE_H
++#define _AMIX_CDE_WCTYPE_H
++
++#include <ctype.h>
++#include <stdlib.h>		/* wchar_t */
++
++#ifndef _WINT_T
++#define _WINT_T
++typedef long wint_t;
++#endif
++#ifndef WEOF
++#define WEOF ((wint_t)-1)
++#endif
++
++#define _AMIX_WC(c, f)	((c) >= 0 && (c) < 256 && f((int)(c)))
++
++static __inline__ int iswalpha(wint_t c)  { return _AMIX_WC(c, isalpha); }
++static __inline__ int iswalnum(wint_t c)  { return _AMIX_WC(c, isalnum); }
++static __inline__ int iswdigit(wint_t c)  { return _AMIX_WC(c, isdigit); }
++static __inline__ int iswxdigit(wint_t c) { return _AMIX_WC(c, isxdigit); }
++static __inline__ int iswspace(wint_t c)  { return _AMIX_WC(c, isspace); }
++static __inline__ int iswprint(wint_t c)  { return _AMIX_WC(c, isprint); }
++static __inline__ int iswgraph(wint_t c)  { return _AMIX_WC(c, isgraph); }
++static __inline__ int iswpunct(wint_t c)  { return _AMIX_WC(c, ispunct); }
++static __inline__ int iswcntrl(wint_t c)  { return _AMIX_WC(c, iscntrl); }
++static __inline__ int iswupper(wint_t c)  { return _AMIX_WC(c, isupper); }
++static __inline__ int iswlower(wint_t c)  { return _AMIX_WC(c, islower); }
++static __inline__ wint_t towupper(wint_t c) { return (c >= 0 && c < 256) ? toupper((int)c) : c; }
++static __inline__ wint_t towlower(wint_t c) { return (c >= 0 && c < 256) ? tolower((int)c) : c; }
++
++#endif
+diff --git a/config/cf/host.def b/config/cf/host.def
+index 58458a3e..45b42958 100644
+--- a/config/cf/host.def
++++ b/config/cf/host.def
+@@ -32,7 +32,8 @@ XCOMM host.def -- cross-building CDE for AMIX on a Linux host (read before amix.
+ #define ArCmdBase		AmixCrossPrefix/bin/m68k-elf-ar
+ #define RanlibCmd		AmixCrossPrefix/bin/m68k-elf-ranlib
+ #define DoRanlibCmd		YES
+-#define DefaultCCOptions	-fno-strict-aliasing -fcommon AmixOldCWarnings
++/* config/amix/include: CDE-owned stand-ins for headers SVR4.0 lacks (wctype.h) */
++#define DefaultCCOptions	-fno-strict-aliasing -fcommon AmixOldCWarnings -isystem $(TOP)/config/amix/include
+ /*
+  * C++ sees AMIX's K&R declarations through amix-cxxfix/: copies of the
+  * affected headers with "()" turned into "(...)" (ABI-neutral on m68k),
+@@ -42,7 +43,7 @@ XCOMM host.def -- cross-building CDE for AMIX on a Linux host (read before amix.
+ #define DefaultCplusplusOptions	-fno-strict-aliasing AmixOldCWarnings
+ #define DefaultCDebugFlags	-O2
+ /* in the debug flags because some trees (lib/tt) set CXXOPTIONS themselves */
+-#define DefaultCplusplusDebugFlags -O2 -isystem $(TOP)/amix-cxxfix
++#define DefaultCplusplusDebugFlags -O2 -isystem $(TOP)/amix-cxxfix -isystem $(TOP)/config/amix/include
+ 
+ /*
+  * Host tools: imake's cpp (and CppCmd for data files) is the host cpp,
+diff --git a/lib/tt/lib/util/tt_string.C b/lib/tt/lib/util/tt_string.C
+index 23113d47..c4a87ade 100644
+--- a/lib/tt/lib/util/tt_string.C
++++ b/lib/tt/lib/util/tt_string.C
+@@ -54,7 +54,7 @@
+ #endif
+ #include <stdlib.h>
+ #include <ctype.h>
+-#if defined(__linux__) || defined(CSRG_BASED) || defined(sun)
++#if defined(__linux__) || defined(CSRG_BASED) || defined(sun) || defined(__amix__)
+ #include <wctype.h>
+ #endif
+ #include "util/tt_string.h"
+-- 
+2.47.3
+

@@ -1,0 +1,129 @@
+From 24f68975434ce41ac721545fdd8dc3b58db43464 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:25:08 +0200
+Subject: [PATCH 32/42] AMIX: fnmatch.h (C locale; checked against glibc on
+ 1200 cases, differing only for an unclosed '[')
+
+---
+ config/amix/include/fnmatch.h | 109 ++++++++++++++++++++++++++++++++++
+ 1 file changed, 109 insertions(+)
+ create mode 100644 config/amix/include/fnmatch.h
+
+diff --git a/config/amix/include/fnmatch.h b/config/amix/include/fnmatch.h
+new file mode 100644
+index 00000000..0187b3b1
+--- /dev/null
++++ b/config/amix/include/fnmatch.h
+@@ -0,0 +1,109 @@
++/*
++ * fnmatch.h -- POSIX.2 fnmatch() for AMIX (SVR4.0), which has none.
++ * Shell wildcard matching in the C locale: '*', '?', bracket expressions
++ * ('[a-z]', '[!x]', '[^x]') and backslash escapes, with the FNM_PATHNAME,
++ * FNM_PERIOD and FNM_NOESCAPE flags.
++ * Part of the AMIX port of CDE (config/cf/amix.cf); not a vendor header.
++ */
++#ifndef _AMIX_CDE_FNMATCH_H
++#define _AMIX_CDE_FNMATCH_H
++
++#define FNM_NOMATCH	1
++#define FNM_NOESCAPE	0x02
++#define FNM_PATHNAME	0x01
++#define FNM_PERIOD	0x04
++
++/* bracket expression at p (just after '['): returns the pointer after ']',
++ * or 0 if there is no closing ']' (then '[' is an ordinary character) */
++static __inline__ const char *
++_amix_fnm_bracket(const char *p, int c, int flags, int *matched)
++{
++	int negate = 0, ok = 0, first = 1;
++
++	if (*p == '!' || *p == '^')
++		negate = 1, p++;
++	while (first || *p != ']') {
++		int lo, hi;
++
++		first = 0;
++		if (*p == '\0')
++			return 0;
++		if (*p == '\\' && !(flags & FNM_NOESCAPE) && p[1])
++			p++;
++		lo = hi = (unsigned char)*p++;
++		if (*p == '-' && p[1] && p[1] != ']') {
++			p++;
++			if (*p == '\\' && !(flags & FNM_NOESCAPE) && p[1])
++				p++;
++			hi = (unsigned char)*p++;
++		}
++		if (lo <= c && c <= hi)
++			ok = 1;
++	}
++	*matched = ok != negate;
++	return p + 1;
++}
++
++static __inline__ int
++fnmatch(const char *pattern, const char *string, int flags)
++{
++	const char *p = pattern, *s = string;
++	const char *star_p = 0, *star_s = 0;
++
++	for (;;) {
++		if (*p == '*') {
++			/* a leading period is only matched explicitly */
++			if ((flags & FNM_PERIOD) && *s == '.' &&
++			    (s == string || ((flags & FNM_PATHNAME) && s[-1] == '/')))
++				return FNM_NOMATCH;
++			while (*p == '*')
++				p++;
++			star_p = p, star_s = s;
++			continue;
++		}
++		if (*s == '\0')
++			return *p == '\0' ? 0 : FNM_NOMATCH;
++		if (*p == '\0')
++			goto backtrack;
++		if ((flags & FNM_PATHNAME) && *s == '/') {
++			if (*p != '/')
++				goto backtrack;	/* only a literal '/' matches '/' */
++			p++, s++;
++			continue;
++		}
++		if ((flags & FNM_PERIOD) && *s == '.' && *p != '.' &&
++		    (s == string || ((flags & FNM_PATHNAME) && s[-1] == '/')))
++			goto backtrack;
++		if (*p == '?') {
++			p++, s++;
++			continue;
++		}
++		if (*p == '[') {
++			int m;
++			const char *q = _amix_fnm_bracket(p + 1, (unsigned char)*s, flags, &m);
++
++			if (q) {
++				if (!m)
++					goto backtrack;
++				p = q, s++;
++				continue;
++			}
++			/* no closing ']': '[' is literal, fall through */
++		}
++		if (*p == '\\' && !(flags & FNM_NOESCAPE) && p[1])
++			p++;
++		if (*p != *s)
++			goto backtrack;
++		p++, s++;
++		continue;
++	backtrack:
++		/* let the last '*' swallow one more character (never a '/'
++		 * under FNM_PATHNAME) and try again */
++		if (!star_p || *star_s == '\0' ||
++		    ((flags & FNM_PATHNAME) && *star_s == '/'))
++			return FNM_NOMATCH;
++		p = star_p, s = ++star_s;
++	}
++}
++
++#endif
+-- 
+2.47.3
+

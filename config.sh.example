@@ -1,0 +1,24 @@
+# config.sh -- the paths of your build.  Copy to config.sh and edit.
+
+# gcc14-cross-amix, installed (bin/m68k-elf-gcc): https://github.com/asokero/gcc14-cross-amix
+TOOLCHAIN=$HOME/opt/m68k-amix
+
+# The AMIX sysroot that gcc14-cross-amix was built against (usr/include,
+# usr/lib, usr/ccs/lib from your own AMIX installation).
+SYSROOT=$HOME/opt/m68k-amix-sysroot
+
+# X11R6.3 for AMIX, built on the AMIX machine: its xc/exports tree
+# (include/ and lib/ with libX11.a, libXt.a, libXmu.a, libXext.a, libSM.a,
+# libICE.a and the .sa stubs), copied from the machine.
+X11_EXPORTS=$SYSROOT/usr/x11r6/xc/exports
+
+# The X11R6.3 source tree (xc/) of that build: libXp is compiled from
+# xc/lib/Xp, and XKeysymDB/XErrorDB come from xc/lib/X11.
+X11_SRC=$HOME/src/x11r6.3-amix/xc
+
+# Downloads and build trees (a few GB).
+DL=$PWD/dl
+WORK=$PWD/work
+
+# Parallel make jobs for Motif (the CDE build runs serially).
+JOBS=8

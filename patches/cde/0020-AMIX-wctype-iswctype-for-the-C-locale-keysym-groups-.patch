@@ -1,0 +1,75 @@
+From 1baab4eb7ce2388200ff8c9baf822308feb130d6 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:10:01 +0200
+Subject: [PATCH 20/42] AMIX: wctype()/iswctype() for the C locale; keysym
+ groups as keysym.h turns them on (R6.3 keysymdef.h)
+
+---
+ config/amix/include/wctype.h | 31 +++++++++++++++++++++++++++++++
+ config/cf/amix.cf            |  9 ++++++++-
+ 2 files changed, 39 insertions(+), 1 deletion(-)
+
+diff --git a/config/amix/include/wctype.h b/config/amix/include/wctype.h
+index 7f2a0e3a..ce21aa7d 100644
+--- a/config/amix/include/wctype.h
++++ b/config/amix/include/wctype.h
+@@ -34,4 +34,35 @@ static __inline__ int iswlower(wint_t c)  { return _AMIX_WC(c, islower); }
+ static __inline__ wint_t towupper(wint_t c) { return (c >= 0 && c < 256) ? toupper((int)c) : c; }
+ static __inline__ wint_t towlower(wint_t c) { return (c >= 0 && c < 256) ? tolower((int)c) : c; }
+ 
++/* XPG4 generic classification: wctype("space") etc. map onto <ctype.h>;
++ * classes the C locale does not have (e.g. "ekinsoku") are 0, as POSIX
++ * prescribes, and iswctype(c, 0) is false. */
++typedef int wctype_t;
++static __inline__ wctype_t wctype(const char *name)
++{
++	static const char *const n[] = { "alnum", "alpha", "blank", "cntrl",
++		"digit", "graph", "lower", "print", "punct", "space", "upper",
++		"xdigit", 0 };
++	int i;
++	for (i = 0; n[i]; i++) {
++		const char *a = n[i], *b = name;
++		while (*a && *a == *b) a++, b++;
++		if (!*a && !*b) return i + 1;
++	}
++	return 0;
++}
++static __inline__ int iswctype(wint_t c, wctype_t t)
++{
++	if (c < 0 || c > 255) return 0;
++	switch (t) {
++	case 1: return isalnum((int)c);	case 2: return isalpha((int)c);
++	case 3: return c == ' ' || c == '\t';	case 4: return iscntrl((int)c);
++	case 5: return isdigit((int)c);	case 6: return isgraph((int)c);
++	case 7: return islower((int)c);	case 8: return isprint((int)c);
++	case 9: return ispunct((int)c);	case 10: return isspace((int)c);
++	case 11: return isupper((int)c);	case 12: return isxdigit((int)c);
++	}
++	return 0;
++}
++
+ #endif
+diff --git a/config/cf/amix.cf b/config/cf/amix.cf
+index e7e27216..6cafa109 100644
+--- a/config/cf/amix.cf
++++ b/config/cf/amix.cf
+@@ -16,8 +16,15 @@ XCOMM platform:  amix.cf -- Amiga UNIX (AMIX) 2.1, SVR4.0 on m68k
+ #define OSTeenyVersion		0
+ 
+ #ifndef OSDefines
+-# define OSDefines		-DAMIX -D__amix__ -D__svr4__ -Dm68k
++# define OSDefines		-DAMIX -D__amix__ -D__svr4__ -Dm68k AmixKeysymGroups
+ #endif
++/*
++ * X11R6.3's <X11/keysymdef.h> defines only the groups <X11/keysym.h> turns
++ * on first; CDE includes keysymdef.h directly in places (as newer X allows).
++ * Turn on the same groups keysym.h does.
++ */
++#define AmixKeysymGroups	-DXK_MISCELLANY -DXK_XKB_KEYS -DXK_LATIN1 \
++				-DXK_LATIN2 -DXK_LATIN3 -DXK_LATIN4 -DXK_GREEK
+ #ifndef BootstrapCFlags
+ # define BootstrapCFlags	-DAMIX -DSVR4 -Dm68k
+ #endif
+-- 
+2.47.3
+

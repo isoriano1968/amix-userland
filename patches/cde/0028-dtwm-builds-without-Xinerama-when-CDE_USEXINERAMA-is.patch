@@ -1,0 +1,67 @@
+From eca102bbb0c83ba7ec10929da8d46d500c20ccd9 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:22:01 +0200
+Subject: [PATCH 28/42] dtwm: builds without Xinerama when CDE_USEXINERAMA is
+ NO (GetHeadInfo reports no head)
+
+---
+ programs/dtwm/Imakefile     | 9 ++++++++-
+ programs/dtwm/WmMultiHead.c | 9 +++++++++
+ 2 files changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/programs/dtwm/Imakefile b/programs/dtwm/Imakefile
+index 82a67739..ed32cb03 100644
+--- a/programs/dtwm/Imakefile
++++ b/programs/dtwm/Imakefile
+@@ -12,12 +12,19 @@ MWMDEFINES = $(VFORK_DEFINE) -DLARGECURSORS -DR2_COMPAT -DOPAQUE -DSHAPE \
+ DTWMDEFINES = -DWSM -DPANELIST
+ 
+ DEPEND_DEFINES = $(DEPENDDEFINES)
+-DEFINES = $(MWMDEFINES) $(DTWMDEFINES) -DMULTIBYTE -DMINIMAL_DT
++DEFINES = $(MWMDEFINES) $(DTWMDEFINES) -DMULTIBYTE -DMINIMAL_DT $(XINERAMA_DEFINES)
+ INCLUDES = $(TIRPCINC)
+ 
+ DEPLIBS = DepDtClientLibs
++#if CDE_USEXINERAMA
+ LOCAL_LIBRARIES = DtClientLibs -lDtXinerama
+ SYS_LIBRARIES = DtClientSysLibs DtClientExtraLibs -lXinerama
++#else
++/* no Xinerama in this X (e.g. AMIX's X11R6.3): GetHeadInfo() reports none */
++LOCAL_LIBRARIES = DtClientLibs
++SYS_LIBRARIES = DtClientSysLibs DtClientExtraLibs
++XINERAMA_DEFINES = -DNO_XINERAMA
++#endif
+ 
+ #if defined(HPArchitecture)
+ EXTRA_DEFINES = -D_HPUX_SOURCE 
+diff --git a/programs/dtwm/WmMultiHead.c b/programs/dtwm/WmMultiHead.c
+index dc3eb811..034731d0 100644
+--- a/programs/dtwm/WmMultiHead.c
++++ b/programs/dtwm/WmMultiHead.c
+@@ -26,10 +26,18 @@
+ /*
+  * Included Files:
+  */
++#ifndef NO_XINERAMA
+ #include <DtXinerama.h>
++#endif
+ 
+ #include "WmMultiHead.h"
+ 
++#ifdef NO_XINERAMA
++/* built without Xinerama (CDE_USEXINERAMA NO): there is one head, so no
++ * head-specific geometry; callers keep the screen's */
++WmHeadInfo_t *GetHeadInfo(const ClientData *pcd) { return NULL; }
++#else
++
+ /*
+  * Global Variables
+  */
+@@ -113,3 +121,4 @@ WmHeadInfo_t *GetHeadInfo(const ClientData *pcd) {
+     /* No valid screen */
+     return NULL;
+ }
++#endif /* NO_XINERAMA */
+-- 
+2.47.3
+

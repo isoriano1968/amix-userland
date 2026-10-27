@@ -1,0 +1,55 @@
+From a9e2dd686736d64682588ff79b36608acfa5f281 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 12:57:36 +0100
+Subject: [PATCH 39/42] amix.cf: use fork() instead of vfork() on AMIX
+
+vfork() on AMIX shares the parent's memory until exec, as on BSD.  dtwm,
+dtsession, DtTerm, DtHelp and ToolTalk's client all run code in the vfork
+child before the exec -- _DtEnvControl(DT_ENV_RESTORE_PRE_DT), signal
+resets, putenv -- which then rewrites the parent's environ and heap.
+
+Measured in a dtwm core: every original environ entry pointed two bytes
+into its string ("TH=/usr/..." for PATH), getenv("PATH") failed, the
+command invoker's path list stayed NULL, and the first front-panel click
+crashed in sprintf on the NULL page's contents.
+
+-Dvfork=fork -DPORT_NOVFORK in StandardDefines, and HasVFork NO.  fork()
+is copy-on-write on SVR4.
+---
+ config/cf/amix.cf | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/config/cf/amix.cf b/config/cf/amix.cf
+index a782e659..d3567543 100644
+--- a/config/cf/amix.cf
++++ b/config/cf/amix.cf
+@@ -29,7 +29,16 @@ XCOMM platform:  amix.cf -- Amiga UNIX (AMIX) 2.1, SVR4.0 on m68k
+ # define BootstrapCFlags	-DAMIX -DSVR4 -Dm68k
+ #endif
+ #ifndef StandardDefines
+-# define StandardDefines	-DSVR4 OSDefines
++/*
++ * vfork() on AMIX shares the parent's memory until exec, as on BSD.  dtwm,
++ * dtsession, DtTerm, DtHelp and ToolTalk all run code in the vfork child
++ * before exec -- _DtEnvControl(DT_ENV_RESTORE_PRE_DT), signal resets, putenv
++ * -- which then rewrites the PARENT's environ and heap.  Measured: dtwm's
++ * environ entries ended up pointing into the middle of their strings, PATH
++ * vanished, and the first front-panel click crashed in sprintf.  fork() is
++ * copy-on-write on SVR4, so use it everywhere.
++ */
++# define StandardDefines	-DSVR4 OSDefines -Dvfork=fork -DPORT_NOVFORK
+ #endif
+ #ifndef StandardCppDefines
+ # define StandardCppDefines	-DSVR4 OSDefines
+@@ -59,7 +68,7 @@ XCOMM platform:  amix.cf -- Amiga UNIX (AMIX) 2.1, SVR4.0 on m68k
+ #define HasPutenv		YES
+ #define HasStrcasecmp		NO
+ #define HasShadowPasswd		YES
+-#define HasVFork		YES
++#define HasVFork		NO
+ #define SetTtyGroup		YES
+ 
+ /*
+-- 
+2.47.3
+

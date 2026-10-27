@@ -1,0 +1,38 @@
+From 6245777263f4e66f76cc8c924227d6889fa6b48d Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 22:20:37 +0100
+Subject: [PATCH 42/42] host.def: the build's paths come from amixpaths.def
+
+The cross compiler, the sysroot and the build tree were absolute paths of
+one machine.  The build script writes them into config/cf/amixpaths.def,
+which host.def includes.
+---
+ config/cf/host.def | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/config/cf/host.def b/config/cf/host.def
+index 4b610d4d..e26144c7 100644
+--- a/config/cf/host.def
++++ b/config/cf/host.def
+@@ -10,10 +10,14 @@ XCOMM host.def -- cross-building CDE for AMIX on a Linux host (read before amix.
+  * implicitly declared pointer function still returns the right value
+  * (gcc14-cross-amix docs/TOOLCHAIN.md section 4).
+  */
+-#define AmixCrossPrefix		/opt/m68k-amix
+-#define AmixSysroot		/opt/m68k-amix-sysroot
+-/* the build tree; absolute, because some sub-makes (lib/tt) get another TOP */
+-#define AmixBuildTop		/usr/src/cde-2.2.4a
++/*
++ * The paths of this build, written by the build script (cde-amix's
++ * build-cde.sh) into config/cf/amixpaths.def:
++ *   AmixCrossPrefix  the gcc14-cross-amix install (bin/m68k-elf-gcc)
++ *   AmixSysroot      the AMIX sysroot
++ *   AmixBuildTop     this tree, absolute: some sub-makes (lib/tt) get another TOP
++ */
++#include "amixpaths.def"
+ 
+ #define AmixOldCWarnings	-Wno-error=implicit-function-declaration \
+ 				-Wno-error=int-conversion \
+-- 
+2.47.3
+

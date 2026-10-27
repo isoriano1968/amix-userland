@@ -1,0 +1,53 @@
+From 5c1bc483a68daae9319cc958089bf67bcd9748c7 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:22:22 +0200
+Subject: [PATCH 29/42] AMIX: socklen_t; dtterm logger memset as on Linux; C++
+ runtime in the link for ToolTalk clients
+
+---
+ config/amix/include/sys/socket.h | 2 ++
+ config/cf/host.def               | 4 +++-
+ programs/dtterm/util/logger.c    | 2 +-
+ 3 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/config/amix/include/sys/socket.h b/config/amix/include/sys/socket.h
+index 20b42e47..ec545f6a 100644
+--- a/config/amix/include/sys/socket.h
++++ b/config/amix/include/sys/socket.h
+@@ -3,6 +3,8 @@
+ #ifndef _AMIX_CDE_SYS_SOCKET_H
+ #define _AMIX_CDE_SYS_SOCKET_H
+ #include_next <sys/socket.h>
++typedef int socklen_t;	/* SVR4.0 passes plain ints */
++
+ #ifdef __cplusplus
+ extern "C" {
+ #endif
+diff --git a/config/cf/host.def b/config/cf/host.def
+index f8c9da81..3bac1bb5 100644
+--- a/config/cf/host.def
++++ b/config/cf/host.def
+@@ -89,4 +89,6 @@ XCOMM host.def -- cross-building CDE for AMIX on a Linux host (read before amix.
+  */
+ #define XmExtraLibraries	-lXp -lXext -lSM -lICE -lX11
+ 
+-#define ExtraLibraries		-lsocket -lnsl -lgen
++/* the C++ runtime for C programs that link ToolTalk (libtt is C++);
++ * archives, so programs that do not need it get nothing from it */
++#define ExtraLibraries		-lstdc++ -lsupc++ -lsocket -lnsl -lgen
+diff --git a/programs/dtterm/util/logger.c b/programs/dtterm/util/logger.c
+index 0a257707..78f0982a 100644
+--- a/programs/dtterm/util/logger.c
++++ b/programs/dtterm/util/logger.c
+@@ -72,7 +72,7 @@ main(int argc, char **argv)
+     }
+ 
+     /* init data... */
+-#if defined(__linux__) || defined(sun) || defined(CSRG_BASED)
++#if defined(__linux__) || defined(sun) || defined(CSRG_BASED) || defined(__amix__)
+     (void) memset((void *) &myaddr_in, (int) '\0', sizeof(myaddr_in));
+ #else
+     (void) memset(myaddr_in, '\0', sizeof(myaddr_in));
+-- 
+2.47.3
+

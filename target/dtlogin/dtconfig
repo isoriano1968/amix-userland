@@ -1,0 +1,67 @@
+#!/bin/sh
+# dtconfig -- CDE configuration utility (AMIX), after the Solaris one:
+#   dtconfig -e        enable the graphical login at boot (S99dtlogin)
+#   dtconfig -d        disable it
+#   dtconfig -kill     stop dtlogin (and its X server) now
+#   dtconfig -reset    make dtlogin reread its configuration (SIGHUP)
+#   dtconfig -status   is it enabled at boot, is it running
+RC=/etc/init.d/dtlogin
+S2=/etc/rc2.d/S99dtlogin
+K0=/etc/rc0.d/K10dtlogin
+K1=/etc/rc1.d/K10dtlogin
+PIDFILE=/var/dt/Xpid
+prg=`basename $0`
+
+usage() {
+	echo "usage: $prg -e | -d | -kill | -reset | -status"
+	exit 1
+}
+[ $# -eq 1 ] || usage
+case "`id`" in
+uid=0\(*) ;;
+*) echo "$prg: must be run as root"; exit 1 ;;
+esac
+
+running() {
+	[ -f $PIDFILE ] && kill -0 `cat $PIDFILE` 2> /dev/null
+}
+
+case "$1" in
+-e)
+	[ -x $RC ] || { echo "$prg: $RC missing"; exit 1; }
+	rm -f $S2 $K0 $K1
+	ln $RC $S2 && ln $RC $K0 && ln $RC $K1
+	rm -f /etc/dt/nodtlogin
+	echo "$prg: graphical login enabled at boot ($S2)"
+	;;
+-d)
+	rm -f $S2 $K0 $K1
+	echo "$prg: graphical login disabled at boot"
+	running && echo "$prg: dtlogin is still running; '$prg -kill' stops it"
+	;;
+-kill)
+	if running; then
+		kill `cat $PIDFILE`
+		echo "$prg: dtlogin stopped"
+	else
+		echo "$prg: dtlogin is not running"
+	fi
+	;;
+-reset)
+	if running; then
+		kill -1 `cat $PIDFILE`
+		echo "$prg: dtlogin reset"
+	else
+		echo "$prg: dtlogin is not running"
+	fi
+	;;
+-status)
+	if [ -f $S2 ]; then echo "enabled at boot ($S2)"; else echo "disabled at boot"; fi
+	[ -f /etc/dt/nodtlogin ] && echo "/etc/dt/nodtlogin exists: the boot start is skipped"
+	if running; then echo "running (pid `cat $PIDFILE`)"; else echo "not running"; fi
+	;;
+*)
+	usage
+	;;
+esac
+exit 0

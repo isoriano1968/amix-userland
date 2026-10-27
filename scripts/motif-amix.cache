@@ -1,0 +1,10 @@
+ac_cv_file__usr_X_include_X11_X_h=no
+ac_cv_file__usr_X11R6_include_X11_X_h=no
+ac_cv_func_setpgrp_void=yes
+ac_cv_func_memcmp_working=yes
+ac_cv_func_void_sprintf=no
+ac_cv_c_stack_direction=-1
+ac_cv_func_fork_works=yes
+ac_cv_func_vfork_works=yes
+ac_cv_func_strcoll_works=yes
+lt_cv_xthreads=no

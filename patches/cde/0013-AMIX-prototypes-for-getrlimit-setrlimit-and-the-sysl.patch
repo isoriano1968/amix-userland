@@ -1,0 +1,74 @@
+From 586fa513d628db9150eb5c2c206bd8eb37d34299 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 11:53:01 +0200
+Subject: [PATCH 13/42] AMIX: prototypes for getrlimit/setrlimit and the syslog
+ family; ttauth.h without K&R malloc
+
+---
+ config/amix/include/sys/resource.h | 14 ++++++++++++++
+ config/amix/include/syslog.h       | 18 ++++++++++++++++++
+ lib/tt/bin/ttauth/ttauth.h         |  2 +-
+ 3 files changed, 33 insertions(+), 1 deletion(-)
+ create mode 100644 config/amix/include/sys/resource.h
+ create mode 100644 config/amix/include/syslog.h
+
+diff --git a/config/amix/include/sys/resource.h b/config/amix/include/sys/resource.h
+new file mode 100644
+index 00000000..d1d632fe
+--- /dev/null
++++ b/config/amix/include/sys/resource.h
+@@ -0,0 +1,14 @@
++/* sys/resource.h -- AMIX's, plus the user-level prototypes SVR4.0 leaves
++ * out (getrlimit/setrlimit are in libc).  Part of the AMIX port of CDE. */
++#ifndef _AMIX_CDE_SYS_RESOURCE_H
++#define _AMIX_CDE_SYS_RESOURCE_H
++#include_next <sys/resource.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++extern int getrlimit(int, struct rlimit *);
++extern int setrlimit(int, const struct rlimit *);
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/config/amix/include/syslog.h b/config/amix/include/syslog.h
+new file mode 100644
+index 00000000..6141b897
+--- /dev/null
++++ b/config/amix/include/syslog.h
+@@ -0,0 +1,18 @@
++/* syslog.h -- AMIX's, plus the prototypes SVR4.0 never declared (the
++ * functions, vsyslog included, are in libc).  Part of the AMIX port of CDE. */
++#ifndef _AMIX_CDE_SYSLOG_H
++#define _AMIX_CDE_SYSLOG_H
++#include_next <syslog.h>
++#include <stdarg.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++extern void openlog(const char *, int, int);
++extern void syslog(int, const char *, ...);
++extern void vsyslog(int, const char *, va_list);
++extern void closelog(void);
++extern int  setlogmask(int);
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/lib/tt/bin/ttauth/ttauth.h b/lib/tt/bin/ttauth/ttauth.h
+index c12ef084..bfb6128b 100644
+--- a/lib/tt/bin/ttauth/ttauth.h
++++ b/lib/tt/bin/ttauth/ttauth.h
+@@ -58,7 +58,7 @@ typedef int Bool;
+ 
+ extern char *ProgramName;
+ 
+-#if !defined(__linux__) && !defined(CSRG_BASED) && !defined(sun)
++#if !defined(__linux__) && !defined(CSRG_BASED) && !defined(sun) && !defined(__amix__)
+ extern char *malloc(), *realloc();
+ #endif
+ int process_command(), auth_initialize(), auth_finalize();
+-- 
+2.47.3
+

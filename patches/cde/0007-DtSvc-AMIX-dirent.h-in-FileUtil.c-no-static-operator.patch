@@ -1,0 +1,40 @@
+From 866440f8aaaf28e3c1cd89b6209b2a86b907a77d Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 11:39:00 +0200
+Subject: [PATCH 07/42] DtSvc: AMIX -- <dirent.h> in FileUtil.c, no static
+ operator new/delete in privbuf.h (gcc 14)
+
+---
+ lib/DtSvc/DtUtil2/FileUtil.c         | 2 +-
+ lib/DtSvc/include/codelibs/privbuf.h | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/lib/DtSvc/DtUtil2/FileUtil.c b/lib/DtSvc/DtUtil2/FileUtil.c
+index d3e799cc..ffb99427 100644
+--- a/lib/DtSvc/DtUtil2/FileUtil.c
++++ b/lib/DtSvc/DtUtil2/FileUtil.c
+@@ -40,7 +40,7 @@
+ #ifdef __hpux
+ #include <ndir.h>		/* opendir(), directory(3C) */
+ #else
+-#if defined(sun) || defined(CSRG_BASED)
++#if defined(sun) || defined(CSRG_BASED) || defined(__amix__)
+ #include <dirent.h>		/* opendir(), directory(3C) */
+ #else
+ #include <sys/dir.h>
+diff --git a/lib/DtSvc/include/codelibs/privbuf.h b/lib/DtSvc/include/codelibs/privbuf.h
+index ad88b9c0..79315933 100644
+--- a/lib/DtSvc/include/codelibs/privbuf.h
++++ b/lib/DtSvc/include/codelibs/privbuf.h
+@@ -48,7 +48,7 @@ typedef void (*privbuf_func)(void *v);
+ #include <stddef.h>
+ #include <stdlib.h>
+ 
+-#if defined(sun) || defined(__linux__) || defined(CSRG_BASED)
++#if defined(sun) || defined(__linux__) || defined(CSRG_BASED) || defined(__amix__)
+ // Rejects valid inline declarations, claiming they have both internal and
+ // external linkage.
+ #else
+-- 
+2.47.3
+

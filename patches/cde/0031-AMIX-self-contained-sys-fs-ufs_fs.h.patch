@@ -1,0 +1,28 @@
+From 480227de885d607b654685cc65480ad59f4bd1b6 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:23:45 +0200
+Subject: [PATCH 31/42] AMIX: self-contained sys/fs/ufs_fs.h
+
+---
+ config/amix/include/sys/fs/ufs_fs.h | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+ create mode 100644 config/amix/include/sys/fs/ufs_fs.h
+
+diff --git a/config/amix/include/sys/fs/ufs_fs.h b/config/amix/include/sys/fs/ufs_fs.h
+new file mode 100644
+index 00000000..ea36431b
+--- /dev/null
++++ b/config/amix/include/sys/fs/ufs_fs.h
+@@ -0,0 +1,9 @@
++/* sys/fs/ufs_fs.h -- AMIX's, made self-contained: it uses daddr_t, u_char,
++ * time_t, NBBY and MAXFRAG without including what defines them (Solaris'
++ * does).  Part of the AMIX port of CDE. */
++#ifndef _AMIX_CDE_SYS_FS_UFS_FS_H
++#define _AMIX_CDE_SYS_FS_UFS_FS_H
++#include <sys/types.h>
++#include <sys/param.h>
++#include_next <sys/fs/ufs_fs.h>
++#endif
+-- 
+2.47.3
+

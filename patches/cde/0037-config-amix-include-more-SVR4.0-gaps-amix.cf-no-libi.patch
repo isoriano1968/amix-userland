@@ -1,0 +1,321 @@
+From f114d3e0ae60c1fb947d55a98d7a03947eddbaaa Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 19:58:08 +0200
+Subject: [PATCH 37/42] config/amix/include: more SVR4.0 gaps; amix.cf: no
+ libiaf
+
+New wrappers (CDE-owned, #include_next the AMIX header where there is one):
+- iostream.h, fstream.h, strstream.h: the pre-standard C++ headers as the
+  standard ones with their names in the global namespace;
+- strings.h: <string.h> plus strcasecmp/strncasecmp (libamixc99);
+- iconv.h: stand-in whose iconv_open always fails (C locale only);
+- nl_types.h: NL_CAT_LOCALE (0, the XPG3 behaviour);
+- unistd.h: seteuid/setegid (libc) and rresvport (libsocket) declared;
+- sys/mman.h: munmap/mprotect/msync declared, madvise via memcntl;
+- sys/uio.h: readv/writev declared;
+- sys/systeminfo.h: SYS_NMLN from <sys/utsname.h> first.
+Changed: sys/stat.h declares fchmod; wchar.h makes putwc/getwc functions
+(callers #undef getwc to get "the libc function").
+
+EUSCompat.h: the AMIX section takes MAXNAMELEN from <sys/param.h> and
+iconv from the stand-in instead of its own macros.
+amix.cf: IafSysLib empty -- libiaf is SVR4.2, dtlogin links without it.
+---
+ config/amix/include/fstream.h        | 10 ++++++++++
+ config/amix/include/iconv.h          | 17 +++++++++++++++++
+ config/amix/include/iostream.h       | 10 ++++++++++
+ config/amix/include/nl_types.h       | 12 ++++++++++++
+ config/amix/include/strings.h        | 17 +++++++++++++++++
+ config/amix/include/strstream.h      | 10 ++++++++++
+ config/amix/include/sys/mman.h       | 23 +++++++++++++++++++++++
+ config/amix/include/sys/stat.h       |  6 ++++++
+ config/amix/include/sys/systeminfo.h | 10 ++++++++++
+ config/amix/include/sys/uio.h        | 16 ++++++++++++++++
+ config/amix/include/unistd.h         | 18 ++++++++++++++++++
+ config/amix/include/wchar.h          |  9 +++------
+ config/cf/amix.cf                    |  3 +++
+ include/EUSCompat.h                  |  9 ++++-----
+ 14 files changed, 159 insertions(+), 11 deletions(-)
+ create mode 100644 config/amix/include/fstream.h
+ create mode 100644 config/amix/include/iconv.h
+ create mode 100644 config/amix/include/iostream.h
+ create mode 100644 config/amix/include/nl_types.h
+ create mode 100644 config/amix/include/strings.h
+ create mode 100644 config/amix/include/strstream.h
+ create mode 100644 config/amix/include/sys/mman.h
+ create mode 100644 config/amix/include/sys/systeminfo.h
+ create mode 100644 config/amix/include/sys/uio.h
+ create mode 100644 config/amix/include/unistd.h
+
+diff --git a/config/amix/include/fstream.h b/config/amix/include/fstream.h
+new file mode 100644
+index 00000000..1720c1fd
+--- /dev/null
++++ b/config/amix/include/fstream.h
+@@ -0,0 +1,10 @@
++/*
++ * fstream.h -- the pre-standard C++ header CDE was written against, for
++ * gcc 14's libstdc++: the standard header, its names in the global
++ * namespace.  Part of the AMIX port of CDE; not a vendor header.
++ */
++#ifndef _AMIX_CDE_FSTREAM_H
++#define _AMIX_CDE_FSTREAM_H
++#include <fstream>
++using namespace std;
++#endif
+diff --git a/config/amix/include/iconv.h b/config/amix/include/iconv.h
+new file mode 100644
+index 00000000..5b394afa
+--- /dev/null
++++ b/config/amix/include/iconv.h
+@@ -0,0 +1,17 @@
++/*
++ * iconv.h -- AMIX has no iconv.  Every conversion fails to open, so callers
++ * take their "no converter" path (as with EUSCompat.h's AMIX stand-ins); in
++ * the C locale the only one CDE has here, nothing needs converting.
++ * Part of the AMIX port of CDE (config/cf/amix.cf); not a vendor header.
++ */
++#ifndef _AMIX_CDE_ICONV_H
++#define _AMIX_CDE_ICONV_H
++#include <sys/types.h>
++#include <errno.h>
++typedef void *iconv_t;
++static __inline__ iconv_t iconv_open(const char *to, const char *from)
++{ (void)to; (void)from; errno = EINVAL; return (iconv_t)-1; }
++static __inline__ size_t iconv(iconv_t cd, char **in, size_t *inl, char **out, size_t *outl)
++{ (void)cd; (void)in; (void)inl; (void)out; (void)outl; errno = EBADF; return (size_t)-1; }
++static __inline__ int iconv_close(iconv_t cd) { (void)cd; return 0; }
++#endif
+diff --git a/config/amix/include/iostream.h b/config/amix/include/iostream.h
+new file mode 100644
+index 00000000..858162c2
+--- /dev/null
++++ b/config/amix/include/iostream.h
+@@ -0,0 +1,10 @@
++/*
++ * iostream.h -- the pre-standard C++ header CDE was written against, for
++ * gcc 14's libstdc++: the standard header, its names in the global
++ * namespace.  Part of the AMIX port of CDE; not a vendor header.
++ */
++#ifndef _AMIX_CDE_IOSTREAM_H
++#define _AMIX_CDE_IOSTREAM_H
++#include <iostream>
++using namespace std;
++#endif
+diff --git a/config/amix/include/nl_types.h b/config/amix/include/nl_types.h
+new file mode 100644
+index 00000000..189b395a
+--- /dev/null
++++ b/config/amix/include/nl_types.h
+@@ -0,0 +1,12 @@
++/*
++ * nl_types.h -- AMIX's catopen() predates the XPG4 flag NL_CAT_LOCALE;
++ * 0 (the XPG3 behaviour, $LANG) is what it does.  Part of the AMIX port of
++ * CDE (config/cf/amix.cf); not a vendor header.
++ */
++#ifndef _AMIX_CDE_NL_TYPES_H
++#define _AMIX_CDE_NL_TYPES_H
++#include_next <nl_types.h>
++#ifndef NL_CAT_LOCALE
++#define NL_CAT_LOCALE	0
++#endif
++#endif
+diff --git a/config/amix/include/strings.h b/config/amix/include/strings.h
+new file mode 100644
+index 00000000..37201435
+--- /dev/null
++++ b/config/amix/include/strings.h
+@@ -0,0 +1,17 @@
++/*
++ * strings.h -- the BSD header AMIX (SVR4.0) lacks: <string.h> plus the
++ * case-insensitive compares, which gcc14-cross-amix's libamixc99 supplies.
++ * Part of the AMIX port of CDE (config/cf/amix.cf); not a vendor header.
++ */
++#ifndef _AMIX_CDE_STRINGS_H
++#define _AMIX_CDE_STRINGS_H
++#include <string.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++extern int strcasecmp(const char *, const char *);
++extern int strncasecmp(const char *, const char *, size_t);
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/config/amix/include/strstream.h b/config/amix/include/strstream.h
+new file mode 100644
+index 00000000..34b86a2d
+--- /dev/null
++++ b/config/amix/include/strstream.h
+@@ -0,0 +1,10 @@
++/*
++ * strstream.h -- the pre-standard C++ header CDE was written against, for
++ * gcc 14's libstdc++: the standard header, its names in the global
++ * namespace.  Part of the AMIX port of CDE; not a vendor header.
++ */
++#ifndef _AMIX_CDE_STRSTREAM_H
++#define _AMIX_CDE_STRSTREAM_H
++#include <strstream>
++using namespace std;
++#endif
+diff --git a/config/amix/include/sys/mman.h b/config/amix/include/sys/mman.h
+new file mode 100644
+index 00000000..7f86ac42
+--- /dev/null
++++ b/config/amix/include/sys/mman.h
+@@ -0,0 +1,23 @@
++/*
++ * sys/mman.h -- AMIX declares only mmap(); munmap(), mprotect() and msync()
++ * are in libc but undeclared;
++ * madvise() is not there at all.  Part of the AMIX port of CDE (config/cf/
++ * amix.cf); not a vendor header.
++ */
++#ifndef _AMIX_CDE_SYS_MMAN_H
++#define _AMIX_CDE_SYS_MMAN_H
++#include_next <sys/mman.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++extern int munmap(void *, size_t);
++extern int mprotect(void *, size_t, int);
++extern int msync(void *, size_t, int);
++extern int memcntl(void *, size_t, int, void *, int, int);
++/* no madvise() in SVR4.0's libc: it is memcntl(MC_ADVISE) */
++static __inline__ int madvise(void *a, size_t l, int advice)
++{ return memcntl(a, l, MC_ADVISE, (void *)(long)advice, 0, 0); }
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/config/amix/include/sys/stat.h b/config/amix/include/sys/stat.h
+index 004fd185..0238f275 100644
+--- a/config/amix/include/sys/stat.h
++++ b/config/amix/include/sys/stat.h
+@@ -13,4 +13,10 @@
+ #define S_ISSOCK(m)	0
+ #endif
+ #endif
++/* in libc, undeclared */
++#ifdef __cplusplus
++extern "C" int fchmod(int, mode_t);
++#else
++extern int fchmod(int, mode_t);
++#endif
+ #endif
+diff --git a/config/amix/include/sys/systeminfo.h b/config/amix/include/sys/systeminfo.h
+new file mode 100644
+index 00000000..63534c4d
+--- /dev/null
++++ b/config/amix/include/sys/systeminfo.h
+@@ -0,0 +1,10 @@
++/*
++ * sys/systeminfo.h -- AMIX's sizes srpc_domain[] with SYS_NMLN, which it
++ * defines only in <sys/utsname.h> and <limits.h>.  Part of the AMIX port
++ * of CDE (config/cf/amix.cf); not a vendor header.
++ */
++#ifndef _AMIX_CDE_SYS_SYSTEMINFO_H
++#define _AMIX_CDE_SYS_SYSTEMINFO_H
++#include <sys/utsname.h>
++#include_next <sys/systeminfo.h>
++#endif
+diff --git a/config/amix/include/sys/uio.h b/config/amix/include/sys/uio.h
+new file mode 100644
+index 00000000..5248399e
+--- /dev/null
++++ b/config/amix/include/sys/uio.h
+@@ -0,0 +1,16 @@
++/*
++ * sys/uio.h -- readv() and writev() are in AMIX's libc but undeclared.
++ * Part of the AMIX port of CDE (config/cf/amix.cf); not a vendor header.
++ */
++#ifndef _AMIX_CDE_SYS_UIO_H
++#define _AMIX_CDE_SYS_UIO_H
++#include_next <sys/uio.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++extern int readv(int, struct iovec *, int);
++extern int writev(int, const struct iovec *, int);
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/config/amix/include/unistd.h b/config/amix/include/unistd.h
+new file mode 100644
+index 00000000..74908f61
+--- /dev/null
++++ b/config/amix/include/unistd.h
+@@ -0,0 +1,18 @@
++/*
++ * unistd.h -- calls AMIX's libraries have but its headers do not declare:
++ * seteuid()/setegid() (libc) and rresvport() (libsocket).  Part of the AMIX
++ * port of CDE (config/cf/amix.cf); not a vendor header.
++ */
++#ifndef _AMIX_CDE_UNISTD_H
++#define _AMIX_CDE_UNISTD_H
++#include_next <unistd.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++extern int seteuid(uid_t);
++extern int setegid(gid_t);
++extern int rresvport(int *);
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/config/amix/include/wchar.h b/config/amix/include/wchar.h
+index 84c28676..30d80160 100644
+--- a/config/amix/include/wchar.h
++++ b/config/amix/include/wchar.h
+@@ -54,11 +54,8 @@ static __inline__ int wcswidth(const wchar_t *s, size_t n)
+ 
+ static __inline__ wint_t fputwc(wint_t c, FILE *f) { return putc((int)c, f) == EOF ? WEOF : c; }
+ static __inline__ wint_t fgetwc(FILE *f) { int c = getc(f); return c == EOF ? WEOF : (wint_t)c; }
+-#ifndef putwc
+-#define putwc(c, f)	fputwc((c), (f))
+-#endif
+-#ifndef getwc
+-#define getwc(f)	fgetwc(f)
+-#endif
++/* functions, not macros: callers #undef getwc to get "the libc function" */
++static __inline__ wint_t putwc(wint_t c, FILE *f) { return fputwc(c, f); }
++static __inline__ wint_t getwc(FILE *f) { return fgetwc(f); }
+ 
+ #endif
+diff --git a/config/cf/amix.cf b/config/cf/amix.cf
+index d43c647e..a782e659 100644
+--- a/config/cf/amix.cf
++++ b/config/cf/amix.cf
+@@ -99,4 +99,7 @@ TIRPCINC =
+ /* Only the C locale: AMIX has no UTF-8 and no ISO 8859 locale data. */
+ #define DtLocalesToBuild	/**/
+ 
++/* libiaf (identification and authentication) is SVR4.2; dtlogin uses getspnam() */
++#define IafSysLib		/**/
++
+ #include <svr4.cf>
+diff --git a/include/EUSCompat.h b/include/EUSCompat.h
+index 2972f11c..5622f10d 100644
+--- a/include/EUSCompat.h
++++ b/include/EUSCompat.h
+@@ -124,11 +124,10 @@ typedef enum {B_FALSE, B_TRUE} boolean_t;
+ 
+ 
+ #if defined(__amix__)
+-/* AMIX (SVR4.0): boolean_t is in <sys/types.h>; no iconv, no MAXHOSTNAMELEN */
+-#define iconv_t			int
+-#define iconv_open(a, b) 	((iconv_t) -1)
+-#define iconv(a, b, c, d, e)	((size_t) 0)
+-#define iconv_close(a)		(0)
++/* AMIX (SVR4.0): boolean_t is in <sys/types.h>; no iconv, no MAXHOSTNAMELEN;
++** MAXNAMELEN (dtcm) is in <sys/param.h> */
++#include <sys/param.h>
++#include <iconv.h>		/* the port's stand-in: every iconv_open fails */
+ #ifndef MAXHOSTNAMELEN
+ #define MAXHOSTNAMELEN		256
+ #endif
+-- 
+2.47.3
+

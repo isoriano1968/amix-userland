@@ -1,0 +1,43 @@
+From 71d352aea7f783c07aa37e7b0fa116a1a4181bfd Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 11:59:29 +0200
+Subject: [PATCH 16/42] DtSearch: AMIX defines as on Solaris (BYTE_SWAP,
+ _XOPEN_SOURCE for WORD_BIT/LONG_BIT)
+
+---
+ lib/DtSearch/Imakefile       | 2 +-
+ lib/DtSearch/raima/Imakefile | 5 +++++
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/lib/DtSearch/Imakefile b/lib/DtSearch/Imakefile
+index 4e4bf580..955cf102 100644
+--- a/lib/DtSearch/Imakefile
++++ b/lib/DtSearch/Imakefile
+@@ -13,7 +13,7 @@ EXTRA_DEFINES = -DBYTE_SWAP -D_OSF_SOURCE
+ EXTRA_DEFINES = -DBYTE_SWAP
+ #endif
+ 
+-#if defined(SunArchitecture)
++#if defined(SunArchitecture) || defined(AMIXArchitecture)
+ EXTRA_DEFINES = -DBYTE_SWAP
+ #endif
+ 
+diff --git a/lib/DtSearch/raima/Imakefile b/lib/DtSearch/raima/Imakefile
+index f4ccc4c7..b9064281 100644
+--- a/lib/DtSearch/raima/Imakefile
++++ b/lib/DtSearch/raima/Imakefile
+@@ -23,6 +23,11 @@ EXTRA_DEFINES = -DBYTE_SWAP -D_XOPEN_SOURCE=700
+ EXTRA_DEFINES = -DBYTE_SWAP -D_XOPEN_SOURCE=500
+ #endif
+ 
++#if defined(AMIXArchitecture)
++/* as on Solaris; SVR4.0 shows WORD_BIT/LONG_BIT to XPG programs only */
++EXTRA_DEFINES = -DBYTE_SWAP -D_XOPEN_SOURCE
++#endif
++
+ #define DoNormalLib	NormalLibDtSearch
+ #define DoSharedLib	SharedLibDtSearch
+ #define DoDebugLib	DebugLibDtSearch
+-- 
+2.47.3
+
