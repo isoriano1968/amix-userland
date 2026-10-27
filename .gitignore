@@ -1,0 +1,16 @@
+*.o
+*.a
+*.so
+*.log
+core
+*.xwd
+*.png.tmp
+blender
+blender.pre-s3d
+obj/
+lib/
+log/
+deps/
+work/
+# the Blender 2.31a source is its own git repository
+src/
