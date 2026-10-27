@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """mkassets.py -- the intro's textures as C arrays (one self-contained binary):
 font.h  -- fonte.tga from LamerIntroLinux, 1024x32 RGBA (bitmap font strip)
-logo.h  -- the AMIX logo, 128x128 RGB, for the cube faces"""
+logo.h  -- the AMIX logo, 256x256 RGB, for the cube faces"""
 import sys
 from PIL import Image
 L = '/home/isoriano/Sources/LamerIntroLinuxPlayground'
@@ -19,6 +19,6 @@ emit('font', font.transpose(Image.FLIP_TOP_BOTTOM).tobytes(), 1024, 32, 4, 'font
 logo = Image.open('/home/isoriano/Sources/usr-amix/cde-amix/dtlogin/amix-logo.webp').convert('RGB')
 w, h = logo.size
 s = int(min(w, h) * 0.955)
-logo = logo.crop(((w - s)//2, (h - s)//2, (w + s)//2, (h + s)//2)).resize((128, 128), Image.LANCZOS)
-emit('logo', logo.transpose(Image.FLIP_TOP_BOTTOM).tobytes(), 128, 128, 3, 'logo.h')
+logo = logo.crop(((w - s)//2, (h - s)//2, (w + s)//2, (h + s)//2)).resize((256, 256), Image.LANCZOS)
+emit('logo', logo.transpose(Image.FLIP_TOP_BOTTOM).tobytes(), 256, 256, 3, 'logo.h')
 print('font.h logo.h written')

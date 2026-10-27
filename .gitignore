@@ -18,3 +18,6 @@ lamercubeamix.tar
 # music: third-party modules, kept local
 *.mod
 *.xm
+LameCubeSUN
+# the Sun logo is Sun's: generated from sun.tga by mksunlogo.py, kept local
+sunlogo.h

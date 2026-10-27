@@ -41,5 +41,15 @@ LameCubeAMIGA42: LameCubeAMIGA42.c font.h logo.h
 		-L$(TINYGL)/lib -lTinyGLUT -lTinyGL -L$(MESA)/shm-static -L$(X)/lib \
 		-lXext -lX11 -lshmsys -lsocket -lnsl -L$(M060) -lm060 -lc060 -lm
 
+# LameCubeSUN: LameCubeAMIGA42 with the bouncing Sun logo (sunlogo.h is
+# generated from LamerIntroLinux's sun.tga by mksunlogo.py and stays local)
+LameCubeSUN: LameCubeSUN.c font.h logo.h sunlogo.h
+	$(CC) $(CFLAGS) -I$(TINYGL)/include -I$(X)/include -o $@ LameCubeSUN.c \
+		-L$(TINYGL)/lib -lTinyGLUT -lTinyGL -L$(MESA)/shm-static -L$(X)/lib \
+		-lXext -lX11 -lshmsys -lsocket -lnsl -L$(M060) -lm060 -lc060 -lm
+
+sunlogo.h: mksunlogo.py
+	python3 -I mksunlogo.py
+
 host42: LameCubeAMIGA42.c font.h logo.h
 	gcc -O2 -Wall -I$(TINYGL)/include -o LameCubeAMIGA42-host LameCubeAMIGA42.c
