@@ -1,0 +1,10 @@
+*.o
+*.a
+*.so
+*.log
+core
+*.xwd
+*.png.tmp
+test060
+*.amix
+sqrtt
