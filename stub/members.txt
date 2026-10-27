@@ -1,0 +1,12 @@
+fpsetrnd.o
+fpsetsticky.o
+gettimeofday.o
+hrtsys.o
+select.o
+seteguid.o
+syscall.o
+syslog.o
+time.o
+vfork.o
+signal.o
+fpsetmask.o
