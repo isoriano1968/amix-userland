@@ -1,0 +1,9 @@
+*.o
+*.a
+*.so
+*.log
+core
+*.xwd
+*.png.tmp
+soft3dtest
+tgltri
