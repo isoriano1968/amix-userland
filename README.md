@@ -67,7 +67,7 @@ $EDITOR config.sh
 | `scripts/build-motif.sh` | Unpacks and patches Motif, builds its host tools, then `libXm`, `libMrm` and `mwm` for AMIX. |
 | `scripts/build-libxp.sh` | A static `libXp` from the X11R6.3 tree. |
 | `scripts/build-cde.sh` | Unpacks and patches CDE, prepares the build (see below), and builds the libraries, the programs and the fonts. |
-| `scripts/package-motif.sh` | `work/motif-amix.tar`: `mwm` and its configuration. |
+| `scripts/package-motif.sh` | `work/motif-amix.tar`: `mwm`, its `system.mwmrc`, and app-defaults that give it its proper colours. |
 | `scripts/package-cde.sh` | `work/cde-amix.tar`: the `/usr/dt` tree, laid out by CDE's own install databases. |
 
 What `build-cde.sh` prepares:
@@ -93,14 +93,29 @@ cd / && tar xf /var/tmp/cde-amix.tar && sh /usr/dt/AMIX-INSTALL.sh
 `AMIX-INSTALL.sh` does these things:
 - sets owners and modes;
 - creates `/etc/dt` and `/var/dt`;
+- writes `/etc/dt/config/sys.dtprofile`, the session environment new users
+  get: `PATH` with AMIX's tool directories, X11R6.3's shared libraries first
+  (if installed), and bash in terminals (if installed);
+- links X11R6.3's versioned shared libraries into `/usr/x11r6/lib/r63`;
+- writes `/etc/dt/config/C/sys.resources`, which shows dotfiles in file
+  dialogs;
 - compiles the ToolTalk types on the machine;
 - installs a `dtterm` terminfo entry.
+
+Files that already exist in `/etc/dt` are left as they are. Users who already
+have a `~/.dtprofile` keep it; add the `AMIX:` lines from the end of
+`/etc/dt/config/sys.dtprofile` to it.
 
 It does not edit `/etc/inetd.conf` or `/etc/services`. It prints the optional
 network services (`dtspcd`, `rpc.ttdbserver`, `rpc.cmsd`) for you to add by
 hand.
 
-Start a session with `startx /usr/dt/bin/Xsession`, or set up dtlogin.
+Start a session with `startcde`, or set up dtlogin (below). `startcde` runs
+X with CDE's session. It uses `xhold` to keep the X server from resetting
+between the session's first clients, which an X server without `-noreset`
+otherwise does. `STARTX` chooses the program that starts X: `startx` by
+default, for example `STARTX=/opt/amix/bin/startx-z3 startcde 1920x1080` on a
+Z3660.
 
 `target/` holds optional extras for the machine; the scripts in it expect
 their files in `/var/tmp`:
@@ -110,7 +125,6 @@ their files in `/var/tmp`:
 | `target/dtlogin/` | dtlogin at boot through `/etc/init.d/dtlogin` and `dtconfig`. `/etc/dt/nodtlogin` skips it. Includes Motif, TWM and OPEN LOOK sessions next to CDE, and `Xzz9000-dt` as the server dtlogin starts. `mklogo.py` turns a picture of your choice into a dtlogin logo; none is included. |
 | `target/keymap/` | The console's keyboard layout for X. `kmap2xmodmap.py` converts your machine's `/usr/amiga/lib/kmap/*` into xmodmap tables, and `xkeymap-amiga` loads the one that matches the console. |
 | `target/extra/XLC_LOCALE.C.amix` | A C locale for X11R6.3 with both halves of ISO 8859-1, so dtterm shows umlauts and other 8-bit characters. |
-| `target/extra/xhold.c` | Holds one X connection open, so `Xzz9000` does not reset between the first clients of a session started without dtlogin. |
 
 ## What builds and what does not
 
