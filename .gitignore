@@ -1,0 +1,14 @@
+/build/
+/dist/
+/local/
+/sysroot/
+/vendor/
+/target-output/
+*.o
+*.a
+*.so
+*.so.*
+*.exe
+__pycache__/
+.env
+secrets.env
