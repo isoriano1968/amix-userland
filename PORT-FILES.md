@@ -4,7 +4,7 @@
 
 ## Build configuration
 
-- `config/cf/amix.cf`: AMIX platform, GCC 2.7.2.3, shared libraries, no MIT-SHM
+- `config/cf/amix.cf`: AMIX platform, GCC 2.7.2.3, shared libraries; MIT-SHM only with `AmixHasShm YES`
 - `config/cf/amix.rules`: old cpp and AMIX archive compatibility rules
 - `config/cf/Imake.cf`, `config/cf/site.def`: AMIX platform selection
 - `config/imake/Makefile.ini`, `config/imake/imakemdep.h`: bootstrap compiler/cpp
@@ -25,7 +25,8 @@
 - `programs/Xserver/mi/midispcur.c`: software cursor path used by the ZZ9000 RTG fallback
 - `programs/Xserver/hw/amix`: AMIX keyboard, mouse, console, and server glue
 - `programs/Xserver/hw/amix/rtg`: generic AMIX RTG screen layer
-- `programs/Xserver/hw/amix/rtg/zz9000`: ZZ9000 16-bit framebuffer DDX
+- `programs/Xserver/hw/amix/rtg/zz9000`: ZZ9000 16-bit framebuffer DDX, for the ZZ9000 and the
+  Z3660's RTG (with the amix-z3660rtg and soft3d-z3660rtg-amix patch series applied)
 - `lib/font/bitmap/pcfread.c`, `bitmapfunc.c`: PCF/font diagnostics for glyph padding bring-up
 
 `SHARED-LIBRARIES.md` documents the native AMIX `.so`/`.sa` ABI and required

@@ -17,6 +17,8 @@ static ZZ9000ModeRec zz9000_modes[] = {
     { "1280x720", 1280,  720 },
     { "1280x1024",1280, 1024 },
     { "1920x800", 1920,  800 },
+    { "1920x1080",1920, 1080 },
+    { "1280x800", 1280,  800 },
     { (char *)0 }
 };
 
@@ -129,6 +131,7 @@ rtgScreenPtr pRTG;
         ErrorF("ZZ9000InitHW: SETSWITCH RTG failed (%s)\n", strerror(errno));
 
     pZZ->fd       = fd;
+    pRTG->devFd   = fd;             /* for the rtg/ layer's monitor switch */
     pZZ->mapBase  = (pointer)base;
     pZZ->mapSize  = info.board_size;
     pZZ->fbOffset = fbi.fb_offset;

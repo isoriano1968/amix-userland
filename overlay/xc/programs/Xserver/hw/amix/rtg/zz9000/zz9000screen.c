@@ -11,7 +11,7 @@
 **
 ** Drawing ops installed in ValidateGC:
 **   FillSolid        -> ZZ9000FillSpans / ZZ9000SolidRect  (ZZ9000draw.c)
-**   Tile/Stipple     -> ZZ9000FillSpans as solid fallback  (TODO proper impls)
+**   Tile/Stipple     -> ZZ9000PatternSpans, rectangles through mi
 **   CopyArea         -> ZZ9000CopyArea                     (ZZ9000draw.c)
 **   Lines/poly/arcs  -> mi layer (miZeroLine, miPolyArc ...)
 **   Text             -> mi layer (miPolyText8, miImageText8 ...)
@@ -60,7 +60,9 @@ static void ZZ9000pixValidateGC();
 
 /* ZZ9000draw.c */
 extern void      ZZ9000FillSpans();
+extern void      ZZ9000PatternSpans();
 extern void      ZZ9000SetSpans();
+extern void      ZZ9000PutImage();
 extern RegionPtr ZZ9000CopyArea();
 extern void      ZZ9000CopyWindow();
 extern void      ZZ9000PaintWindow();
@@ -115,7 +117,7 @@ static GCOps ZZ9000gcOps =
 {
     ZZ9000FillSpans,    /* FillSpans   */
     ZZ9000SetSpans,     /* SetSpans    */
-    miPutImage,         /* PutImage    - mi handles all wire formats    */
+    ZZ9000PutImage,     /* PutImage    - 16-bit ZPixmap direct, else mi */
     ZZ9000CopyArea,     /* CopyArea    */
     miCopyPlane,        /* CopyPlane   */
     miPolyPoint,        /* PolyPoint   */
@@ -168,7 +170,9 @@ GCPtr pGC;
 {
     RTGGCPRIV *pPriv;
 
+#ifdef ZZ9000_DEBUG
     ErrorF("ZZ9000CreateGC: depth=%d\n", pGC->depth);
+#endif
 
     /* Delegate 1-bit GCs to mfb - same pattern as cfb/cfbgc.c line 241.
        mfbAllocatePrivates() in rtgScreenInit ensures the mfb GC private
@@ -182,7 +186,9 @@ GCPtr pGC;
         return FALSE;
     }
 
+#ifdef ZZ9000_DEBUG
     ErrorF("ZZ9000CreateGC: pPriv=%p\n", pGC->devPrivates[rtgGCPrivateIndex].ptr);
+#endif
 
     pGC->funcs = (GCFuncs *) xalloc(sizeof(GCFuncs));
     if (!pGC->funcs)
@@ -286,9 +292,11 @@ DrawablePtr   pDraw;
         }
     }
 
-    pGC->ops->FillSpans     = ZZ9000FillSpans;  /* solid; tile/stip: TODO */
+    /* solid fills direct; tiles and stipples through ZZ9000PatternSpans */
+    pGC->ops->FillSpans     = (pGC->fillStyle == FillSolid) ? ZZ9000FillSpans
+                                                            : ZZ9000PatternSpans;
     pGC->ops->SetSpans      = ZZ9000SetSpans;
-    pGC->ops->PutImage      = miPutImage;
+    pGC->ops->PutImage      = ZZ9000PutImage;
     pGC->ops->CopyArea      = ZZ9000CopyArea;
     pGC->ops->CopyPlane     = miCopyPlane;
     pGC->ops->PolyPoint     = miPolyPoint;
@@ -297,7 +305,8 @@ DrawablePtr   pDraw;
     pGC->ops->PolyRectangle = miPolyRectangle;
     pGC->ops->PolyArc       = miPolyArc;
     pGC->ops->FillPolygon   = miFillPolygon;
-    pGC->ops->PolyFillRect  = ZZ9000SolidRect;
+    pGC->ops->PolyFillRect  = (pGC->fillStyle == FillSolid) ? ZZ9000SolidRect
+                                                            : miPolyFillRect;
     pGC->ops->PolyFillArc   = miPolyFillArc;
     pGC->ops->PolyText8     = miPolyText8;
     pGC->ops->PolyText16    = miPolyText16;
@@ -319,8 +328,8 @@ DrawablePtr   pDraw;
 ** the appropriate ops:
 **
 **   FillSolid  -> ZZ9000FillSpans / ZZ9000SolidRect
-**   FillTiled  -> ZZ9000FillSpans as solid fallback (TODO: real tile ops)
-**   Stipple    -> ZZ9000FillSpans as solid fallback (TODO: real stip ops)
+**   FillTiled  -> ZZ9000PatternSpans (rectangles and polygons through mi)
+**   Stipple    -> ZZ9000PatternSpans
 **   Lines      -> miZeroLine (zero-width) / miWideLine (wide)
 **   Everything else -> mi
 */
@@ -403,7 +412,7 @@ DrawablePtr   pDraw;
 #endif
     pGC->ops->SetSpans   = ZZ9000SetSpans;
 
-    /* Fill ops - tile/stipple fall back to solid colour (TODO) */
+    /* Fill ops: solid direct, tile/stipple spans through ZZ9000PatternSpans */
     switch (pGC->fillStyle)
     {
     case FillSolid:
@@ -415,8 +424,7 @@ DrawablePtr   pDraw;
         break;
 
     case FillTiled:
-        /* TODO: implement ZZ9000FillTileSpans; using solid as placeholder */
-        pGC->ops->FillSpans    = ZZ9000FillSpans;
+        pGC->ops->FillSpans    = ZZ9000PatternSpans;
         pGC->ops->FillPolygon  = miFillPolygon;
         pGC->ops->PolyFillRect = miPolyFillRect;
         pGC->ops->PushPixels   = miPushPixels;
@@ -425,8 +433,7 @@ DrawablePtr   pDraw;
 
     case FillStippled:
     case FillOpaqueStippled:
-        /* TODO: implement ZZ9000FillStipSpans; using solid as placeholder */
-        pGC->ops->FillSpans    = ZZ9000FillSpans;
+        pGC->ops->FillSpans    = ZZ9000PatternSpans;
         pGC->ops->FillPolygon  = miFillPolygon;
         pGC->ops->PolyFillRect = miPolyFillRect;
         pGC->ops->PushPixels   = miPushPixels;
@@ -725,5 +732,6 @@ DepthRec    *pDepth;
 
     /* Block/Wakeup and cursor are installed by rtgInit.c after this returns */
 
+    ZZ9000Soft3DInit(pRTG);         /* zz9000draw.c: 3D clients' swaps */
     return TRUE;
 }

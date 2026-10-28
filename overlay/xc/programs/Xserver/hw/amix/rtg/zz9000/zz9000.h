@@ -22,6 +22,32 @@
 #define ZZ9KIOC_GETFBINFO   (ZZ9K_IOC | 11)
 #define ZZ9KIOC_FILLRECT    (ZZ9K_IOC | 12)
 #define ZZ9KIOC_COPYRECT    (ZZ9K_IOC | 13)
+#define ZZ9KIOC_BLITS       (ZZ9K_IOC | 16)
+
+/* ZZ9KIOC_BLITS records (the driver's zz9000.h): the card's blitter */
+#define ZZ9K_BLIT_FILL      1
+#define ZZ9K_BLIT_COPY      2
+#define ZZ9K_BLITS_MAX      1024
+
+struct zz9k_blit {
+    unsigned short op;
+    unsigned short x;
+    unsigned short y;
+    unsigned short width;
+    unsigned short height;
+    unsigned short src_x;
+    unsigned short src_y;
+    unsigned short pad;
+    unsigned long  color;
+};
+
+struct zz9k_blits {
+    struct zz9k_blit *recs;
+    unsigned long     n;
+};
+
+extern int zz9000BlitMin;       /* -blitmin: pixels; 0 = never */
+extern int zz9000BlitMax;       /* -blitmax: pixels per blitter op; 0 = no split */
 
 struct _ZZ9000ModeRec {
     char *name;
@@ -165,6 +191,7 @@ void    ZZ9000PolyText8();
 void    ZZ9000ImageText8();
 void    ZZ9000PutImage();
 void    ZZ9000PushPixels();
+void    ZZ9000Soft3DInit();
 
 Bool    ZZ9000CreateWindow();
 Bool    ZZ9000DestroyWindow();

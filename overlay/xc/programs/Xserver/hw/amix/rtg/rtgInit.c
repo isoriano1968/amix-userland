@@ -28,8 +28,10 @@
 #include "servermd.h"
 #include <scrnintstr.h>
 #include "mipointer.h"
+#include "miline.h"
 #include "mi.h"
 #include "rtg.h"
+#include "opaque.h"		/* dispatchException, DE_TERMINATE */
 #include "zz9000/zz9000.h"
 
 extern int  XmonitorResolution;
@@ -102,6 +104,73 @@ int       on;
     return FALSE;
 }
 
+/*
+** RTG monitor switch (RT-04, P-8).
+**
+** rtgSwitchFd is a dup() of the card's device fd, taken at the first screen
+** init and kept for the whole process.  Two reasons: the card code closes its
+** own fd at every server reset (rtgCloseScreen -> *CloseHW), and on a card
+** whose driver switches back to native on its LAST close (zz9000 -> monsw)
+** that close would flip the monitor at every reset; with this copy open, a
+** reset's close is not the last one.  And when the process dies -- a crash,
+** kill -9 -- every descriptor closes and the driver's last close puts the
+** monitor back on the Amiga video, with nothing here having to run.
+**
+** Terminate is told apart from reset by DE_TERMINATE: dix/main.c calls each
+** screen's CloseScreen before it tests dispatchException for it.
+*/
+static int rtgSwitchFd = -1;
+
+static void
+rtgMonitorSwitch(sw)
+int sw;
+{
+    int v = sw;
+
+    if (rtgSwitchFd >= 0)
+        (void) ioctl(rtgSwitchFd, SVGAIOCSetMonitorSwitch, &v);
+}
+
+static void
+rtgMonitorOn(pRTG)
+rtgScreenPtr pRTG;
+{
+    if (rtgSwitchFd < 0 && pRTG->devFd >= 0)
+        rtgSwitchFd = dup(pRTG->devFd);
+    rtgMonitorSwitch(SVGAMONITORSWITCH_SVGA);
+}
+
+/*
+** Give the keyboard back to the console (RT-10).  rtgOpenInput made our
+** screen the screen manager's active one (SIOCACTIVATE) without displaying
+** it; closing it leaves the kernel with no active screen at all -- its
+** CloseScreen looks for a successor only in our (empty) screen group and
+** then clears activescreen, and a key with no active screen is dropped
+** (console screen.c) -- so after X the console took no typing (A4000T,
+** MG11).  SIOCBACK (HideScreen) acts only while our screen is still the
+** active one and selects the first usable other screen, the console; a
+** user who switched screens meanwhile is left alone.
+*/
+static void
+rtgInputBack(fd)
+int fd;
+{
+    if (fd >= 0 && ioctl(fd, SIOCBACK, 0))
+        ErrorF("rtgInputBack: SIOCBACK failed (%s)\n", strerror(errno));
+}
+
+/* Fatal error or GiveUp (AbortDDX, amixIo.c): back to the Amiga video. */
+void
+rtgAbort()
+{
+    int i;
+
+    rtgMonitorSwitch(SVGAMONITORSWITCH_Amiga);
+    for (i = 0; i < MAXSCREENS; i++)    /* no CloseScreen on this path */
+        if (amixFbs[i].mapped)
+            rtgInputBack(amixFbs[i].fd);
+}
+
 static Bool
 rtgCloseScreen(index, pScreen)
 int       index;
@@ -115,8 +184,17 @@ ScreenPtr pScreen;
     ret = (*pScreen->CloseScreen)(index, pScreen);
     (*pScreen->SaveScreen)(pScreen, SCREEN_SAVER_OFF);
 
+    /* The server is ending, not resetting: monitor back to the Amiga video. */
+    if ((dispatchException & DE_TERMINATE) && rtgSwitchFd >= 0)
+    {
+        rtgMonitorSwitch(SVGAMONITORSWITCH_Amiga);
+        (void) close(rtgSwitchFd);
+        rtgSwitchFd = -1;
+    }
+
     if (amixFbs[i].mapped && amixFbs[i].fd >= 0)
     {
+        rtgInputBack(amixFbs[i].fd);
         if (CloseScreen(amixFbs[i].fd))
             ErrorF("rtgCloseScreen: CloseScreen(%d) failed\n", amixFbs[i].fd);
         amixFbs[i].fd     = -1;
@@ -229,8 +307,18 @@ char    **argv;
         return FALSE;
     }
     memset((char *) pRTG, 0, sizeof(rtgScreenRec));
+    pRTG->devFd = -1;
 
     pScreen->devPrivates[rtgScreenIndex].ptr = (pointer) pRTG;
+
+    /*
+    ** The zero-width line bias, which miScreenInit sets and this screen
+    ** (not built on miScreenInit) never did: without it miZeroLineScreenIndex
+    ** stays 0 and miZeroLine takes its Bresenham tie-breaks from whatever
+    ** devPrivates[0] holds -- a heap pointer -- so diagonal edges changed
+    ** with every build (MG10: the window-menu triangle, s8rt04 vs s10rt04).
+    */
+    miSetZeroLineBias(pScreen, DEFAULTZEROLINEBIAS);
 
     /* Screen geometry from selected mode */
     pRTG->width        = ZZ9000_selected_mode->w;
@@ -268,6 +356,9 @@ char    **argv;
         xfree((pointer) pRTG);
         return FALSE;
     }
+
+    /* The mode is set: the monitor to the RTG output (RT-04). */
+    rtgMonitorOn(pRTG);
 
     ErrorF("rtgScreenInit: hw init done, calling ZZ9000ScreenInit\n");
 

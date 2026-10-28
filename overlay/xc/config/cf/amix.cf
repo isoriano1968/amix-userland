@@ -39,8 +39,15 @@ XCOMM operating system: OSName OSVendor
 #define SharedDataSeparation YES
 #define SharedCodeDef -DSHAREDCODE
 #define SharedLibraryDef -DSUNSHLIB
-/* MIT-SHM is independent of shared libraries and is unsafe on AMIX. */
-#define HasShm NO
+/*
+ * MIT-SHM: unsafe on the stock AMIX kernel; safe on the 68040/68060 port
+ * kernel with its shared-memory fixes (ISSUE-62/66).  Off unless site.def
+ * says  #define AmixHasShm YES
+ */
+#ifndef AmixHasShm
+#define AmixHasShm NO
+#endif
+#define HasShm AmixHasShm
 #define CcCmd gcc
 #define ServerCcCmd gcc
 #define DefaultCCOptions -ansi -finline-functions

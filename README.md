@@ -15,9 +15,11 @@ sources are downloaded from the official X.Org archive by `install.sh`.
 - Shared libraries use the native AMIX model: `gcc -fpic`, ELF runtime
   images linked by `ld -G -h`, and companion `.sa` stub archives for Xt
   and Xmu. Xaw has no `.sa` archive.
-- MIT-SHM is disabled independently because it is not safe on AMIX.
+- MIT-SHM is off by default because it is not safe on the stock AMIX kernel.
+  On the 68040/68060 port kernel it is (see "The Z3660 and the A3000" below).
 - Dynamic `xclock`, `xterm`, and `twm` are the current validation targets.
-- GLX and Mesa are not included yet.
+- There is no GLX. OpenGL programs use Mesa's Xlib driver
+  ([mesa-amix](https://github.com/isoriano1968/mesa-amix)).
 
 This is development software. Keep the existing X11R4 and X11R5 installations
 available; the port installs under `/usr/x11r6` and does not replace them.
@@ -127,6 +129,41 @@ ZZ9K_SHELL=/usr/public/bin/bash sh config/util/startXzz9000 :1
 The launcher uses `-ac` for the initial local test and `-kb` to avoid the
 unfinished XKB device path. Do not expose this test server to an untrusted
 network.
+
+## The Z3660 and the A3000
+
+The ZZ9000 server also drives the Z3660 accelerator's RTG output, whose
+registers are ZZ9000-compatible. The server sources in this overlay include
+two patch series:
+
+- **Jusii's** from [amix-z3660rtg](https://github.com/jusii/amix-z3660rtg):
+  - the Z3660's video modes;
+  - correctness fixes for raster ops and window copies;
+  - fills and copies on the card's blitter;
+  - the monitor switch;
+  - the keyboard hand-back to the console when the server ends.
+- **The ones from the A3000 + Z3660 68060 setup**
+  ([soft3d-z3660rtg-amix](https://github.com/isoriano1968/soft3d-z3660rtg-amix)):
+  - correct CopyWindow box order, tiled window backgrounds, and tiled and
+    stippled fills, which CDE and Motif need;
+  - the keyboard bell on `/dev/audio`;
+  - a direct 16-bit PutImage;
+  - the ZZ9K-SOFT3D extension, which shows frames that the Z3660's soft3D
+    rasterizer drew in off-screen VRAM. It's only registered when the kernel
+    driver offers `ZZ9KIOC_BLITX`.
+
+Two settings matter on a 68040/68060 kernel from the
+[68040/68060 port](https://github.com/asokero/amix-040-060-port):
+
+- `-move16` (server option): PutImage copies rows with the 68040/68060's
+  `move16` (26 MB/s into VRAM instead of 10.6). Off by default, because a
+  68030 has no `move16`.
+- `#define AmixHasShm YES` in `config/cf/site.def`: builds MIT-SHM in. The
+  port kernel's shared-memory fixes make it safe; Mesa's back buffer and
+  `x11perf -shmput` use it.
+
+The CDE desktop and Motif for this X11R6.3 are in
+[cde-amix](https://github.com/isoriano1968/cde-amix).
 
 ## Source and licensing
 

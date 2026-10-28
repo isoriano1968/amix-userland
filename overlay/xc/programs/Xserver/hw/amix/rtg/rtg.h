@@ -32,7 +32,28 @@ struct _rtgScreenRec {
     int               (*CloseScreen)(); /* chained CloseScreen                */
 
     unsigned char      *cardPrivate;    /* card-specific private data         */
+    int                 devFd;          /* the card's device fd, -1 = none;   */
+                                        /* set by the card's InitHW (RT-04)   */
 };
+
+/*
+** The RTG monitor switch (P-8 / RT-04): the device-independent layer asks
+** the card's own device to put the monitor on the RTG output at screen init
+** and back on the Amiga video when the server ends, with the ioctl of the
+** Xsvga-class RTG contract (Klaus Burckert; the numbering of Antti's
+** va2000.h).  The card driver decides how: a line switch through the
+** kernel's monsw, a passthrough register, ...  A kernel or card without it
+** answers with an error, which is ignored.
+*/
+#ifndef SVGAIOCSetMonitorSwitch
+#define SVGAIOC                 (0xe300)
+#define SVGAIOCGetMonitorSwitch (SVGAIOC|0x06)
+#define SVGAIOCSetMonitorSwitch (SVGAIOC|0x08)  /* note: 0x08 not 0x07 */
+#define SVGAMONITORSWITCH_Amiga 1
+#define SVGAMONITORSWITCH_SVGA  2
+#endif
+
+extern void rtgAbort();
 
 typedef struct _rtgScreenRec rtgScreenRec;
 typedef struct _rtgScreenRec *rtgScreenPtr;

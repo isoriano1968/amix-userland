@@ -322,6 +322,13 @@ AbortDDX()
 	(*pScreen->SaveScreen) (pScreen, SCREEN_SAVER_OFF);
 	amixDisableCursor (pScreen);
     }
+#ifdef RTG
+    {
+	extern void rtgAbort();
+
+	rtgAbort ();	/* the monitor back to the Amiga video (RT-04) */
+    }
+#endif
 }
 
 /* Called by GiveUp(). */
@@ -398,6 +405,32 @@ ddxProcessArgument (argc, argv, i)
     if (!strcmp(argv[i], "-depth")) {	/* screen depth */
 	if (++i >= argc) UseMsg ();
 	amixFbs[AmixIndex].scrtype.dispz = atoi(argv[i]);
+	return 2;
+    }
+    if (!strcmp(argv[i], "-blitmin")) {	/* card blitter from this area on */
+	extern int zz9000BlitMin;
+	if (++i >= argc) UseMsg ();
+	zz9000BlitMin = atoi(argv[i]);
+	if (zz9000BlitMin < 0)
+	    zz9000BlitMin = 0;
+	return 2;
+    }
+    if (!strcmp(argv[i], "-move16")) {	/* 68040/060 line bursts in PutImage */
+	extern int zz9000Move16;
+	zz9000Move16 = 1;
+	return 1;
+    }
+    if (!strcmp(argv[i], "-nomove16")) {	/* no 68040/060 line bursts */
+	extern int zz9000Move16;
+	zz9000Move16 = 0;
+	return 1;
+    }
+    if (!strcmp(argv[i], "-blitmax")) {	/* largest area per blitter op */
+	extern int zz9000BlitMax;
+	if (++i >= argc) UseMsg ();
+	zz9000BlitMax = atoi(argv[i]);
+	if (zz9000BlitMax < 0)
+	    zz9000BlitMax = 0;
 	return 2;
     }
     if (!strcmp(argv[i], "-mode")) {	/* RTG mode: WxH (e.g. 1024x768) */
@@ -515,6 +548,10 @@ ddxUseMsg()
     ErrorF("-height int            screen height in pixels.\n");
     ErrorF("-depth int             screen depth in planes.\n");
     ErrorF("-mode WxH              RTG video mode (e.g. 800x600, 1024x768)\n");
+    ErrorF("-blitmin int           RTG: card blitter for fills/copies of this many pixels or more (default 1024, 0 = never)\n");
+    ErrorF("-blitmax int           RTG: split blitter ops into bands of at most this many pixels (default 8192, 0 = never)\n");
+    ErrorF("-move16                RTG: move16 line bursts in PutImage (68040/060 only; default off)\n");
+    ErrorF("-nomove16              RTG: no move16 line bursts in PutImage\n");
     ErrorF("-group int		   screen group\n");
 #ifdef TIGA
     ErrorF("-res<#>                Use /dev/dmi<#> as display.\n");
