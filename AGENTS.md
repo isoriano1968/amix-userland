@@ -14,7 +14,8 @@
 - Target proof: /tmp/pthreads-amix-261028/python/py311. Do not replace libc,
   system Python, kernel or boot files during these probes.
 - The physical kernel has extensive updates; measured behavior is authoritative.
-  Do not assume /unix identifies the image that was actually booted.
+  The owner confirmed /stand/unix.z3 is currently booted (2026-10-28).
+  /unix is an older image; its symbols do not describe the running kernel.
 - Normal startup needs a functional random device. PYTHONHASHSEED=0 is explicit
   for controlled tests, never an implicit fallback or production default.
 - Read README.md and docs/PORT-NOTES.md for tested scope and limitations.

@@ -56,8 +56,11 @@ The user's driver source and object exist at `/usr/sys/amiga/driver/random.c`
 and `random.o`, and the driver Makefile includes that object. The source
 `/usr/sys/master.d/kernel.c` registers its entry points at major 48, matching
 the device nodes. The older `/unix` contains `randopen`; the newer
-`/stand/unix.z3` has no `randopen` or `randread` symbol. The actual selected
-boot image still needs confirmation before any kernel change.
+`/stand/unix.z3` has no `randopen` or `randread` symbol. The owner confirmed
+on 2026-10-28 that `/stand/unix.z3` is the currently booted kernel. Together
+with the device-open failure, this supports the diagnosis that the random
+driver is missing from the running kernel despite its presence in the older
+`/unix` image and source tree.
 The source describes a compatibility PRNG without modern entropy accounting.
 Enabling the interface and establishing cryptographic suitability are separate
 tasks. The owner deferred kernel integration and will build the kernel
