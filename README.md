@@ -5,10 +5,16 @@ the community-maintained 68040/68060 kernel and GCC 14 application toolchain.
 
 ## Status
 
-Planning and capability discovery. No pthread implementation exists here yet.
+Capability discovery is underway. No pthread implementation exists here yet.
 The current loadable-module implementation is unavailable to this project.
 No kernel thread, shared-address-space task, or libc reentrancy capability has
 been verified on the target.
+
+On the physical machine running `68060-261027-ia`, initial native-compiler
+probes passed context restoration and a separate-stack context roundtrip.
+See [the first hardware results](docs/RESULTS-2026-10-28.md) and
+[application API audit](docs/API-AUDIT.md). These results do not yet establish
+safe scheduling, libc reentrancy, or a pthread-compatible execution model.
 
 ## Objective
 

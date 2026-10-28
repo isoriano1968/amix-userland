@@ -98,6 +98,10 @@ early productivity. It is not a gate for this pthread runtime.
 
 ## Next concrete work
 
-Prepare the read-only inventory script and release-specific application API
-audit. Authenticate to the target when account access is provided. Do not
-choose kernel changes or promise full POSIX conformance before the probe results.
+The inventory script, initial source audit, and first context probes now exist.
+Authenticated hardware inspection and two native-compiler probes passed on
+2026-10-28; see RESULTS-2026-10-28.md. Next: locate the GCC 14 cross-build
+environment, repeat probes with that ABI, and test register/FPU preservation,
+signal-mask behavior, and libc safety. Complete the application audit before
+fixing the initial API. Do not choose kernel changes or promise full POSIX
+conformance before the remaining probe results.

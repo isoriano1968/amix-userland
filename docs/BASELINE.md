@@ -14,8 +14,14 @@ not establish which exact revisions are installed on the running machine.
   toolchain remains relevant there.
 - The user reports loadable-module support, but its implementation is currently
   unavailable. Its hooks and capabilities are unknown.
-- The target Telnet endpoint is 192.168.0.133:23. A TCP connection was verified;
-  no authenticated inventory has been performed in this project.
+- The target Telnet endpoint is 192.168.0.133:23. Authenticated inspection on
+  2026-10-28 established running kernel identity `68060-261027-ia`. The physical
+  machine includes additional updates and is the authoritative baseline; the
+  public repository alone does not describe all installed capabilities.
+- Native `cc` and `gcc` in this login resolve to GCC 2.7.2.3. This is separate
+  from the available GCC 14 cross-toolchain, whose local installation/build
+  environment has not yet been located.
+- Initial native-compiler context probes passed. See RESULTS-2026-10-28.md.
 
 ## References
 
