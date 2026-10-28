@@ -31,8 +31,8 @@ optimizations. The interpreter is staged in a scratch directory.
 One machine prerequisite remains: `/dev/urandom` currently returns
 `No such device`. Normal Python startup cannot initialize its random hash
 seed. Controlled tests explicitly used **`PYTHONHASHSEED=0`**; this is not
-built into Python as a default. The existing kernel driver’s integration
-is being investigated. `os.urandom()` needs a working random device.
+built into Python as a default. The owner will rebuild the kernel with the
+random driver separately, after this port. `os.urandom()` needs that device.
 
 The current scope is a scripting and threading proof. Socket/SSL, ctypes,
 SQLite, subprocess extensions, pip and broad package compatibility remain

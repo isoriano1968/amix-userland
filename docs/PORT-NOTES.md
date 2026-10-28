@@ -27,7 +27,7 @@ CPython regression suite.
 The executable reported:
 
 ```text
-3.11.18 (main, Oct 28 2026, 13:40:03) [GCC 14.2.0]
+3.11.18 (main, Oct 28 2026, 13:58:58) [GCC 14.2.0]
 PYTHON3_AMIX_SMOKE_PASS
 PYTHON3_AMIX_STDLIB_PASS
 ```
@@ -35,12 +35,14 @@ PYTHON3_AMIX_STDLIB_PASS
 SHA-256 of the tested stripped clean-build executable:
 
 ```text
-13c3ea3ce8a43d24054a60b78d5cf98d11816a3948beaea7c7a25e80e5e55e18
+7fb086a0cdbefa0a3383dcb2b430553bd43adfa5a78eeb8eb1bfa92c3446a109
 ```
 
 The toolchain's encoding-based instruction check inspected 1005 long
 multiply/divide instructions and found no forms removed by the 68060.
-The link map records the GNU `libpthread.a` archive.
+The link map records the GNU `libpthread.a` archive. A second build from
+the standalone repository in a fresh build directory also passed both
+physical Python test scripts; its stripped executable is the hash above.
 
 ## Random-device prerequisite
 
@@ -58,7 +60,9 @@ the device nodes. The older `/unix` contains `randopen`; the newer
 boot image still needs confirmation before any kernel change.
 The source describes a compatibility PRNG without modern entropy accounting.
 Enabling the interface and establishing cryptographic suitability are separate
-tasks. No boot or kernel files were changed for this proof.
+tasks. The owner deferred kernel integration and will build the kernel
+separately after the Python port. No boot or kernel files were changed for
+this proof.
 
 ## Reproduce the cross-build
 
@@ -92,6 +96,20 @@ already configured build tree.
 The extra-module build expects the previously cross-built zlib 1.3.1 tree at
 `~/src/upstream/zlib-1.3.1`; override `ZLIB_SOURCE` if needed. Other paths can be
 set through `PYTHON_SOURCE`, `PYTHON_BUILD` and `BUILD_PYTHON`.
+
+To build that dependency from a separately downloaded upstream zlib 1.3.1
+source tree, use the same cross-toolchain:
+
+```sh
+(
+    cd "$HOME/src/upstream/zlib-1.3.1"
+    CC="$CC" AR="$(dirname "$CC")/m68k-elf-ar" \
+        RANLIB="$(dirname "$CC")/m68k-elf-ranlib" \
+        CFLAGS='-O2 -m68060 -std=gnu89 -fno-strict-aliasing' \
+        ./configure --static
+    make -j4 libz.a
+)
+```
 
 Output is `~/build/python311-amix/python`. Keep the unstripped executable for
 debugging and strip a copy for transfer. Run the 68060 instruction checker on
@@ -144,6 +162,9 @@ The proof includes static math, struct, binascii, JSON, random, datetime,
 select, builtin hash and zlib modules. Socket, SSL, ctypes, SQLite and
 subprocess extension modules have not been built for this milestone. There
 is no pip/bootstrap or package-compatibility claim yet.
+
+The configured `off_t` and `time_t` types are 32 bits. Large-file and
+post-2038 behavior are outside this acceptance milestone.
 
 The private math fallbacks passed focused hardware checks. A Linux comparison
 sampled 4000 inputs each for expm1/log1p/log2/exp2 with a maximum observed
