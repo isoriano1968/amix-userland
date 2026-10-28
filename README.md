@@ -5,7 +5,8 @@ the community-maintained 68040/68060 kernel and GCC 14 application toolchain.
 
 ## Status
 
-Capability discovery is underway. No pthread implementation exists here yet.
+Capability discovery is underway. An unvalidated cooperative pthread API proof
+now exists in [poc](poc/README.md); it is not an accepted pthread implementation.
 The current loadable-module implementation is unavailable to this project.
 No kernel thread, shared-address-space task, or libc reentrancy capability has
 been verified on the target.
@@ -15,6 +16,8 @@ probes passed context restoration and a separate-stack context roundtrip.
 See [the first hardware results](docs/RESULTS-2026-10-28.md) and
 [application API audit](docs/API-AUDIT.md). These results do not yet establish
 safe scheduling, libc reentrancy, or a pthread-compatible execution model.
+The GCC 14 cross-toolchain with -m68060 is the required acceptance toolchain;
+native GCC 2.7 results are preliminary diagnostics only.
 
 ## Objective
 
