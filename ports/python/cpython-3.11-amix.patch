@@ -1,0 +1,122 @@
+--- a/configure
++++ b/configure
+@@ -3832,6 +3832,10 @@
+ 	*-*-wasi)
+ 	    ac_sys_system=WASI
+ 	    ;;
++	m68k-*-sysv4*)
++		# AMIX cross-build platform
++		ac_sys_system=AmigaUNIX
++		;;
+ 	*)
+ 		# for now, limit cross builds to known configurations
+ 		MACHDEP="unknown"
+@@ -3894,6 +3898,10 @@
+ 		_host_cpu=$host_cpu
+ 		;;
+ 	wasm32-*-* | wasm64-*-*)
++		_host_cpu=$host_cpu
++		;;
++	m68k-*-sysv4*)
++		# AMIX cross-build platform
+ 		_host_cpu=$host_cpu
+ 		;;
+ 	*)
+--- a/configure.ac
++++ b/configure.ac
+@@ -554,6 +554,10 @@
+ 	*-*-wasi)
+ 	    ac_sys_system=WASI
+ 	    ;;
++	m68k-*-sysv4*)
++		# AMIX cross-build platform
++		ac_sys_system=AmigaUNIX
++		;;
+ 	*)
+ 		# for now, limit cross builds to known configurations
+ 		MACHDEP="unknown"
+@@ -612,6 +616,10 @@
+ 		_host_cpu=$host_cpu
+ 		;;
+ 	wasm32-*-* | wasm64-*-*)
++		_host_cpu=$host_cpu
++		;;
++	m68k-*-sysv4*)
++		# AMIX cross-build platform
+ 		_host_cpu=$host_cpu
+ 		;;
+ 	*)
+--- a/Python/pytime.c
++++ b/Python/pytime.c
+@@ -1108,6 +1108,18 @@
+     _PyTime_t ns = _PyTime_MulDiv(ticks, timebase_numer, timebase_denom);
+     *tp = pytime_from_nanoseconds(ns);
+ 
++#elif defined(__amix__)
++    if (amix_python_monotonic(tp) < 0) {
++        if (raise_exc) PyErr_SetFromErrno(PyExc_OSError);
++        return -1;
++    }
++    if (info) {
++        info->implementation = "AMIX times() elapsed ticks";
++        info->resolution = 1.0 / amix_python_clock_hz();
++        info->monotonic = 1;
++        info->adjustable = 0;
++    }
++
+ #elif defined(__hpux)
+     hrtime_t time;
+ 
+--- a/Modules/posixmodule.c
++++ b/Modules/posixmodule.c
+@@ -3119,7 +3119,12 @@
+ /*[clinic end generated code: output=c424d2e9d1cd636a input=9ff5a58b08115c55]*/
+ {
+ 
++#if defined(__amix__)
++    /* AMIX has no _SC_TTY_NAME_MAX; ttyname_r checks the buffer bound. */
++    long size = PATH_MAX;
++#else
+     long size = sysconf(_SC_TTY_NAME_MAX);
++#endif
+     if (size == -1) {
+         return posix_error();
+     }
+--- a/Modules/zlibmodule.c
++++ b/Modules/zlibmodule.c
+@@ -20,7 +20,7 @@
+    On failure, return -1 */
+ static inline Py_ssize_t
+ OutputBuffer_InitAndGrow(_BlocksOutputBuffer *buffer, Py_ssize_t max_length,
+-                         Bytef **next_out, uint32_t *avail_out)
++                         Bytef **next_out, uInt *avail_out)
+ {
+     Py_ssize_t allocated;
+ 
+@@ -34,7 +34,7 @@
+    On failure, return -1 */
+ static inline Py_ssize_t
+ OutputBuffer_Grow(_BlocksOutputBuffer *buffer,
+-                  Bytef **next_out, uint32_t *avail_out)
++                  Bytef **next_out, uInt *avail_out)
+ {
+     Py_ssize_t allocated;
+ 
+@@ -89,7 +89,7 @@
+ static inline Py_ssize_t
+ OutputBuffer_WindowInitWithSize(_BlocksOutputBuffer *buffer, _Uint32Window *window,
+                                 Py_ssize_t init_size,
+-                                Bytef **next_out, uint32_t *avail_out)
++                                Bytef **next_out, uInt *avail_out)
+ {
+     Py_ssize_t allocated = _BlocksOutputBuffer_InitWithSize(
+                                buffer, init_size, (void**) next_out);
+@@ -111,7 +111,7 @@
+    On failure, return value < 0 */
+ static inline Py_ssize_t
+ OutputBuffer_WindowGrow(_BlocksOutputBuffer *buffer, _Uint32Window *window,
+-                        Bytef **next_out, uint32_t *avail_out)
++                        Bytef **next_out, uInt *avail_out)
+ {
+     Py_ssize_t allocated;
+ 
