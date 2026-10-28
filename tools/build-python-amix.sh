@@ -54,7 +54,7 @@ export LIBS="$compat/amix-math.o $compat/amix-wide.o $compat/amix-clock.o $compa
 export ac_cv_file__dev_ptmx=yes ac_cv_file__dev_ptc=no
 if test "${PYTHON_SKIP_CONFIGURE:-no}" != yes; then
     "$source/configure" --build="$("$source/config.guess")" --host=m68k-cbm-sysv4 \
-    --with-build-python="$host_python" --prefix=/usr/local/gnu \
+    --with-build-python="$host_python" --prefix=/usr/local \
     --disable-shared --disable-ipv6 --without-ensurepip \
         --without-c-locale-coercion --disable-test-modules
 fi

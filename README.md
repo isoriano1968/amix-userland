@@ -16,7 +16,8 @@ sysroot. Compiled interpreters, system files and VM images are excluded.
 
 The tested machine reports `68060-261027-ia`. A clean build reports
 `[GCC 14.2.0]`. All target objects use the GCC 14 cross-compiler with 68060
-optimizations. The interpreter is staged in a scratch directory.
+optimizations. Python's installation prefix is `/usr/local`; GNU Pth remains
+under `/usr/local/gnu` as its separate threading dependency.
 
 | Area | Physical test result |
 | --- | --- |
@@ -67,7 +68,46 @@ built only to generate cross-build files; it is never deployed to AMIX.
 Extra modules need the previously cross-built zlib 1.3.1 tree at
 `~/src/upstream/zlib-1.3.1`, or the path set in `ZLIB_SOURCE`.
 
-## Try it on AMIX
+## Install on AMIX
+
+After building and testing, create the private installation archive on Linux:
+
+```sh
+PYTHON_BUILD="$HOME/build/python311-amix" python3 tools/stage-python-install.py
+```
+
+Transfer `dist/python3-amix-install.tar.gz` to a fresh directory on AMIX,
+extract it, and run the simple installer as root:
+
+```sh
+gzip -dc python3-amix-install.tar.gz | tar xf -
+sh install.sh
+```
+
+| Directory | Contents |
+| --- | --- |
+| `/usr/local/bin` | `python3.11`, `python3`, and their config helpers |
+| `/usr/local/lib/python3.11` | Standard library, sysconfig data and static SDK support |
+| `/usr/local/lib` | `libpython3.11.a` |
+| `/usr/local/include/python3.11` | Python headers, target pyconfig and private AMIX compatibility headers |
+| `/usr/local/man/man1` | `python3.11.1` and `python3.1` |
+| `/usr/local/share/doc/python3-amix` | Licence, notes, tests, receipt and installation manifests |
+
+The installer preflights all files and aliases, refuses differing existing
+files, and verifies installed bytes and links. It uses ordinary shell tools,
+with no AMIX package-manager dependency. No Python files are installed under
+`/usr/local/gnu`.
+
+Until the random driver is available, run Python with an explicit hash seed:
+
+```sh
+PYTHONHASHSEED=0 /usr/local/bin/python3 -c 'import sys; print(sys.version)'
+```
+
+No `PYTHONHOME` setting is needed for the installation. For GCC 14 embedding
+flags, use `python3.11-config --cflags` and `python3.11-config --embed --ldflags`.
+
+## Try a scratch build on AMIX
 
 Use a dedicated scratch directory. Transfer the target executable from
 `~/build/python311-amix/python` and `dist/python311-amix-stdlib.tar.gz`.
@@ -83,8 +123,8 @@ PYTHONHASHSEED=0 PYTHONHOME="$PWD/py311" py311/bin/python3.11 -S py311/smoke.py
 
 Transfer and run `tests/python3-stdlib.py` separately for the extra-module
 tests. Bound hardware experiments with the cross-built `probes/bounded-run.c`.
-The recipe does not install Python or change kernel/boot files. The intended
-installation prefix is `/usr/local/gnu`.
+The scratch recipe does not install Python. Neither recipe changes kernel
+or boot files.
 
 ## Sources and licences
 

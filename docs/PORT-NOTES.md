@@ -4,9 +4,10 @@ CPython 3.11.18 has been cross-built with the AMIX-adapted GCC 14.2 compiler
 and run on the physical 68060 machine. Its threading backend links GNU Pth's
 `libpthread.a`. The custom historical pthread runtime is not linked.
 
-This milestone provides a scripting and threading proof staged under
-`/tmp/pthreads-amix-261028/python/py311`. It does not install or replace a
-system interpreter. The tested kernel reports `68060-261027-ia`.
+The initial scripting and threading proof was staged under
+`/tmp/pthreads-amix-261028/python/py311`. Installation now uses `/usr/local`
+through `install.sh`; GNU Pth remains under `/usr/local/gnu`.
+The tested kernel reports `68060-261027-ia`.
 
 ## Physical results, 2026-10-28
 
@@ -27,7 +28,7 @@ CPython regression suite.
 The executable reported:
 
 ```text
-3.11.18 (main, Oct 28 2026, 13:58:58) [GCC 14.2.0]
+3.11.18 (main, Oct 28 2026, 14:59:57) [GCC 14.2.0]
 PYTHON3_AMIX_SMOKE_PASS
 PYTHON3_AMIX_STDLIB_PASS
 ```
@@ -35,14 +36,14 @@ PYTHON3_AMIX_STDLIB_PASS
 SHA-256 of the tested stripped clean-build executable:
 
 ```text
-7fb086a0cdbefa0a3383dcb2b430553bd43adfa5a78eeb8eb1bfa92c3446a109
+5b0e4d81237f3ac74123cab5f46a7bb6d2dc3652fb6256e680c32646614c7b72
 ```
 
 The toolchain's encoding-based instruction check inspected 1005 long
 multiply/divide instructions and found no forms removed by the 68060.
-The link map records the GNU `libpthread.a` archive. A second build from
-the standalone repository in a fresh build directory also passed both
-physical Python test scripts; its stripped executable is the hash above.
+The link map records the GNU `libpthread.a` archive. The standalone recipe
+and the subsequent `/usr/local` build passed the physical Python test scripts.
+The hash above identifies the installed `/usr/local/bin/python3.11` executable.
 
 ## Random-device prerequisite
 
@@ -92,7 +93,8 @@ Source: [Python 3.11.18](https://www.python.org/downloads/release/python-31118/)
 A matching Linux-native interpreter is built only to generate files needed
 for cross-compilation. Every AMIX target object uses GCC 14.2 with `-O2
 -m68060 -fno-strict-aliasing`; CPython uses GNU C11 mode and 1 MiB default
-worker stacks. A clean rebuild can be requested with `PYTHON_CLEAN=yes`.
+worker stacks. Configure uses `--prefix=/usr/local`. A clean rebuild can be
+requested with `PYTHON_CLEAN=yes`.
 `PYTHON_SKIP_CONFIGURE=yes` is only for incremental development with an
 already configured build tree.
 
@@ -130,6 +132,46 @@ PYTHONHASHSEED=0 PYTHONHOME="$PWD/py311" py311/bin/python3.11 -S py311/smoke.py
 
 The separate test `tests/python3-stdlib.py` checks the extra modules. Bound
 hardware experiments with the cross-built `probes/bounded-run.c` launcher.
+
+## Installation and SDK
+
+After a build configured for `/usr/local`, run
+`PYTHON_BUILD=/absolute/build/path python3 tools/stage-python-install.py`.
+Transfer the resulting private `dist/python3-amix-install.tar.gz`, extract it
+in a fresh AMIX directory, and run `sh install.sh` as root. The installer uses
+the file/link manifests and byte comparisons; it refuses differing existing
+files. It does not invoke the obsolete package manager.
+
+The payload includes the stripped interpreter, pure Python library and
+resources, target sysconfig data, public/internal headers, the static Python
+archive, private compatibility/zlib archives, config helper, manual page,
+licence, receipt and tests. It creates `python3`/config/manual aliases and
+empty `site-packages`/`lib-dynload` directories. GUI, regression-test,
+ensurepip and venv trees remain outside this initial distribution.
+
+Installed paths are listed in
+`/usr/local/share/doc/python3-amix/INSTALL-FILES` and `INSTALL-LINKS`.
+`python3.11-config --embed --ldflags` includes the GNU Pth dependency under
+`/usr/local/gnu`; Python's own files use `/usr/local`.
+
+The stage script requires a fresh staging directory; set `PYTHON_STAGE` to
+another empty path when preparing a new payload. Installation does not
+silently set a hash seed or change shell profiles. The current machine still
+needs explicit `PYTHONHASHSEED=0` until its kernel random device is enabled.
+
+Physical installation verified 859 regular files and four aliases. With
+the final native-tool compatibility fixes, repeating the complete
+`install.sh` also verified all files and aliases and exited 0. With
+`PYTHONHOME` and `PYTHONPATH` unset, the installed interpreter passed
+`tests/python3-installed.py`, the thread/Unicode/JSON smoke test, and the
+compression/hash/struct/datetime/math/select/environment test. A GCC 14
+embedding program built through the staged config helper ran successfully
+against the installed library tree and reported `/usr/local`.
+
+The config-helper alias is a hard link: this kernel cannot execute the
+relative symlink to the shell script correctly. The interpreter, manual and
+archive aliases are symbolic links. Native-tool compatibility also requires
+attached `xargs -n16` syntax and an existence check before `mkdir -p`.
 
 ## Port changes
 
