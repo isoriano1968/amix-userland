@@ -4,6 +4,28 @@ MESA_TINY=0
 
 AMIX_TARGETS=targets
 
+# amix060: cross-built on a Linux host with gcc14-cross-amix for the 68060 --
+# soft3D on the Z3660 (AMIX_SOFT3D), MIT-SHM, 060 code.  AMIX_SYSROOT: the
+# sysroot with X11R6.3's exports (usr/x11r6/xc/exports); override it on the
+# make command line (amix060-build.sh passes $AMIX_SYSROOT).
+AMIX_SYSROOT = $(HOME)/opt/m68k-amix-sysroot
+
+amix060:
+	$(MAKE) $(MFLAGS) -f Makefile.X11 $(AMIX_TARGETS) \
+	"GL_LIB = libGL.a" \
+	"GLU_LIB = libGLU.a" \
+	"GLUT_LIB = libglut.a" \
+	"GLW_LIB = libGLw.a" \
+	"CC = m68k-elf-gcc" \
+	"CFLAGS = -O2 -m68060 -ffast-math -DSHM -DAMIX_SOFT3D -fno-strict-aliasing -fcommon \
+		-U__linux__ -Ulinux -DAMIX -Dm68k -DSVR4 -D__amix__ \
+		-Wno-error=implicit-function-declaration -Wno-error=int-conversion \
+		-Wno-error=incompatible-pointer-types -Wno-error=return-mismatch \
+		-Wno-error=implicit-int -I$(AMIX_SYSROOT)/usr/x11r6/xc/exports/include" \
+	"MAKELIB = ../bin/mklib.amix060" \
+	"AR = m68k-elf-ar" "RANLIB = m68k-elf-ranlib" \
+	"XLIBS = -lXmu -lXext -lX11 -lsocket -lnsl -lm"
+
 amix:
 	$(MAKE) $(MFLAGS) -f Makefile.X11 $(AMIX_TARGETS) \
 	"GL_LIB = libGL.a" \

@@ -64,6 +64,53 @@ sh amix-build.sh mech
 ./demos/glutmech
 ```
 
+## The 68060 build with soft3D (Z3660)
+
+For a 68060 with a Z3660, the same overlay also builds a second variant,
+cross-compiled on a Linux host with
+[gcc14-cross-amix](https://github.com/asokero/gcc14-cross-amix):
+
+- **soft3D.** On the Z3660, Mesa hands every triangle, line and point to the
+  board's own rasterizer (soft3D, Wazp3D on the Z3660's ARM). The 68060 only
+  transforms, lights and clips. The frame is drawn in off-screen VRAM, and
+  the X server copies it into the window through its clip list. Without the
+  Z3660 driver or the server extension, Mesa draws in software as before.
+  `MESA_SOFT3D=0` turns it off; `MESA_SOFT3D=1` says why it could not be
+  used.
+- **MIT-SHM** for the back buffer, aligned for the server's `move16` copy.
+- **68060 code,** with `move16` buffer clears. `MESA_NOMOVE16` turns those off.
+
+What it needs:
+- the 68040/68060 kernel from
+  [amix-040-060-port](https://github.com/asokero/amix-040-060-port) (MIT-SHM
+  is only safe there);
+- the Z3660 RTG driver built with `-DZZ9K_MAP_BOARD`, and the `Xzz9000`
+  server with the ZZ9K-SOFT3D extension. Both are in
+  [soft3d-z3660rtg-amix](https://github.com/isoriano1968/soft3d-z3660rtg-amix);
+  [x11r6.3-amix](https://github.com/isoriano1968/x11r6.3-amix) carries the
+  same server.
+
+Building, on the Linux host, in the prepared tree:
+
+```sh
+export PATH=$HOME/opt/m68k-amix/bin:$PATH     # gcc14-cross-amix
+AMIX_SYSROOT=$HOME/opt/m68k-amix-sysroot sh amix060-build.sh demos
+```
+
+That gives static `lib/libGL.a`, `libGLU.a` and `libglut.a`, and the demos in
+`demos/bin060/`. Programs link them statically. For MIT-SHM, put a static
+`libXext.a` with the XShm client functions first, and add `-lshmsys`.
+`demos/build060.sh` shows the link line; its `SHM_LIBS` names where those
+libraries are.
+
+Measured on an A3000 with a Z3660 68060 at 80 MHz: gears went from 6.6 fps
+(software, before MIT-SHM) to 10.6 with MIT-SHM. soft3D rasterizes at about
+20 Mpixel/s, against 3.4 for the 68060 in software.
+
+The native build with gcc 2.7.2.3 (`amix-build.sh`) is unchanged. The soft3D
+files compile to nothing there (`AMIX_SOFT3D` is only set by the `amix060`
+target).
+
 ## Source archives
 
 - `MesaLib-3.1.tar.gz`

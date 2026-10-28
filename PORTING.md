@@ -14,6 +14,9 @@ fails on malformed backslashes in unrelated upstream platform targets.
 
 ## Deliberate exclusions
 
+These apply to the native build (`amix-build.sh`). The `amix060` cross build
+adds soft3D on the Z3660 and MIT-SHM (see README.md).
+
 - No ZZ9000 hardware acceleration
 - No MIT-SHM
 - No pthread or Solaris-thread backend
