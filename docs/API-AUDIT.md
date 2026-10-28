@@ -24,6 +24,21 @@ comments/history but is not called by yarn.c. Cleanup handlers still need real
 semantics; they cannot simply be empty macros. Inspect the rest of pigz before
 claiming this list covers the complete application.
 
+Additional full-application inspection of the verified pigz 2.8 release:
+
+- `try.c` blob d949e4e7b1716fa2830b969e739828986cc4dffd.
+- `try.h` blob ff06d74018834b086ae307fb0095c3b42f0fdc37.
+- These add pthread_once, pthread_key_create, pthread_getspecific, and
+  pthread_setspecific for per-thread exception stacks. No compiler TLS is
+  required by this path. The proof runtime already implements these APIs.
+- `pigz.c` itself no longer calls pthread functions directly; thread operations
+  are routed through yarn, and try uses pthread-specific keys.
+- Release tar SHA256:
+  eb872b4f0e1f0ebe59c9f7bd8c506c4204893ba6a8492de31df416f0d5170fd0.
+- Audit remaining platform dependencies separately: inttypes.h, va_copy,
+  timestamp functions, filesystem APIs, and C99 formatting. Build without
+  Zopfli for the initial regular-file compression proof.
+
 ## CPython 3.10.16 investigation sample
 
 Source: `python/cpython`, tag `v3.10.16`, `Python/thread_pthread.h`.

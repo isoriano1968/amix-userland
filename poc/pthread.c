@@ -102,6 +102,9 @@ int amix_thread_yield(void)
 static void trampoline(void)
 {
     struct thread *t = &threads[current];
+#ifdef AMIX_PTHREAD_TRACE
+    fprintf(stderr, "amix-pthreads: start id=%lu\n", t->id);
+#endif
     pthread_exit(t->start(t->argument));
 }
 
@@ -147,6 +150,9 @@ int pthread_create(pthread_t *id, const pthread_attr_t *a,
     t->state = READY;
     makecontext(&t->context, trampoline, 0);
     *id = t->id;
+#ifdef AMIX_PTHREAD_TRACE
+    fprintf(stderr, "amix-pthreads: create id=%lu\n", t->id);
+#endif
     errno = old_errno;
     return 0;
 }
@@ -195,6 +201,9 @@ void pthread_exit(void *result)
         }
     }
     t->result = result;
+#ifdef AMIX_PTHREAD_TRACE
+    fprintf(stderr, "amix-pthreads: exit id=%lu\n", t->id);
+#endif
     t->state = ZOMBIE;
     wake(WAIT_JOIN, t, 1);
     if (schedule()) {

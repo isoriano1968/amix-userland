@@ -1,23 +1,20 @@
 # pthreads-amix
 
-An experimental POSIX threads runtime for Amiga UNIX (AMIX), developed against
-the community-maintained 68040/68060 kernel and GCC 14 application toolchain.
+GNU Pth 2.0.7 and its POSIX pthread emulation for updated Amiga UNIX (AMIX),
+cross-built with GCC 14.2 and -m68060. This project carries the build scripts,
+small AMIX port fixes, and hardware acceptance tests.
 
 ## Status
 
-Capability discovery is underway. An unvalidated cooperative pthread API proof
-now exists in [poc](poc/README.md); it is not an accepted pthread implementation.
-The current loadable-module implementation is unavailable to this project.
-No kernel thread, shared-address-space task, or libc reentrancy capability has
-been verified on the target.
+GNU Pth builds and its upstream standard and pthread tests run on the physical
+machine reporting `68060-261027-ia`. See [GNU Pth port notes](docs/GNU-PTH.md)
+for current acceptance results and limitations. No module loader or kernel
+change is needed for this user-space library.
 
-On the physical machine running `68060-261027-ia`, initial native-compiler
-probes passed context restoration and a separate-stack context roundtrip.
-See [the first hardware results](docs/RESULTS-2026-10-28.md) and
-[application API audit](docs/API-AUDIT.md). These results do not yet establish
-safe scheduling, libc reentrancy, or a pthread-compatible execution model.
-The GCC 14 cross-toolchain with -m68060 is the required acceptance toolchain;
-native GCC 2.7 results are preliminary diagnostics only.
+GNU Pth is the implementation. The custom [poc](poc/README.md) runtime is a
+historical experiment, not the library applications should link. The default
+acceptance build links the GNU archive and never links poc/pthread.c.
+The project has its own [Ubuntu build VM](docs/BUILD-ENVIRONMENT.md).
 
 ## Objective
 
@@ -28,17 +25,28 @@ Mesa/Gallium is a subsequent integration target, not an initial acceptance gate.
 
 ## Approach
 
-1. Inventory the running system and available headers, libraries, and kernel
-   interfaces without changing the target.
-2. Build isolated probes with GCC 14 and establish which facilities actually
-   work, including context switching, signals, timing, and blocking I/O.
-3. Choose the execution model from measured results: user-space threads,
-   kernel-backed threads, or a deliberately limited interim implementation.
-4. Implement and test a small pthread API with an explicit compatibility matrix.
-5. Validate real applications before widening the API or claiming conformance.
+1. Build the pinned GNU Pth release and apply the measured AMIX fixes.
+2. Run upstream and application tests on the physical machine.
+3. Package its headers and static libraries for cross-builds.
+4. Audit a selected Python 3 release against the actual supported API.
 
-The module loader is not a prerequisite for the first two stages. No route is
-assumed to deliver full POSIX semantics before its prerequisites are measured.
+GNU Pth is cooperative and provides pthread emulation; using an established
+library is not a claim of full modern POSIX conformance. Wrapped I/O support
+requires applications to be compiled with its header mappings.
+
+Inside the Linux VM, from the project directory:
+
+```sh
+bash tools/build-gnu-pth.sh
+sh tools/build-proof.sh
+bash tools/build-pigz-gnu.sh
+```
+
+The physical install uses [install.sh](install.sh) under **/usr/local/gnu**,
+with headers, static libraries, config helpers, manual pages and a manifest.
+No native AMIX package manager is required. For publication, use the
+[source build recipe](docs/BUILD-RECIPE.md) and [patches](patches/README.md);
+compiled libraries and private sysroots are excluded.
 
 See [the roadmap](docs/ROADMAP.md), [baseline](docs/BASELINE.md), and
 [initial architecture decisions](docs/DECISIONS.md).
@@ -55,6 +63,7 @@ See [the roadmap](docs/ROADMAP.md), [baseline](docs/BASELINE.md), and
   libraries, or complete target filesystem inventories.
 - Keep experimental builds outside system library paths. Do not replace libc,
   install a system pthread library, or change the running kernel during probes.
-- Select a licence before introducing runtime implementation or imported code.
+- GNU Pth and its port modifications retain GNU Pth's LGPL terms. The original
+  custom proof has its own MIT licence; do not confuse the two implementations.
 
 This is an independent local Git repository. It has no configured remote.

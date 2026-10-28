@@ -1,5 +1,10 @@
 /* Bounded producer/consumer proof against the experimental API. */
+#ifdef AMIX_USE_GNU_PTH
+#include <pthread.h>
+#define amix_thread_yield pthread_yield_np
+#else
 #include "pthread.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -24,6 +29,7 @@ static int head, tail, used, finished, produced, consumed;
 static int once_calls, cleanup_calls, destructor_calls;
 static unsigned long sum;
 static int identifiers[4] = { 0, 1, 2, 3 };
+static unsigned char seen[2 * COUNT];
 
 static void initialize_once(void)
 {
@@ -37,8 +43,9 @@ static void cleanup(void *argument)
 }
 static void destroy_identity(void *argument)
 {
-    REQUIRE(argument == pthread_getspecific(identity) ||
-            pthread_getspecific(identity) == 0);
+    REQUIRE(argument == &identifiers[0] || argument == &identifiers[1] ||
+            argument == &identifiers[2] || argument == &identifiers[3]);
+    REQUIRE(pthread_getspecific(identity) == 0);
     ++destructor_calls;
 }
 static void checkpoint(int id)
@@ -90,6 +97,9 @@ static void *worker(void *argument)
                 break;
             }
             item = queue[head];
+            REQUIRE(*item >= 1 && *item <= 2 * COUNT);
+            REQUIRE(seen[*item - 1] == 0);
+            seen[*item - 1] = 1;
             head = (head + 1) % CAPACITY;
             --used;
             ++consumed;
@@ -133,6 +143,9 @@ int main(void)
     }
     REQUIRE(produced == 2 * COUNT && consumed == produced && used == 0);
     REQUIRE(sum == expected);
+    printf("joined-workers: once=%d cleanup=%d destructors=%d\n",
+           once_calls, cleanup_calls, destructor_calls);
+    fflush(stdout);
     REQUIRE(once_calls == 1 && cleanup_calls == 4 && destructor_calls == 4);
     /* Reclaim/reuse every worker slot; check cleanup during explicit exit. */
     for (i = 0; i < 24; ++i) {
@@ -141,7 +154,10 @@ int main(void)
         REQUIRE(result == &identifiers[0]);
     }
     REQUIRE(cleanup_calls == 28);
+#ifndef AMIX_USE_GNU_PTH
+    /* Custom runtime diagnostic only: POSIX does not permit stale thread IDs. */
     REQUIRE(pthread_join(workers[0], 0) == ESRCH);
+#endif
     CHECK(pthread_cond_destroy(&readable));
     CHECK(pthread_cond_destroy(&writable));
     CHECK(pthread_mutex_destroy(&lock));
@@ -150,8 +166,15 @@ int main(void)
            produced, consumed, sum, expected);
     printf("once=%d cleanup=%d destructors=%d reused-slots=24\n",
            once_calls, cleanup_calls, destructor_calls);
-    puts("PASS: cooperative pthread API proof on AMIX");
+    puts("PASS: cooperative pthread API proof");
+#ifdef AMIX_USE_GNU_PTH
+    puts("backend=GNU Pth pthread emulation (no custom runtime linked)");
+#endif
     puts("create/join, mutex contention, condition queues, once, keys, errno");
+#ifdef AMIX_USE_GNU_PTH
+    puts("Cooperative GNU Pth; wrapped I/O and timed waits tested separately");
+#else
     puts("NOT full POSIX: no preemption, blocking-I/O isolation, timed waits");
+#endif
     return 0;
 }

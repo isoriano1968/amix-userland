@@ -1,6 +1,9 @@
 # Cooperative runtime proof
 
-Status: implementation prepared; not yet built or executed with GCC 14.
+Status: historical custom proof, tested successfully on AMIX with GCC 14.
+GNU Pth is now the user-selected implementation; see ../docs/GNU-PTH.md.
+Do not develop this runtime as the application library. proof.c is also reused
+as a test harness with AMIX_USE_GNU_PTH, linking only GNU's libpthread.a.
 Do not interpret the presence of pthread.h as a conformance claim.
 
 This source is an isolated experiment, not a system-installed libpthread or a
@@ -12,13 +15,13 @@ It uses libc ucontext, with no kernel/module changes and no timer preemption.
 From the repository root, on the GCC 14 cross-build host:
 
 ```sh
-CC=/path/to/gcc14-cross-amix/tools/amix-cc.sh sh tools/build-proof.sh
+CC="$HOME/opt/m68k-amix/bin/m68k-elf-gcc" sh tools/build-custom-proof.sh
 ```
 
-The build script requires GCC 14 and uses -O2 -m68060. The local Windows host
-has the AMIX sysroot under C:\Storage, but the existing GCC 14 cross installation
-has not yet been located. Native GCC 2.7 observations remain diagnostic evidence
-only. Use the GCC 14 toolchain's 68060 instruction checker before deployment.
+The build script requires GCC 14 and uses -O2 -m68060. The project has an
+isolated Ubuntu build VM; see ../docs/BUILD-ENVIRONMENT.md. Native GCC 2.7
+observations remain diagnostic evidence only. Use the GCC 14 toolchain's
+68060 instruction checker before deployment.
 
 Run the context probes and pthread-proof separately on the physical target.
 Every proof has an alarm bound. pthread-proof expects four worker threads,
@@ -53,6 +56,8 @@ asynchronous reentry. This does not establish general libc thread safety.
   diagnostic and is not a general POSIX deadlock-detection guarantee.
 - No binary compatibility with any future pthread implementation. Include this
   header only using a private -Ipoc build; never copy it into system includes.
+- The main context must return normally; joining main and calling pthread_exit
+  from main are outside this proof's supported lifecycle.
 
 Before any real application acceptance: GCC 14 hardware runs, error-path and
 resource-limit tests, full application API audit, and I/O-model selection.

@@ -1,0 +1,35 @@
+--- a/pth_mctx.c
++++ b/pth_mctx.c
+@@ -126,9 +126,21 @@
+ #define  _pth_mctx_switch_debug /*NOP*/
+ #endif
+ #if PTH_MCTX_MTH(mcsc)
++#if defined(__amix__)
++/* AMIX errno is process-global: preserve it across cooperative switches. */
++#define pth_mctx_switch(old,new) \
++    do { \
++        _pth_mctx_switch_debug \
++        (old)->error = errno; \
++        errno = (new)->error; \
++        swapcontext(&((old)->uc), &((new)->uc)); \
++        errno = (old)->error; \
++    } while (0)
++#else
+ #define pth_mctx_switch(old,new) \
+     _pth_mctx_switch_debug \
+     swapcontext(&((old)->uc), &((new)->uc));
++#endif
+ #elif PTH_MCTX_MTH(sjlj)
+ #define pth_mctx_switch(old,new) \
+     _pth_mctx_switch_debug \
+@@ -170,6 +182,10 @@
+     mctx->uc.uc_stack.ss_sp    = pth_skaddr(makecontext, sk_addr_lo, sk_addr_hi-sk_addr_lo);
+     mctx->uc.uc_stack.ss_size  = pth_sksize(makecontext, sk_addr_lo, sk_addr_hi-sk_addr_lo);
+     mctx->uc.uc_stack.ss_flags = 0;
++
++#if defined(__amix__)
++    mctx->error = 0;
++#endif
+ 
+     /* configure startup function (with no arguments) */
+     makecontext(&(mctx->uc), func, 0+1);

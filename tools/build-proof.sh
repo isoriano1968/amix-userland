@@ -1,27 +1,25 @@
 #!/bin/sh
-# Invoke with CC=/absolute/path/to/gcc14-cross-amix/tools/amix-cc.sh.
-# Run from the repository root. This never installs or deploys anything.
+# GNU Pth application acceptance. Never add poc/pthread.c to these link lines.
 set -eu
-: "${CC:?Set CC to the GCC 14 AMIX cross-compiler wrapper}"
-if test ! -x "$CC"; then
-    echo 'CC must be one executable path, not a shell command with flags' >&2
-    exit 1
-fi
-compiler_version=`"$CC" -dumpversion`
-case "$compiler_version" in
-    14|14.*) ;;
-    *) echo "Expected GCC 14, got: $compiler_version" >&2; exit 1 ;;
-esac
+CC="${CC:-$HOME/opt/m68k-amix/bin/m68k-elf-gcc}"
+PTH_PREFIX="${PTH_PREFIX:-$HOME/opt/pth-amix}"
+case "$("$CC" -dumpversion)" in 14|14.*) ;; *) echo 'GCC 14 required' >&2; exit 1;; esac
+test -f "$PTH_PREFIX/lib/libpthread.a"
 mkdir -p build
 "$CC" --version > build/compiler.txt
-echo '-O2 -m68060 -std=gnu89 -Wall -Wextra' > build/flags.txt
-"$CC" -O2 -m68060 -std=gnu89 -Wall -Wextra \
-    probes/context-roundtrip.c -o build/context-roundtrip
-"$CC" -O2 -m68060 -std=gnu89 -Wall -Wextra \
-    probes/context-stack.c -o build/context-stack
-"$CC" -O2 -m68060 -std=gnu89 -Wall -Wextra \
-    probes/context-state.c -o build/context-state
-"$CC" -O2 -m68060 -std=gnu89 -Wall -Wextra -Ipoc \
-    poc/pthread.c poc/proof.c -o build/pthread-proof
-echo 'Cross-build complete. Execute each binary in a target scratch directory.'
-echo 'Run the toolchain 68060 instruction-safety checker before deployment.'
+echo '-O2 -m68060 -std=gnu89 -fno-strict-aliasing; GNU Pth libpthread.a' > build/flags.txt
+for name in context-roundtrip context-stack context-state bounded-run; do
+    "$CC" -O2 -m68060 -std=gnu89 -fno-strict-aliasing \
+        "probes/$name.c" -o "build/$name"
+done
+"$CC" -O2 -m68060 -std=gnu89 -fno-strict-aliasing -DAMIX_USE_GNU_PTH \
+    -I"$PTH_PREFIX/include" poc/proof.c -L"$PTH_PREFIX/lib" \
+    -lpthread -ldl -lsocket -lnsl -Wl,-Map=build/gnu-pthread-proof.map \
+    -o build/gnu-pthread-proof
+"$CC" -O2 -m68060 -std=gnu89 -fno-strict-aliasing \
+    -I"$PTH_PREFIX/include" tests/gnu-pth-io.c -L"$PTH_PREFIX/lib" \
+    -lpthread -ldl -lsocket -lnsl -o build/gnu-pth-io
+echo 'Built GNU Pth acceptance binaries; run instruction checks before deployment.'
+"$CC" -O2 -m68060 -std=gnu89 -fno-strict-aliasing \
+    -I"$PTH_PREFIX/include" tests/gnu-pth-once.c -L"$PTH_PREFIX/lib" \
+    -lpthread -ldl -lsocket -lnsl -o build/gnu-pth-once

@@ -51,3 +51,17 @@ or unblock arbitrary Python/pigz workloads without an explicit I/O audit.
 
 The original proof runtime is MIT licensed under poc/LICENSE. No upstream
 runtime implementation was imported.
+
+## 0006: use GNU Pth as the application implementation
+
+Status: accepted, 2026-10-28, explicit user direction.
+
+Build GNU Pth 2.0.7 and its pthread emulation with GCC 14 and -m68060. The custom
+runtime is historical proof only. Reuse tests against the GNU archive, with no
+custom runtime object on the link line. Keep AMIX fixes small, reproducible,
+reviewable, and distributed with upstream source/licence information.
+
+The implemented port fixes errno switching, the public timespec fallback, and
+yielding pthread_once initialization. See GNU-PTH.md for measured failures,
+successful regressions, and remaining limits. This supersedes the custom
+runtime direction in 0005 without claiming full POSIX conformance.

@@ -1,5 +1,9 @@
 # Staged implementation plan
 
+The initial plan below is preserved as project history. The user's subsequent
+decision is to port GNU Pth and use its pthread emulation, not grow the custom
+proof into a library. The active build and acceptance plan is docs/GNU-PTH.md.
+
 ## Stage 0: target and source inventory
 
 Use an ordinary account for read-only inspection once login is available. Root
