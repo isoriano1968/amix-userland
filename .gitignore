@@ -1,0 +1,9 @@
+# build output (the hand-written Makefiles build in place)
+*.o
+*.a
+*.lo
+*.Plo
+/mikmod/mikmod
+/libmikmod/examples/simpleplay/splay
+music.wav
+*.orig
