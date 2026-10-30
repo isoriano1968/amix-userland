@@ -6,6 +6,11 @@ cc="${CC:-$HOME/opt/m68k-amix/bin/m68k-elf-gcc}"
 prefix="${PTH_PREFIX:-$HOME/opt/pth-amix}"
 source="${PTH_SOURCE:-$HOME/src/upstream/pth-2.0.7}"
 archive="$(dirname "$source")/pth-2.0.7.tar.gz"
+# Machine-context method.  The default, mcsc (getcontext/setcontext/
+# swapcontext), makes system calls on every thread switch on AMIX; usjlj
+# (_setjmp/_longjmp, sigaltstack only to start a thread) makes none:
+#   PTH_MCTX='--with-mctx-mth=sjlj --with-mctx-dsp=usjlj --with-mctx-stk=sas'
+mctx="${PTH_MCTX:---with-mctx-mth=mcsc --with-mctx-dsp=sc --with-mctx-stk=mc}"
 case "$("$cc" -dumpversion)" in 14|14.*) ;; *) echo 'GCC 14 required' >&2; exit 1;; esac
 mkdir -p "$(dirname "$source")"
 if test ! -f "$archive"; then
@@ -22,7 +27,7 @@ CC="$cc" AR="$(dirname "$cc")/m68k-elf-ar" \
     CFLAGS='-O2 -m68060 -std=gnu89 -fno-strict-aliasing' \
     ./configure --host=m68k-cbm-sysv4 --build="$(./config.guess)" \
         --prefix="$prefix" --enable-pthread --disable-shared --enable-static \
-        --with-mctx-mth=mcsc --with-mctx-dsp=sc --with-mctx-stk=mc
+        $mctx
 # Old generated-header dependencies are incomplete: use an ordered clean build
 # so the errno macro change reaches every scheduler/caller object.
 make clean
