@@ -1,0 +1,42 @@
+--- a/src/thread/pthread/SDL_systhread.c
++++ b/src/thread/pthread/SDL_systhread.c
+@@ -186,11 +186,37 @@
+     return (SDL_threadID)pthread_self();
+ }
+ 
++#ifdef _POSIX_THREAD_IS_GNU_PTH
++/* from pth.h, which does not go together with pth's pthread.h */
++extern void *pth_self(void);
++extern void *pth_attr_of(void *);
++extern int pth_attr_set(void *, int, ...);
++extern int pth_attr_destroy(void *);
++#define SDL_PTH_ATTR_PRIO 0     /* PTH_ATTR_PRIO */
++#endif
++
+ int SDL_SYS_SetThreadPriority(SDL_ThreadPriority priority)
+ {
+-#if defined(__NACL__) || defined(__RISCOS__) || defined(__OS2__) || defined(_POSIX_THREAD_IS_GNU_PTH)
++#if defined(_POSIX_THREAD_IS_GNU_PTH)
++    /*
++     * gnu-pth (AMIX): cooperative threads with priorities -5 to +5 for the
++     * order in which ready threads run.  The audio thread asks for
++     * TIME_CRITICAL: it goes first whenever its device has room again.
++     */
++    int prio = priority == SDL_THREAD_PRIORITY_LOW ? -5 :
++               priority == SDL_THREAD_PRIORITY_NORMAL ? 0 :
++               priority == SDL_THREAD_PRIORITY_HIGH ? 3 : 5;
++    void *attr = pth_attr_of(pth_self());
++    int ok;
++
++    if (!attr) {
++        return SDL_SetError("pth_attr_of() failed");
++    }
++    ok = pth_attr_set(attr, SDL_PTH_ATTR_PRIO, prio);
++    pth_attr_destroy(attr);
++    return ok ? 0 : SDL_SetError("pth_attr_set() failed");
++#elif defined(__NACL__) || defined(__RISCOS__) || defined(__OS2__)
+     /* FIXME: Setting thread priority does not seem to be supported in NACL */
+-    /* gnu-pth (AMIX): cooperative threads, no scheduling policies */
+     return 0;
+ #else
+     struct sched_param sched;

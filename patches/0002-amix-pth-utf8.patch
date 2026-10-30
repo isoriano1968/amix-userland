@@ -1,0 +1,30 @@
+--- a/src/thread/pthread/SDL_systhread.c
++++ b/src/thread/pthread/SDL_systhread.c
+@@ -188,8 +188,9 @@
+ 
+ int SDL_SYS_SetThreadPriority(SDL_ThreadPriority priority)
+ {
+-#if defined(__NACL__) || defined(__RISCOS__) || defined(__OS2__)
++#if defined(__NACL__) || defined(__RISCOS__) || defined(__OS2__) || defined(_POSIX_THREAD_IS_GNU_PTH)
+     /* FIXME: Setting thread priority does not seem to be supported in NACL */
++    /* gnu-pth (AMIX): cooperative threads, no scheduling policies */
+     return 0;
+ #else
+     struct sched_param sched;
+--- a/src/video/x11/SDL_x11messagebox.c
++++ b/src/video/x11/SDL_x11messagebox.c
+@@ -28,6 +28,14 @@
+ #include "SDL_x11dyn.h"
+ #include "SDL_x11messagebox.h"
+ 
++#ifndef X_HAVE_UTF8_STRING
++/* X11R6 before 6.4 (AMIX's X11R6.3) has no Xutf8 functions: always the
++   XTextExtents/XDrawString path */
++#define SDL_X11_HAVE_UTF8 0
++#define X11_Xutf8TextExtents(fs, s, n, ink, logical) 0
++#define X11_Xutf8DrawString(d, w, fs, gc, x, y, s, n) ((void)0)
++#endif
++
+ #include <X11/keysym.h>
+ #include <locale.h>
+ 
