@@ -1,0 +1,21 @@
+#!/bin/sh
+# pkg-config-sdl2 -- just enough pkg-config for FFmpeg's configure to find
+# sdl2-amix: only "sdl2" exists, and its flags come from sdl2-config on PATH
+# (FFmpeg 4.4's sdl2-config route still refuses SDL 2.1 and later).
+mode=
+[ "$1" = --version ] && { echo 0.29.2; exit 0; }
+for a in "$@"; do
+	case $a in
+	--exists|--cflags|--libs|--modversion) mode=$a ;;
+	--print-errors|--static) ;;
+	sdl2*|'>='|'<'|[0-9]*) ;;
+	*) exit 1 ;;		# anything but sdl2: not found
+	esac
+done
+case $mode in
+--exists) exit 0 ;;
+--cflags) sdl2-config --cflags ;;
+--libs) sdl2-config --libs ;;
+--modversion) sdl2-config --version ;;
+*) exit 1 ;;
+esac

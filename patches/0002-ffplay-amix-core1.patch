@@ -1,0 +1,403 @@
+--- a/fftools/ffplay.c
++++ b/fftools/ffplay.c
+@@ -1299,8 +1299,97 @@
+     av_free(is);
+ }
+ 
++/*
++ * AMIX on the A3000 with the Z3660 (vplay-amix): H.264 (+ AAC) is played by
++ * the board's second ARM core when its player is there -- ffplay then opens
++ * no decoders, hands the packets over (vplay's src/zzav.c, compiled in) and
++ * keeps the window over the RTG overlay core 1 draws into; the sound is on
++ * the board's HDMI.  A seek opens core 1's player anew at the new place (an
++ * amixcast URL: the PC starts a new stream).  FFPLAY_NOARM=1: ffplay as usual.
++ */
++#define FFPLAY_ZZAV 1
++#ifdef FFPLAY_ZZAV
++#include "../../src/zzav.c"
++static int zzav_on;
++
++#define ZZ_LEAD 3.0             /* seconds of a stream's sound before it starts */
++#define ZZ_WAIT 8.0             /* ... or after this long */
++static int zz_scale = 1;        /* the window's size, not fullscreen */
++static double zz_t0, zz_c0 = -1.0;      /* a stream: where it starts in the file, its first time stamp */
++
++static double zz_goal = -1.0;   /* a seek under way: where it goes */
++
++/* where the picture is, seconds into the file */
++static double zz_pos(void)
++{
++    if (zz_goal >= 0.0)
++        return zz_goal;
++    return zz_t0 + zzav_clock() - (zz_c0 >= 0.0 ? zz_c0 : 0.0);
++}
++
++/* amixcast's stream: the same URL from t seconds on */
++static void zz_url(char *out, int n, const char *url, double t)
++{
++    const char *p = strstr(url, "&t="), *e = p ? strchr(p + 1, '&') : NULL;
++
++    snprintf(out, n, "%.*s%s&t=%d", p ? (int)(p - url) : (int)strlen(url), url, e ? e : "", (int)t);
++}
++
++/* the overlay in the middle of the window (it does not scale) */
++static void zzav_window(void)
++{
++    int x, y, w, h, ow, oh, vsc;
++
++    if (!zzav_on || !window)
++        return;
++    SDL_GetWindowPosition(window, &x, &y);
++    SDL_GetWindowSize(window, &w, &h);
++    zzav_size(&ow, &oh, &vsc);
++    zzav_place(x + (w - ow) / 2, y + (h - oh * vsc) / 2);
++}
++
++/* keys 1, 2 and h: the picture's size, the window with it */
++static void zz_size(int half, int k)
++{
++    int ow, oh, vsc;
++
++    zz_scale = k;
++    zzav_half(half);
++    zzav_scale(k);
++    zzav_size(&ow, &oh, &vsc);
++    SDL_SetWindowFullscreen(window, 0);
++    is_full_screen = 0;
++    SDL_SetWindowSize(window, ow, oh * vsc);
++}
++
++/* position and length in the window's title, once a second; of a file its
++   name, of a stream what -window_title says */
++static void zz_title(VideoState *is)
++{
++    static int shown = -1;
++    const char *name = window_title && strstr(window_title, "://") ? "" :
++                       window_title && strrchr(window_title, '/') ? strrchr(window_title, '/') + 1 :
++                       window_title ? window_title : "";
++    const int t = (int)zz_pos(), d = is->ic && is->ic->duration > 0 ? (int)(is->ic->duration / AV_TIME_BASE) : 0;
++    char buf[256];
++
++    if (t == shown || !window)
++        return;
++    shown = t;
++    if (d)
++        snprintf(buf, sizeof buf, "%d:%02d:%02d / %d:%02d:%02d  %s", t / 3600, t / 60 % 60, t % 60,
++                 d / 3600, d / 60 % 60, d % 60, name);
++    else
++        snprintf(buf, sizeof buf, "%d:%02d:%02d  %s", t / 3600, t / 60 % 60, t % 60, name);
++    SDL_SetWindowTitle(window, buf);
++}
++#endif
++
+ static void do_exit(VideoState *is)
+ {
++#ifdef FFPLAY_ZZAV
++    zzav_close();               /* the overlay off, core 1's player idle */
++#endif
+     if (is) {
+         stream_close(is);
+     }
+@@ -1322,6 +1411,9 @@
+ 
+ static void sigterm_handler(int sig)
+ {
++#ifdef FFPLAY_ZZAV
++    zzav_close();               /* not left running with the overlay on */
++#endif
+     exit(123);
+ }
+ 
+@@ -2817,6 +2909,12 @@
+ 
+     av_format_inject_global_side_data(ic);
+ 
++#ifdef FFPLAY_ZZAV
++    if (strstr(is->filename, "://"))
++        ic->probesize = 256 * 1024;     /* no waiting for 5 MB of a slow stream */
++    if (strstr(is->filename, "://"))
++        ic->max_analyze_duration = 30 * AV_TIME_BASE;
++#endif
+     if (find_stream_info) {
+         AVDictionary **opts = setup_find_stream_info_opts(ic, codec_opts);
+         int orig_nb_streams = ic->nb_streams;
+@@ -2838,6 +2936,15 @@
+     if (ic->pb)
+         ic->pb->eof_reached = 0; // FIXME hack, ffplay maybe should not use avio_feof() to test for the end
+ 
++#ifdef FFPLAY_ZZAV
++    {
++        /* amixcast's stream has no length of its own: the URL says */
++        const char *dp = strstr(is->filename, "&d=");
++
++        if (dp)
++            ic->duration = (int64_t)(atof(dp + 3) * AV_TIME_BASE);
++    }
++#endif
+     if (seek_by_bytes < 0)
+         seek_by_bytes = !!(ic->iformat->flags & AVFMT_TS_DISCONT) && strcmp("ogg", ic->iformat->name);
+ 
+@@ -2909,6 +3016,158 @@
+             set_default_window_size(codecpar->width, codecpar->height, sar);
+     }
+ 
++#ifdef FFPLAY_ZZAV
++    zzav_prog = "ffplay";
++    if (!video_disable && st_index[AVMEDIA_TYPE_VIDEO] >= 0 && !getenv("FFPLAY_NOARM") &&
++        zzav_open(ic, st_index[AVMEDIA_TYPE_VIDEO], audio_disable ? -1 : st_index[AVMEDIA_TYPE_AUDIO],
++                  0, 0, 0, 0, show_status) == 0) {
++        int ow, oh, vsc, have = 0, eofd = 0;
++        char why[512];
++        const int net = strstr(is->filename, "://") != NULL;
++        const int cast = strstr(is->filename, "/stream?") != NULL;
++        int tries = 0;
++        int hold = net;         /* a stream: core 1 waits for ZZ_LEAD seconds of it */
++        double t_hold = av_gettime_relative() / 1e6, first = -1.0, last = -1.0;
++        const char *tp = strstr(is->filename, "&t=");
++
++        atexit(zzav_close);
++        /* ffplay discards every stream until stream_component_open() opens it:
++           here none is opened, so the two core 1 plays are switched on */
++        for (i = 0; i < ic->nb_streams; i++)
++            ic->streams[i]->discard = zzav_stream(i) ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
++        zzav_size(&ow, &oh, &vsc);
++        if (!screen_width) {    /* the window the size of the picture */
++            default_width = ow;
++            default_height = oh * vsc;
++        }
++        zzav_on = 1;
++        seek_by_bytes = 0;
++        if (tp)
++            zz_t0 = atof(tp + 3);
++        if (hold)
++            zzav_pause(1);
++        for (;;) {
++            if (is->abort_request)
++                break;
++            if (is->seek_req) {
++                const double t = FFMAX(is->seek_pos / (double)AV_TIME_BASE, 0.0);
++
++                is->seek_req = 0;
++                zz_goal = t;
++                if (!net || cast) {
++                    const int64_t dur = ic->duration;
++
++                    if (have)
++                        av_packet_unref(pkt);
++                    have = eofd = 0;
++                    zzav_close();
++                  again:
++                    if (cast) {         /* a new stream from there */
++                        AVFormatContext *n = avformat_alloc_context();
++                        char url[1024];
++
++                        zz_url(url, sizeof url, is->filename, t);
++                        if (!n) {
++                            ret = AVERROR(ENOMEM);
++                            goto fail;
++                        }
++                        n->interrupt_callback = ic->interrupt_callback;
++                        if ((ret = avformat_open_input(&n, url, NULL, NULL)) < 0) {
++                            av_log(NULL, AV_LOG_ERROR, "ffplay: %s: %s\n", url, av_err2str(ret));
++                            goto fail;
++                        }
++                        n->probesize = (256 << tries) * 1024;
++                        /* from the middle of a file VLC's video comes seconds after its sound */
++                        n->max_analyze_duration = 30 * AV_TIME_BASE;
++                        if ((ret = avformat_find_stream_info(n, NULL)) < 0) {
++                            av_log(NULL, AV_LOG_ERROR, "ffplay: no streams: %s\n", av_err2str(ret));
++                            avformat_close_input(&n);
++                            goto fail;
++                        }
++                        n->duration = dur;
++                        avformat_close_input(&ic);
++                        is->ic = ic = n;
++                        zz_t0 = t;
++                        zz_c0 = -1.0;
++                    } else
++                        av_seek_frame(ic, -1, (int64_t)(t * AV_TIME_BASE), AVSEEK_FLAG_BACKWARD);
++                    st_index[AVMEDIA_TYPE_VIDEO] = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
++                    st_index[AVMEDIA_TYPE_AUDIO] = audio_disable ? -1 :
++                        av_find_best_stream(ic, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
++                    if (zzav_open(ic, st_index[AVMEDIA_TYPE_VIDEO], st_index[AVMEDIA_TYPE_AUDIO],
++                                  0, 0, 0, 0, show_status) != 0) {
++                        const AVCodecParameters *cp = st_index[AVMEDIA_TYPE_VIDEO] >= 0 ?
++                            ic->streams[st_index[AVMEDIA_TYPE_VIDEO]]->codecpar : NULL;
++
++                        av_log(NULL, AV_LOG_ERROR, "ffplay: core 1 did not start again: try %d, video %d codec %d "
++                               "format %d extradata %d\n", tries, st_index[AVMEDIA_TYPE_VIDEO], cp ? (int)cp->codec_id : -1,
++                               cp ? cp->format : -1, cp ? cp->extradata_size : -1);
++                        if (cast && ++tries < 3)
++                            goto again;
++                        ret = AVERROR(EIO);
++                        goto fail;
++                    }
++                    for (i = 0; i < ic->nb_streams; i++)
++                        ic->streams[i]->discard = zzav_stream(i) ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
++                    zzav_window();
++                    tries = 0;
++                    hold = net;
++                    t_hold = av_gettime_relative() / 1e6;
++                    first = last = -1.0;
++                }
++            }
++            if (hold && (eofd || (first >= 0.0 && last - first >= ZZ_LEAD) ||
++                         av_gettime_relative() / 1e6 - t_hold >= ZZ_WAIT))
++                hold = 0;
++            if (!hold && zz_goal >= 0.0 && !is->seek_req)
++                zz_goal = -1.0;
++            zzav_pause(hold || is->paused);
++            zzav_volume(is->muted ? 0 : is->audio_volume * 256 / SDL_MIX_MAXVOLUME);
++            if (!have && !eofd) {
++                ret = av_read_frame(ic, pkt);
++                if (ret < 0) {
++                    if (ret != AVERROR_EOF)
++                        av_log(NULL, AV_LOG_WARNING, "ffplay: read error %s at %lld\n", av_err2str(ret),
++                               ic->pb ? (long long)avio_tell(ic->pb) : -1LL);
++                    if (ret == AVERROR_EOF || avio_feof(ic->pb) || (ic->pb && ic->pb->error)) {
++                        eofd = 1;
++                        zzav_eof();
++                    }
++                } else if (!zzav_stream(pkt->stream_index))
++                    av_packet_unref(pkt);
++                else
++                    have = 1;
++            }
++            if (have && zzav_send(pkt)) {
++                if (pkt->pts != AV_NOPTS_VALUE &&
++                    ic->streams[pkt->stream_index]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
++                    last = pkt->pts * av_q2d(ic->streams[pkt->stream_index]->time_base);
++                    if (first < 0.0) {
++                        first = last;
++                        if (net)
++                            zz_c0 = first;
++                    }
++                }
++                av_packet_unref(pkt);
++                have = 0;
++                continue;
++            }
++            if (zzav_done() && autoexit) {
++                zzav_stats(why, sizeof why);
++                av_log(NULL, AV_LOG_INFO, "\nffplay: core 1 is done (%s): %s\n", eofd ? "end of file" : "early", why);
++                ret = AVERROR_EOF;
++                goto fail;
++            }
++            SDL_LockMutex(wait_mutex);
++            SDL_CondWaitTimeout(is->continue_read_thread, wait_mutex, 10);
++            SDL_UnlockMutex(wait_mutex);
++        }
++        zzav_stats(why, sizeof why);
++        av_log(NULL, AV_LOG_INFO, "\nffplay: stopped (abort %d): %s\n", is->abort_request, why);
++        ret = 0;
++        goto fail;
++    }
++#endif
+     /* open the streams */
+     if (st_index[AVMEDIA_TYPE_AUDIO] >= 0) {
+         stream_component_open(is, st_index[AVMEDIA_TYPE_AUDIO]);
+@@ -3218,6 +3477,10 @@
+ static void toggle_full_screen(VideoState *is)
+ {
+     is_full_screen = !is_full_screen;
++#ifdef FFPLAY_ZZAV
++    if (zzav_on)                /* the picture grows with the window */
++        zzav_scale(is_full_screen ? 4 : zz_scale);
++#endif
+     SDL_SetWindowFullscreen(window, is_full_screen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+ }
+ 
+@@ -3244,6 +3507,34 @@
+         if (remaining_time > 0.0)
+             av_usleep((int64_t)(remaining_time * 1000000.0));
+         remaining_time = REFRESH_RATE;
++#ifdef FFPLAY_ZZAV
++        if (zzav_on) {          /* core 1 draws: the window only shows where */
++            if (!is->width) {
++                video_open(is);
++                is->force_refresh = 1;
++            }
++            if (is->force_refresh) {
++                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
++                SDL_RenderClear(renderer);
++                SDL_RenderPresent(renderer);
++                zzav_window();
++                is->force_refresh = 0;
++            }
++            zz_title(is);
++            if (getenv("ZZ_STATS")) {
++                static int64_t t_st;
++                char sb[512];
++
++                if (av_gettime_relative() - t_st > 4000000) {
++                    t_st = av_gettime_relative();
++                    zzav_stats(sb, sizeof sb);
++                    fprintf(stderr, "pos %.1f title [%s] %s\n", zz_pos(), SDL_GetWindowTitle(window), sb);
++                }
++            }
++            SDL_PumpEvents();
++            continue;
++        }
++#endif
+         if (is->show_mode != SHOW_MODE_NONE && (!is->paused || is->force_refresh))
+             video_refresh(is, &remaining_time);
+         SDL_PumpEvents();
+@@ -3296,6 +3587,20 @@
+             if (!cur_stream->width)
+                 continue;
+             switch (event.key.keysym.sym) {
++#ifdef FFPLAY_ZZAV
++            case SDLK_1:
++                if (zzav_on)
++                    zz_size(0, 1);
++                break;
++            case SDLK_2:
++                if (zzav_on)
++                    zz_size(0, 2);
++                break;
++            case SDLK_h:
++                if (zzav_on)
++                    zz_size(1, 1);
++                break;
++#endif
+             case SDLK_f:
+                 toggle_full_screen(cur_stream);
+                 cur_stream->force_refresh = 1;
+@@ -3371,6 +3676,13 @@
+             case SDLK_DOWN:
+                 incr = -60.0;
+             do_seek:
++#ifdef FFPLAY_ZZAV
++                    if (zzav_on) {
++                        pos = FFMAX(zz_pos() + incr, 0.0);
++                        stream_seek(cur_stream, (int64_t)(pos * AV_TIME_BASE), 0, 0);
++                        break;
++                    }
++#endif
+                     if (seek_by_bytes) {
+                         pos = -1;
+                         if (pos < 0 && cur_stream->video_stream >= 0)
+@@ -3429,6 +3741,10 @@
+                     break;
+                 x = event.motion.x;
+             }
++#ifdef FFPLAY_ZZAV
++                if (zzav_on && cur_stream->ic->duration <= 0)
++                    break;              /* nothing to take a fraction of */
++#endif
+                 if (seek_by_bytes || cur_stream->ic->duration <= 0) {
+                     uint64_t size =  avio_size(cur_stream->ic->pb);
+                     stream_seek(cur_stream, size*x/cur_stream->width, 0, 1);
+@@ -3465,6 +3781,12 @@
+                     }
+                 case SDL_WINDOWEVENT_EXPOSED:
+                     cur_stream->force_refresh = 1;
++                    break;
++#ifdef FFPLAY_ZZAV
++                case SDL_WINDOWEVENT_MOVED:
++                    zzav_window();
++                    break;
++#endif
+             }
+             break;
+         case SDL_QUIT:
