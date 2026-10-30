@@ -1,0 +1,13 @@
+#
+# amixcast.dt -- streaming on the A3000.  Installed in /etc/dt/appconfig/types/C.
+#
+ACTION AmixCast
+{
+	LABEL		AmixCast
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/opt/amix/bin/amixcast
+	ICON		AmixCast
+	DESCRIPTION	Plays videos of the DLNA server through the PC's \
+			amixcast.py, on the Z3660's second ARM core.
+}
