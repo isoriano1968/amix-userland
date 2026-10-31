@@ -1,1 +1,5 @@
 *.o
+net/membench
+net/netget
+net/netput
+net/peekmem

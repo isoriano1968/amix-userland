@@ -14,3 +14,5 @@ deps/
 work/
 # the Blender 2.31a source is its own git repository
 src/
+
+/*.tar.bz2

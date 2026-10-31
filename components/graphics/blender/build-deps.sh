@@ -5,7 +5,7 @@
 # Sources: ../distfiles/blender-deps (checksums in README there).
 set -e
 H=$(cd "$(dirname "$0")" && pwd)
-DL=$H/../distfiles/blender-deps
+DL=$HOME/Sources/usr-amix/distfiles/blender-deps
 P=$H/deps
 W=$H/work
 export PATH=$HOME/opt/m68k-amix/bin:$PATH

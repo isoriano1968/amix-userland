@@ -1,0 +1,100 @@
+diff --git a/intern/ghost/intern/GHOST_WindowX11.cpp b/intern/ghost/intern/GHOST_WindowX11.cpp
+index 1310d11..44fc0c9 100755
+--- a/intern/ghost/intern/GHOST_WindowX11.cpp
++++ b/intern/ghost/intern/GHOST_WindowX11.cpp
+@@ -503,6 +503,12 @@ GHOST_WindowX11::
+ 		if (m_context == s_firstContext) {
+ 			s_firstContext = NULL;
+ 		}
++		/* release it first if it is current: Mesa 3.1's glXDestroyContext
++		   leaves its current-context pointer dangling, and the next GL call
++		   (closing Blender's render window) jumps through freed memory */
++		if (glXGetCurrentContext() == m_context) {
++			glXMakeCurrent(m_display, None, NULL);
++		}
+ 		glXDestroyContext(m_display, m_context);
+ 	}
+ 	XDestroyWindow(m_display, m_window);
+diff --git a/intern/guardedalloc/intern/mallocn.c b/intern/guardedalloc/intern/mallocn.c
+index 56b3e03..960ba33 100644
+--- a/intern/guardedalloc/intern/mallocn.c
++++ b/intern/guardedalloc/intern/mallocn.c
+@@ -87,7 +87,7 @@ static char *check_memlist(MemHead *memh);
+ /* locally used defines                                                  */
+ /* --------------------------------------------------------------------- */
+ 
+-#if defined( __sgi) || defined (__sun__) || defined (__PPC__) || defined (__APPLE__)
++#if defined( __sgi) || defined (__sun__) || defined (__PPC__) || defined (__APPLE__) || defined (__BIG_ENDIAN__)
+ #define MAKE_ID(a,b,c,d) ( (int)(a)<<24 | (int)(b)<<16 | (c)<<8 | (d) )
+ #else
+ #define MAKE_ID(a,b,c,d) ( (int)(d)<<24 | (int)(c)<<16 | (b)<<8 | (a) )
+diff --git a/source/blender/blenlib/intern/storage.c b/source/blender/blenlib/intern/storage.c
+index 1832784..dd2b77c 100644
+--- a/source/blender/blenlib/intern/storage.c
++++ b/source/blender/blenlib/intern/storage.c
+@@ -56,7 +56,7 @@
+ #include <time.h>
+ #include <sys/stat.h>
+ 
+-#if defined(__sgi) || defined(__sun__)
++#if defined(__sgi) || defined(__sun__) || defined(__amix__)
+ #include <sys/statfs.h>
+ #endif
+ 
+@@ -199,7 +199,7 @@ double BLI_diskfree(char *dir)
+ #ifdef __BeOS
+ 	return -1;
+ #endif
+-#if defined __sgi || defined __sun__
++#if defined __sgi || defined __sun__ || defined __amix__
+ 
+ 	if (statfs(name, &disk, sizeof(struct statfs), 0)){
+ 		/* printf("diskfree: Couldn't get information about %s.\n",dir); */
+diff --git a/source/blender/imbuf/intern/imbuf.h b/source/blender/imbuf/intern/imbuf.h
+index 6cbb038..63c27dc 100644
+--- a/source/blender/imbuf/intern/imbuf.h
++++ b/source/blender/imbuf/intern/imbuf.h
+@@ -63,7 +63,7 @@
+ 
+ #define ENDIAN_NOP(x) (x)
+ 
+-#if defined(__sgi) || defined(__sparc) || defined(__sparc__) || defined (__PPC__) || defined (__APPLE__)
++#if defined(__sgi) || defined(__sparc) || defined(__sparc__) || defined (__PPC__) || defined (__APPLE__) || defined (__BIG_ENDIAN__)
+ #define LITTLE_SHORT SWAP_SHORT
+ #define LITTLE_LONG SWAP_LONG
+ #define BIG_SHORT ENDIAN_NOP
+diff --git a/source/blender/makesdna/DNA_actuator_types.h b/source/blender/makesdna/DNA_actuator_types.h
+index 8c177c0..cca9a46 100644
+--- a/source/blender/makesdna/DNA_actuator_types.h
++++ b/source/blender/makesdna/DNA_actuator_types.h
+@@ -106,8 +106,11 @@ typedef struct bObjectActuator {
+ 	float loc[3], rot[3];
+ 	float dloc[3], drot[3];
+ 	float linearvelocity[3], angularvelocity[3];
+-//	float addedlinearvelocity[3];
+-//	char anotherpad[4];
++	/* AMIX: these two were commented out with //, which makesdna does not
++	   understand: Blender's file format has always counted them, so they
++	   are real here and the compiled struct matches the SDNA (120 bytes) */
++	float addedlinearvelocity[3];
++	char anotherpad[4];
+ } bObjectActuator;
+ 
+ typedef struct bIpoActuator {
+diff --git a/source/blender/makesdna/DNA_sound_types.h b/source/blender/makesdna/DNA_sound_types.h
+index 04a522b..ec001f7 100644
+--- a/source/blender/makesdna/DNA_sound_types.h
++++ b/source/blender/makesdna/DNA_sound_types.h
+@@ -103,8 +103,10 @@ typedef struct bSound {
+ 	float distance;
+ 	int flags;
+ 	int streamlen;
+-//	unsigned int loopstart;
+-//	unsigned int loopend;
++	/* AMIX: commented out with // upstream, which makesdna counts anyway:
++	   real fields, so the compiled struct matches the SDNA (288 bytes) */
++	unsigned int loopstart;
++	unsigned int loopend;
+ 	char channels;
+ 	char highprio;
+ 	char pad[10];

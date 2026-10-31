@@ -55,7 +55,8 @@ version it names in its Makefile, and one version is linked into
 | `demos`        | demos and intros                     | moved: amixintro                                  |
 | `editor`       | editors                              | moved: vim                                        |
 | `games`        | games and their engines              | moved: iortcw, ioquake3 (patches only)            |
-| `library`      | general libraries                    | moved: lib060, ncurses, pth, sdl2, tinygl         |
+| `graphics`     | 3D and images                        | moved: blender                                    |
+| `library`      | general libraries                    | moved: lib060, ncurses, pth, sdl2, soft3d, tinygl |
 | `multimedia`   | video                                | moved: ffmpeg                                     |
 | `runtime`      | language runtimes                    | moved: python3                                    |
 | `shell`        | shells                               | (bash)                                            |
