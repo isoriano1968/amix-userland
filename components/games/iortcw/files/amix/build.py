@@ -18,8 +18,8 @@ X = HOME + "/opt/m68k-amix-sysroot/usr/x11r6/xc/exports"
 SYSLIB = HOME + "/opt/m68k-amix-sysroot/usr/ccs/lib"
 L060 = os.environ.get("LIB060", HOME + "/Sources/usr-amix/amix-userland/components/library/lib060")
 MESA = os.environ.get("MESA31", HOME + "/Sources/usr-amix/amix-userland/components/x11/mesa-31/work")
-ZZDIR = os.environ.get("Z3660GL", HOME + "/Sources/usr-amix/z3660gl-amix")
-H264 = os.environ.get("CORE1_HDR", HOME + "/Sources/usr-amix/vplay-amix/arm/h264bench")
+ZZDIR = os.environ.get("Z3660GL", HOME + "/Sources/usr-amix/amix-gate/usr/src/firmware/core1")
+H264 = os.environ.get("CORE1_HDR", HOME + "/Sources/usr-amix/amix-gate/usr/src/firmware/core1/cores/h264bench")
 
 CFLAGS = ["-O2", "-m68060", "-fno-strict-aliasing", "-fcommon", "-w", "-U__linux__", "-Ulinux",
           "-D__amix__", "-DSVR4", "-DAMIX_ZZGL", "-DBOTLIB", '-DPRODUCT_VERSION="1.51-amix"',

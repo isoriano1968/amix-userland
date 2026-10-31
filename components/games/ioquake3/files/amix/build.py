@@ -74,7 +74,7 @@ GROUPS = [
 # 3.1 and soft3D: amix_glimp_zzgl.c, the encoder and the AMIX side of zzgl,
 # no libGL; objects in obj-zzgl, the program ioquake3.zzgl
 ZZGL = os.environ.get("ZZGL") == "1"
-ZZDIR = HOME + "/Sources/usr-amix/z3660gl-amix"
+ZZDIR = HOME + "/Sources/usr-amix/amix-gate/usr/src/firmware/core1"
 if ZZGL:
     CFLAGS += ["-DAMIX_ZZGL", "-I" + ZZDIR + "/zzgl"]
     GROUPS = [(g, [x for x in srcs if not x.endswith(("tr_amix_s3d.c", "amix_glprocs.c"))])
@@ -83,7 +83,7 @@ if ZZGL:
     GROUPS.append(("zzgl", [ZZDIR + "/zzgl/zzgl_enc.c", ZZDIR + "/zzgl/zzgl_amix.c"]))
 # the zzgl sources see Mesa 18.3's GL headers and vplay's board layout
 GROUP_FLAGS = {"zzgl": ["-I" + ZZDIR + "/src/mesa-18.3.6/include", "-I" + ZZDIR + "/compat/amix",
-                        "-I" + HOME + "/Sources/usr-amix/vplay-amix/arm/h264bench"]}
+                        "-I" + HOME + "/Sources/usr-amix/amix-gate/usr/src/firmware/core1/cores/h264bench"]}
 OBJ = "obj-zzgl" if ZZGL else "obj"
 
 LIBS = ["-L" + MESA + "/shm-static", "-L" + MESA + "/lib", "-L" + X + "/lib", "-lGL", "-lXext", "-lX11",

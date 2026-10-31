@@ -11,7 +11,7 @@ g = {"__file__": os.path.join(H, "build.py")}
 exec(compile(src, "build.py", "exec"), g)
 out = sys.argv[1]
 C = g["C"]
-ZZ = os.path.expanduser("~/Sources/usr-amix/z3660gl-amix")
+ZZ = os.path.expanduser("~/Sources/usr-amix/amix-gate/usr/src/firmware/core1")
 ZZGL = os.path.join(ZZ, "zzgl")
 MESA_INC = os.path.join(ZZ, "src", "mesa-18.3.6", "include")
 OSMESA = os.path.join(ZZ, "src", "host-osmesa", "src", "gallium", "targets", "osmesa")

@@ -1,0 +1,198 @@
+#######################################################################
+#
+#  vplay.dt -- CDE data types and actions for vplay, the AMIX video player.
+#
+#  Install as /etc/dt/appconfig/types/C/vplay.dt; files there take
+#  precedence over /usr/dt, so the Open action below replaces CDE's
+#  "No MPEG player available" for MPEG files.  Then Reload Actions
+#  (Application Manager, Desktop_Tools) or log in again.
+#
+#  Double-click plays a video at its own size; the menu also has
+#  "Play Double Size".  The VPlay action takes files dropped on its icon.
+#  MPEG-1 files (.mpg) are decoded by the Z3660's ARM, with the sound on
+#  the board's HDMI; their menu has "Play, Sound through Paula" as well.
+#
+#######################################################################
+
+set DtDbVersion=1.0
+
+ACTION VPlay
+{
+	LABEL		Video Player
+	ICON		Dtmpeg
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/opt/amix/bin/vplay %Arg_1"Video file to play:"%
+	DESCRIPTION	Plays a video (MP4, AVI, MKV, MOV, MPEG) with sound \
+			through Paula; MPEG-1 on the Z3660's ARM with the \
+			sound on HDMI. Keys: q quit, space pause, \
+			Left/Right -/+10 s, Down/Up -/+60 s.
+}
+
+ACTION VPlayDouble
+{
+	LABEL		Play Double Size
+	ICON		Dtmpeg
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/opt/amix/bin/vplay -x2 %Arg_1"Video file to play:"%
+	DESCRIPTION	Plays a video in a window twice its size.
+}
+
+ACTION VPlayPaula
+{
+	LABEL		Play, Sound through Paula
+	ICON		Dtmpeg
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/opt/amix/bin/vplay -paula %Arg_1"Video file to play:"%
+	DESCRIPTION	Plays an MPEG-1 file on the Z3660's ARM with the sound \
+			through Paula instead of the board's HDMI.
+}
+
+# ---- MPEG: CDE's own type (its file names: .mpg .mpeg .MPG .MPEG), ----
+# ---- opened by vplay instead of an error; the menu replaced too    ----
+
+DATA_ATTRIBUTES MPEG
+{
+	ACTIONS		Open,VPlayDouble,VPlayPaula
+	ICON		Dtmpeg
+	NAME_TEMPLATE	%s.mpg
+	MIME_TYPE	video/mpeg
+	TYPE_LABEL	MPEG
+	DESCRIPTION	This file contains an MPEG video. Double-click plays \
+			it: MPEG-1 on the Z3660's ARM, sound on HDMI.
+}
+
+ACTION Open
+{
+	LABEL		Open
+	ARG_TYPE	MPEG
+	TYPE		MAP
+	MAP_ACTION	VPlay
+}
+
+# ---- MP4, QuickTime ---------------------------------------------------
+
+DATA_ATTRIBUTES MP4
+{
+	ACTIONS		Open,VPlayDouble
+	ICON		Dtmpeg
+	NAME_TEMPLATE	%s.mp4
+	MIME_TYPE	video/mp4
+	TYPE_LABEL	MP4
+	DESCRIPTION	This file contains a video in an MP4 or QuickTime \
+			container (.mp4, .m4v, .mov). Double-click plays it.
+}
+DATA_CRITERIA MP4_1
+{
+	DATA_ATTRIBUTES_NAME	MP4
+	MODE			f
+	NAME_PATTERN		*.mp4
+}
+DATA_CRITERIA MP4_2
+{
+	DATA_ATTRIBUTES_NAME	MP4
+	MODE			f
+	NAME_PATTERN		*.MP4
+}
+DATA_CRITERIA MP4_3
+{
+	DATA_ATTRIBUTES_NAME	MP4
+	MODE			f
+	NAME_PATTERN		*.m4v
+}
+DATA_CRITERIA MP4_4
+{
+	DATA_ATTRIBUTES_NAME	MP4
+	MODE			f
+	NAME_PATTERN		*.mov
+}
+DATA_CRITERIA MP4_5
+{
+	DATA_ATTRIBUTES_NAME	MP4
+	MODE			f
+	NAME_PATTERN		*.MOV
+}
+
+ACTION Open
+{
+	LABEL		Open
+	ARG_TYPE	MP4
+	TYPE		MAP
+	MAP_ACTION	VPlay
+}
+
+# ---- AVI --------------------------------------------------------------
+
+DATA_ATTRIBUTES AVI
+{
+	ACTIONS		Open,VPlayDouble
+	ICON		Dtmpeg
+	NAME_TEMPLATE	%s.avi
+	MIME_TYPE	video/x-msvideo
+	TYPE_LABEL	AVI
+	DESCRIPTION	This file contains a video in an AVI container, \
+			as mkamixvideo.sh makes them. Double-click plays it.
+}
+DATA_CRITERIA AVI_1
+{
+	DATA_ATTRIBUTES_NAME	AVI
+	MODE			f
+	NAME_PATTERN		*.avi
+}
+DATA_CRITERIA AVI_2
+{
+	DATA_ATTRIBUTES_NAME	AVI
+	MODE			f
+	NAME_PATTERN		*.AVI
+}
+
+ACTION Open
+{
+	LABEL		Open
+	ARG_TYPE	AVI
+	TYPE		MAP
+	MAP_ACTION	VPlay
+}
+
+# ---- Matroska, MPEG transport stream ------------------------------------
+
+DATA_ATTRIBUTES MKV
+{
+	ACTIONS		Open,VPlayDouble
+	ICON		Dtmpeg
+	NAME_TEMPLATE	%s.mkv
+	MIME_TYPE	video/x-matroska
+	TYPE_LABEL	MKV
+	DESCRIPTION	This file contains a video in a Matroska container \
+			(.mkv) or an MPEG transport stream (.ts). \
+			Double-click plays it.
+}
+DATA_CRITERIA MKV_1
+{
+	DATA_ATTRIBUTES_NAME	MKV
+	MODE			f
+	NAME_PATTERN		*.mkv
+}
+DATA_CRITERIA MKV_2
+{
+	DATA_ATTRIBUTES_NAME	MKV
+	MODE			f
+	NAME_PATTERN		*.MKV
+}
+DATA_CRITERIA MKV_3
+{
+	DATA_ATTRIBUTES_NAME	MKV
+	MODE			f
+	NAME_PATTERN		*.ts
+}
+
+ACTION Open
+{
+	LABEL		Open
+	ARG_TYPE	MKV
+	TYPE		MAP
+	MAP_ACTION	VPlay
+}
+
