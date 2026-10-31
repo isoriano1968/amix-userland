@@ -14,7 +14,8 @@ one directory per component, grouped by category.
       tools/                                   helpers for the tree
       doc/                                     how to add a component
 
-A component holds what it takes to build it, not the built result:
+A component holds what it takes to build it, not the built result
+(`components/library/pth` is the worked example):
 
     <name>/
       Makefile        where the source comes from, version, configure and build
@@ -53,7 +54,7 @@ version it names in its Makefile, and one version is linked into
 | `developer`    | compilers and development tools      | gcc-cross-amix, vscode-amix                       |
 | `driver`       | kernel drivers, core 1 programs      | paula-amix, random-amix, hydra-amix, amix-z3660net, amix-z3660scsi, soft3d-z3660rtg-amix, core1-z3660-amix |
 | `games`        | games and their engines              | (quake, rtcw: source patches only)                |
-| `library`      | general libraries                    | sdl2-amix, gnu-pth-amix                           |
+| `library`      | general libraries                    | sdl2-amix; moved: pth                             |
 | `multimedia`   | video                                | ffmpeg-amix, cde-apps-amix (amixcast)             |
 | `runtime`      | language runtimes                    | python3-amix                                      |
 | `shell`        | shells                               | (bash)                                            |
@@ -61,6 +62,8 @@ version it names in its Makefile, and one version is linked into
 
 The kernel port (amix-040-060-port) and the Z3660 firmware fork (Z3660) stay
 separate: they are not userland.
+
+To move a repository in, see [doc/moving-a-repo.md](doc/moving-a-repo.md).
 
 ## Licence
 
