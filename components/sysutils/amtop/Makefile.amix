@@ -1,0 +1,20 @@
+CC = cc
+CFLAGS = -O
+LDFLAGS =
+LIBS = -lncurses
+PREFIX = /usr/local
+BINDIR = $(PREFIX)/bin
+
+all: amtop
+
+amtop: amtop.o
+	$(CC) $(LDFLAGS) amtop.o -o amtop $(LIBS)
+
+amtop.o: amtop.c
+	$(CC) $(CFLAGS) -c amtop.c
+
+clean:
+	rm -f amtop.o amtop
+
+install: amtop
+	cp amtop $(BINDIR)/amtop
