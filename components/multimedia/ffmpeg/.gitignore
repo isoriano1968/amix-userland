@@ -1,0 +1,12 @@
+# FFmpeg 4.4.8 source (unpacked from the release tarball) and build trees
+/ffmpeg-4.4.8/
+/build-ff/
+/build-ffplay/
+/build-host/
+# binaries
+/vplay
+/vplay-host
+/compat/*.o
+/compat/*.a
+# test media: made locally by mkclips.sh / mkamixvideo.sh, not published
+/clips/
