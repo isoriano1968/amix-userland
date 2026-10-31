@@ -1,0 +1,45 @@
+{
+  "scopeName": "source.m68k.amix",
+  "patterns": [
+    {
+      "name": "comment.line.m68k",
+      "match": "[|#;].*$"
+    },
+    {
+      "name": "entity.name.label.m68k",
+      "match": "^\\s*[A-Za-z_.$][A-Za-z0-9_.$]*:"
+    },
+    {
+      "name": "keyword.directive.m68k",
+      "match": "\\.(text|data|bss|globl|global|comm|lcomm|align|even|long|word|short|byte|ascii|asciz|ident|size|type)\\b"
+    },
+    {
+      "name": "keyword.mnemonic.m68k",
+      "match": "\\b(move|mov|movm|lea|pea|clr|ext|swap|add|adda|addi|addq|sub|suba|subi|subq|mul[su]|div[su]|and|andi|or|ori|eor|not|neg|cmp|cmpa|cmpi|tst|btst|bset|bclr|bra|bsr|bhi|bls|bcc|bcs|bne|beq|bvc|bvs|bpl|bmi|bge|blt|bgt|ble|dbra|jmp|jsr|rts|rte|link|unlk|trap|nop|pmove|pflusha)\\.?[bwl]?\\b"
+    },
+    {
+      "name": "variable.language.register.m68k",
+      "match": "%?(a[0-7]|d[0-7]|sp|fp|pc|sr|ccr|usp|vbr|sfc|dfc|cacr|caar)\\b"
+    },
+    {
+      "name": "constant.numeric.hex.m68k",
+      "match": "(\\$[0-9A-Fa-f]+|0x[0-9A-Fa-f]+|&[0-9A-Fa-f]+)"
+    },
+    {
+      "name": "constant.numeric.decimal.m68k",
+      "match": "\\b[0-9]+\\b"
+    },
+    {
+      "name": "string.quoted.double.m68k",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.m68k",
+          "match": "\\\\."
+        }
+      ]
+    }
+  ]
+}
+

@@ -1,0 +1,55 @@
+{
+  "AMIX hello": {
+    "prefix": "amix-hello",
+    "body": [
+      "#include <stdio.h>",
+      "",
+      "int",
+      "main(void)",
+      "{",
+      "\tputs(\"hello from AMIX\");",
+      "\treturn 0;",
+      "}"
+    ],
+    "description": "Small AMIX userland C program"
+  },
+  "AMIX driver entry points": {
+    "prefix": "amix-driver",
+    "body": [
+      "#include <sys/types.h>",
+      "#include <sys/errno.h>",
+      "#include <sys/uio.h>",
+      "",
+      "int",
+      "${1:name}open(dev, flag, otyp, credp)",
+      "\tdev_t dev;",
+      "\tint flag;",
+      "\tint otyp;",
+      "\tstruct cred *credp;",
+      "{",
+      "\treturn 0;",
+      "}",
+      "",
+      "int",
+      "${1:name}close(dev, flag, otyp, credp)",
+      "\tdev_t dev;",
+      "\tint flag;",
+      "\tint otyp;",
+      "\tstruct cred *credp;",
+      "{",
+      "\treturn 0;",
+      "}",
+      "",
+      "int",
+      "${1:name}read(dev, uiop, credp)",
+      "\tdev_t dev;",
+      "\tstruct uio *uiop;",
+      "\tstruct cred *credp;",
+      "{",
+      "\treturn 0;",
+      "}"
+    ],
+    "description": "Skeleton AMIX character driver entry points"
+  }
+}
+
