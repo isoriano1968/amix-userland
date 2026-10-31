@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """amixcast.py -- the PC's half of streaming to the A3000.
 
-Reads a DLNA server's list and has VLC transcode what the Amiga picks, at
-the bitrate and from the time it asks for.  The Amiga only speaks plain HTTP
+Lists a folder of this PC, ~/Videos unless told otherwise, or a DLNA server,
+and has VLC transcode what the Amiga picks, at the bitrate and from the time
+it asks for.  The Amiga only speaks plain HTTP
 to this program:
 
   GET /list?id=0                 a folder, one line each, tab separated:
@@ -12,9 +13,9 @@ to this program:
   GET /info?id=..                the file's length in seconds (0: unknown)
   GET /probe                     1 MB, to measure the line
 
-  amixcast.py [--server http://192.168.0.50:45227] [--port 8092] [--width 640]
+  amixcast.py [--dir ~/Videos | --server http://192.168.0.50:45227] [--port 8092] [--width 640]
 """
-import argparse, html, http.server, re, shutil, socketserver, subprocess, sys, urllib.parse, urllib.request
+import argparse, html, http.server, os, pathlib, re, shutil, socketserver, subprocess, sys, urllib.parse, urllib.request
 
 BROWSE = ('<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" '
           's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>'
@@ -71,6 +72,43 @@ class Dlna:
             start += int(n.group(1)) if n else 0
             if not n or not total or not int(n.group(1)) or start >= int(total.group(1)):
                 return out
+
+
+class Folder(Dlna):
+    """A folder of this PC, listed like a DLNA server; ids are handed out as
+    folders are listed, so nothing outside it can be asked for."""
+
+    KINDS = {'v': 'mp4 mkv avi mov webm mpg mpeg m4v ts wmv flv ogv', 'a': 'mp3 flac ogg m4a wav opus aac',
+             'i': 'jpg jpeg png gif'}
+
+    def __init__(self, root):
+        self.urls = {}
+        self.lengths = {}
+        self.dirs = {'0': pathlib.Path(root).expanduser().resolve()}
+        self.next_id = 1
+
+    def _id(self):
+        self.next_id += 1
+        return str(self.next_id - 1)
+
+    def browse(self, oid):
+        out = []
+        for e in sorted(os.scandir(self.dirs[oid]), key=lambda e: (not e.is_dir(), e.name.lower())):
+            if e.name.startswith('.'):
+                continue
+            title = e.name.replace('\t', ' ').replace('\n', ' ')
+            if e.is_dir():
+                i = self._id()
+                self.dirs[i] = pathlib.Path(e.path)
+                out.append(('d', i, title, 0, ''))
+                continue
+            ext = e.name.rsplit('.', 1)[-1].lower()
+            kind = next((k for k, v in self.KINDS.items() if ext in v.split()), None)
+            if kind:
+                i = self._id()
+                self.urls[i] = pathlib.Path(e.path).resolve().as_uri()
+                out.append(('f', i, title, 0, kind))
+        return out
 
 
 def _attr(s, name):
@@ -166,15 +204,16 @@ class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 def main():
     a = argparse.ArgumentParser()
-    a.add_argument('--server', default='http://192.168.0.50:45227')
+    a.add_argument('--dir', default='~/Videos')
+    a.add_argument('--server')
     a.add_argument('--port', type=int, default=8092)
     a.add_argument('--width', type=int, default=640)
     o = a.parse_args()
     s = Server(('', o.port), Handler)
-    s.dlna = Dlna(o.server)
+    s.dlna = Dlna(o.server) if o.server else Folder(o.dir)
     s.width = o.width
     s.active = {}
-    print('amixcast: %s on port %d' % (o.server, o.port), flush=True)
+    print('amixcast: %s on port %d' % (o.server or o.dir, o.port), flush=True)
     s.serve_forever()
 
 
