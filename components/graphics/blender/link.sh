@@ -5,7 +5,7 @@ H=$(cd "$(dirname "$0")" && pwd)
 export PATH=$HOME/opt/m68k-amix/bin:$PATH
 X=$HOME/opt/m68k-amix-sysroot/usr/x11r6/xc/exports
 MESA=$HOME/Sources/usr-amix/amix-userland/components/x11/mesa-31/work
-L060=$HOME/Sources/usr-amix/x11r63-amix/lib060
+L060=$HOME/Sources/usr-amix/private/x11r63-amix/lib060
 CF="-I$H/amixinc -O2 -m68060 -funsigned-char -U__linux__ -Ulinux -D__amix__ -D__BIG_ENDIAN__ -std=gnu89 -include $H/ccompat.h -w"
 mkdir -p $H/obj/link
 m68k-elf-gcc $CF -c $H/obj/makesdna/DNA.c -o $H/obj/link/DNA.o

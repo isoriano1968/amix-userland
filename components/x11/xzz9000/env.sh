@@ -1,3 +1,4 @@
-export PATH=/home/isoriano/opt/amix-cross/bin:$PATH
-export AMIX_SYSROOT=/home/isoriano/Sources/usr-amix/xzz9000-z3/sysroot-mirror
-export IMAKECPP=/home/isoriano/Sources/usr-amix/xzz9000-z3/imakecpp.sh
+W=$HOME/Sources/usr-amix/amix-userland/components/x11/xzz9000
+export PATH=$HOME/opt/amix-cross/bin:$PATH
+export AMIX_SYSROOT=$W/sysroot-mirror
+export IMAKECPP=$W/imakecpp.sh

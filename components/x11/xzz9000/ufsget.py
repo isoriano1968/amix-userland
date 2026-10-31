@@ -1,6 +1,6 @@
 """Copy a directory tree out of an AMIX UFS image (read-only) with pvmk's ufstool."""
 import os, subprocess, sys
-T = "/home/isoriano/Sources/usr-amix/pvmk/build/host/ufstool"
+T = os.path.expanduser("~/Sources/usr-amix/pvmk/build/host/ufstool")
 img, start, src, dst = sys.argv[1:5]
 def walk(s, d):
     os.makedirs(d, exist_ok=True)
