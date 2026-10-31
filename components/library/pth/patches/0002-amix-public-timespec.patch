@@ -1,0 +1,18 @@
+--- a/pthread.h
++++ b/pthread.h
+@@ -199,6 +199,15 @@
+  * Extra structure definitions
+  */
+ struct timeval;
++#if defined(__amix__) && !defined(_PTHREAD_PRIVATE)
++#ifndef _PTH_AMIX_PUBLIC_TIMESPEC
++#define _PTH_AMIX_PUBLIC_TIMESPEC
++struct timespec {
++    time_t tv_sec;
++    long tv_nsec;
++};
++#endif
++#endif
+ struct timespec;
+ 
+ /*
