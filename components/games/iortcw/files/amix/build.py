@@ -17,7 +17,7 @@ CC, CXX, LD = BIN + "m68k-elf-gcc", BIN + "m68k-elf-g++", BIN + "m68k-elf-ld"
 X = HOME + "/opt/m68k-amix-sysroot/usr/x11r6/xc/exports"
 SYSLIB = HOME + "/opt/m68k-amix-sysroot/usr/ccs/lib"
 L060 = os.environ.get("LIB060", HOME + "/Sources/usr-amix/amix-userland/components/library/lib060")
-MESA = os.environ.get("MESA31", HOME + "/Sources/usr-amix/mesa31-amix")
+MESA = os.environ.get("MESA31", HOME + "/Sources/usr-amix/amix-userland/components/x11/mesa-31/work")
 ZZDIR = os.environ.get("Z3660GL", HOME + "/Sources/usr-amix/z3660gl-amix")
 H264 = os.environ.get("CORE1_HDR", HOME + "/Sources/usr-amix/vplay-amix/arm/h264bench")
 

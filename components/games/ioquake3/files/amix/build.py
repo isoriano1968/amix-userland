@@ -19,7 +19,7 @@ C = os.path.join(TOP, "code")
 HOME = os.path.expanduser("~")
 CC = HOME + "/opt/m68k-amix/bin/m68k-elf-gcc"
 X = HOME + "/opt/m68k-amix-sysroot/usr/x11r6/xc/exports"
-MESA = HOME + "/Sources/usr-amix/mesa31-amix"
+MESA = HOME + "/Sources/usr-amix/amix-userland/components/x11/mesa-31/work"
 L060 = HOME + "/Sources/usr-amix/amix-userland/components/library/lib060"
 
 CFLAGS = ["-O2", "-m68060", "-fno-strict-aliasing", "-fcommon", "-w",

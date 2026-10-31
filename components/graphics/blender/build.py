@@ -22,7 +22,7 @@ HOME = os.path.expanduser("~")
 TC = os.path.join(HOME, "opt/m68k-amix/bin")
 CC, CXX, AR = TC + "/m68k-elf-gcc", TC + "/m68k-elf-g++", TC + "/m68k-elf-ar"
 XINC = os.path.join(HOME, "opt/m68k-amix-sysroot/usr/x11r6/xc/exports/include")
-MESA = os.path.join(HOME, "Sources/usr-amix/mesa31-amix")
+MESA = os.path.join(HOME, "Sources/usr-amix/amix-userland/components/x11/mesa-31/work")
 DEPS = os.path.join(H, "deps")
 
 COMMON = ["-I" + os.path.join(H, "amixinc"), "-O2", "-m68060", "-funsigned-char", "-U__linux__", "-Ulinux",

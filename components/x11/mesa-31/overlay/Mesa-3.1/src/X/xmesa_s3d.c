@@ -4,7 +4,7 @@
  * Unless MESA_SOFT3D=0 is in the environment, a double-buffered RGB window gets
  * its back buffer in off-screen VRAM, and Mesa hands every triangle, line
  * and point -- transformed, lit, clipped and culled on the 68060 -- to the
- * Z3660's ARM rasterizer through libs3d (s3d.c, from soft3d-z3660rtg-amix).  The swap is
+ * Z3660's ARM rasterizer through libs3d (soft3d-amix/libs3d).  The swap is
  * a blitter copy by the X server (ZZ9K-SOFT3D), through the window's clip
  * list.  Drawing to the front buffer stays on Mesa's own X path.
  *
@@ -21,8 +21,6 @@
  * ARM has finished).  One soft3D buffer per machine at a time; the first
  * window that asks gets it.
  */
-#ifdef AMIX_SOFT3D	/* Make-config: amix060 (gcc14, 68060); empty otherwise */
-
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -33,7 +31,7 @@
 #include "macros.h"
 #include "types.h"
 #include "vb.h"
-#include "s3d.h"
+#include "../../../soft3d-amix/libs3d/s3d.h"
 
 static XMesaBuffer s3dbuf;              /* the buffer soft3D draws for */
 static struct s3d_state base;           /* the state without the texture */
@@ -740,5 +738,3 @@ int glAmixS3DHeight(void)
 {
     return s3dbuf ? (int) s3dbuf->height : 0;
 }
-
-#endif /* AMIX_SOFT3D */

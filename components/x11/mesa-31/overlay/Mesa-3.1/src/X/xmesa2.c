@@ -176,9 +176,7 @@ static void get_buffer_size( GLcontext *ctx, GLuint *width, GLuint *height )
       xmesa->xm_buffer->width = winwidth;
       xmesa->xm_buffer->height = winheight;
       xmesa_alloc_back_buffer( xmesa->xm_buffer );
-#ifdef AMIX_SOFT3D
       xmesa_s3d_resize( xmesa->xm_buffer );
-#endif
    }
 
    /* Needed by FLIP macro */
@@ -5136,8 +5134,6 @@ void xmesa_update_state( GLcontext *ctx )
    ctx->Driver.ReadCI32Pixels = read_index_pixels;
    ctx->Driver.ReadRGBAPixels = read_color_pixels;
 
-#ifdef AMIX_SOFT3D
    /* AMIX: the Z3660's soft3D takes over the back buffer (xmesa_s3d.c) */
    xmesa_s3d_update_state( ctx );
-#endif
 }

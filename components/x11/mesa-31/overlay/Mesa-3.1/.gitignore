@@ -1,0 +1,17 @@
+*.o
+*.a
+*.so
+*.log
+core
+*.xwd
+*.png.tmp
+# build output
+lib/
+shm-static/
+xmu-static/
+demos/bin060/
+demos/xmu-static/
+build-*.log
+src/depend
+src-glu/depend
+src-glut/depend

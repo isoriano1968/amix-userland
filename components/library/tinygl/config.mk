@@ -38,7 +38,7 @@ TINYGL_USE_GLX=y
 
 ifdef TINYGL_USE_GLX
 # Linux
-UI_LIBS= -L$(HOME)/Sources/usr-amix/mesa31-amix/shm-static -L$(X)/lib -lXext -lX11 -lshmsys -lsocket -lnsl -L$(M060) -lm060 -lc060
+UI_LIBS= -L$(HOME)/Sources/usr-amix/amix-userland/components/x11/mesa-31/work/shm-static -L$(X)/lib -lXext -lX11 -lshmsys -lsocket -lnsl -L$(M060) -lm060 -lc060
 UI_INCLUDES= 
 # Solaris
 #UI_LIBS= -L/usr/X11/lib -lX11 -lXext -lsocket -lnsl

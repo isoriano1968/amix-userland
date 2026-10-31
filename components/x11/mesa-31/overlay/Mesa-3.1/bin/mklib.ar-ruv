@@ -1,0 +1,8 @@
+#!/bin/sh
+# mklib.ar-ruv LIBRARY MAJOR MINOR TINY OBJECTS... -- a static archive with
+# the cross archiver (AMIX gcc14 build of Mesa 3.1)
+LIBRARY=$1
+shift 4
+rm -f $LIBRARY
+m68k-elf-ar ruv $LIBRARY "$@"
+m68k-elf-ranlib $LIBRARY

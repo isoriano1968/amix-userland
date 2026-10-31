@@ -1996,9 +1996,7 @@ GLboolean XMesaMakeCurrent( XMesaContext c, XMesaBuffer b )
 
       gl_make_current( c->gl_ctx, b->gl_buffer );
       XMesa = c;
-#ifdef AMIX_SOFT3D
       xmesa_s3d_attach( b );     /* AMIX: soft3D unless MESA_SOFT3D=0 (xmesa_s3d.c) */
-#endif
 
       if (c->gl_ctx->Viewport.Width==0) {
 	 /* initialize viewport to window size */
@@ -2258,10 +2256,8 @@ void XMesaSwapBuffers( XMesaBuffer b )
 
     FLUSH_VB( XMesa->gl_ctx, "swap buffers" );
 
-#ifdef AMIX_SOFT3D
    if (xmesa_s3d_swap( b ))     /* AMIX: soft3D's back buffer (xmesa_s3d.c) */
       return;
-#endif
 
    if (b->db_state) {
 #ifdef FX

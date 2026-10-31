@@ -9,7 +9,7 @@ names = set(re.findall(r"GLE\(\s*[^,]+,\s*(\w+)\s*,", qgl))
 names |= {"ActiveTextureARB", "ClientActiveTextureARB", "MultiTexCoord2fARB",
           "LockArraysEXT", "UnlockArraysEXT"}
 nm = subprocess.run([os.path.expanduser("~/opt/m68k-amix/bin/m68k-elf-nm"),
-                     os.path.expanduser("~/Sources/usr-amix/mesa31-amix/lib/libGL.a")],
+                     os.path.expanduser("~/Sources/usr-amix/amix-userland/components/x11/mesa-31/work/lib/libGL.a")],
                     capture_output=True, text=True).stdout
 have = set(re.findall(r" T (gl\w+)$", nm, re.M))
 use = sorted(n for n in names if "gl" + n in have)

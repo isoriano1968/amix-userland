@@ -6,7 +6,7 @@
 #   make            AMIX binary LamerCubeAMIX
 #   make host       PC preview build (system GL/GLUT)
 #   make assets     regenerate font.h/logo.h (mkassets.py)
-MESA = $(HOME)/Sources/usr-amix/mesa31-amix
+MESA = $(HOME)/Sources/usr-amix/amix-userland/components/x11/mesa-31/work
 X    = $(HOME)/opt/m68k-amix-sysroot/usr/x11r6/xc/exports
 CC   = $(HOME)/opt/m68k-amix/bin/m68k-elf-gcc
 # lib060 (library/lib060): sin/cos/fmod without the instructions the 060 traps on,
