@@ -2,6 +2,7 @@
 """mkassets.py -- the intro's textures as C arrays (one self-contained binary):
 font.h  -- fonte.tga from LamerIntroLinux, 1024x32 RGBA (bitmap font strip)
 logo.h  -- the AMIX logo, 256x256 RGB, for the cube faces"""
+import os
 import sys
 from PIL import Image
 L = '/home/isoriano/Sources/LamerIntroLinuxPlayground'
@@ -16,7 +17,7 @@ def emit(name, data, w, h, comps, out):
 font = Image.open(L + '/fonte.tga').convert('RGBA')
 # OpenGL wants the first row at the bottom; TGA from PIL comes top-down
 emit('font', font.transpose(Image.FLIP_TOP_BOTTOM).tobytes(), 1024, 32, 4, 'font.h')
-logo = Image.open('/home/isoriano/Sources/usr-amix/cde-amix/dtlogin/amix-logo.webp').convert('RGB')
+logo = Image.open(os.path.expanduser('~/Sources/usr-amix/amix-userland/components/desktop/cde/files/dtlogin/')+'amix-logo.webp').convert('RGB')
 w, h = logo.size
 s = int(min(w, h) * 0.955)
 logo = logo.crop(((w - s)//2, (h - s)//2, (w + s)//2, (h + s)//2)).resize((256, 256), Image.LANCZOS)

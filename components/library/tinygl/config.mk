@@ -8,7 +8,7 @@ X= $(HOME)/opt/m68k-amix-sysroot/usr/x11r6/xc/exports
 # lib060: sin/cos/tan/fmod without the 68881 instructions the 060 emulates,
 # and memcpy/memset/... in longs instead of AMIX libc's byte loops
 # (78 us per inlined fsin); gcc must call them, not inline them
-M060= $(HOME)/Sources/usr-amix/lib060
+M060= $(HOME)/Sources/usr-amix/amix-userland/components/library/lib060
 M060_CFLAGS= -fno-builtin-sin -fno-builtin-cos -fno-builtin-tan -fno-builtin-fmod -fno-builtin-sinf -fno-builtin-cosf -fno-builtin-tanf -fno-builtin-fmodf
 CFLAGS= -O2 -m68060 -ffast-math $(M060_CFLAGS) -w -I$(X)/include -D__amix__ -U__linux__ -Ulinux -DM_PI=3.14159265358979323846 -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=incompatible-pointer-types
 LFLAGS=

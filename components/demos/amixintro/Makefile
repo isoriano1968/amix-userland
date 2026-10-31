@@ -9,9 +9,9 @@
 MESA = $(HOME)/Sources/usr-amix/mesa31-amix
 X    = $(HOME)/opt/m68k-amix-sysroot/usr/x11r6/xc/exports
 CC   = $(HOME)/opt/m68k-amix/bin/m68k-elf-gcc
-# lib060 (../lib060): sin/cos/fmod without the instructions the 060 traps on,
+# lib060 (library/lib060): sin/cos/fmod without the instructions the 060 traps on,
 # memcpy/memset without AMIX libc's byte loops
-M060 = $(HOME)/Sources/usr-amix/lib060
+M060 = $(HOME)/Sources/usr-amix/amix-userland/components/library/lib060
 CFLAGS = -O2 -m68060 -ffast-math -U__linux__ -Ulinux -D__amix__ -DSVR4 \
 	-fno-builtin-sin -fno-builtin-cos -fno-builtin-tan -fno-builtin-fmod -fno-builtin-sinf -fno-builtin-cosf -fno-builtin-tanf -fno-builtin-fmodf
 
@@ -33,9 +33,9 @@ host: LamerCubeAMIX.c font.h logo.h
 assets:
 	python3 -I mkassets.py
 
-# LameCubeAMIGA42: TinyGL 0.4.1 (tinygl-amix, built for the 68060 with
-# MIT-SHM) instead of Mesa, through tinygl-amix's GLUT subset (libTinyGLUT).
-TINYGL = $(HOME)/Sources/usr-amix/tinygl-amix
+# LameCubeAMIGA42: TinyGL 0.4.1 (library/tinygl, built for the 68060 with
+# MIT-SHM) instead of Mesa, through library/tinygl's GLUT subset (libTinyGLUT).
+TINYGL = $(HOME)/Sources/usr-amix/amix-userland/components/library/tinygl
 LameCubeAMIGA42: LameCubeAMIGA42.c font.h logo.h
 	$(CC) $(CFLAGS) -I$(TINYGL)/include -I$(X)/include -o $@ LameCubeAMIGA42.c \
 		-L$(TINYGL)/lib -lTinyGLUT -lTinyGL -L$(MESA)/shm-static -L$(X)/lib \

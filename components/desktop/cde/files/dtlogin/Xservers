@@ -1,0 +1,3 @@
+# /etc/dt/config/Xservers -- AMIX: the Z3660 RTG server through its wrapper
+# (limits, library path, mode, font path).  See /opt/amix/bin/Xzz9000-dt.
+   :0	Local local_uid@console root /opt/amix/bin/Xzz9000-dt :0
