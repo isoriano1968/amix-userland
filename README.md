@@ -54,8 +54,8 @@ version it names in its Makefile, and one version is linked into
 | `developer`    | compilers and development tools      | gcc-cross-amix, vscode-amix                       |
 | `driver`       | kernel drivers, core 1 programs      | paula-amix, random-amix, hydra-amix, amix-z3660net, amix-z3660scsi, soft3d-z3660rtg-amix, core1-z3660-amix |
 | `games`        | games and their engines              | (quake, rtcw: source patches only)                |
-| `library`      | general libraries                    | sdl2-amix; moved: pth                             |
-| `multimedia`   | video                                | ffmpeg-amix, cde-apps-amix (amixcast)             |
+| `library`      | general libraries                    | moved: pth, sdl2                                  |
+| `multimedia`   | video                                | cde-apps-amix (amixcast); moved: ffmpeg           |
 | `runtime`      | language runtimes                    | python3-amix                                      |
 | `shell`        | shells                               | (bash)                                            |
 | `x11`          | X server, libraries, GL              | x11r6.3-amix, mesa-amix, zz9000-amix              |

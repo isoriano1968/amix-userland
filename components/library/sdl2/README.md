@@ -2,7 +2,7 @@
 
 SDL 2.30.12 for Commodore Amiga UNIX (AMIX, SVR4, m68k): a static `libSDL2.a`
 for 68040/68060 machines, cross-built with gcc14-cross-amix against X11R6.3 and
-[gnu-pth-amix](https://github.com/isoriano1968/gnu-pth-amix). SDL itself is not
+`components/library/pth`. SDL itself is not
 here: `fetch.sh` downloads the release and checks its hash, `build.sh` patches it.
 
 - `patches/`, applied in order:
@@ -16,8 +16,7 @@ here: `fetch.sh` downloads the release and checks its hash, `build.sh` patches i
 
 ## Building
 
-    sh fetch.sh
-    SHM_LIBS=<dir> sh build.sh
+    SHM_LIBS=<dir> make build
 
 The result is in `build/install/usr/local`. `AMIX_SYSROOT` defaults to
 `~/opt/m68k-amix-sysroot`. `SHM_LIBS` names a directory with a static `libXext.a`

@@ -10,3 +10,4 @@
 /compat/*.a
 # test media: made locally by mkclips.sh / mkamixvideo.sh, not published
 /clips/
+/*.tar.xz

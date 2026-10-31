@@ -6,7 +6,7 @@
 #                                    with patches/ applied to ffplay
 # The ffplay build compiles every file with gnu-pth's pthread.h, so read(),
 # usleep() and select() let ffplay's other threads run.  SDL2_AMIX names the
-# sdl2-amix tree (default ../sdl2-amix).
+# sdl2 component (default ../../library/sdl2).
 set -e
 V=$(cd "$(dirname "$0")" && pwd)
 C=$V/compat
@@ -17,7 +17,7 @@ EXTRA_LIBS=
 PLAY="--disable-ffplay"
 if [ "$1" = ffplay ]; then
 	BD=build-ffplay
-	S2=${SDL2_AMIX:-$V/../sdl2-amix}
+	S2=${SDL2_AMIX:-$V/../../library/sdl2}
 	[ -x "$S2/build/sdl2-config-cross" ] || { echo "no $S2/build/sdl2-config-cross: build sdl2-amix first"; exit 1; }
 	mkdir -p "$V/$BD/bin"
 	ln -sf "$S2/build/sdl2-config-cross" "$V/$BD/bin/sdl2-config"

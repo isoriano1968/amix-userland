@@ -2,7 +2,7 @@
 
 FFmpeg 4.4.8 with ffmpeg and ffplay on Commodore Amiga UNIX (AMIX, SVR4, m68k),
 and `vplay`, a small player, cross-built for an A3000 with a Z3660 (68060).
-FFmpeg itself is not here: unpack the release as `ffmpeg-4.4.8/`.
+FFmpeg itself is not here: `make compat` fetches and unpacks the release.
 
 On a Z3660 with core 1's player loaded, H.264 and AAC are decoded by the
 board's second ARM core: picture in the RTG overlay, sound on HDMI. The 060
@@ -30,13 +30,12 @@ stream waits for 3 s of sound before it starts.
 
 ## Building
 
-With gcc14-cross-amix (`m68k-elf-gcc`) on PATH:
+With gcc14-cross-amix (`m68k-elf-gcc`) in `~/opt/m68k-amix/bin`:
 
-    sh compat/build.sh
-    sh configure-amix.sh && make -C build-ff            # ffmpeg and the libraries
-    SHM_LIBS=<dir> sh build.sh                          # vplay
-    sh configure-amix.sh ffplay && make -C build-ffplay # ffplay
+    make build                 # ffmpeg and the libraries
+    SHM_LIBS=<dir> make vplay  # vplay
+    make ffplay                # ffplay
 
-`ffplay` needs sdl2-amix (`SDL2_AMIX`, default `../sdl2-amix`) and gnu-pth
+`ffplay` needs `components/library/sdl2` (`SDL2_AMIX`) and `components/library/pth`
 (`PTH_LIB`); `SHM_LIBS` names a directory with `libXext.a` (with XShm) and
 `libshmsys.a`. `mkclips.sh` makes test clips with GStreamer.
