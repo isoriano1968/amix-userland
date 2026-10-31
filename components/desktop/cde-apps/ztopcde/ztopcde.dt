@@ -1,0 +1,15 @@
+#
+# ztopcde.dt -- the Z3660 window (ztopcde): the board's state and the
+# programs of its second ARM core.  Installed in /etc/dt/appconfig/types/C;
+# the front panel control is in ztopcde.fp.
+#
+ACTION ZtopCDE
+{
+	LABEL		Z3660
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/opt/amix/bin/ztopcde
+	ICON		Z3660
+	DESCRIPTION	The Z3660: temperatures, voltages and clocks, and the \
+			programs of its second ARM core (start, replace).
+}

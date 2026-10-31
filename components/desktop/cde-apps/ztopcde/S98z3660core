@@ -1,0 +1,65 @@
+#!/bin/sh
+#
+# S98z3660core - start the Z3660's second ARM core at boot.
+#
+# Loads /root/z3660ARMCores/default, a link to the z3660ARM_Core_* program
+# wanted at boot.  Change the program with
+#	ln -sf z3660ARM_Core_xxx.bin /root/z3660ARMCores/default
+# No link, nothing is loaded.  Core 0 starts core 1 once per power-on
+# (armbench -load); after a reboot without a power cycle core 1 still runs
+# and takes the program with armbench -reload.
+#
+# Install as /etc/rc2.d/S98z3660core.
+
+PATH=/sbin:/usr/sbin:/usr/bin
+export PATH
+
+DIR=/root/z3660ARMCores
+AB=$DIR/armbench
+
+case "$1" in
+''|start)
+	if [ ! -h $DIR/default -a ! -f $DIR/default ]; then
+		echo "INFO: Z3660 core 1: no $DIR/default, nothing loaded"
+		exit 0
+	fi
+	if [ -h $DIR/default ]; then
+		prog=`ls -l $DIR/default | sed 's/.*-> //'`
+		prog=`basename "$prog"`
+	else
+		prog=default
+	fi
+	if [ ! -f $DIR/default ]; then
+		echo "INFO: Z3660 core 1: $DIR/default points to $prog, which is missing"
+		exit 1
+	fi
+	loads=`$AB -dump 2>/dev/null | sed -n 's/.*loads \([0-9]*\).*/\1/p'`
+	cd $DIR
+	if [ -z "$loads" ]; then
+		echo "INFO: Z3660 core 1: the firmware has no core 1 loader, $prog not loaded"
+		exit 1
+	elif [ "$loads" = 0 ]; then
+		how=loaded
+		out=`$AB -load default 2>&1`
+	else
+		how=reloaded
+		out=`$AB -reload default 2>&1`
+	fi
+	if [ $? -eq 0 ]; then
+		echo "INFO: Z3660 core 1: $prog $how"
+	else
+		echo "INFO: Z3660 core 1: $prog not loaded:"
+		echo "$out"
+		exit 1
+	fi
+	;;
+
+stop)
+	;;
+
+*)
+	echo "usage: $0 {start|stop}"
+	;;
+esac
+
+exit 0
