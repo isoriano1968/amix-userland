@@ -9,7 +9,7 @@ that are normally available on System V systems when present:
 - `swap -s`
 - `swap -l`
 
-The display refreshes every five seconds and shows system load-style counters,
+The display refreshes every two seconds, in colour where the terminal has it, and shows system load-style counters,
 memory and swap summaries when available, and the currently running process
 table.
 
