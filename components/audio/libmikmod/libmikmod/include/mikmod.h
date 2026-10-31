@@ -751,6 +751,7 @@ MIKMODAPI extern struct MDRIVER drv_sgi;    /* SGI audio library */
 MIKMODAPI extern struct MDRIVER drv_sndio;  /* OpenBSD sndio */
 MIKMODAPI extern struct MDRIVER drv_sun;    /* Sun/NetBSD/OpenBSD audio device */
 MIKMODAPI extern struct MDRIVER drv_amix;   /* AMIX (Commodore Amiga UNIX) /dev/audio device */
+MIKMODAPI extern struct MDRIVER drv_hdmi;   /* AMIX: the Z3660's HDMI through core 1 */
 MIKMODAPI extern struct MDRIVER drv_paula;  /* AMIX /dev/paula: Paula's four channels, no mixing */
 
 MIKMODAPI extern struct MDRIVER drv_dart;   /* OS/2 Direct Audio RealTime */

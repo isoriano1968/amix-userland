@@ -80,6 +80,10 @@ static void _mm_registeralldrivers(void)
 #ifdef DRV_AMIX
 	_mm_registerdriver(&drv_amix);
 #endif
+#ifdef DRV_HDMI
+	/* last: only when asked for (-d n), never by autodetection */
+	_mm_registerdriver(&drv_hdmi);
+#endif
 #ifdef DRV_DART
 	_mm_registerdriver(&drv_dart);
 #endif

@@ -12,6 +12,7 @@
 # systems and are not compiled.
 
 CC	= gcc
+AR	= ar
 CFLAGS	= -O -m68020 -DHAVE_CONFIG_H -Dunix -I. -Iinclude
 
 # Without an explicit -o, cc writes foo.o for dir/foo.c into the current
@@ -26,7 +27,8 @@ DRIVERS = drivers/drv_nos.o \
 	  drivers/drv_stdout.o \
 	  drivers/drv_pipe.o \
 	  drivers/drv_amix.o \
-	  drivers/drv_paula.o
+	  drivers/drv_paula.o \
+	  drivers/drv_hdmi.o
 
 LOADERS = loaders/load_669.o \
 	  loaders/load_amf.o \
@@ -69,7 +71,13 @@ POSIX	= posix/strcasecmp.o
 OBJECTS = $(DRIVERS) $(LOADERS) $(MMIO) $(PLAYER) $(POSIX)
 
 libmikmod.a: $(OBJECTS)
-	ar r $@ $(OBJECTS)
+	$(AR) r $@ $(OBJECTS)
+
+# built from -fPIC objects, by a compiler that links shared libraries
+libmikmod.so.3: $(OBJECTS)
+	$(CC) -shared -Wl,-h,libmikmod.so.3 $(OBJECTS) posix/usleep.o -o $@
+
+libmikmod.so.3: posix/usleep.o
 
 install: libmikmod.a
 	cpset libmikmod.a $(ROOT)/usr/local/lib 644 bin bin
@@ -77,6 +85,6 @@ install: libmikmod.a
 	cpset include/mikmod_ctype.h $(ROOT)/usr/local/include 644 bin bin
 
 clean:
-	-rm -f $(OBJECTS) libmikmod.a
+	-rm -f $(OBJECTS) posix/usleep.o libmikmod.a libmikmod.so.3
 
 clobber: clean
