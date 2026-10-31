@@ -1,0 +1,11 @@
+--- a/libpkgconf/stdinc.h
++++ b/libpkgconf/stdinc.h
+@@ -52,7 +52,7 @@
+ # define PKGCONF_ITEM_SIZE (_MAX_PATH + 1024)
+ #else
+ # define PATH_DEV_NULL	"/dev/null"
+-# define SIZE_FMT_SPECIFIER	"%zu"
++# define SIZE_FMT_SPECIFIER	"%u"
+ # ifdef __HAIKU__
+ #  include <FindDirectory.h>
+ # endif
