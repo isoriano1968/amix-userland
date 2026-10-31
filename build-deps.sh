@@ -2,10 +2,10 @@
 # build-deps.sh -- zlib 1.2.13, libjpeg 6b and libpng 1.2.59 for AMIX, as
 # static libraries built by gcc14-cross-amix for the 68060, into deps/
 # (include/, lib/).  Blender 2.31a's image code needs all three.
-# Sources: ../downloads/blender-deps (checksums in README there).
+# Sources: ../distfiles/blender-deps (checksums in README there).
 set -e
 H=$(cd "$(dirname "$0")" && pwd)
-DL=$H/../downloads/blender-deps
+DL=$H/../distfiles/blender-deps
 P=$H/deps
 W=$H/work
 export PATH=$HOME/opt/m68k-amix/bin:$PATH
