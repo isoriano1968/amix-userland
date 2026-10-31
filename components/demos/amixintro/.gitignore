@@ -1,0 +1,23 @@
+*.o
+*.a
+*.so
+*.log
+core
+*.xwd
+*.png.tmp
+amixintro
+LameCubeAMIGA42
+LamerCubeAMIX
+LameCubeAMIGA42-host
+LamerCubeAMIX-host
+amixintro-host
+xmu-static/
+mesa/
+pkg/
+lamercubeamix.tar
+# music: third-party modules, kept local
+*.mod
+*.xm
+LameCubeSUN
+# the Sun logo is Sun's: generated from sun.tga by mksunlogo.py, kept local
+sunlogo.h
