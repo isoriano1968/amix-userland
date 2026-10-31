@@ -1,0 +1,7 @@
+# fileutils-4.1 configure answers for AMIX (SVR4.0, m68k), cross-compiled
+ac_cv_c_bigendian=${ac_cv_c_bigendian=yes}
+ac_cv_c_long_double=${ac_cv_c_long_double=yes}
+ac_cv_func_setvbuf_reversed=${ac_cv_func_setvbuf_reversed=no}
+# <sys/mkdev.h> declares makedev/major/minor extern, then defines them static
+# (a gcc 14 error); <sys/sysmacros.h> has the same as macros
+ac_cv_header_sys_mkdev_h=${ac_cv_header_sys_mkdev_h=no}
