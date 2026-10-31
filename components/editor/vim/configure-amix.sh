@@ -15,7 +15,7 @@ export vim_cv_toupper_broken=no vim_cv_terminfo=yes vim_cv_tgetent=zero \
 	vim_cv_uname_output=AMIX vim_cv_uname_r_output=4.0 vim_cv_uname_m_output=m68k
 CC=m68k-elf-gcc \
 CFLAGS="-O2 -U__linux__ -Ulinux -D__amix__ -D__svr4__ -DSVR4 -fcommon $W" \
-CPPFLAGS="-I$SR/usr/local/include" LDFLAGS="-L$SR/usr/local/lib" \
+CPPFLAGS="-I$SR/usr/local/include" LDFLAGS="-L$SR/usr/local/lib -Wl,-R,/usr/local/lib" \
 	./configure --host=m68k-elf --build=x86_64-pc-linux-gnu --prefix=/usr/local \
 	--with-features=normal --disable-gui --without-x --enable-gpm=no \
 	--disable-nls --disable-netbeans --disable-channel --disable-sysmouse \

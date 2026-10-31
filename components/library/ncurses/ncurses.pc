@@ -1,9 +1,0 @@
-prefix=/usr/local
-libdir=${prefix}/lib
-includedir=${prefix}/include
-
-Name: ncurses
-Description: ncurses 6.6 for AMIX, narrow characters
-Version: 6.6
-Libs: -L${libdir} -lncurses
-Cflags: -I${includedir}

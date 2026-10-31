@@ -1,0 +1,9 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: @NAME@
+Description: @NAME@ from ncurses for AMIX, narrow characters
+Version: @VERSION@
+Libs: -L${libdir} -R${libdir} -l@NAME@
+Cflags: -I${includedir}
