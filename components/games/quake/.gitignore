@@ -1,0 +1,6 @@
+*.o
+*.a
+*.log
+core
+glquake
+quake.x11

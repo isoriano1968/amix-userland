@@ -1,0 +1,33 @@
+# Makefile.amix -- GLQuake (id's GPL Quake source) for AMIX on the A3000 +
+# Z3660 68060: X11R6.3, Mesa 3.1 (GLX; on the Z3660's ARM
+# through soft3D unless MESA_SOFT3D=0), gcc14 cross.  make -f Makefile.amix
+CC = $(HOME)/opt/m68k-amix/bin/m68k-elf-gcc
+X = $(HOME)/opt/m68k-amix-sysroot/usr/x11r6/xc/exports
+MESA = $(HOME)/Sources/usr-amix/amix-userland/components/x11/mesa-31/work
+L060 = $(HOME)/Sources/usr-amix/lib060
+CFLAGS = -O2 -m68060 -ffast-math -fno-strict-aliasing -fcommon -w \
+	-Wno-error=implicit-function-declaration -Wno-error=int-conversion \
+	-Wno-error=incompatible-pointer-types -Wno-error=implicit-int -Wno-error=return-mismatch \
+	-U__linux__ -Ulinux -D__amix__ -DSVR4 -DGLQUAKE -DAMIX \
+	-I$(MESA)/include -I$(X)/include
+LIBS = -L$(MESA)/shm-static -L$(MESA)/lib -L$(X)/lib -lGL -lXext -lX11 \
+	-lshmsys -lsocket -lnsl -ldl -L$(L060) -lm060 -lc060 -lm
+
+OBJS = cl_demo.o cl_input.o cl_main.o cl_parse.o cl_tent.o chase.o cmd.o \
+	common.o console.o crc.o cvar.o gl_draw.o gl_mesh.o gl_model.o \
+	gl_refrag.o gl_rlight.o gl_rmain.o gl_rmisc.o gl_rsurf.o gl_screen.o \
+	gl_test.o gl_warp.o host.o host_cmd.o keys.o menu.o mathlib.o \
+	net_dgrm.o net_loop.o net_main.o net_vcr.o net_udp.o net_bsd.o \
+	pr_cmds.o pr_edict.o pr_exec.o r_part.o sbar.o sv_main.o sv_phys.o \
+	sv_move.o sv_user.o zone.o view.o wad.o world.o cd_null.o \
+	sys_linux.o snd_null.o \
+	gl_vidlinuxglx.o
+
+glquake: $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -f *.o glquake

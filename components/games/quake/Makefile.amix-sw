@@ -1,0 +1,33 @@
+# Makefile.amix-sw -- software Quake (id's X11 target, vid_x.c) for AMIX on
+# the A3000 + Z3660 68060, gcc14 cross; the C renderer (no x86 assembler),
+# MIT-SHM to the 16-bit Xzz9000.  make -f Makefile.amix-sw
+CC = $(HOME)/opt/m68k-amix/bin/m68k-elf-gcc
+X = $(HOME)/opt/m68k-amix-sysroot/usr/x11r6/xc/exports
+MESA = $(HOME)/Sources/usr-amix/amix-userland/components/x11/mesa-31/work
+L060 = $(HOME)/Sources/usr-amix/lib060
+CFLAGS = -O2 -m68060 -ffast-math -fno-strict-aliasing -fcommon -w \
+	-Wno-error=implicit-function-declaration -Wno-error=int-conversion \
+	-Wno-error=incompatible-pointer-types -Wno-error=implicit-int -Wno-error=return-mismatch \
+	-U__linux__ -Ulinux -D__amix__ -DSVR4 -DAMIX -I$(X)/include
+LIBS = -L$(MESA)/shm-static -L$(X)/lib -lXext -lX11 \
+	-lshmsys -lsocket -lnsl -ldl -L$(L060) -lm060 -lc060 -lm
+O = obj-sw
+
+SRCS = cl_demo cl_input cl_main cl_parse cl_tent chase cmd common console crc cvar \
+	draw d_edge d_fill d_init d_modech d_part d_polyse d_scan d_sky d_sprite d_surf \
+	d_vars d_zpoint host host_cmd keys menu mathlib model net_dgrm net_loop net_main \
+	net_vcr net_udp net_bsd nonintel pr_cmds pr_edict pr_exec r_aclip r_alias r_bsp \
+	r_light r_draw r_efrag r_edge r_misc r_main r_sky r_sprite r_surf r_part r_vars \
+	screen sbar sv_main sv_phys sv_move sv_user zone view wad world cd_null sys_linux \
+	vid_x snd_null
+OBJS = $(SRCS:%=$(O)/%.o)
+
+quake.x11: $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
+
+$(O)/%.o: %.c
+	@mkdir -p $(O)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -rf $(O) quake.x11

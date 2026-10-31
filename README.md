@@ -54,7 +54,7 @@ version it names in its Makefile, and one version is linked into
 | `developer`    | compilers and development tools      | moved: gcc-27, gcc-14, vscode                     |
 | `demos`        | demos and intros                     | moved: amixintro                                  |
 | `editor`       | editors                              | moved: vim                                        |
-| `games`        | games and their engines              | moved: iortcw, ioquake3 (patches only)            |
+| `games`        | games and their engines              | moved: iortcw, ioquake3, quake                    |
 | `graphics`     | 3D and images                        | moved: blender                                    |
 | `library`      | general libraries                    | moved: lib060, ncurses, pth, sdl2, soft3d, tinygl |
 | `multimedia`   | video                                | moved: ffmpeg                                     |
