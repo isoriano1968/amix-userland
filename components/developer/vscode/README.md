@@ -129,3 +129,9 @@ Additional make arguments can be configured with:
 C/C++ semantic browsing is provided by the installed VS Code C/C++ extension
 when available. This extension writes `C_Cpp.default.*` settings so that AMIX
 headers are visible to IntelliSense.
+
+## Planned
+
+Both cross toolchains from one extension: gcc 2.7.2.3 (`m68k-cbm-sysv4-gcc`)
+for the kernel and drivers, gcc 14 (`m68k-elf-gcc`) for userland, chosen per
+build task, each with its own problem matcher. Today only 2.7.2.3 is set up.
