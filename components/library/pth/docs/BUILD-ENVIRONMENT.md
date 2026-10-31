@@ -51,7 +51,7 @@ Its AGENTS.md and ABI measurements were read before building. The build uses
 binutils 2.43.1 and GCC 14.2.0 with the upstream AMIX ABI target header, repaired
 headers/specs, C99 compatibility library, and default 68060 code generation.
 
-The sysroot was transferred from C:\Storage\usr-amix (usr/include, usr/ccs/lib,
+The sysroot was transferred from a local copy of the AMIX tree (usr/include, usr/ccs/lib,
 usr/lib); original Windows files were not modified. It is licensed material
 and must never be committed. VM/source archives and credentials are ignored.
 

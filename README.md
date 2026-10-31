@@ -49,16 +49,16 @@ version it names in its Makefile, and one version is linked into
 
 | Category       | For                                  | Today's repos                                     |
 | -------------- | ------------------------------------ | ------------------------------------------------- |
-| `audio`        | sound and music                      | lib-mikmod-amix, pt2-clone-amix                   |
-| `desktop`      | desktop environments                 | cde-amix, cde-apps-amix (ztopcde)                 |
+| `audio`        | sound and music                      | pt2-clone-amix; moved: libmikmod                  |
+| `desktop`      | desktop environments                 | moved: cde, cde-apps                              |
 | `developer`    | compilers and development tools      | gcc-cross-amix, vscode-amix                       |
 | `driver`       | kernel drivers, core 1 programs      | paula-amix, random-amix, hydra-amix, amix-z3660net, amix-z3660scsi, soft3d-z3660rtg-amix, core1-z3660-amix |
 | `games`        | games and their engines              | (quake, rtcw: source patches only)                |
 | `library`      | general libraries                    | moved: pth, sdl2                                  |
-| `multimedia`   | video                                | cde-apps-amix (amixcast); moved: ffmpeg           |
+| `multimedia`   | video                                | moved: ffmpeg                                     |
 | `runtime`      | language runtimes                    | python3-amix                                      |
 | `shell`        | shells                               | (bash)                                            |
-| `x11`          | X server, libraries, GL              | x11r6.3-amix, mesa-amix, zz9000-amix              |
+| `x11`          | X server, libraries, GL              | x11r6.3-amix, zz9000-amix; moved: mesa-31, mesa-183 |
 
 The kernel port (amix-040-060-port) and the Z3660 firmware fork (Z3660) stay
 separate: they are not userland.

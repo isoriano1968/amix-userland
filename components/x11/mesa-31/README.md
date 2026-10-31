@@ -8,8 +8,6 @@ installer. Unmodified Mesa sources come from the official Mesa archive.
 
 ## Layout
 
-- Git checkout: `C:\Storage\mesa-amix`
-- Prepared local tree: `C:\Storage\usr-amix\usr\mesa3\Mesa-3.1`
 - AMIX build tree: `/usr/mesa3/Mesa-3.1`
 - X11 dependency: `/usr/x11r6`
 
