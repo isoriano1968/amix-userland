@@ -49,16 +49,16 @@ version it names in its Makefile, and one version is linked into
 
 | Category       | For                                  | Today's repos                                     |
 | -------------- | ------------------------------------ | ------------------------------------------------- |
-| `audio`        | sound and music                      | pt2-clone-amix; moved: libmikmod                  |
+| `audio`        | sound and music                      | moved: libmikmod, pt2-clone                       |
 | `desktop`      | desktop environments                 | moved: cde, cde-apps                              |
 | `developer`    | compilers and development tools      | gcc-cross-amix, vscode-amix                       |
 | `driver`       | kernel drivers, core 1 programs      | paula-amix, random-amix, hydra-amix, amix-z3660net, amix-z3660scsi, soft3d-z3660rtg-amix, core1-z3660-amix |
 | `games`        | games and their engines              | (quake, rtcw: source patches only)                |
 | `library`      | general libraries                    | moved: pth, sdl2                                  |
 | `multimedia`   | video                                | moved: ffmpeg                                     |
-| `runtime`      | language runtimes                    | python3-amix                                      |
+| `runtime`      | language runtimes                    | moved: python3                                    |
 | `shell`        | shells                               | (bash)                                            |
-| `x11`          | X server, libraries, GL              | x11r6.3-amix, zz9000-amix; moved: mesa-31, mesa-183 |
+| `x11`          | X server, libraries, GL              | zz9000-amix; moved: x11r6.3, mesa-31, mesa-183    |
 
 The kernel port (amix-040-060-port) and the Z3660 firmware fork (Z3660) stay
 separate: they are not userland.
