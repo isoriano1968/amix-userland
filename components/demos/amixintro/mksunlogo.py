@@ -3,10 +3,11 @@
 LamerIntroLinux (sun.tga, 770x768 RGBA) as a 64x64 RGBA texture (it is drawn 40 pixels wide: no shimmer), first row
 at the bottom as OpenGL wants it.  The logo is Sun's: sun.tga and the
 generated sunlogo.h stay local (.gitignore), only this script is tracked."""
+import os
 import sys
 from PIL import Image
 SRC = sys.argv[1] if len(sys.argv) > 1 else \
-    '/home/isoriano/Sources/usr-amix/usr/local/src/lamerintro/sun.tga'
+    os.path.expanduser('~/Sources/usr-amix/')+'usr/local/src/lamerintro/sun.tga'
 im = Image.open(SRC).convert('RGBA').resize((64, 64), Image.LANCZOS)
 data = im.transpose(Image.FLIP_TOP_BOTTOM).tobytes()
 with open('sunlogo.h', 'w') as f:
