@@ -1,0 +1,172 @@
+/* AMIX-specific imake rules. */
+
+/*
+ * AMIX keeps the runtime image in libfoo.so and executable-resident stubs in
+ * a companion libfoo.sa archive.  The native link editor consumes both when
+ * resolving -lfoo.
+ */
+#ifndef SharedLibraryDataTarget
+#define SharedLibraryDataTarget(libname,rev,objlist)                    @@\
+AllTarget(Concat(lib,libname.sa))                                       @@\
+                                                                        @@\
+Concat(lib,libname.sa): objlist AMIXSHLIBFORCE                          @@\
+	$(RM) $@                                                              @@\
+	$(AR) $@ objlist                                                      @@\
+	LinkBuildLibrary($@)                                                  @@\
+                                                                        @@\
+AMIXSHLIBFORCE:                                                         @@\
+                                                                        @@\
+clean::                                                                 @@\
+	$(RM) Concat(lib,libname.sa)
+#endif /* SharedLibraryDataTarget */
+
+#ifndef InstallSharedLibraryData
+#define InstallSharedLibraryData(libname,rev,dest)                      @@\
+install:: Concat(lib,libname.sa)                                        @@\
+	MakeDir($(DESTDIR)dest)                                               @@\
+	$(RM) Concat($(DESTDIR)dest/lib,libname.sa)                           @@\
+	$(INSTALL) $(INSTALLFLAGS) $(INSTLIBFLAGS) Concat(lib,libname.sa) $(DESTDIR)dest
+#endif /* InstallSharedLibraryData */
+
+/*
+ * GCC's link driver does not add AMIX companion .sa archives implicitly.
+ * Put each required archive immediately after its ELF shared library.
+ */
+#if defined(UseInstalled) || UseInstalledX11
+#define AmixSALibXt $(USRLIBDIR)/libXt.sa
+#define AmixSALibXmu $(USRLIBDIR)/libXmu.sa
+#else
+#define AmixSALibXt $(BUILDLIBDIR)/libXt.sa
+#define AmixSALibXmu $(BUILDLIBDIR)/libXmu.sa
+#endif
+#define AmixSALibXaw /**/
+#define AmixSALib(libname) Concat(AmixSALib,libname)
+
+/*
+ * Stock SVR4 XawClientLibs can expand to bare -lXmu and -lXt.  On AMIX that
+ * drops the companion .sa archives required by the shared-data ABI, causing
+ * Athena clients such as xlogo and xmag to fail with unresolved Xt entry
+ * points.  Override the client rule so every Athena client gets the same
+ * known-good library order.
+ */
+#ifdef XawClientLibs
+#undef XawClientLibs
+#endif
+#define XawClientLibs $(XAWLIB) $(XMULIBONLY) $(XTOOLONLYLIB) AmixSALibXt $(SMLIB) $(ICELIB) $(XLIB)
+
+#ifdef XawClientDepLibs
+#undef XawClientDepLibs
+#endif
+#define XawClientDepLibs $(DEPXAWLIB) $(DEPXMULIB) $(DEPXTOOLLIB) $(DEPXLIB)
+
+/* sv4Lib.tmpl otherwise replaces XMU with a bare -lXmu. */
+#ifndef FixupLibReferences
+#define FixupLibReferences()                                            @@\
+XMULIBONLY = -lXmu AmixSALibXmu                                        @@\
+XMULIB = $(XMULIBONLY) -z nodefs
+#endif
+
+#ifndef SharedDSLibReferences
+#define SharedDSLibReferences(varname,libname,libsource,revname,rev)     @@\
+revname = rev                                                           @@\
+Concat3(DEP,varname,LIB) = AmixSALib(libname)                           @@\
+Concat(varname,LIB) = LoaderLibPrefix Concat(-l,libname) AmixSALib(libname) @@\
+LintLibReferences(varname,libname,libsource)
+#endif
+
+/*
+ * gcc-cpp loses the build-directory argument when the stock
+ * ProjectUnsharedLibReferences macro pastes it to "/lib".  All X11 project
+ * libraries are exported through BUILDLIBDIR, so construct the dependency
+ * from that stable make variable and only paste the library filename.
+ */
+#if defined(UseInstalled) || UseInstalledX11
+#define AmixProjectDepLib(name) $(USRLIBDIR)/LibraryTargetName(name)
+#else
+#define AmixProjectDepLib(name) $(BUILDLIBDIR)/LibraryTargetName(name)
+#endif
+
+#ifndef ProjectUnsharedLibReferences
+#define ProjectUnsharedLibReferences(varname,libname,libsource,buildlibdir) @@\
+Concat3(DEP,varname,LIB) = AmixProjectDepLib(libname)                     @@\
+Concat(varname,LIB) = LoaderLibPrefix Concat(-l,libname)                  @@\
+LintLibReferences(varname,libname,libsource)
+#endif /* ProjectUnsharedLibReferences */
+
+/*
+ * AMIX SVR4 ar maintains the symbol table with ar cq.  On this tree the
+ * default library macro can expand an empty/undefined RANLIB command into a
+ * shell error, so keep normal library creation to rm + ar.
+ */
+#ifndef NormalLibraryTarget
+#define NormalLibraryTarget(libname,objlist)                             @@\
+AllTarget(LibraryTargetName(libname))                                    @@\
+                                                                        @@\
+LibraryTargetName(libname): objlist $(EXTRALIBRARYDEPS)                 @@\
+	$(RM) $@                                                              @@\
+	$(AR) $@ objlist                                                     @@\
+	_LinkBuildLibrary($@)
+#endif /* NormalLibraryTarget */
+
+#ifndef NormalLibraryTarget2
+#define NormalLibraryTarget2(libname,objlist1,objlist2)                  @@\
+AllTarget(LibraryTargetName(libname))                                    @@\
+                                                                        @@\
+LibraryTargetName(libname): objlist1 objlist2 $(EXTRALIBRARYDEPS)       @@\
+	$(RM) $@                                                              @@\
+	$(AR) $@ objlist1 objlist2                                           @@\
+	_LinkBuildLibrary($@)
+#endif /* NormalLibraryTarget2 */
+
+/*
+ * The same cpp whitespace issue affects include export paths such as
+ * IncSubdir/IncSubSubdir, producing "X11 /ICE".  Normalize the generated path
+ * in the shell before creating the export directory and header links.
+ */
+#ifdef BuildIncludesTop
+#undef BuildIncludesTop
+#endif
+#define BuildIncludesTop(list)                                         @@\
+includes:: list                                                        @@\
+	@dst=`echo $(BUILDINCDIR) | sed 's/[ 	]*\/[ 	]*/\//g'`; \       @@\
+	$(MKDIRHIER) $$dst; \                                              @@\
+	set -x; cd $$dst; for i in list; do \                              @@\
+		RemoveFile($$i); \                                            @@\
+		src=`echo $(BUILDINCTOP)/$(CURRENT_DIR)/$$i | sed 's/[ 	]*\/[ 	]*/\//g'`; \ @@\
+		$(LN) $$src .; \                                              @@\
+	done
+
+#ifdef BuildIncludes
+#undef BuildIncludes
+#endif
+#define BuildIncludes(list,sub,up)                                     @@\
+includes:: list                                                        @@\
+	@dst=`echo $(BUILDINCDIR)/sub | sed 's/[ 	]*\/[ 	]*/\//g'`; \   @@\
+	$(MKDIRHIER) $$dst; \                                              @@\
+	set -x; cd $$dst; for i in list; do \                              @@\
+		RemoveFile($$i); \                                            @@\
+		src=`echo $(BUILDINCTOP)/up/$(CURRENT_DIR)/$$i | sed 's/[ 	]*\/[ 	]*/\//g'`; \ @@\
+		$(LN) $$src .; \                                              @@\
+	done
+
+/*
+ * AMIX/gcc-cpp can expand a macro fragment like "dir/src" as
+ * "dir /src".  That makes generated link-source dependencies refer to
+ * absolute paths such as /cfb.h.  Avoid path concatenation in the make
+ * dependency and do the source-directory join in the shell instead.
+ */
+#ifndef LinkSourceFile
+#define LinkSourceFile(src,dir)                                         @@\
+src:                                                                   @@\
+	RemoveFile($@)                                                     @@\
+	@srcdir=`cd dir; pwd`; (set -x; $(LN) $$srcdir/src $@)             @@\
+                                                                        @@\
+NoConfigRec(src)                                                       @@\
+                                                                        @@\
+includes:: src                                                         @@\
+                                                                        @@\
+depend:: src                                                           @@\
+                                                                        @@\
+clean::                                                                @@\
+	RemoveFile(src)
+#endif /* LinkSourceFile */

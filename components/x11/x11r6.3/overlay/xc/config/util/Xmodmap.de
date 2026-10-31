@@ -1,0 +1,62 @@
+! German keymap overlay for the AMIX X11R6 server.
+! AMIX reports raw Amiga keycodes as X keycode = raw scancode + 1.
+!
+! This file intentionally avoids XKB; Xzz9000 is started with -kb.
+! Load with:
+!   /usr/x11r6/xc/programs/xmodmap/xmodmap /usr/x11r6/xc/config/util/Xmodmap.de
+
+clear Mod5
+
+keycode   1 = asciicircum degree
+keycode   2 = 1 exclam
+keycode   3 = 2 quotedbl twosuperior
+keycode   4 = 3 section threesuperior
+keycode   5 = 4 dollar
+keycode   6 = 5 percent
+keycode   7 = 6 ampersand
+keycode   8 = 7 slash braceleft
+keycode   9 = 8 parenleft bracketleft
+keycode  10 = 9 parenright bracketright
+keycode  11 = 0 equal braceright
+keycode  12 = ssharp question backslash
+keycode  13 = acute grave
+keycode  14 = numbersign apostrophe
+
+keycode  17 = q Q at
+keycode  18 = w W
+keycode  19 = e E
+keycode  20 = r R
+keycode  21 = t T
+keycode  22 = z Z
+keycode  23 = u U
+keycode  24 = i I
+keycode  25 = o O
+keycode  26 = p P
+keycode  27 = udiaeresis Udiaeresis
+keycode  28 = plus asterisk asciitilde
+
+keycode  33 = a A
+keycode  34 = s S
+keycode  35 = d D
+keycode  36 = f F
+keycode  37 = g G
+keycode  38 = h H
+keycode  39 = j J
+keycode  40 = k K
+keycode  41 = l L
+keycode  42 = odiaeresis Odiaeresis
+keycode  43 = adiaeresis Adiaeresis
+
+keycode  50 = y Y
+keycode  51 = x X
+keycode  52 = c C
+keycode  53 = v V
+keycode  54 = b B
+keycode  55 = n N
+keycode  56 = m M
+keycode  57 = comma semicolon
+keycode  58 = period colon
+keycode  59 = minus underscore
+
+keycode 102 = Mode_switch
+add Mod5 = Mode_switch

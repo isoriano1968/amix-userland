@@ -1,0 +1,126 @@
+#!/bin/sh
+
+TOP=${X11R6_TOP-/usr/x11r6/xc}
+DISPLAY_NUMBER=${1-:0}
+MODE=${ZZ9K_MODE-1920x800}
+FONT_PATH=${ZZ9K_FONT_PATH-$TOP/fonts/bdf/misc}
+
+SERVER=$TOP/programs/Xserver/Xzz9000
+CLIENT=$TOP/config/util/xinitrc.zz9000
+ZZ9K_DEV=${ZZ9K_DEV-/dev/zz9000}
+ZZ9K_TEST=${ZZ9K_TEST-/usr/amiga/bin/zz9k_test}
+ZZ9K_CONSOLE=${ZZ9K_CONSOLE-/usr/amiga/bin/zz9k_console}
+ZZ9K_PRE_X_CMD=${ZZ9K_PRE_X_CMD-noconsole}
+ZZ9K_EXIT_CMD=${ZZ9K_EXIT_CMD-redirect}
+ZZ9K_SERVER_LOG=${ZZ9K_SERVER_LOG-/tmp/Xzz9000.log}
+ZZ9K_CLIENT_LOG=${ZZ9K_CLIENT_LOG-/tmp/Xzz9000-clients.log}
+
+case "$DISPLAY_NUMBER" in
+:[0-9]*) ;;
+*)
+    echo "usage: $0 [:display]" >&2
+    exit 1
+    ;;
+esac
+
+for file in "$SERVER" "$CLIENT"
+do
+    if test -f "$file"
+    then
+        :
+    else
+        echo "startXzz9000: missing $file" >&2
+        exit 1
+    fi
+done
+
+if test "x$LD_LIBRARY_PATH" = x
+then
+    LD_LIBRARY_PATH=$TOP/exports/lib
+else
+    LD_LIBRARY_PATH=$TOP/exports/lib:$LD_LIBRARY_PATH
+fi
+export LD_LIBRARY_PATH TOP
+
+RGB_PATH=
+if test -s /usr/x11r6/lib/X11/rgb.dir
+then
+    RGB_PATH=/usr/x11r6/lib/X11/rgb
+else
+    if test -s "$TOP/programs/rgb/rgb.dir"
+    then
+        RGB_PATH=$TOP/programs/rgb/rgb
+    fi
+fi
+
+echo "Starting Xzz9000 on $DISPLAY_NUMBER at $MODE"
+echo "Exit twm to stop the X server."
+echo "Server log: $ZZ9K_SERVER_LOG"
+echo "Client log: $ZZ9K_CLIENT_LOG"
+
+DISPLAY=$DISPLAY_NUMBER
+export DISPLAY
+
+run_zz9k_command()
+{
+    ZZ9K_CMD=$1
+
+    case "$ZZ9K_CMD" in
+    ''|none)
+        return
+        ;;
+    redirect|start)
+        if test -x "$ZZ9K_CONSOLE"
+        then
+            "$ZZ9K_CONSOLE" start >/dev/null 2>&1
+            return
+        fi
+        ;;
+    stop|noconsole)
+        if test -x "$ZZ9K_CONSOLE"
+        then
+            "$ZZ9K_CONSOLE" stop >/dev/null 2>&1
+            return
+        fi
+        ;;
+    esac
+
+    if test -x "$ZZ9K_TEST"
+    then
+        "$ZZ9K_TEST" "$ZZ9K_DEV" "$ZZ9K_CMD" >/dev/null 2>&1
+    fi
+}
+
+run_zz9k_command "$ZZ9K_PRE_X_CMD"
+
+if test "x$RGB_PATH" = x
+then
+    "$SERVER" "$DISPLAY_NUMBER" -mode "$MODE" -fp "$FONT_PATH" \
+        -ac -kb >"$ZZ9K_SERVER_LOG" 2>&1 &
+else
+    "$SERVER" "$DISPLAY_NUMBER" -mode "$MODE" -fp "$FONT_PATH" \
+        -co "$RGB_PATH" -ac -kb >"$ZZ9K_SERVER_LOG" 2>&1 &
+fi
+
+SERVER_PID=$!
+
+cleanup()
+{
+    if test "x$SERVER_PID" != x
+    then
+        kill "$SERVER_PID" >/dev/null 2>&1
+        wait "$SERVER_PID" >/dev/null 2>&1
+        SERVER_PID=
+    fi
+    run_zz9k_command "$ZZ9K_EXIT_CMD"
+}
+
+trap 'cleanup; exit 1' 1 2 3 15
+
+sleep ${ZZ9K_START_DELAY-5}
+
+sh "$CLIENT" >"$ZZ9K_CLIENT_LOG" 2>&1
+STATUS=$?
+
+cleanup
+exit $STATUS

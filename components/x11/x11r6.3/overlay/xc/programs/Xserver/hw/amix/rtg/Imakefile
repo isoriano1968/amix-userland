@@ -1,0 +1,20 @@
+#include <Server.tmpl>
+
+SRCS = rtgInit.c
+
+OBJS = rtgInit.o
+
+SUBDIRS = zz9000
+
+STD_DEFINES = ServerDefines -DRTG
+CDEBUGFLAGS = -g -O
+   INCLUDES = -I. -I.. -I../../../include -I$(XINCLUDESRC) -I../../../mi -I../../../mfb -I$(FONTINCSRC) -I/usr/amiga/include
+
+NormalLibraryObjectRule()
+NormalLibraryTarget(rtg, $(OBJS))
+
+DependTarget()
+
+#define IHaveSubdirs
+MakeSubdirs($(SUBDIRS))
+DependSubdirs($(SUBDIRS))
