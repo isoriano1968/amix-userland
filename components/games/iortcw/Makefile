@@ -14,7 +14,7 @@ SRC = $(BUILD_DIR)/iortcw-438e7d413b5f7277187c35b032eb0ef9093ae778/SP
 prep: $(COMPONENT_ARCHIVE)
 	mkdir -p $(BUILD_DIR)
 	tar xzf $(COMPONENT_ARCHIVE) -C $(BUILD_DIR)
-	patch -s -p1 -d $(SRC) < patches/0001-amix.patch
+	for p in patches/*.patch; do patch -s -p1 -d $(SRC) < $$p; done
 	cp -R files/amix $(SRC)/amix
 
 .PHONY: prep

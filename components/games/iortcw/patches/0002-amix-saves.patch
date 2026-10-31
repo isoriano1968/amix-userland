@@ -1,0 +1,54 @@
+diff --git a/code/game/g_save.c b/code/game/g_save.c
+index 5d29aad..9fa5447 100644
+--- a/code/game/g_save.c
++++ b/code/game/g_save.c
+@@ -1087,6 +1087,10 @@ G_SaveGame
+   so full disks don't result in lost saved games.
+ ===============
+ */
++#ifdef __amix__
++int g_amixUserSave;	// set by the "savegame" command
++#endif
++
+ qboolean G_SaveGame( char *username ) {
+ 	char filename[MAX_QPATH];
+ 	char mapstr[MAX_QPATH];
+@@ -1111,6 +1115,14 @@ qboolean G_SaveGame( char *username ) {
+ 		return qtrue;
+ 	}
+ 
++#ifdef __amix__
++	// no saves of the level's own on the A3000's small disk: only the player's,
++	// and "current", which a death reloads
++	if ( username && !g_amixUserSave ) {
++		return qtrue;
++	}
++#endif
++
+ 	G_DPrintf( "G_SaveGame '%s'\n", username );
+ 
+ 	// update the playtime
+diff --git a/code/game/g_svcmds.c b/code/game/g_svcmds.c
+index 810e0b3..0be5d71 100644
+--- a/code/game/g_svcmds.c
++++ b/code/game/g_svcmds.c
+@@ -488,11 +488,19 @@ qboolean    ConsoleCommand( void ) {
+ 				return qtrue;
+ 			}
+ 
++#ifdef __amix__
++			extern int g_amixUserSave;
++
++			g_amixUserSave = 1;
++#endif
+ 			if ( G_SaveGame( cmd ) ) {
+ 				trap_SendServerCommand( -1, "cp gamesaved" );  // deletedgame
+ 			} else {
+ 				G_Printf( "Unable to save game.\n" );
+ 			}
++#ifdef __amix__
++			g_amixUserSave = 0;
++#endif
+ 
+ 		} else {    // need a name
+ 			G_Printf( "syntax: savegame <name>\n" );
