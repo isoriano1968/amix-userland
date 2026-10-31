@@ -1,0 +1,40 @@
+--- a/src/video/SDL_surface.c
++++ b/src/video/SDL_surface.c
+@@ -973,6 +973,16 @@
+         SDL_InvalidateMap(src->map);
+     }
+ 
++    /*
++     * AMIX: linear scaling of pixels other than 32-bit goes through 32-bit
++     * copies of the source and of the whole destination (8 MB for a
++     * 1920x1080 screen) and costs several times what nearest does on a
++     * 68060.  ffplay always asks for linear; 16-bit windows get nearest.
++     */
++    if (scaleMode != SDL_ScaleModeNearest && src->format->BytesPerPixel != 4) {
++        scaleMode = SDL_ScaleModeNearest;
++    }
++
+     if (scaleMode == SDL_ScaleModeNearest) {
+         if (!(src->map->info.flags & complex_copy_flags) &&
+             src->format->format == dst->format->format &&
+@@ -1025,6 +1035,9 @@
+                     fmt = SDL_PIXELFORMAT_ARGB8888;
+                 }
+                 tmp1 = SDL_CreateRGBSurfaceWithFormat(flags, src->w, src->h, 0, fmt);
++                if (!tmp1) {
++                    return -1;
++                }
+                 SDL_LowerBlit(src, srcrect, tmp1, &tmprect);
+ 
+                 srcrect2.x = 0;
+@@ -1040,6 +1053,10 @@
+             if (is_complex_copy_flags || src->format->format != dst->format->format) {
+                 SDL_Rect tmprect;
+                 SDL_Surface *tmp2 = SDL_CreateRGBSurfaceWithFormat(flags, dstrect->w, dstrect->h, 0, src->format->format);
++                if (!tmp2) {
++                    SDL_FreeSurface(tmp1);
++                    return -1;
++                }
+                 SDL_SoftStretchLinear(src, &srcrect2, tmp2, NULL);
+ 
+                 SDL_SetSurfaceColorMod(tmp2, r, g, b);

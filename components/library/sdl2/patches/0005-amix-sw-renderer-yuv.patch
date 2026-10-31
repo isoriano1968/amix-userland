@@ -1,0 +1,65 @@
+--- a/src/render/SDL_render.c
++++ b/src/render/SDL_render.c
+@@ -1205,6 +1205,11 @@
+ {
+     Uint32 i;
+ 
++    /* AMIX: the software renderer lists IYUV and YV12, which it takes
++       through SDL_SW_YUVTexture here, not as textures of its own */
++    if (SDL_ISPIXELFORMAT_FOURCC(format) && (renderer->info.flags & SDL_RENDERER_SOFTWARE)) {
++        return SDL_FALSE;
++    }
+     for (i = 0; i < renderer->info.num_texture_formats; ++i) {
+         if (renderer->info.texture_formats[i] == format) {
+             return SDL_TRUE;
+@@ -1217,7 +1222,14 @@
+ {
+     Uint32 i;
+ 
+-    if (SDL_ISPIXELFORMAT_FOURCC(format)) {
++    if (SDL_ISPIXELFORMAT_FOURCC(format) && (renderer->info.flags & SDL_RENDERER_SOFTWARE)) {
++        /* AMIX: the first RGB format, the window's own (SDL_render_sw.c) */
++        for (i = 0; i < renderer->info.num_texture_formats; ++i) {
++            if (!SDL_ISPIXELFORMAT_FOURCC(renderer->info.texture_formats[i])) {
++                return renderer->info.texture_formats[i];
++            }
++        }
++    } else if (SDL_ISPIXELFORMAT_FOURCC(format)) {
+         /* Look for an exact match */
+         for (i = 0; i < renderer->info.num_texture_formats; ++i) {
+             if (renderer->info.texture_formats[i] == format) {
+--- a/src/render/software/SDL_render_sw.c
++++ b/src/render/software/SDL_render_sw.c
+@@ -1039,6 +1039,32 @@
+     renderer->info = SW_RenderDriver.info;
+     renderer->driverdata = data;
+ 
++    /*
++     * AMIX: the window's own format first, then IYUV and YV12, so that a
++     * program choosing from this list (ffplay) hands over its YUV frames as
++     * they are.  SDL_render.c converts them once, into a texture of the
++     * window's format, which then only has to be copied (or scaled).
++     */
++    {
++        Uint32 fmts[SDL_arraysize(renderer->info.texture_formats)];
++        Uint32 i, n = 0;
++
++        for (i = 0; i < SW_RenderDriver.info.num_texture_formats; ++i) {
++            if (SW_RenderDriver.info.texture_formats[i] == surface->format->format) {
++                fmts[n++] = surface->format->format;
++            }
++        }
++        fmts[n++] = SDL_PIXELFORMAT_IYUV;
++        fmts[n++] = SDL_PIXELFORMAT_YV12;
++        for (i = 0; i < SW_RenderDriver.info.num_texture_formats; ++i) {
++            if (SW_RenderDriver.info.texture_formats[i] != surface->format->format) {
++                fmts[n++] = SW_RenderDriver.info.texture_formats[i];
++            }
++        }
++        SDL_memcpy(renderer->info.texture_formats, fmts, n * sizeof(Uint32));
++        renderer->info.num_texture_formats = n;
++    }
++
+     return renderer;
+ }
+ 

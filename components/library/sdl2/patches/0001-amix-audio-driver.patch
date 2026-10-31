@@ -1,0 +1,22 @@
+--- a/src/audio/SDL_audio.c
++++ b/src/audio/SDL_audio.c
+@@ -57,6 +57,9 @@
+ #ifdef SDL_AUDIO_DRIVER_QSA
+     &QSAAUDIO_bootstrap,
+ #endif
++#ifdef SDL_AUDIO_DRIVER_AMIX
++    &AMIXAUDIO_bootstrap,
++#endif
+ #ifdef SDL_AUDIO_DRIVER_SUNAUDIO
+     &SUNAUDIO_bootstrap,
+ #endif
+--- a/src/audio/SDL_sysaudio.h
++++ b/src/audio/SDL_sysaudio.h
+@@ -186,6 +186,7 @@
+ extern AudioBootStrap NETBSDAUDIO_bootstrap;
+ extern AudioBootStrap DSP_bootstrap;
+ extern AudioBootStrap QSAAUDIO_bootstrap;
++extern AudioBootStrap AMIXAUDIO_bootstrap;
+ extern AudioBootStrap SUNAUDIO_bootstrap;
+ extern AudioBootStrap ARTS_bootstrap;
+ extern AudioBootStrap ESD_bootstrap;

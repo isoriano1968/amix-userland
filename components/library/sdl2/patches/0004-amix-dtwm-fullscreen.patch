@@ -1,0 +1,50 @@
+--- a/src/video/x11/SDL_x11window.c
++++ b/src/video/x11/SDL_x11window.c
+@@ -1369,7 +1369,46 @@
+     SDL_bool window_size_changed = SDL_FALSE;
+     int window_position_changed = 0;
+ 
+-    if (X11_IsWindowMapped(_this, window)) {
++    if (!data->videodata->net_wm && X11_IsWindowMapped(_this, window)) {
++        /*
++         * AMIX: dtwm (Motif) has no EWMH and ignores _NET_WM_STATE.  Take
++         * the frame away with _MOTIF_WM_HINTS and cover the screen; the
++         * window is withdrawn and mapped again so the window manager reads
++         * the hint.  Its UnmapNotify is taken out of the queue, or SDL would
++         * leave fullscreen again for the hidden window.
++         */
++        Atom mwm = X11_XInternAtom(display, "_MOTIF_WM_HINTS", False);
++        long hint[5] = { 2, 0, 0, 0, 0 }; /* MWM_HINTS_DECORATIONS, none */
++        XEvent e;
++        int w, h;
++
++        X11_XWithdrawWindow(display, data->xwindow, displaydata->screen);
++        X11_XSync(display, False);
++        while (X11_XCheckIfEvent(display, &e, &isUnmapNotify, (XPointer)&data->xwindow)) {
++        }
++        if (fullscreen) {
++            X11_XChangeProperty(display, data->xwindow, mwm, mwm, 32, PropModeReplace,
++                                (unsigned char *)hint, 5);
++        } else {
++            SetWindowBordered(display, displaydata->screen, data->xwindow,
++                              (window->flags & SDL_WINDOW_BORDERLESS) ? SDL_FALSE : SDL_TRUE);
++        }
++        X11_XMapRaised(display, data->xwindow);
++        if (fullscreen) {
++            w = DisplayWidth(display, displaydata->screen);
++            h = DisplayHeight(display, displaydata->screen);
++            X11_XMoveWindow(display, data->xwindow, 0, 0);
++        } else {
++            w = window->windowed.w;
++            h = window->windowed.h;
++            X11_XMoveWindow(display, data->xwindow,
++                            window->windowed.x - data->border_left,
++                            window->windowed.y - data->border_top);
++        }
++        X11_XResizeWindow(display, data->xwindow, w, h);
++        X11_XSync(display, False);
++        SDL_SendWindowEvent(window, SDL_WINDOWEVENT_RESIZED, w, h);
++    } else if (X11_IsWindowMapped(_this, window)) {
+         XEvent e;
+         /* !!! FIXME: most of this waiting code is copy/pasted from elsewhere. */
+         int (*prev_handler)(Display *, XErrorEvent *) = NULL;
