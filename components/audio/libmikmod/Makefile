@@ -24,6 +24,7 @@ build:
 	cp -R libmikmod $(BUILD_DIR)/pic/
 	$(MAKE) -C $(BUILD_DIR)/pic/libmikmod libmikmod.so.3 CC=m68k-elf-gcc \
 		CFLAGS='$(BASE) -fPIC -DDRV_HDMI -I. -Iinclude -I$(GATE)/zzgl -I$(GATE)/cores/h264bench'
+	../../../tools/amix-got-check $(BUILD_DIR)/pic/libmikmod/*/*.o
 
 # the shared library where it belongs on AMIX
 stage:

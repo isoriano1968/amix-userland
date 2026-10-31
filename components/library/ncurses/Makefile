@@ -14,6 +14,7 @@ build: $(COMPONENT_ARCHIVE)
 	tar xzf $(COMPONENT_ARCHIVE)
 	sh configure-amix.sh
 	$(MAKE) -C build
+	../../../tools/amix-got-check `find build -name "*.o"`
 	cd build/lib && \
 	m68k-elf-gcc -shared -Wl,-h,libncurses.so.6 -Wl,--whole-archive libncurses.a -Wl,--no-whole-archive -o libncurses.so.6 && \
 	ln -sf libncurses.so.6 libncurses.so && \

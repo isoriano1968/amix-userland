@@ -122,7 +122,12 @@ replace("cc1", "%(cc1_cpu) -Wno-error=implicit-int")
 # Found as heap corruption in CDE (DtSvc MMDb.c build_file_list), crashing
 # dtfile/dtdbcache/dtwm inside AMIX's malloc.  Every translation unit needs
 # it, libgcc and libstdc++ included, hence self_spec as well.
-replace("self_spec", "%{!mno-align-int:-malign-int} %{!ffold-mem-offsets:-fno-fold-mem-offsets}")
+#
+# PIC: when the register allocator pushes a pointer loaded from the GOT as two
+# words, it writes the low half as sym+2@GOT, which is the wrong GOT slot, so a
+# string comes out wrong.  Hoisting that load out of a loop or block is what
+# leads there; tools/amix-got-check fails a build if one is left.
+replace("self_spec", "%{!mno-align-int:-malign-int} %{!ffold-mem-offsets:-fno-fold-mem-offsets} %{fPIC|fpic:-fno-gcse -fno-move-loop-invariants}")
 
 # Read off the machine's own /usr/bin/ls: libc.so.1 IS the runtime linker, text
 # starts at 0x80000000, and the hash table is the classic SysV one.  Nothing

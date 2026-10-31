@@ -1,0 +1,12 @@
+#!/bin/sh
+# amix-got-check OBJECT...: fails on a GOT relocation with an addend, which
+# gcc 14 m68k -fPIC can emit (see gcc-14's install-specs.sh) and which reads the
+# wrong GOT slot.  The linker takes it without a word.
+bad=0
+for o in "$@"; do
+	r=`${READELF:-m68k-elf-readelf} -Wr "$o" | grep GOT32 | grep -v _GLOBAL_OFFSET_TABLE_ | grep -v ' + 0$'`
+	if [ -n "$r" ]; then
+		echo "$o:"; echo "$r"; bad=1
+	fi
+done
+exit $bad
