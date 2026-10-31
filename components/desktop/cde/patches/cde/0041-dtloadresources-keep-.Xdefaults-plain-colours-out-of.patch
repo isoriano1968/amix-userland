@@ -1,0 +1,40 @@
+From 481723522b39022a0e7e86c89bc2ef5719eeba57 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 22:19:05 +0100
+Subject: [PATCH 41/42] dtloadresources: keep ~/.Xdefaults' plain colours out
+ of a CDE session
+
+The palette colours a CDE session, not ~/.Xdefaults.  An OPEN LOOK
+(olwsm) .Xdefaults sets *Background: white, which reaches DtEditor's
+textBackground (class Background) while the palette's text colour stays
+white: white text on white in dtpad.  The generic colour resources are
+filtered out of ~/.Xdefaults when it is merged.
+---
+ programs/dtsession/dtloadresources.src | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/programs/dtsession/dtloadresources.src b/programs/dtsession/dtloadresources.src
+index 69c05188..15282c2c 100644
+--- a/programs/dtsession/dtloadresources.src
++++ b/programs/dtsession/dtloadresources.src
+@@ -164,6 +164,16 @@ display=$(echo ${display%.*} | /usr/bin/tr ".:" "__")
+ (
+   echo "dtsession_res*files: $resourceFiles"
+   if [ ! -z "$resourceFiles" ]; then
+-    cat $resourceFiles
++    for f in $resourceFiles; do
++      if [ "$f" = "$rXdefaults" ]; then
++        # The palette, not ~/.Xdefaults, colours a CDE session: an OPEN LOOK
++        # (olwsm) .Xdefaults sets *Background: white, which reaches
++        # DtEditor's textBackground (class Background) while the text colour
++        # set still gives white text -- white on white in dtpad.
++        egrep -v '^\*(Background|FontColor|TextBackground|TextFontColor|foreground):' "$f"
++      else
++        cat "$f"
++      fi
++    done
+   fi
+ ) | XBINDIR/xrdb -quiet $xrdbOption -DDISPLAY_$display
+-- 
+2.47.3
+

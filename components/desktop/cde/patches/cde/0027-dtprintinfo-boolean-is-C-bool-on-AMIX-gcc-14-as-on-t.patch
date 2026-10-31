@@ -1,0 +1,40 @@
+From 21797c41c4071ca67ee92fd9f58dc0d22323bd93 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:20:12 +0200
+Subject: [PATCH 27/42] dtprintinfo: boolean is C++ bool on AMIX (gcc 14), as
+ on the BSDs
+
+---
+ programs/dtprintinfo/libUI/BaseUI.h    | 2 +-
+ programs/dtprintinfo/objects/BaseObj.h | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/programs/dtprintinfo/libUI/BaseUI.h b/programs/dtprintinfo/libUI/BaseUI.h
+index 6544ce18..4af7658a 100644
+--- a/programs/dtprintinfo/libUI/BaseUI.h
++++ b/programs/dtprintinfo/libUI/BaseUI.h
+@@ -54,7 +54,7 @@
+   #define false 0
+   #define true 1
+   #define boolean int
+-#elif defined(CSRG_BASED)
++#elif defined(CSRG_BASED) || defined(__amix__)
+ #include <stdbool.h>
+ #define boolean bool
+ #else
+diff --git a/programs/dtprintinfo/objects/BaseObj.h b/programs/dtprintinfo/objects/BaseObj.h
+index d6df4657..2884b3ba 100644
+--- a/programs/dtprintinfo/objects/BaseObj.h
++++ b/programs/dtprintinfo/objects/BaseObj.h
+@@ -55,7 +55,7 @@
+   #define false 0
+   #define true 1
+   #define boolean int
+-#elif defined(CSRG_BASED)
++#elif defined(CSRG_BASED) || defined(__amix__)
+ #include <stdbool.h>
+ #define boolean bool
+ #else
+-- 
+2.47.3
+

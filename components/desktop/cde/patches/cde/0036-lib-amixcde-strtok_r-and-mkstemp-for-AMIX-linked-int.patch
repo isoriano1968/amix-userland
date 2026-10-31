@@ -1,0 +1,148 @@
+From d3fa3e166101458c541f5ae3f0b2e1c30a163f19 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:29:32 +0200
+Subject: [PATCH 36/42] lib/amixcde: strtok_r and mkstemp for AMIX, linked into
+ every program
+
+---
+ config/cf/host.def    |  3 +-
+ lib/Imakefile         |  6 +++-
+ lib/amixcde/Imakefile | 19 ++++++++++++
+ lib/amixcde/amixcde.c | 70 +++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 96 insertions(+), 2 deletions(-)
+ create mode 100644 lib/amixcde/Imakefile
+ create mode 100644 lib/amixcde/amixcde.c
+
+diff --git a/config/cf/host.def b/config/cf/host.def
+index ad9276d6..4b610d4d 100644
+--- a/config/cf/host.def
++++ b/config/cf/host.def
+@@ -96,5 +96,6 @@ XCOMM host.def -- cross-building CDE for AMIX on a Linux host (read before amix.
+  * archives, so programs that do not need it get nothing from it */
+ /* ... and, last, what static libXm needs from X (Editres in Xmu, Xp printing)
+  * with their own dependencies after them: a static link resolves left to right */
++/* libamixcde (lib/amixcde): what SVR4.0's libc lacks (strtok_r, mkstemp) */
+ #define ExtraLibraries		-lXmu -lXt -lXp -lXext -lSM -lICE -lX11 \
+-				-lstdc++ -lsupc++ -lsocket -lnsl -lgen
++				-lstdc++ -lsupc++ -lamixcde -lsocket -lnsl -lgen
+diff --git a/lib/Imakefile b/lib/Imakefile
+index df37a00c..c3f07bf6 100644
+--- a/lib/Imakefile
++++ b/lib/Imakefile
+@@ -12,7 +12,11 @@ PAMDIR = pam
+ PAMDIR =
+ #endif
+ 
+-SUBDIRS = $(XINDIR) $(PAMDIR) tt DtSvc DtSearch DtWidget DtHelp DtPrint \
++#if defined(AMIXArchitecture)
++AMIXDIR = amixcde
++#endif
++
++SUBDIRS = $(AMIXDIR) $(XINDIR) $(PAMDIR) tt DtSvc DtSearch DtWidget DtHelp DtPrint \
+ 	DtTerm DtMrm csa
+ 
+ MakeSubdirs($(SUBDIRS))
+diff --git a/lib/amixcde/Imakefile b/lib/amixcde/Imakefile
+new file mode 100644
+index 00000000..27f0f22c
+--- /dev/null
++++ b/lib/amixcde/Imakefile
+@@ -0,0 +1,19 @@
++XCOMM lib/amixcde -- functions CDE uses that AMIX (SVR4.0) lacks; built on AMIX
++XCOMM only (lib/Imakefile), linked into every program via ExtraLibraries.
++#define DoNormalLib   YES
++#define DoSharedLib   NO
++#define DoDebugLib    NO
++#define DoProfileLib  NO
++#define HasSharedData NO
++#define LibName       amixcde
++#define LibHeaders    NO
++
++SRCS = amixcde.c
++
++OBJS = amixcde.o
++
++#include <Library.tmpl>
++
++INCLUDES = -I.
++
++DependTarget()
+diff --git a/lib/amixcde/amixcde.c b/lib/amixcde/amixcde.c
+new file mode 100644
+index 00000000..3b5b27c9
+--- /dev/null
++++ b/lib/amixcde/amixcde.c
+@@ -0,0 +1,70 @@
++/*
++ * amixcde.c -- C library functions CDE uses that Amiga UNIX (AMIX, SVR4.0)
++ * does not have.  Part of the AMIX port of CDE.
++ */
++#include <sys/types.h>
++#include <stdlib.h>
++#include <string.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <errno.h>
++#include <time.h>
++
++/* POSIX.1c strtok_r */
++char *
++strtok_r(char *s, const char *delim, char **last)
++{
++	char *tok;
++
++	if (s == NULL && (s = *last) == NULL)
++		return NULL;
++	s += strspn(s, delim);
++	if (*s == '\0') {
++		*last = NULL;
++		return NULL;
++	}
++	tok = s;
++	s += strcspn(s, delim);
++	if (*s != '\0')
++		*s++ = '\0';
++	else
++		s = NULL;
++	*last = s;
++	return tok;
++}
++
++/*
++ * mkstemp: replace the trailing XXXXXX of template and create the file
++ * exclusively (O_EXCL), retrying with other names on a clash.
++ */
++int
++mkstemp(char *template)
++{
++	static const char chars[] =
++	    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
++	static unsigned long seed;
++	size_t len = strlen(template);
++	char *x;
++	int tries, fd, i;
++
++	if (len < 6 || strcmp(template + len - 6, "XXXXXX") != 0) {
++		errno = EINVAL;
++		return -1;
++	}
++	x = template + len - 6;
++	if (seed == 0)
++		seed = (unsigned long)getpid() * 2654435761UL + (unsigned long)time(0);
++	for (tries = 0; tries < 1000; tries++) {
++		unsigned long v;
++
++		seed = seed * 1103515245UL + 12345UL;
++		v = seed;
++		for (i = 0; i < 6; i++, v /= 62)
++			x[i] = chars[v % 62];
++		fd = open(template, O_RDWR | O_CREAT | O_EXCL, 0600);
++		if (fd >= 0 || errno != EEXIST)
++			return fd;
++	}
++	errno = EEXIST;
++	return -1;
++}
+-- 
+2.47.3
+

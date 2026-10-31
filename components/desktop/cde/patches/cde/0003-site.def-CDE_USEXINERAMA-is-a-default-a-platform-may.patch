@@ -1,0 +1,27 @@
+From 8e63174fad1b52ce2892858f98f4762d30d370fd Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 11:21:42 +0200
+Subject: [PATCH 03/42] site.def: CDE_USEXINERAMA is a default a platform may
+ override (AMIX's X11R6.3 has no Xinerama)
+
+---
+ config/cf/site.def | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/config/cf/site.def b/config/cf/site.def
+index 785d2594..c27d380f 100644
+--- a/config/cf/site.def
++++ b/config/cf/site.def
+@@ -110,7 +110,9 @@ XCOMM site:  $TOG: site.def /main/23 1998/03/19 18:43:26 mgreess $
+ #endif
+ 
+ XCOMM build the DtXinerama support
++#ifndef CDE_USEXINERAMA
+ #define CDE_USEXINERAMA         YES
++#endif
+ 
+ #ifdef SunArchitecture
+ # define DtLocalesToBuild de_DE.ISO8859-1 es_ES.ISO8859-1 fr_FR.ISO8859-1 it_IT.ISO8859-1
+-- 
+2.47.3
+

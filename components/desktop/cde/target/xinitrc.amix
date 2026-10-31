@@ -1,0 +1,7 @@
+#!/bin/sh
+# xinitrc.amix -- the startcde session: CDE's Xsession (dtsession, dtwm, the
+# front panel).  xhold waits for the server, then keeps one connection open
+# for the whole session, so the server never runs out of clients and resets
+# (an X server without -noreset); dtlogin does the same for its sessions.
+/usr/dt/bin/xhold	# returns once the server accepts; a child holds the connection
+exec /usr/dt/bin/Xsession

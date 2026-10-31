@@ -1,0 +1,27 @@
+From 6ccec293efa4499c152363ca6fbab345430a80c1 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 09:50:23 +0200
+Subject: [PATCH] TextF.c: AMIX (SVR4.0) has no <wchar.h>; use the internal
+ wide-string routines
+
+---
+ lib/Xm/TextF.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/lib/Xm/TextF.c b/lib/Xm/TextF.c
+index f66076d..8e53abe 100644
+--- a/lib/Xm/TextF.c
++++ b/lib/Xm/TextF.c
+@@ -82,7 +82,8 @@ static char rcsid[] = "$TOG: TextF.c /main/65 1999/09/01 17:28:48 mgreess $"
+ #define FIX_1409
+ 
+ #if (defined(__FreeBSD__) && (__FreeBSD__ < 4)) || \
+-    (defined(__APPLE__) || defined(__NetBSD__) || defined(__OpenBSD__))
++    (defined(__APPLE__) || defined(__NetBSD__) || defined(__OpenBSD__)) || \
++    defined(__amix__)
+ /*
+  * Modification by Integrated Computer Solutions, Inc.  May 2000
+  *
+-- 
+2.47.3
+

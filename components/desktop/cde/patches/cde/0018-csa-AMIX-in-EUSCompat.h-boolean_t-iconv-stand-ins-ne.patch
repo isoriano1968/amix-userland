@@ -1,0 +1,50 @@
+From 1ded58e622b3a618992e132ef81c577805c00019 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:08:15 +0200
+Subject: [PATCH 18/42] csa: AMIX in EUSCompat.h (boolean_t, iconv stand-ins),
+ netinet/in.h for the classic RPC path
+
+---
+ include/EUSCompat.h | 4 ++--
+ lib/csa/agent.c     | 3 +++
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/include/EUSCompat.h b/include/EUSCompat.h
+index 44e4b9c3..a22ab9e8 100644
+--- a/include/EUSCompat.h
++++ b/include/EUSCompat.h
+@@ -59,7 +59,7 @@ extern "C" {
+ ** System V R4 based systems define the stuff we need in
+ ** sys/types.h. Include that and then we are done.
+ */
+-#if defined(HPUX) || defined(__linux__) || defined(SunOS)
++#if defined(HPUX) || defined(__linux__) || defined(SunOS) || defined(__amix__)
+ #include <sys/types.h>
+ #endif
+ 
+@@ -110,7 +110,7 @@ typedef enum {B_FALSE, B_TRUE} boolean_t;
+ 
+ #endif	/* HPUX */
+ 
+-#if defined(__linux__) || defined(CSRG_BASED)
++#if defined(__linux__) || defined(CSRG_BASED) || defined(__amix__)
+ typedef enum {B_FALSE, B_TRUE} boolean_t;
+ #define MAXNAMELEN      	256
+ 
+diff --git a/lib/csa/agent.c b/lib/csa/agent.c
+index 888bdf39..72847fae 100644
+--- a/lib/csa/agent.c
++++ b/lib/csa/agent.c
+@@ -43,6 +43,9 @@
+ #else
+ #include <sys/signal.h>
+ #include <sys/socket.h>
++#if defined(__amix__)
++#include <netinet/in.h>	/* IPPROTO_*, sockaddr_in: not implied by AMIX's rpc/rpc.h */
++#endif
+ #include <sys/errno.h>
+ #endif /* SunOS */
+ #include <X11/Intrinsic.h>
+-- 
+2.47.3
+

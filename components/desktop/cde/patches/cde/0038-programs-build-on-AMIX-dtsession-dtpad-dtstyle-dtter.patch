@@ -1,0 +1,464 @@
+From 7dcb2dd799661a6593a15ffd40fbd1eb0c7ea6a5 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 19:58:08 +0200
+Subject: [PATCH 38/42] programs: build on AMIX -- dtsession, dtpad, dtstyle,
+ dtterm, dtmail, dtcm, dtlogin, ...
+
+Source changes for the AMIX port (__amix__ / AMIXArchitecture next to the
+existing platform branches):
+- DtWidget Editor.c: wctype.h and wchar.h (wcwidth, putwc/getwc), no
+  NO_putwc; DtTerm TermPrimSelect.c: <wctype.h> as on OpenBSD;
+- dtstyle ColorFile.c: <fnmatch.h>; dtscreen usleep.c: libc's usleep;
+- dtsession SmConMgmt.c, dtcm lexit.c: no nlist()/madvise memory probing,
+  as on Linux;
+- dtmail: Buffer.hh Chunk declaration, INFTIM, SYSTEM_MAILRC
+  (/etc/mail/mailx.rc), signal handler signature, dmx.hh keeps the
+  system boolean_t, VendorP.h met with C linkage first (R6.3 has none);
+- dtlogin dm.c: <stdarg.h>;
+- dtprintinfo: regcmp/regex (NO_REGCOMP) in libUI and PrintObj, the SVR4
+  lp spool parser (as on Solaris), <sys/time.h>, boolean after
+  <sys/types.h>;
+- dtsearchpath UnixEnv.C: rm-based removeFiles and UID/GID_NO_CHANGE as
+  on sun, an AMIX MANPATH;
+- dtsr Imakefile: depend on libDtSearch.a, not on -lDtSearch;
+- util/dttypes: forward declaration for <regexp.h>'s getrnge;
+- fontaliases: the linux (X11 font name) aliases for AMIX.
+---
+ lib/DtTerm/TermPrim/TermPrimSelect.c              |  2 +-
+ lib/DtWidget/Editor.c                             |  6 +++++-
+ programs/dtcm/server/lexit.c                      |  2 +-
+ programs/dtlogin/dm.c                             |  2 +-
+ programs/dtmail/dtmail/AttachArea.C               |  8 ++++++++
+ programs/dtmail/dtmail/Icon.C                     |  8 ++++++++
+ programs/dtmail/dtmailpr/dmx.hh                   |  2 +-
+ programs/dtmail/include/DtMail/Buffer.hh          |  2 +-
+ programs/dtmail/libDtMail/Common/DtMailRc.C       |  2 ++
+ programs/dtmail/libDtMail/Common/Process.C        |  2 +-
+ programs/dtmail/libDtMail/RFC/RFCMailBox.C        |  2 +-
+ programs/dtmail/libDtMail/RFC/SunV3.C             |  2 +-
+ programs/dtprintinfo/Imakefile                    |  5 +++++
+ programs/dtprintinfo/libUI/BaseUI.C               |  2 +-
+ programs/dtprintinfo/libUI/BaseUI.h               |  3 +++
+ programs/dtprintinfo/libUI/Imakefile              |  5 +++++
+ programs/dtprintinfo/objects/PrintObj/Imakefile   |  5 +++++
+ programs/dtprintinfo/objects/PrintObj/ParseJobs.C |  2 +-
+ programs/dtscreen/usleep.c                        |  2 +-
+ programs/dtsearchpath/libCliSrv/UnixEnv.C         | 10 ++++++----
+ programs/dtsession/SmConMgmt.c                    |  6 +++---
+ programs/dtsr/Imakefile                           |  4 ++++
+ programs/dtstyle/ColorFile.c                      |  4 ++++
+ programs/fontaliases/Imakefile                    |  2 +-
+ programs/util/dttypes/dttypes.c                   |  4 ++++
+ 25 files changed, 74 insertions(+), 20 deletions(-)
+
+diff --git a/lib/DtTerm/TermPrim/TermPrimSelect.c b/lib/DtTerm/TermPrim/TermPrimSelect.c
+index 5f2c302a..373e95be 100644
+--- a/lib/DtTerm/TermPrim/TermPrimSelect.c
++++ b/lib/DtTerm/TermPrim/TermPrimSelect.c
+@@ -53,7 +53,7 @@ static char rcs_id[] = "$TOG: TermPrimSelect.c /main/6 1999/10/14 16:22:53 mgree
+ #include <Xm/DropSMgr.h>
+ #include <Xm/DropTrans.h>
+ 
+-#if defined(OPENBSD_ARCHITECTURE)
++#if defined(OPENBSD_ARCHITECTURE) || defined(__amix__)
+ #include <ctype.h>
+ #include <wctype.h>
+ #endif
+diff --git a/lib/DtWidget/Editor.c b/lib/DtWidget/Editor.c
+index b25fe8a6..902c0a3e 100644
+--- a/lib/DtWidget/Editor.c
++++ b/lib/DtWidget/Editor.c
+@@ -62,7 +62,11 @@
+ #  include <wchar.h>
+ # endif
+ # include <libintl.h>
+-#elif defined(__linux__) || defined(__amix__)
++#elif defined(__amix__)
++/* the port's config/amix/include: wcwidth(), putwc(), getwc() */
++# include <wctype.h>
++# include <wchar.h>
++#elif defined(__linux__)
+ # include <wctype.h>
+ # define NO_putwc
+ #elif defined(CSRG_BASED)
+diff --git a/programs/dtcm/server/lexit.c b/programs/dtcm/server/lexit.c
+index a59393b3..3fe60528 100644
+--- a/programs/dtcm/server/lexit.c
++++ b/programs/dtcm/server/lexit.c
+@@ -428,7 +428,7 @@ setinput (FILE* f)
+ 	return(-1);
+       }
+ 
+-#if !defined(__linux__)
++#if !defined(__linux__) && !defined(__amix__)
+   /* no madvise so we lose this optimization */
+   madvise(start_of_mmapped_area, len, MADV_SEQUENTIAL);
+ #endif
+diff --git a/programs/dtlogin/dm.c b/programs/dtlogin/dm.c
+index 8ce0eafe..1db19ee5 100644
+--- a/programs/dtlogin/dm.c
++++ b/programs/dtlogin/dm.c
+@@ -62,7 +62,7 @@
+ # include	<time.h>
+ # include	<utime.h>
+ # include	<pwd.h>
+-#if defined(__linux__) || defined(CSRG_BASED) || defined(sun)
++#if defined(__linux__) || defined(CSRG_BASED) || defined(sun) || defined(__amix__)
+ # include	<stdarg.h>
+ #else
+ # include	<varargs.h>
+diff --git a/programs/dtmail/dtmail/AttachArea.C b/programs/dtmail/dtmail/AttachArea.C
+index c22e4011..ad38fcc0 100644
+--- a/programs/dtmail/dtmail/AttachArea.C
++++ b/programs/dtmail/dtmail/AttachArea.C
+@@ -49,6 +49,14 @@
+ #include <sys/stat.h>
+ #include <stdio.h>
+ #include <Dt/Editor.h>
++#if defined(__amix__)
++/* X11R6.3's <X11/VendorP.h> has no extern "C"; Motif's <Xm/VendorSP.h>
++** redeclares vendorShellClassRec inside one.  Meet it first with C linkage. */
++extern "C" {
++#include <X11/IntrinsicP.h>
++#include <X11/ShellP.h>
++}
++#endif
+ #include <Xm/ColorObjP.h>
+ 
+ #include "EUSDebug.hh"
+diff --git a/programs/dtmail/dtmail/Icon.C b/programs/dtmail/dtmail/Icon.C
+index 9b4721a2..72570621 100644
+--- a/programs/dtmail/dtmail/Icon.C
++++ b/programs/dtmail/dtmail/Icon.C
+@@ -59,6 +59,14 @@
+ 
+ #include <X11/Xlib.h>
+ #include <X11/Xutil.h>
++#if defined(__amix__)
++/* X11R6.3's <X11/VendorP.h> has no extern "C"; Motif's <Xm/VendorSP.h>
++** redeclares vendorShellClassRec inside one.  Meet it first with C linkage. */
++extern "C" {
++#include <X11/IntrinsicP.h>
++#include <X11/ShellP.h>
++}
++#endif
+ #include <Xm/ColorObjP.h>
+ 
+ Icon::Icon ( 
+diff --git a/programs/dtmail/dtmailpr/dmx.hh b/programs/dtmail/dtmailpr/dmx.hh
+index 1baca99f..41aa06b3 100644
+--- a/programs/dtmail/dtmailpr/dmx.hh
++++ b/programs/dtmail/dtmailpr/dmx.hh
+@@ -96,7 +96,7 @@ enum DmxHeaders
+ };
+ 
+ // This is undoubtedly illegal, unethical, and immoral.  So sue me.
+-#if !defined(SunOS) && !defined(_AIX)
++#if !defined(SunOS) && !defined(_AIX) && !defined(__amix__)
+ #undef boolean_t
+ typedef enum { B_FALSE, B_TRUE } boolean_t;
+ #endif // SunOS
+diff --git a/programs/dtmail/include/DtMail/Buffer.hh b/programs/dtmail/include/DtMail/Buffer.hh
+index 1f223274..aeafb0ed 100644
+--- a/programs/dtmail/include/DtMail/Buffer.hh
++++ b/programs/dtmail/include/DtMail/Buffer.hh
+@@ -125,7 +125,7 @@ class BufferMemory : public Buffer {
+ 	virtual int getSize(void);      // get total size of the buffer
+ 
+     private:
+-#if !defined(__linux__) && !defined(CSRG_BASED) && !defined(sun)
++#if !defined(__linux__) && !defined(CSRG_BASED) && !defined(sun) && !defined(__amix__)
+ 	class Chunk;
+ #endif
+ 
+diff --git a/programs/dtmail/libDtMail/Common/DtMailRc.C b/programs/dtmail/libDtMail/Common/DtMailRc.C
+index 66c1e0a6..3ba7ddba 100644
+--- a/programs/dtmail/libDtMail/Common/DtMailRc.C
++++ b/programs/dtmail/libDtMail/Common/DtMailRc.C
+@@ -149,6 +149,8 @@ struct cmd cmdtab[] = {
+ #define SYSTEM_MAILRC	"/usr/share/lib/Mail.rc"
+ #elif defined(__hpux)
+ #define SYSTEM_MAILRC	"/usr/share/lib/mailx.rc"
++#elif defined(__amix__)
++#define SYSTEM_MAILRC	"/etc/mail/mailx.rc"	/* SVR4.0 mailx */
+ #elif defined(CSRG_BASED)
+ #define SYSTEM_MAILRC	"/etc/mail.rc"
+ #endif
+diff --git a/programs/dtmail/libDtMail/Common/Process.C b/programs/dtmail/libDtMail/Common/Process.C
+index 623e5f13..84809021 100644
+--- a/programs/dtmail/libDtMail/Common/Process.C
++++ b/programs/dtmail/libDtMail/Common/Process.C
+@@ -55,7 +55,7 @@
+ #include <stropts.h>
+ #elif defined(HPUX)
+ #include <sys/poll.h>
+-#elif defined(_AIX) || defined(__linux__)
++#elif defined(_AIX) || defined(__linux__) || defined(__amix__)
+ #define INFTIM (-1)             /* Infinite timeout */
+ #endif
+ 
+diff --git a/programs/dtmail/libDtMail/RFC/RFCMailBox.C b/programs/dtmail/libDtMail/RFC/RFCMailBox.C
+index a2a98e97..2aa4d955 100644
+--- a/programs/dtmail/libDtMail/RFC/RFCMailBox.C
++++ b/programs/dtmail/libDtMail/RFC/RFCMailBox.C
+@@ -97,7 +97,7 @@ extern "C" {
+ #define	LCL_SIG_HANDLER_SIGNATURE	
+ #elif defined(__hpux)
+ #define	LCL_SIG_HANDLER_SIGNATURE	__harg
+-#elif defined(__aix) || defined(__alpha) || defined(__linux__) || defined(CSRG_BASED)
++#elif defined(__aix) || defined(__alpha) || defined(__linux__) || defined(CSRG_BASED) || defined(__amix__)
+ #define	LCL_SIG_HANDLER_SIGNATURE	int
+ #endif
+ 
+diff --git a/programs/dtmail/libDtMail/RFC/SunV3.C b/programs/dtmail/libDtMail/RFC/SunV3.C
+index 38b9a303..450c1945 100644
+--- a/programs/dtmail/libDtMail/RFC/SunV3.C
++++ b/programs/dtmail/libDtMail/RFC/SunV3.C
+@@ -59,7 +59,7 @@
+ #include <stropts.h>
+ #elif defined(HPUX)
+ #include <sys/poll.h>
+-#elif defined(_AIX) || defined(__linux__)
++#elif defined(_AIX) || defined(__linux__) || defined(__amix__)
+ #define INFTIM (-1)             /* Infinite timeout */
+ #endif
+ 
+diff --git a/programs/dtprintinfo/Imakefile b/programs/dtprintinfo/Imakefile
+index a1458036..cbffe6db 100644
+--- a/programs/dtprintinfo/Imakefile
++++ b/programs/dtprintinfo/Imakefile
+@@ -59,6 +59,11 @@ DEFINES = -DHAS_EXCEPTIONS
+ DEFINES = -D_TOOLTALK
+ #endif
+ 
++#ifdef AMIXArchitecture
++/* libUI/BaseUI.o is built from here too: see libUI/Imakefile */
++DEFINES = -DNO_REGCOMP
++#endif
++
+ /* special processing for message files */
+ SYM2NUM_CMD = $(BUILDKSH) sym2num
+ 
+diff --git a/programs/dtprintinfo/libUI/BaseUI.C b/programs/dtprintinfo/libUI/BaseUI.C
+index 872945b3..d827b85c 100644
+--- a/programs/dtprintinfo/libUI/BaseUI.C
++++ b/programs/dtprintinfo/libUI/BaseUI.C
+@@ -44,7 +44,7 @@
+ #include <stdlib.h>
+ #ifdef hpux
+   #include <time.h>
+-#elif defined(__linux__)
++#elif defined(__linux__) || defined(__amix__)
+   #include <sys/time.h>
+ #else
+   #include <sys/select.h>
+diff --git a/programs/dtprintinfo/libUI/BaseUI.h b/programs/dtprintinfo/libUI/BaseUI.h
+index 4af7658a..7a034acc 100644
+--- a/programs/dtprintinfo/libUI/BaseUI.h
++++ b/programs/dtprintinfo/libUI/BaseUI.h
+@@ -56,6 +56,9 @@
+   #define boolean int
+ #elif defined(CSRG_BASED) || defined(__amix__)
+ #include <stdbool.h>
++#ifdef __amix__
++#include <sys/types.h>	/* its 'enum boolean' before the macro below */
++#endif
+ #define boolean bool
+ #else
+   typedef enum
+diff --git a/programs/dtprintinfo/libUI/Imakefile b/programs/dtprintinfo/libUI/Imakefile
+index b2e04f30..dba42e21 100644
+--- a/programs/dtprintinfo/libUI/Imakefile
++++ b/programs/dtprintinfo/libUI/Imakefile
+@@ -26,6 +26,11 @@ DEFINES = -DHAS_EXCEPTIONS
+ DEFINES = -UNO_REGCOMP
+ #endif
+ 
++#ifdef AMIXArchitecture
++/* SVR4.0: regcmp()/regex() in libgen, no POSIX regcomp() */
++DEFINES = -DNO_REGCOMP
++#endif
++
+ SRCS = 	BaseUI.C Test.C
+ OBJS = 	BaseUI.o Test.o
+ 
+diff --git a/programs/dtprintinfo/objects/PrintObj/Imakefile b/programs/dtprintinfo/objects/PrintObj/Imakefile
+index 1430c5ce..1d276bef 100644
+--- a/programs/dtprintinfo/objects/PrintObj/Imakefile
++++ b/programs/dtprintinfo/objects/PrintObj/Imakefile
+@@ -20,6 +20,11 @@ DEFINES = -DHAS_EXCEPTIONS
+ DEFINES = -UNO_REGCOMP
+ #endif
+ 
++#ifdef AMIXArchitecture
++/* SVR4.0: regcmp()/regex() in libgen, no POSIX regcomp() */
++DEFINES = -DNO_REGCOMP
++#endif
++
+ SRCS = 	ParseJobs.C	PrintJob.C 	PrintSubSys.C 	Queue.C
+ OBJS = 	ParseJobs.o	PrintJob.o 	PrintSubSys.o 	Queue.o
+ 
+diff --git a/programs/dtprintinfo/objects/PrintObj/ParseJobs.C b/programs/dtprintinfo/objects/PrintObj/ParseJobs.C
+index 2adbcfdb..6806dc8b 100644
+--- a/programs/dtprintinfo/objects/PrintObj/ParseJobs.C
++++ b/programs/dtprintinfo/objects/PrintObj/ParseJobs.C
+@@ -332,7 +332,7 @@ void LocalPrintJobs(char *printer, char **job_list, int *n_jobs)
+ }
+ #endif
+ 
+-#if defined(sun)
++#if defined(sun) || defined(__amix__)	// AMIX: the SVR4 lp spool, as on Solaris
+ 
+ // SUN LOCAL PARSER, actually this gets the local information from the file
+ // system, it should have the good performance since no processes (lpstat)
+diff --git a/programs/dtscreen/usleep.c b/programs/dtscreen/usleep.c
+index 82470bfd..1cc13d79 100644
+--- a/programs/dtscreen/usleep.c
++++ b/programs/dtscreen/usleep.c
+@@ -41,7 +41,7 @@
+ 
+ #include "dtscreen.h"
+ 
+-#if !defined(_AIX) && !defined(hpV4) && !defined(__linux__) && !defined(sun) && !defined(CSRG_BASED)
++#if !defined(_AIX) && !defined(hpV4) && !defined(__linux__) && !defined(sun) && !defined(CSRG_BASED) && !defined(__amix__)
+ int
+ usleep(unsigned long usec)
+ {
+diff --git a/programs/dtsearchpath/libCliSrv/UnixEnv.C b/programs/dtsearchpath/libCliSrv/UnixEnv.C
+index 1c634ff1..fabe669b 100644
+--- a/programs/dtsearchpath/libCliSrv/UnixEnv.C
++++ b/programs/dtsearchpath/libCliSrv/UnixEnv.C
+@@ -45,12 +45,12 @@
+ #include <pwd.h>
+ #if defined(sun)
+ #include <regexpr.h>
+-#else
++#elif !defined(__amix__)	/* AMIX: no regcomp(); removeFiles() uses rm, as on sun */
+ #include <regex.h>
+ #endif
+ #include <errno.h>
+ 
+-#if defined(sun) || defined(_AIX) || defined(__linux__) || defined(CSRG_BASED)
++#if defined(sun) || defined(_AIX) || defined(__linux__) || defined(CSRG_BASED) || defined(__amix__)
+ #define UID_NO_CHANGE ((uid_t) -1)
+ #define GID_NO_CHANGE ((gid_t) -1)
+ #endif
+@@ -81,6 +81,8 @@ UnixEnvironment::UnixEnvironment()
+ 	manpath = "/usr/share/man:/usr/local/man";
+ #elif defined(__NetBSD__)
+ 	manpath = "/usr/share/man:/usr/X11R6/man:/usr/X11R7/man:/usr/local/man:/usr/pkg/man";
++#elif defined(__amix__)
++	manpath = "/usr/share/man:/usr/x11r6/man:/usr/local/man";
+ #endif
+     else
+ 	manpath = temp;
+@@ -274,7 +276,7 @@ void UnixEnvironment::removeDirectory
+ 	const CString & dirspec
+ 	)
+ {
+-#ifdef sun
++#if defined(sun) || defined(__amix__)
+     removeFiles(dirspec, ".~*");
+     removeFiles(dirspec, "*");
+ #else
+@@ -293,7 +295,7 @@ void UnixEnvironment::removeFiles
+ 	const CString & filespec
+ 	)
+ {
+-#if defined(sun)
++#if defined(sun) || defined(__amix__)
+ char buffer[100];
+     sprintf(buffer,"rm -f %s/%s", dirspec.data(),filespec.data());
+     system(buffer);
+diff --git a/programs/dtsession/SmConMgmt.c b/programs/dtsession/SmConMgmt.c
+index 23762542..5143403b 100644
+--- a/programs/dtsession/SmConMgmt.c
++++ b/programs/dtsession/SmConMgmt.c
+@@ -55,7 +55,7 @@
+ 
+ #include <stdio.h>
+ #include <fcntl.h>
+-#if !defined(__linux__)
++#if !defined(__linux__) && !defined(__amix__)
+ #include <nlist.h>
+ #endif
+ #include <X11/Intrinsic.h>
+@@ -109,7 +109,7 @@ int clientRunning;
+ /*
+  * Variables global to this module only
+  */
+-#if !defined(__linux__)
++#if !defined(__linux__) && !defined(__amix__)
+ static struct nlist namelist[3];
+ #endif
+ static int freemem_loc, gpgslim_loc, gpgslim, freemem;
+@@ -160,7 +160,7 @@ static void WaitClientTimeout(XtPointer, XtIntervalId *);
+ int 
+ GetMemoryUtilization(void)
+ {
+-#if !defined(__linux__)
++#if !defined(__linux__) && !defined(__amix__)
+     static int init = 0;
+     static int kmem;
+ #if !defined(SVR4) && !defined(hpV4) && !defined(_POWER) && !defined(CSRG_BASED)
+diff --git a/programs/dtsr/Imakefile b/programs/dtsr/Imakefile
+index e7c801b9..86b5787b 100644
+--- a/programs/dtsr/Imakefile
++++ b/programs/dtsr/Imakefile
+@@ -30,6 +30,10 @@ BYTE_SWAP_LIB =
+ DEP_LIBS = $(DEPXLIB) 
+ 
+ LOCAL_LIBRARIES = $(DTSEARCHLIB)
++#ifdef AMIXArchitecture
++/* static libraries: depend on the archive, not on "-lDtSearch" */
++DEPLIBS = $(DEPDTSEARCHLIB)
++#endif
+ 
+ SYS_LIBRARIES   = -lc -lm
+ 
+diff --git a/programs/dtstyle/ColorFile.c b/programs/dtstyle/ColorFile.c
+index 0fbe6110..c685a536 100644
+--- a/programs/dtstyle/ColorFile.c
++++ b/programs/dtstyle/ColorFile.c
+@@ -75,6 +75,10 @@
+ /*+++++++++++++++++++++++++++++++++++++++*/
+ #include "ColorFile.h"
+ 
++#ifdef __amix__
++#include <fnmatch.h>	/* the port's config/amix/include */
++#endif
++
+ /*+++++++++++++++++++++++++++++++++++++++*/
+ /* Local #defines                        */
+ /*+++++++++++++++++++++++++++++++++++++++*/
+diff --git a/programs/fontaliases/Imakefile b/programs/fontaliases/Imakefile
+index 6e0d1fcc..fcb58dd9 100644
+--- a/programs/fontaliases/Imakefile
++++ b/programs/fontaliases/Imakefile
+@@ -10,7 +10,7 @@ SUBDIRS = hp
+ SUBDIRS = ibm
+ #elif defined(SunArchitecture)
+ SUBDIRS = sun
+-#elif defined(LinuxArchitecture)
++#elif defined(LinuxArchitecture) || defined(AMIXArchitecture)	/* AMIX: the X11 font names */
+ SUBDIRS = linux
+ #elif defined(FreeBSDArchitecture)
+ SUBDIRS = freebsd
+diff --git a/programs/util/dttypes/dttypes.c b/programs/util/dttypes/dttypes.c
+index 2340cf1f..613c842f 100644
+--- a/programs/util/dttypes/dttypes.c
++++ b/programs/util/dttypes/dttypes.c
+@@ -44,6 +44,10 @@ static	int	rexp_errno = 0;
+ #if defined(CSRG_BASED) || defined(__linux__)
+ #include	<regex.h>
+ #else
++#ifdef __amix__
++/* <regexp.h> calls getrnge() before its static definition */
++static int getrnge(char *);
++#endif
+ #include	<regexp.h>
+ #endif
+ #include	<nl_types.h>
+-- 
+2.47.3
+

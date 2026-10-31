@@ -1,0 +1,25 @@
+From 7753ed4aa93f91982cb62e2cbbc0e28ecb65f72f Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 11:21:57 +0200
+Subject: [PATCH 04/42] host.def: the host's make (svr4.cf defaults to
+ /usr/ccs/bin/make)
+
+---
+ config/cf/host.def | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/config/cf/host.def b/config/cf/host.def
+index bb83b897..250a7004 100644
+--- a/config/cf/host.def
++++ b/config/cf/host.def
+@@ -47,6 +47,7 @@ XCOMM host.def -- cross-building CDE for AMIX on a Linux host (read before amix.
+ #define LexLib			/**/
+ #define YaccCmd			bison -y
+ #define MkdirHierCmd		mkdir -p
++#define MakeCmd			make
+ #define DependCmd		/bin/true
+ #define InstallCmd		/usr/bin/install
+ 
+-- 
+2.47.3
+

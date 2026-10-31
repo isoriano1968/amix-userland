@@ -1,0 +1,25 @@
+From 50dbf931fb174a040b08d27a96aab66c0dca237b Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:16:43 +0200
+Subject: [PATCH 25/42] DtTerm: utmp ut_id on AMIX as on Linux/Solaris
+
+---
+ lib/DtTerm/TermPrim/TermPrimSetUtmp.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lib/DtTerm/TermPrim/TermPrimSetUtmp.c b/lib/DtTerm/TermPrim/TermPrimSetUtmp.c
+index b37d7e8a..e23db3d8 100644
+--- a/lib/DtTerm/TermPrim/TermPrimSetUtmp.c
++++ b/lib/DtTerm/TermPrim/TermPrimSetUtmp.c
+@@ -385,7 +385,7 @@ UtmpEntryCreate(Widget w, pid_t pid, char *utmpLine)
+ 	(void) strncpy(utPtr->ut_id, utmpLine,
+ 		sizeof(utPtr->ut_id));
+ #else	/* __AIX */
+-#if defined(__linux__) || defined(sun)
++#if defined(__linux__) || defined(sun) || defined(__amix__)
+ 	if (c = strchr(utmpLine, '/')) {
+ 	    c++;
+ 	} else {
+-- 
+2.47.3
+

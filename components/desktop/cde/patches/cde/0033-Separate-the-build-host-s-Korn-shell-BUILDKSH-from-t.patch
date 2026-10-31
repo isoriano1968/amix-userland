@@ -1,0 +1,135 @@
+From 92104277d1a2f222170bad45beb95b7cf475748d Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:26:20 +0200
+Subject: [PATCH 33/42] Separate the build host's Korn shell (BUILDKSH) from
+ the target's (KORNSHELL, /usr/bin/ksh on AMIX)
+
+---
+ config/cf/Imake.tmpl                      | 5 +++++
+ config/cf/amix.cf                         | 3 +++
+ config/cf/cde.tmpl                        | 2 +-
+ config/cf/host.def                        | 3 ++-
+ doc/C/man/Imakefile                       | 4 ++--
+ programs/dtksh/ksh93/Imakefile            | 2 +-
+ programs/dtprintinfo/Imakefile            | 2 +-
+ programs/localized/templates/header2.tmpl | 4 ++--
+ 8 files changed, 17 insertions(+), 8 deletions(-)
+
+diff --git a/config/cf/Imake.tmpl b/config/cf/Imake.tmpl
+index 1874d0b1..a9118e10 100644
+--- a/config/cf/Imake.tmpl
++++ b/config/cf/Imake.tmpl
+@@ -907,6 +907,11 @@ XCOMM the platform-specific parameters - edit site.def to change
+           PATHSEP = PathSeparator
+             SHELL = BourneShell
+         KORNSHELL = KornShell
++/* a Korn shell to run build scripts with on the build host (cross builds) */
++#ifndef BuildKornShell
++#define BuildKornShell KornShell
++#endif
++         BUILDKSH = BuildKornShell
+       DTKORNSHELL = DtKornShell
+ 
+               TOP = TOPDIR
+diff --git a/config/cf/amix.cf b/config/cf/amix.cf
+index 62039e2b..d43c647e 100644
+--- a/config/cf/amix.cf
++++ b/config/cf/amix.cf
+@@ -90,6 +90,9 @@ TIRPCINC =
+  */
+ #define DtSvcDefines		-DMULTIBYTE -DNO_REGCOMP
+ 
++/* AMIX's Korn shell (ksh88), built into dtfile, dtsession, ... */
++#define KornShell		/usr/bin/ksh
++
+ /* for DtTerm's TermPrimOSDepI.h and friends */
+ #define ArchitectureDefines	-DAMIX_ARCHITECTURE
+ 
+diff --git a/config/cf/cde.tmpl b/config/cf/cde.tmpl
+index 65a01992..d9f7d6c5 100644
+--- a/config/cf/cde.tmpl
++++ b/config/cf/cde.tmpl
+@@ -260,7 +260,7 @@ XCOMM $XConsortium: cde.tmpl /main/2 1996/12/04 10:13:09 swick $
+ # if UseInstalledCDE
+ #  define DtDocBook dtdocbook
+ # else
+-#  define DtDocBook $(CLIENTENVSETUP) $(DTLCXENVSETUP) $(KORNSHELL) $(CDESRC)/dtdocbook/doc2sdl/dtdocbook
++#  define DtDocBook $(CLIENTENVSETUP) $(DTLCXENVSETUP) $(BUILDKSH) $(CDESRC)/dtdocbook/doc2sdl/dtdocbook
+ # endif
+ #endif
+ #ifndef DtDocBookOptions
+diff --git a/config/cf/host.def b/config/cf/host.def
+index 3bac1bb5..b679839e 100644
+--- a/config/cf/host.def
++++ b/config/cf/host.def
+@@ -65,7 +65,8 @@ XCOMM host.def -- cross-building CDE for AMIX on a Linux host (read before amix.
+ #define YaccCmd			bison -y
+ #define MkdirHierCmd		mkdir -p
+ #define MakeCmd			make
+-#define KornShell		/bin/bash	/* the build's ksh scripts; the host has no ksh */
++/* KornShell is the target's (amix.cf); build scripts run with the host's bash */
++#define BuildKornShell		/bin/bash
+ #define DependCmd		/bin/true
+ #define InstallCmd		/usr/bin/install
+ 
+diff --git a/doc/C/man/Imakefile b/doc/C/man/Imakefile
+index c5b3e05b..2031e769 100644
+--- a/doc/C/man/Imakefile
++++ b/doc/C/man/Imakefile
+@@ -7,13 +7,13 @@ DBENVSETUP = CDETOP=$(CDETOP)
+ Concat(cde,step):: dst							@@\
+ dst: src cdedecl.sgm ../guides/man/SEntity.sgm ../guides/common/ManLinks.sgm ../m-guides/common/ManLinks.sgm @@\
+ 	$(RM) $@							@@\
+-	$(DBENVSETUP) $(KORNSHELL) $(DBTOMAN) $(DBOPTS) cdedecl.sgm src $@
++	$(DBENVSETUP) $(BUILDKSH) $(DBTOMAN) $(DBOPTS) cdedecl.sgm src $@
+ 
+ #define MotifMan(step,src,dst)						@@\
+ Concat(mot,step):: dst							@@\
+ dst: src motifdecl.sgm ../m-guides/common/BOOKDEFS.sgm ../m-guides/common/ManLinks.sgm @@\
+ 	$(RM) $@							@@\
+-	$(DBENVSETUP) $(KORNSHELL) $(DBTOMAN) $(DBOPTS) motifdecl.sgm src $@
++	$(DBENVSETUP) $(BUILDKSH) $(DBTOMAN) $(DBOPTS) motifdecl.sgm src $@
+ 
+ #define ManAlias(step,src,dst)						@@\
+ step:: dst								@@\
+diff --git a/programs/dtksh/ksh93/Imakefile b/programs/dtksh/ksh93/Imakefile
+index 91e6f1ae..cbaf67ff 100644
+--- a/programs/dtksh/ksh93/Imakefile
++++ b/programs/dtksh/ksh93/Imakefile
+@@ -58,7 +58,7 @@ ALL_SUBS = *
+ 
+ ksh93src:
+ 	$(RM) $(SHIP_DIR)/$(ALL_SUBS)/$(ALL_SUBS)/BUILT; \
+-	SHELL=$(KORNSHELL) CC="$(CC)" CCFLAGS="$(CCFLAGS)" ICCFLAGS="$(ICCFLAGS)" $(KORNSHELL) ship/shipin $(FORCE_SHIP)
++	SHELL=$(BUILDKSH) CC="$(CC)" CCFLAGS="$(CCFLAGS)" ICCFLAGS="$(ICCFLAGS)" $(BUILDKSH) ship/shipin $(FORCE_SHIP)
+ 
+ ksh93.o: $(OBJS)
+ 	$(LD) -r -o $@ $(OBJS)
+diff --git a/programs/dtprintinfo/Imakefile b/programs/dtprintinfo/Imakefile
+index 382ac172..a1458036 100644
+--- a/programs/dtprintinfo/Imakefile
++++ b/programs/dtprintinfo/Imakefile
+@@ -60,7 +60,7 @@ DEFINES = -D_TOOLTALK
+ #endif
+ 
+ /* special processing for message files */
+-SYM2NUM_CMD = $(KORNSHELL) sym2num
++SYM2NUM_CMD = $(BUILDKSH) sym2num
+ 
+ SRCS = DtPrintinfo.C
+ OBJS = libUI/BaseUI.o objects/BaseObj.o DtPrintinfo.o
+diff --git a/programs/localized/templates/header2.tmpl b/programs/localized/templates/header2.tmpl
+index 9128f8f6..79e90056 100644
+--- a/programs/localized/templates/header2.tmpl
++++ b/programs/localized/templates/header2.tmpl
+@@ -89,5 +89,5 @@ includes::								@@\
+ 	$(MAKEMESSCAT) $(GENCATFLAGS) $@ $(LANG)
+ #endif
+ 
+-MAKEMESSCAT = $(KORNSHELL) $(CDESRC)/localized/util/makeMessCat
+-SYM2NUM_CMD = $(KORNSHELL) $(CDESRC)/dtprintinfo/sym2num
++MAKEMESSCAT = $(BUILDKSH) $(CDESRC)/localized/util/makeMessCat
++SYM2NUM_CMD = $(BUILDKSH) $(CDESRC)/dtprintinfo/sym2num
+-- 
+2.47.3
+

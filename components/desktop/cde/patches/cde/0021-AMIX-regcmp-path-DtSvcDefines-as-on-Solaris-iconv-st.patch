@@ -1,0 +1,105 @@
+From c3fc1827b102ebbc942f8526622f33c201a17079 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:12:01 +0200
+Subject: [PATCH 21/42] AMIX: regcmp path (DtSvcDefines as on Solaris), iconv
+ stand-ins in DtHelp, X11/keysym.h forced (R6.3 Xutil.h lacks it),
+ X11/ImUtil.h (not in R6.3)
+
+---
+ config/amix/include/X11/ImUtil.h | 14 ++++++++++++++
+ config/cf/amix.cf                |  6 ++++++
+ config/cf/host.def               | 10 ++++++++--
+ dthelp.log                       |  1 +
+ lib/DtHelp/StringFuncs.c         |  2 +-
+ 5 files changed, 30 insertions(+), 3 deletions(-)
+ create mode 100644 config/amix/include/X11/ImUtil.h
+ create mode 100644 dthelp.log
+
+diff --git a/config/amix/include/X11/ImUtil.h b/config/amix/include/X11/ImUtil.h
+new file mode 100644
+index 00000000..05e8f096
+--- /dev/null
++++ b/config/amix/include/X11/ImUtil.h
+@@ -0,0 +1,14 @@
++/* X11/ImUtil.h -- not in X11R6.3 (later Xlibs install it).  DtHelp needs only
++ * _XInitImageFuncPtrs(), which R6.3's Xlib has (lib/X11/ImUtil.c).
++ * Part of the AMIX port of CDE. */
++#ifndef _AMIX_CDE_X11_IMUTIL_H
++#define _AMIX_CDE_X11_IMUTIL_H
++#include <X11/Xlib.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++extern int _XInitImageFuncPtrs(XImage *);
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/config/cf/amix.cf b/config/cf/amix.cf
+index 6cafa109..17d18790 100644
+--- a/config/cf/amix.cf
++++ b/config/cf/amix.cf
+@@ -84,6 +84,12 @@ TIRPCINC =
+ # define ExtraLibraries		-lsocket -lnsl -lgen
+ #endif
+ 
++/*
++ * Regular expressions: SVR4.0 has regcmp()/regex() in libgen, not POSIX
++ * regcomp() -- the same choice as sun.cf.
++ */
++#define DtSvcDefines		-DMULTIBYTE -DNO_REGCOMP
++
+ /* Only the C locale: AMIX has no UTF-8 and no ISO 8859 locale data. */
+ #define DtLocalesToBuild	/**/
+ 
+diff --git a/config/cf/host.def b/config/cf/host.def
+index ed33ea66..f8c9da81 100644
+--- a/config/cf/host.def
++++ b/config/cf/host.def
+@@ -35,7 +35,13 @@ XCOMM host.def -- cross-building CDE for AMIX on a Linux host (read before amix.
+ #define RanlibCmd		AmixCrossPrefix/bin/m68k-elf-ranlib
+ #define DoRanlibCmd		YES
+ /* config/amix/include: CDE-owned stand-ins for headers SVR4.0 lacks (wctype.h) */
+-#define DefaultCCOptions	-fno-strict-aliasing -fcommon AmixOldCWarnings -isystem AmixBuildTop/config/amix/include
++/*
++ * -include X11/keysym.h: newer Xlibs pull it in from Xutil.h and CDE relies
++ * on that (XK_Escape in DtHelp); X11R6.3's Xutil.h does not.  It defines
++ * constants only.
++ */
++#define AmixForcedIncludes	-include X11/keysym.h
++#define DefaultCCOptions	-fno-strict-aliasing -fcommon AmixOldCWarnings -isystem AmixBuildTop/config/amix/include AmixForcedIncludes
+ /*
+  * C++ sees AMIX's K&R declarations through amix-cxxfix/: copies of the
+  * affected headers with "()" turned into "(...)" (ABI-neutral on m68k),
+@@ -46,7 +52,7 @@ XCOMM host.def -- cross-building CDE for AMIX on a Linux host (read before amix.
+ #define DefaultCDebugFlags	-O2
+ /* in the debug flags because some trees (lib/tt) set CXXOPTIONS themselves */
+ /* config/amix/include first: its wrappers #include_next the amix-cxxfix copies */
+-#define DefaultCplusplusDebugFlags -O2 -isystem AmixBuildTop/config/amix/include -isystem AmixBuildTop/amix-cxxfix
++#define DefaultCplusplusDebugFlags -O2 -isystem AmixBuildTop/config/amix/include -isystem AmixBuildTop/amix-cxxfix AmixForcedIncludes
+ 
+ /*
+  * Host tools: imake's cpp (and CppCmd for data files) is the host cpp,
+diff --git a/dthelp.log b/dthelp.log
+new file mode 100644
+index 00000000..33edf65a
+--- /dev/null
++++ b/dthelp.log
+@@ -0,0 +1 @@
++make: *** No targets specified and no makefile found.  Stop.
+diff --git a/lib/DtHelp/StringFuncs.c b/lib/DtHelp/StringFuncs.c
+index bbb64199..7608ac66 100644
+--- a/lib/DtHelp/StringFuncs.c
++++ b/lib/DtHelp/StringFuncs.c
+@@ -58,7 +58,7 @@
+ #include "CvStringI.h"        /* for string functions used by Canvas Engine */
+ #include "StringFuncsI.h"     /* for _CEStrcollProc */
+ 
+-#if !defined(__linux__)
++#if !defined(__linux__) && !defined(__amix__)
+ # include <iconv.h>
+ #else
+ # define iconv_t		int
+-- 
+2.47.3
+

@@ -1,0 +1,17 @@
+#!/bin/sh
+# Xzz9000-dt -- the Z3660 RTG X server as dtlogin starts it (/etc/dt/config/
+# Xservers).  The limits and library path are startx-rtg's: the server maps
+# the whole 46 MB framebuffer and its heap is brk, so the 16 MB defaults make
+# it fail with "Not enough space" or "Out of memory".  exec, so that dtlogin's
+# signals (reset, terminate) reach the server itself.  Mode: $RTG_MODE, else
+# the first word of /etc/dt/config/rtg-mode, else 1920x1080.
+ulimit -v 131072 2> /dev/null || ulimit -m 131072 2> /dev/null
+ulimit -d 65536 2> /dev/null
+MODE=${RTG_MODE-}
+[ -z "$MODE" ] && [ -r /etc/dt/config/rtg-mode ] && MODE=`sed -n 1p /etc/dt/config/rtg-mode`
+MODE=${MODE:-1920x1080}
+LD_LIBRARY_PATH=/usr/lib:/usr/amiga/lib
+export LD_LIBRARY_PATH
+exec /opt/amix/bin/Xzz9000 "$@" -mode $MODE \
+	-fp /usr/X/lib/fonts/misc/,/usr/X/lib/fonts/Xol/,/usr/X/lib/fonts/75dpi/,/usr/X/lib/fonts/100dpi/,/usr/dt/config/xfonts/C/ \
+	-co /usr/X/lib/rgb -kb >> /var/dt/Xzz9000.log 2>&1

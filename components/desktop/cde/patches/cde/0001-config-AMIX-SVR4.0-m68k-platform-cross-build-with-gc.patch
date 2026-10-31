@@ -1,0 +1,209 @@
+From f441c500560711cd58af97e3f9256d7d7f645132 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 11:20:31 +0200
+Subject: [PATCH 01/42] config: AMIX (SVR4.0/m68k) platform, cross build with
+ gcc14-cross-amix
+
+Imake.cf selects amix.cf for -DAMIX; amix.cf carries the AMIX facts (SVR4.0, sockets/TLI, no MIT-SHM, no Xinerama, TI-RPC in libnsl, static CDE libraries, C locale only) and ends with svr4.cf; host.def holds the cross-build part (gcc14-cross-amix, host cpp/lex/yacc, X11 and Motif through imports/, X11R6.3 linked statically).
+---
+ config/cf/Imake.cf | 14 ++++++++
+ config/cf/amix.cf  | 83 ++++++++++++++++++++++++++++++++++++++++++++++
+ config/cf/host.def | 73 ++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 170 insertions(+)
+ create mode 100644 config/cf/amix.cf
+
+diff --git a/config/cf/Imake.cf b/config/cf/Imake.cf
+index 4b984aec..36e6d6f2 100644
+--- a/config/cf/Imake.cf
++++ b/config/cf/Imake.cf
+@@ -18,6 +18,20 @@ XCOMM $TOG: Imake.cf /main/30 1998/04/28 13:55:25 barstow $
+  *     4.  Create a .cf file with the name given by MacroFile.
+  */
+ 
++#ifdef AMIX
++# define MacroIncludeFile <amix.cf>
++# define MacroFile amix.cf
++# undef AMIX
++# define AMIXArchitecture
++# ifdef SVR4
++#  undef SVR4
++# endif
++# ifdef m68k
++#  undef m68k
++#  define M68kArchitecture
++# endif
++#endif /* AMIX */
++
+ #ifdef ultrix
+ # define MacroIncludeFile <ultrix.cf>
+ # define MacroFile ultrix.cf
+diff --git a/config/cf/amix.cf b/config/cf/amix.cf
+new file mode 100644
+index 00000000..e7e27216
+--- /dev/null
++++ b/config/cf/amix.cf
+@@ -0,0 +1,83 @@
++XCOMM platform:  amix.cf -- Amiga UNIX (AMIX) 2.1, SVR4.0 on m68k
++
++/*
++ * AMIX is AT&T SVR4.0 (1991) for the Amiga 3000UX, here on a 68040/68060
++ * kernel.  The X11 it builds against is the X11R6.3 port to AMIX
++ * (isoriano), not the X11R5 that came with the system; Motif is 2.3.8.
++ * Settings mirror the X11R6.3 tree's amix.cf where they overlap.  Anything
++ * about cross-building (compilers, sysroot paths) belongs in host.def,
++ * which site.def reads before this file.
++ */
++
++#define OSName			Amiga UNIX System V Release 4.0
++#define OSVendor		Commodore-Amiga
++#define OSMajorVersion		4
++#define OSMinorVersion		0
++#define OSTeenyVersion		0
++
++#ifndef OSDefines
++# define OSDefines		-DAMIX -D__amix__ -D__svr4__ -Dm68k
++#endif
++#ifndef BootstrapCFlags
++# define BootstrapCFlags	-DAMIX -DSVR4 -Dm68k
++#endif
++#ifndef StandardDefines
++# define StandardDefines	-DSVR4 OSDefines
++#endif
++#ifndef StandardCppDefines
++# define StandardCppDefines	-DSVR4 OSDefines
++#endif
++
++/*
++ * Libraries: CDE's own are static.  AMIX's shared libraries are the
++ * SunOS-style SVR4.0 kind (the X11R6.3 port links with -DSUNSHLIB, and Xt
++ * and Xmu keep a static part in libXt.sa and libXmu.sa).  A first CDE that
++ * runs comes before shared libDtSvc/libtt.
++ */
++#define HasSharedLibraries	NO
++#define ForceNormalLib		YES
++
++/*
++ * No MIT-SHM (unsafe on AMIX, as in the X11R6.3 port), no Xinerama (not
++ * in R6.3), TCP and Unix-domain connections as the server listens on.
++ */
++#define HasShm			NO
++#define CDE_USEXINERAMA		NO
++#define BuildXinerama		NO
++#ifndef ConnectionFlags
++# define ConnectionFlags	-DTCPCONN -DUNIXCONN
++#endif
++#define HasSockets		YES
++#define HasPoll			YES
++#define HasPutenv		YES
++#define HasStrcasecmp		NO
++#define HasShadowPasswd		YES
++#define HasVFork		YES
++#define SetTtyGroup		YES
++
++/*
++ * AMIX has no <wchar.h>, <wctype.h> or <widec.h>: Xlib's internal
++ * wide-character helpers, as in the X11R6.3 port.
++ */
++#define XawI18nDefines		-DUSE_XWCHAR_STRING -DUSE_XMBTOWC
++
++/*
++ * RPC: AMIX's libnsl is SVR4 TI-RPC, the interface ToolTalk and the
++ * calendar were written for; there is no separate libtirpc.
++ */
++#define HasTIRPCLib		NO
++TIRPCLIB =
++TIRPCINC =
++
++/*
++ * The libraries every client needs on SVR4.0: sockets and TLI (libnsl),
++ * libgen (regcmp/regex, basename) for Motif and CDE.
++ */
++#ifndef ExtraLibraries
++# define ExtraLibraries		-lsocket -lnsl -lgen
++#endif
++
++/* Only the C locale: AMIX has no UTF-8 and no ISO 8859 locale data. */
++#define DtLocalesToBuild	/**/
++
++#include <svr4.cf>
+diff --git a/config/cf/host.def b/config/cf/host.def
+index e69de29b..bb83b897 100644
+--- a/config/cf/host.def
++++ b/config/cf/host.def
+@@ -0,0 +1,73 @@
++XCOMM host.def -- cross-building CDE for AMIX on a Linux host (read before amix.cf)
++
++/*
++ * Compiler: gcc14-cross-amix (asokero), userland only.  Its specs make
++ * m68k-elf-gcc link AMIX executables (AMIX crt objects, /usr/lib/libc.so.1
++ * as interpreter, the compat layer); -mcpu=68060 is its default.
++ *
++ * gcc 14 treats several 1990s C idioms as errors.  On AMIX they are safe to
++ * keep as warnings: a pointer comes back in both %a0 and %d0, so an
++ * implicitly declared pointer function still returns the right value
++ * (gcc14-cross-amix docs/TOOLCHAIN.md section 4).
++ */
++#define AmixCrossPrefix		/opt/m68k-amix
++#define AmixSysroot		/opt/m68k-amix-sysroot
++
++#define AmixOldCWarnings	-Wno-error=implicit-function-declaration \
++				-Wno-error=int-conversion \
++				-Wno-error=incompatible-pointer-types \
++				-Wno-error=return-mismatch \
++				-Wno-error=declaration-missing-parameter-type \
++				-Wno-error=implicit-int
++
++#define HasGcc			YES
++#define HasGcc2			YES
++#define HasGcc2ForCplusplus	YES
++#define HasCplusplus		YES
++#define CcCmd			AmixCrossPrefix/bin/m68k-elf-gcc
++#define CplusplusCmd		AmixCrossPrefix/bin/m68k-elf-g++ -fpermissive
++#define CplusplusLibC		-lstdc++
++#define AsCmd			AmixCrossPrefix/bin/m68k-elf-as
++#define LdCmd			AmixCrossPrefix/bin/m68k-elf-ld
++#define ArCmdBase		AmixCrossPrefix/bin/m68k-elf-ar
++#define RanlibCmd		AmixCrossPrefix/bin/m68k-elf-ranlib
++#define DoRanlibCmd		YES
++#define DefaultCCOptions	-fno-strict-aliasing -fcommon AmixOldCWarnings
++#define DefaultCplusplusOptions	-fno-strict-aliasing AmixOldCWarnings
++#define DefaultCDebugFlags	-O2
++#define DefaultCplusplusDebugFlags -O2
++
++/*
++ * Host tools: imake's cpp (and CppCmd for data files) is the host cpp,
++ * lex/yacc run on the host and emit portable C.
++ */
++#define CppCmd			/usr/bin/cpp -traditional
++#define PreProcessCmd		/usr/bin/cpp
++#define LexCmd			flex -l
++#define LexLib			/**/
++#define YaccCmd			bison -y
++#define MkdirHierCmd		mkdir -p
++#define DependCmd		/bin/true
++#define InstallCmd		/usr/bin/install
++
++/*
++ * X11 and Motif come in through imports/ (site.def's ImportX11/ImportMotif);
++ * the links there point into the sysroot:
++ *   imports/x11/include, lib   -> AmixSysroot/usr/x11r6/xc/exports/...
++ *   imports/motif/include, lib -> AmixSysroot/usr/motif/...
++ * X11ProjectRoot/MotifProjectRoot are the paths on the AMIX machine.
++ */
++#define X11ProjectRoot		/usr/x11r6/xc/exports
++#define MotifProjectRoot	/usr/motif
++
++/*
++ * X11 is linked statically: imports/x11/lib holds only the R6.3 archives
++ * (libX11.a, libXt.a, ...; libXp.a built from the R6.3 sources), no .so.
++ * The R6.3 shared libraries do not name their own dependencies and keep
++ * Xt's and Xmu's static part in libXt.sa/libXmu.sa (SunOS-style); linking
++ * the archives avoids all of that, and CDE's own libraries are static too.
++ * Static order matters: Xp/Xext/SM/ICE call into Xlib, so -lX11 again last.
++ */
++#define XmExtraLibraries	-lXp -lXext -lSM -lICE -lX11
++
++#define ExtraLibraries		-lsocket -lnsl -lgen
+-- 
+2.47.3
+

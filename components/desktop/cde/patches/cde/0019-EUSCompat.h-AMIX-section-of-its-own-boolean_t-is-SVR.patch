@@ -1,0 +1,44 @@
+From 19958a76cfd2f5e390a00524468820e2f703da06 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:08:53 +0200
+Subject: [PATCH 19/42] EUSCompat.h: AMIX section of its own (boolean_t is
+ SVR4's; iconv stand-ins, MAXHOSTNAMELEN)
+
+---
+ include/EUSCompat.h | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/include/EUSCompat.h b/include/EUSCompat.h
+index a22ab9e8..2972f11c 100644
+--- a/include/EUSCompat.h
++++ b/include/EUSCompat.h
+@@ -110,7 +110,7 @@ typedef enum {B_FALSE, B_TRUE} boolean_t;
+ 
+ #endif	/* HPUX */
+ 
+-#if defined(__linux__) || defined(CSRG_BASED) || defined(__amix__)
++#if defined(__linux__) || defined(CSRG_BASED)
+ typedef enum {B_FALSE, B_TRUE} boolean_t;
+ #define MAXNAMELEN      	256
+ 
+@@ -123,6 +123,17 @@ typedef enum {B_FALSE, B_TRUE} boolean_t;
+ #endif
+ 
+ 
++#if defined(__amix__)
++/* AMIX (SVR4.0): boolean_t is in <sys/types.h>; no iconv, no MAXHOSTNAMELEN */
++#define iconv_t			int
++#define iconv_open(a, b) 	((iconv_t) -1)
++#define iconv(a, b, c, d, e)	((size_t) 0)
++#define iconv_close(a)		(0)
++#ifndef MAXHOSTNAMELEN
++#define MAXHOSTNAMELEN		256
++#endif
++#endif
++
+ /*
+ ** AIX, like HPUX defines most of what we need.
+ */
+-- 
+2.47.3
+

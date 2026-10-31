@@ -1,0 +1,10 @@
+! Mwm -- app-defaults for Motif 2.3.8's mwm on AMIX with X11R6.3.
+! mwm's built-in default colours ("LightGrey", "CadetBlue") come out black and
+! white with this build; the same colours as hex values work.
+Mwm*background:			#a8a8a8
+Mwm*foreground:			#000000
+Mwm*activeBackground:		#5f929e
+Mwm*activeForeground:		#ffffff
+Mwm*icon*background:		#a8a8a8
+Mwm*menu*background:		#a8a8a8
+Mwm*feedback*background:	#a8a8a8

@@ -1,0 +1,61 @@
+From adb93e819ea349292217c1ea55c8ae033e896ac4 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:14:49 +0200
+Subject: [PATCH 24/42] DtTerm: AMIX section (STREAMS ptys with ttcompat,
+ tcsendbreak), SVR4 pty code; AMIX_ARCHITECTURE
+
+---
+ config/cf/amix.cf                    | 3 +++
+ lib/DtTerm/TermPrim/Imakefile        | 2 +-
+ lib/DtTerm/TermPrim/TermPrimOSDepI.h | 8 ++++++++
+ 3 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/config/cf/amix.cf b/config/cf/amix.cf
+index 17d18790..62039e2b 100644
+--- a/config/cf/amix.cf
++++ b/config/cf/amix.cf
+@@ -90,6 +90,9 @@ TIRPCINC =
+  */
+ #define DtSvcDefines		-DMULTIBYTE -DNO_REGCOMP
+ 
++/* for DtTerm's TermPrimOSDepI.h and friends */
++#define ArchitectureDefines	-DAMIX_ARCHITECTURE
++
+ /* Only the C locale: AMIX has no UTF-8 and no ISO 8859 locale data. */
+ #define DtLocalesToBuild	/**/
+ 
+diff --git a/lib/DtTerm/TermPrim/Imakefile b/lib/DtTerm/TermPrim/Imakefile
+index 0f209613..22f08407 100644
+--- a/lib/DtTerm/TermPrim/Imakefile
++++ b/lib/DtTerm/TermPrim/Imakefile
+@@ -98,7 +98,7 @@ LinkFile(TermPrimGetPty.c,TermPrimGetPty-clone.c)
+ LinkFile(TermPrimGetPty.c,TermPrimGetPty-svr4.c)
+ #endif
+ 
+-#ifdef SunArchitecture
++#if defined(SunArchitecture) || defined(AMIXArchitecture)
+ LinkFile(TermPrimGetPty.c,TermPrimGetPty-svr4.c)
+ #endif
+ 
+diff --git a/lib/DtTerm/TermPrim/TermPrimOSDepI.h b/lib/DtTerm/TermPrim/TermPrimOSDepI.h
+index 3f9da45f..2665dabf 100644
+--- a/lib/DtTerm/TermPrim/TermPrimOSDepI.h
++++ b/lib/DtTerm/TermPrim/TermPrimOSDepI.h
+@@ -115,6 +115,14 @@
+ # endif /* (_XOPEN_VERSION == 3) */
+ #endif /* SUN_ARCHITECTURE */
+ 
++#ifdef	AMIX_ARCHITECTURE
++/* Amiga UNIX (SVR4.0): STREAMS ptys (/dev/ptmx, ptem + ldterm + ttcompat)
++ * as on Solaris, without Sun's SRIOCSREDIR console redirection and bufmod */
++# define USE_STREAMS		/* use streams			*/
++# define USE_STREAMS_TTCOMPAT	/* use ttcompat streams mod	*/
++# define USE_TCSENDBREAK	/* use tcsendbreak()		*/
++#endif /* AMIX_ARCHITECTURE */
++
+ #ifdef	IBM_ARCHITECTURE
+ /* this seems to be #define'ed in the world of imake... */
+ # define USE_TIOCCONS		/* use tioccons for -C		*/
+-- 
+2.47.3
+

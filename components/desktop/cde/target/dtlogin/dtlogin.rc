@@ -1,0 +1,34 @@
+#!/bin/sh
+# /etc/init.d/dtlogin -- CDE graphical login on the Z3660 RTG (AMIX).
+# Linked as /etc/rc2.d/S99dtlogin and /etc/rc[01].d/K10dtlogin by
+# "dtconfig -e"; "dtconfig -d" removes the links.  Skipped while
+# /etc/dt/nodtlogin exists, so a broken X setup cannot lock the console out
+# (the serial login keeps working regardless).
+PIDFILE=/var/dt/Xpid
+case "$1" in
+start)
+	if [ -f /etc/dt/nodtlogin ]; then
+		echo "dtlogin: /etc/dt/nodtlogin exists, not starting the graphical login"
+		exit 0
+	fi
+	[ -x /usr/dt/bin/dtlogin ] || exit 0
+	if [ -f $PIDFILE ] && kill -0 `cat $PIDFILE` 2> /dev/null; then
+		echo "dtlogin: already running"
+		exit 0
+	fi
+	echo "Starting the CDE graphical login (dtlogin)"
+	LANG=C; export LANG
+	/usr/dt/bin/dtlogin -daemon < /dev/null > /dev/null 2>&1 &
+	;;
+stop)
+	if [ -f $PIDFILE ]; then
+		kill `cat $PIDFILE` 2> /dev/null
+		rm -f $PIDFILE
+	fi
+	;;
+*)
+	echo "usage: $0 {start|stop}"
+	exit 1
+	;;
+esac
+exit 0

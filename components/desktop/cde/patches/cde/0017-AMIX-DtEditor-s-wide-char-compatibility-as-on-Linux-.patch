@@ -1,0 +1,42 @@
+From 4a3853b3e9c049d5d0b3d7a80d1db904148962e4 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 12:00:02 +0200
+Subject: [PATCH 17/42] AMIX: DtEditor's wide-char compatibility as on Linux;
+ rpc/types.h brings int32_t & co. for rpcgen output
+
+---
+ config/amix/include/rpc/types.h | 8 ++++++++
+ lib/DtWidget/Editor.c           | 2 +-
+ 2 files changed, 9 insertions(+), 1 deletion(-)
+ create mode 100644 config/amix/include/rpc/types.h
+
+diff --git a/config/amix/include/rpc/types.h b/config/amix/include/rpc/types.h
+new file mode 100644
+index 00000000..c6243ecd
+--- /dev/null
++++ b/config/amix/include/rpc/types.h
+@@ -0,0 +1,8 @@
++/* rpc/types.h -- AMIX's, plus the C99 integer types that rpcgen output (the
++ * calendar's rtable*_xdr.c) expects to come with it, as on Linux.  <stdint.h>
++ * is gcc14-cross-amix's.  Part of the AMIX port of CDE. */
++#ifndef _AMIX_CDE_RPC_TYPES_H
++#define _AMIX_CDE_RPC_TYPES_H
++#include_next <rpc/types.h>
++#include <stdint.h>
++#endif
+diff --git a/lib/DtWidget/Editor.c b/lib/DtWidget/Editor.c
+index 983d61e7..b25fe8a6 100644
+--- a/lib/DtWidget/Editor.c
++++ b/lib/DtWidget/Editor.c
+@@ -62,7 +62,7 @@
+ #  include <wchar.h>
+ # endif
+ # include <libintl.h>
+-#elif defined(__linux__)
++#elif defined(__linux__) || defined(__amix__)
+ # include <wctype.h>
+ # define NO_putwc
+ #elif defined(CSRG_BASED)
+-- 
+2.47.3
+

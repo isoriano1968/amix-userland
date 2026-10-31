@@ -1,0 +1,30 @@
+From 3fbd54e645d9115b2dd5ddde629c0bee29bdc070 Mon Sep 17 00:00:00 2001
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 11:21:28 +0200
+Subject: [PATCH 02/42] imake: pass -DAMIX -DSVR4 -Dm68k to cpp when built for
+ AMIX (as the X11R6.3 port does)
+
+---
+ config/imake/imakemdep.h | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/config/imake/imakemdep.h b/config/imake/imakemdep.h
+index aa897b4a..2a3a5564 100644
+--- a/config/imake/imakemdep.h
++++ b/config/imake/imakemdep.h
+@@ -300,6 +300,12 @@ char *cpp_argv[ARGUMENTS] = {
+ #ifdef unix
+ 	"-Uunix",	/* remove unix symbol so that filename unix.c okay */
+ #endif
++#ifdef AMIX
++	"-traditional",
++	"-DAMIX",
++	"-DSVR4",
++	"-Dm68k",
++#endif
+ #if defined(__386BSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__FreeBSD__) || defined(MACH) || defined(ISC) || defined(__linux__) || defined(__hpux__) || defined(__vxworks)
+ # ifdef __i386__
+ 	"-D__i386__",
+-- 
+2.47.3
+

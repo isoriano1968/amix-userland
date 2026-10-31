@@ -1,0 +1,19 @@
+#!/bin/sh
+# xkeymap-amiga -- give the X server (Xzz9000, built-in US keymap) the console's
+# keyboard layout.  The console's map is /usr/amiga/lib/kmap/default.kmap, a
+# link to one of the maps there (amixkeymap sets it); its X table is
+# /usr/x11r6/lib/X11/xmodmap.amiga-NAME, generated from the same file by
+# kmap2xmodmap.py.  Needs DISPLAY (and XAUTHORITY under dtlogin).
+K=/usr/amiga/lib/kmap
+X=/usr/x11r6/lib/X11
+[ -r $K/default.kmap ] || exit 0
+for f in $K/*; do
+	n=`basename $f`
+	[ "$n" = default.kmap ] && continue
+	if cmp -s $f $K/default.kmap; then
+		[ "$n" = usa ] && exit 0
+		[ -r $X/xmodmap.amiga-$n ] && exec /usr/X/bin/xmodmap $X/xmodmap.amiga-$n
+		exit 0
+	fi
+done
+exit 0
