@@ -1,0 +1,1161 @@
+# Bootstrap an AMIX cross toolchain on Linux.
+#
+# The first working milestone is C -> AMIX m68k ELF relocatable objects.
+# The real goal is a sysrooted toolchain that can link AMIX executables with
+# GNU ld and, after C links cleanly, build the C++ front end as well.
+
+SHELL := /bin/sh
+
+TARGET ?= m68k-cbm-sysv4
+BUILD ?= i686-pc-linux-gnu
+HOST ?= $(BUILD)
+PREFIX ?= $(HOME)/opt/amix-cross
+
+BINUTILS_VERSION ?= 2.8.1
+GCC_VERSION ?= 2.7.2.3
+
+GNU_BASE ?= https://ftp.gnu.org/gnu
+BINUTILS_TARBALL := binutils-$(BINUTILS_VERSION).tar.gz
+GCC_TARBALL := gcc-$(GCC_VERSION).tar.gz
+BINUTILS_URL ?= $(GNU_BASE)/binutils/$(BINUTILS_TARBALL)
+GCC_URL ?= $(GNU_BASE)/gcc/$(GCC_TARBALL)
+BINUTILS_CONFIGURE_EXTRA ?=
+GCC_CONFIGURE_EXTRA ?=
+BINUTILS_DISABLE_DIRS ?=
+GCC_BUILD_TARGETS ?= xgcc cc1 cccp
+GCC_FULL_BUILD_TARGETS ?= LANGUAGES="c c++" all
+
+HERE := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+AMIX_ROOT ?= $(abspath $(HERE)/../..)
+
+DISTDIR ?= $(HERE)/distfiles
+SRCDIR ?= $(HERE)/src
+BUILDDIR ?= $(HERE)/build
+
+BINUTILS_SRC := $(SRCDIR)/binutils-$(BINUTILS_VERSION)
+GCC_SRC := $(SRCDIR)/gcc-$(GCC_VERSION)
+BINUTILS_BUILD := $(BUILDDIR)/binutils-$(BINUTILS_VERSION)-$(TARGET)
+GCC_BUILD := $(BUILDDIR)/gcc-$(GCC_VERSION)-$(TARGET)
+
+HOST_CC ?= gcc
+HOST_CFLAGS ?= -O2 -g -std=gnu89 -fcommon -no-pie
+AMIX_MAKEINFO ?= true
+override MAKEINFO := $(AMIX_MAKEINFO)
+MAKE_JOBS ?= $(shell nproc 2>/dev/null || echo 1)
+CONFIG_GUESS ?= /usr/share/misc/config.guess
+CONFIG_SUB ?= /usr/share/misc/config.sub
+
+CPUFLAGS ?= -m68020
+AMIX_KERNEL_CPPFLAGS ?= -D_KERNEL -DSVR40 -DSVR4
+AMIX_KERNEL_INCLUDES ?= -I$(AMIX_ROOT)/usr/include -I$(AMIX_ROOT)/usr/sys -I$(AMIX_ROOT)/usr/sys/amiga/inc
+AMIX_KERNEL_CFLAGS ?= -O -traditional -fno-builtin -Dinline=__inline__ -Dvolatile=__volatile__ -Dconst=__const__ $(CPUFLAGS) $(AMIX_KERNEL_CPPFLAGS) $(AMIX_KERNEL_INCLUDES)
+SYSROOT ?= $(PREFIX)/$(TARGET)/sysroot
+AMIX_USR_LIB ?= $(AMIX_ROOT)/usr/lib
+AMIX_CRT_DIR ?= $(SYSROOT)/usr/ccs/lib
+AMIX_CRTS ?= crt1.o crti.o crtn.o
+AMIX_USER_CFLAGS ?= -O -traditional -fno-builtin -Dvolatile=__volatile__ -Dconst=__const__ $(CPUFLAGS) -I$(SYSROOT)/usr/include
+
+PATH_FOR_BUILD := $(PREFIX)/bin:$(PATH)
+TARGET_CC := $(PREFIX)/bin/$(TARGET)-gcc
+TARGET_AS := $(PREFIX)/bin/$(TARGET)-as
+TARGET_LD := $(PREFIX)/bin/$(TARGET)-ld
+TARGET_AR := $(PREFIX)/bin/$(TARGET)-ar
+TARGET_RANLIB := $(PREFIX)/bin/$(TARGET)-ranlib
+GCC_LIBDIR := $(PREFIX)/lib/gcc-lib/$(TARGET)/$(GCC_VERSION)
+GCC_REAL := $(PREFIX)/bin/$(TARGET)-gcc.real
+
+# Host ar/ranlib the target ar/ranlib wrappers delegate to (see
+# amix-ar-wrapper.sh and install-target-ar).
+HOST_AR ?= ar
+HOST_RANLIB ?= ranlib
+
+# Target libgcc: the freestanding libgcc2 helper routines built from the GCC
+# 2.7.2.3 source and archived into libgcc.a.  These are the soft-arithmetic
+# helpers gcc emits calls to (chiefly the 64-bit DImode integer routines such
+# as __udivdi3/__umoddi3/__lshrdi3) plus the DImode<->float conversions.  Every
+# routine here is freestanding: it builds and links with no AMIX libc.  Built
+# one object per function with -DL<name>, mirroring the stock gcc LIB2FUNCS
+# rule, but through the installed wrapper compiler so the SGS->GNU-as fixups are
+# applied.  (The float->unsigned and XFmode fix routines are omitted because
+# nothing built here needs them.  They also used to be impossible to build at
+# all -- GNU as 2.8.1 rejected the SGS fcmp operand order they emit -- but the
+# compare fixup in fix_asm now handles that, so _fixunsdfsi, _fixunssfsi,
+# _fixunsxfsi, _fixunsxfdi, _fixxfdi and _fixsfdi all compile cleanly should
+# they ever be wanted.)
+LIBGCC_A := $(GCC_LIBDIR)/libgcc.a
+LIBGCC2_BUILD_DIR := $(GCC_BUILD)/amix-libgcc
+LIBGCC2_BUILD_CFLAGS ?= -O2
+LIBGCC2_BUILD_INCLUDES := -I$(GCC_BUILD) -I$(GCC_SRC) -I$(GCC_SRC)/config -I$(GCC_SRC)/ginclude
+LIBGCC2_FUNCS := _muldi3 _divdi3 _moddi3 _udivdi3 _umoddi3 _negdi2 \
+	_lshrdi3 _ashldi3 _ashrdi3 _udiv_w_sdiv _udivmoddi4 _cmpdi2 _ucmpdi2 \
+	_floatdidf _floatdisf _floatdixf _fixunsdfdi _fixdfdi _fixunssfdi \
+	__gcc_bcmp _clear_cache _shtab _trampoline
+
+.PHONY: all help deps-hint deps download extract binutils install-binutils sysroot validate-sysroot check-runtime github-safety-check sysroot-check gcc install-gcc gcc-full install-gcc-wrapper refresh-gcc-wrapper install-target-ar libgcc install-libgcc env test-random test-hello test-uint64 test-divmod test-float test-fcmp test-bitfield test-objdir test-dtneeded test-kernel-volatile test-user-volatile print-vars clean distclean
+
+all: install-binutils sysroot install-gcc install-gcc-wrapper install-target-ar install-libgcc env
+
+help:
+	@echo "AMIX cross-toolchain bootstrap"
+	@echo ""
+	@echo "Common targets:"
+	@echo "  make deps-hint       Print LMDE/Debian package hints"
+	@echo "  make deps            Run apt-get install for build prerequisites"
+	@echo "  make all             Build binutils, import AMIX sysroot, install GCC, write env.sh"
+	@echo "  make sysroot         Copy AMIX headers/libs into PREFIX/TARGET/sysroot"
+	@echo "  make validate-sysroot Check required user-supplied AMIX runtime files"
+	@echo "  make check-runtime   Verify AMIX crt objects needed for Linux-side linking"
+	@echo "  make github-safety-check Warn if redistributable repo contains AMIX files"
+	@echo "  make gcc-full        Attempt full GCC C/C++ build after ld/runtime are ready"
+	@echo "  make install-libgcc  Build and install the target libgcc.a (also part of 'all')"
+	@echo "  make test-random     Cross-compile usr/sys/amiga/driver/random.c"
+	@echo "  make test-hello      Try to build and link a runnable AMIX user program"
+	@echo "  make env             Write env.sh only"
+	@echo "  make refresh-gcc-wrapper Reinstall only the wrapper script (the test gates use this)"
+	@echo "  make print-vars      Show the selected versions and paths"
+	@echo ""
+	@echo "Regression gates (each checks the emitted encoding, not just that it assembled):"
+	@echo "  make test-divmod     Divides use the 32-bit-dividend divsll/divull"
+	@echo "  make test-float      Register-to-register fsgldiv/fsglmul are .x; memory forms untouched"
+	@echo "  make test-fcmp       Compare order: the fcmp destination is the register the fmul wrote"
+	@echo "  make test-bitfield   Bit-field offset/width survive as extension-word bits 10:6 and 4:0"
+	@echo "  make test-uint64     64-bit / % >> link, helpers resolved from libgcc.a"
+	@echo "  make test-objdir     '-c' with no '-o' writes ./basename.o, not beside the source"
+	@echo "  make test-dtneeded   DT_NEEDED names resolve on the guest, not on the build host"
+	@echo "  make test-kernel-volatile  spl()/splx() and MMIO volatile survive AMIX_KERNEL_CFLAGS"
+	@echo "  make test-user-volatile    volatile polls and const data survive AMIX_USER_CFLAGS"
+	@echo ""
+	@echo "Useful overrides:"
+	@echo "  make PREFIX=/opt/amix-cross"
+	@echo "  make TARGET=m68k-cbm-sysv4"
+	@echo "  make CPUFLAGS=-m68030"
+
+deps-hint:
+	@echo "On LMDE/Debian, install prerequisites with:"
+	@echo "  sudo apt-get update"
+	@echo "  sudo apt-get install build-essential make m4 bison flex texinfo curl wget gzip tar patch file autotools-dev"
+
+deps:
+	sudo apt-get update
+	sudo apt-get install build-essential make m4 bison flex texinfo curl wget gzip tar patch file autotools-dev
+
+print-vars:
+	@echo "TARGET=$(TARGET)"
+	@echo "PREFIX=$(PREFIX)"
+	@echo "BINUTILS_VERSION=$(BINUTILS_VERSION)"
+	@echo "GCC_VERSION=$(GCC_VERSION)"
+	@echo "AMIX_ROOT=$(AMIX_ROOT)"
+	@echo "AMIX_KERNEL_CFLAGS=$(AMIX_KERNEL_CFLAGS)"
+	@echo "AMIX_USER_CFLAGS=$(AMIX_USER_CFLAGS)"
+	@echo "SYSROOT=$(SYSROOT)"
+	@echo "AMIX_CRT_DIR=$(AMIX_CRT_DIR)"
+
+download: $(DISTDIR)/$(BINUTILS_TARBALL) $(DISTDIR)/$(GCC_TARBALL)
+
+$(DISTDIR):
+	mkdir -p $@
+
+$(DISTDIR)/$(BINUTILS_TARBALL): | $(DISTDIR)
+	curl -L -o $@ $(BINUTILS_URL) || wget -O $@ $(BINUTILS_URL)
+
+$(DISTDIR)/$(GCC_TARBALL): | $(DISTDIR)
+	curl -L -o $@ $(GCC_URL) || wget -O $@ $(GCC_URL)
+
+extract: $(BINUTILS_SRC)/.amix-cross-extracted $(GCC_SRC)/.amix-cross-extracted
+
+$(SRCDIR):
+	mkdir -p $@
+
+$(BINUTILS_SRC)/.amix-cross-extracted: $(DISTDIR)/$(BINUTILS_TARBALL) | $(SRCDIR)
+	rm -rf $(BINUTILS_SRC)
+	rm -rf $(BINUTILS_BUILD)
+	cd $(SRCDIR) && tar -xzf $(DISTDIR)/$(BINUTILS_TARBALL)
+	$(MAKE) refresh-config TREE=$(BINUTILS_SRC)
+	$(MAKE) patch-binutils TREE=$(BINUTILS_SRC)
+	$(MAKE) disable-binutils-dirs TREE=$(BINUTILS_SRC)
+	touch $@
+
+$(GCC_SRC)/.amix-cross-extracted: $(DISTDIR)/$(GCC_TARBALL) | $(SRCDIR)
+	rm -rf $(GCC_SRC)
+	rm -rf $(GCC_BUILD)
+	cd $(SRCDIR) && tar -xzf $(DISTDIR)/$(GCC_TARBALL)
+	$(MAKE) refresh-config TREE=$(GCC_SRC)
+	$(MAKE) patch-gcc TREE=$(GCC_SRC)
+	touch $@
+
+refresh-config:
+	@test -n "$(TREE)" || { echo "TREE is required"; exit 1; }
+	@test -f "$(CONFIG_GUESS)" || { echo "Missing $(CONFIG_GUESS). Install autotools-dev or set CONFIG_GUESS=/path/to/config.guess"; exit 1; }
+	@test -f "$(CONFIG_SUB)" || { echo "Missing $(CONFIG_SUB). Install autotools-dev or set CONFIG_SUB=/path/to/config.sub"; exit 1; }
+	@find "$(TREE)" -name config.guess -exec cp "$(CONFIG_GUESS)" {} \;
+	@find "$(TREE)" -name config.sub -exec cp "$(CONFIG_SUB)" {} \;
+	@echo "Refreshed config.guess/config.sub under $(TREE)"
+
+disable-binutils-dirs:
+	@test -n "$(TREE)" || { echo "TREE is required"; exit 1; }
+	@for dir in $(BINUTILS_DISABLE_DIRS); do \
+		if test -d "$(TREE)/$$dir" && test ! -d "$(TREE)/$$dir.disabled"; then \
+			mv "$(TREE)/$$dir" "$(TREE)/$$dir.disabled"; \
+			echo "Disabled binutils subdir $$dir"; \
+		fi; \
+	done
+
+patch-binutils:
+	@test -n "$(TREE)" || { echo "TREE is required"; exit 1; }
+	@if test -f "$(TREE)/ld/configure.tgt" && ! grep -q 'm68k-\*-\*sysv4\*' "$(TREE)/ld/configure.tgt"; then \
+		sed -i '/m68\*-\*-elf)/i m68k-*-*sysv4*)	targ_emul=m68kelf ;;' "$(TREE)/ld/configure.tgt"; \
+		echo "Patched ld/configure.tgt for m68k-*-sysv4"; \
+	fi
+	@if test -f "$(TREE)/bfd/config.bfd" && ! grep -q 'm68k-\*-\*sysv4\*' "$(TREE)/bfd/config.bfd"; then \
+		sed -i '/m68\*-\*-elf)/i m68k-*-*sysv4*)	targ_defvec=bfd_elf32_m68k_vec ;;' "$(TREE)/bfd/config.bfd"; \
+		echo "Patched bfd/config.bfd for m68k-*-sysv4"; \
+	fi
+	@if grep -q 'amix-cross: include write.h before targ-cpu.h' "$(TREE)/gas/config/obj-elf.h"; then \
+		sed -i '/amix-cross: include write.h before targ-cpu.h/d; /#include "write.h"/d' "$(TREE)/gas/config/obj-elf.h"; \
+	fi
+	@if grep -q '^extern struct relax_type md_relax_table\[\];' "$(TREE)/gas/config/tc-m68k.h"; then \
+		sed -i 's/^extern struct relax_type md_relax_table\[\];/\/\* amix-cross: declaration removed; struct relax_type is not visible yet. \*\//' "$(TREE)/gas/config/tc-m68k.h"; \
+		echo "Patched gas/config/tc-m68k.h for modern host GCC"; \
+	fi
+	@if ! grep -q 'amix-cross: declare m68k relax table after as.h' "$(TREE)/gas/write.c"; then \
+		sed -i '/#include "as.h"/a /* amix-cross: declare m68k relax table after as.h defines relax_typeS. */\
+extern relax_typeS md_relax_table[];' "$(TREE)/gas/write.c"; \
+		echo "Patched gas/write.c for m68k relax table declaration"; \
+	fi
+
+patch-gcc:
+	@test -n "$(TREE)" || { echo "TREE is required"; exit 1; }
+	@if ! grep -q 'amix-cross: modern libc strerror' "$(TREE)/cccp.c"; then \
+		sed -i '/#include "config.h"/a /* amix-cross: modern libc strerror fallback. */\
+#include <string.h>' "$(TREE)/cccp.c"; \
+		sed -i 's/if (errno < sys_nerr)/if (1)/' "$(TREE)/cccp.c"; \
+		sed -i 's/return sys_errlist\[errno\];/return strerror (errno);/' "$(TREE)/cccp.c"; \
+		echo "Patched gcc cccp.c for modern libc strerror"; \
+	fi
+	@if ! grep -q 'amix-cross: modern libc strerror' "$(TREE)/gcc.c"; then \
+		sed -i '/#include "config.h"/a /* amix-cross: modern libc strerror fallback. */\
+#include <string.h>' "$(TREE)/gcc.c"; \
+		sed -i 's/if (e < sys_nerr)/if (1)/g; s/if (errno < sys_nerr)/if (1)/g' "$(TREE)/gcc.c"; \
+		sed -i 's/sys_errlist\[e\]/strerror (e)/g; s/sys_errlist\[errno\]/strerror (errno)/g' "$(TREE)/gcc.c"; \
+		echo "Patched gcc gcc.c for modern libc strerror"; \
+	fi
+	@if grep -R -q 'gcc2_compiled%' "$(TREE)"; then \
+		find "$(TREE)" -type f -exec sed -i 's/gcc2_compiled%/gcc2_compiled/g' {} \; ; \
+		echo "Patched GCC sources for GNU as gcc2_compiled symbol syntax"; \
+	fi
+	@if grep -R -q 'lcomm.*,%u,%u' "$(TREE)"; then \
+		find "$(TREE)" -type f -exec perl -0pi -e 's/((?:\\\\t|\t)?\\.lcomm[^"\\n]*,%[du]),%[du](\\\\n")/$$1$$2/g' {} \; ; \
+		echo "Patched GCC .lcomm output for binutils 2.8.1"; \
+	fi
+	@find "$(TREE)/config" -type f -exec perl -0pi -e 's/fprintf\s*\(\s*\(FILE\)\s*,\s*",%([ud]),%[ud]\\n"\s*,\s*\(?SIZE\)?\s*,\s*\(?ROUNDED\)?\s*\)/fprintf ((FILE), ",%\1\\n", (SIZE))/g; s/fprintf\s*\(\s*\(FILE\)\s*,\s*",%([ud]),%[ud]\\n"\s*,\s*\(?SIZE\)?\s*,\s*\(?ALIGNMENT\)?\s*\/\s*BITS_PER_UNIT\s*\)/fprintf ((FILE), ",%\1\\n", (SIZE))/g; s/fprintf\s*\(\s*\(FILE\)\s*,\s*",%([ud]),%[ud]\\n"\s*,\s*\(?SIZE\)?\s*,\s*\(?ALIGN\)?\s*\/\s*BITS_PER_UNIT\s*\)/fprintf ((FILE), ",%\1\\n", (SIZE))/g; s/fprintf\s*\(\s*\(FILE\)\s*,\s*",%([ud]),%[ud]\\n"\s*,\s*\(?SIZE\)?\s*,\s*\(?ALIGNMENT\)?\s*\)/fprintf ((FILE), ",%\1\\n", (SIZE))/g; s/fprintf\s*\(\s*\(FILE\)\s*,\s*",%([ud]),%[ud]\\n"\s*,\s*\(?SIZE\)?\s*,\s*\(?ALIGN\)?\s*\)/fprintf ((FILE), ",%\1\\n", (SIZE))/g' {} \;
+	@# m68k.md ashrdi_const: a signed 64-bit >> 16 sign-extended the wrong half
+	@# of the high word (no swap before ext.l), so the result's high long was 0
+	@# or -1.  Every other count is right; the unsigned twin has the swap.
+	@# Reported in kdedon/ashnazag#282 (broke dropbear signatures).
+	@if grep -q 'clr%.w %0\\;swap %1\\;ext%.l %0' "$(TREE)/config/m68k/m68k.md"; then \
+		sed -i 's/clr%\.w %0\\;swap %1\\;ext%\.l %0/clr%.w %0\\;swap %1\\;swap %0\\;ext%.l %0/' "$(TREE)/config/m68k/m68k.md"; \
+		echo "Patched m68k.md: signed 64-bit >> 16"; \
+	fi
+	@if test -f "$(TREE)/c-parse.c"; then touch "$(TREE)/c-parse.c"; fi
+	@if test -f "$(TREE)/c-gperf.h"; then touch "$(TREE)/c-gperf.h"; fi
+
+$(BUILDDIR):
+	mkdir -p $@
+
+$(BINUTILS_BUILD)/config.status: $(BINUTILS_SRC)/.amix-cross-extracted | $(BUILDDIR)
+	mkdir -p $(BINUTILS_BUILD)
+	cd $(BINUTILS_BUILD) && CC="$(HOST_CC)" CFLAGS="$(HOST_CFLAGS)" $(BINUTILS_SRC)/configure \
+		--target=$(TARGET) \
+		--prefix=$(PREFIX) \
+		--disable-nls \
+		$(BINUTILS_CONFIGURE_EXTRA)
+
+binutils: $(BINUTILS_BUILD)/config.status
+	$(MAKE) -C $(BINUTILS_BUILD) -j$(MAKE_JOBS) \
+		CC="$(HOST_CC)" \
+		CFLAGS="$(HOST_CFLAGS)" \
+		MAKEINFO="$(AMIX_MAKEINFO)"
+
+install-binutils: binutils
+	$(MAKE) -C $(BINUTILS_BUILD) install \
+		CC="$(HOST_CC)" \
+		CFLAGS="$(HOST_CFLAGS)" \
+		MAKEINFO="$(AMIX_MAKEINFO)"
+
+# The stock files copied into the sysroot are made read-only once copied, so
+# a stray link step (for example an ld option that takes the next argument as
+# a map-file name) cannot overwrite libc.so.1 or a header in place.  Directories
+# stay writable so extra libraries can still be added.  Regenerating lifts the
+# write protection first, because cp cannot overwrite a read-only file.
+sysroot:
+	mkdir -p $(SYSROOT)/usr
+	chmod -R u+w $(SYSROOT)/usr
+	test -d "$(AMIX_ROOT)/usr/include"
+	cp -Rf "$(AMIX_ROOT)/usr/include" "$(SYSROOT)/usr/"
+	if test -d "$(AMIX_ROOT)/usr/sys"; then cp -Rf "$(AMIX_ROOT)/usr/sys" "$(SYSROOT)/usr/"; fi
+	if test -d "$(AMIX_ROOT)/usr/ccs"; then cp -Rf "$(AMIX_ROOT)/usr/ccs" "$(SYSROOT)/usr/"; fi
+	if test -d "$(AMIX_USR_LIB)"; then mkdir -p "$(SYSROOT)/usr/lib"; cp -Rf "$(AMIX_USR_LIB)"/. "$(SYSROOT)/usr/lib/" || true; fi
+	@for f in libc.so.1 ld.so.1; do \
+		if test -f "$(AMIX_USR_LIB)/$$f"; then \
+			tmp="$(SYSROOT)/usr/lib/.$$f.tmp"; \
+			cp -f "$(AMIX_USR_LIB)/$$f" "$$tmp"; \
+			test -s "$$tmp"; \
+			mv -f "$$tmp" "$(SYSROOT)/usr/lib/$$f"; \
+		fi; \
+	done
+	@for d in include sys ccs; do \
+		if test -d "$(AMIX_ROOT)/usr/$$d"; then \
+			(cd "$(AMIX_ROOT)/usr" && find "$$d" -type f) | \
+				while read -r f; do chmod a-w "$(SYSROOT)/usr/$$f"; done; \
+		fi; \
+	done
+	@if test -d "$(AMIX_USR_LIB)"; then \
+		(cd "$(AMIX_USR_LIB)" && find . -type f) | \
+			while read -r f; do chmod a-w "$(SYSROOT)/usr/lib/$$f"; done; \
+	fi
+	@echo "Stock sysroot files are now read-only"
+
+# Refuse to run when the sysroot libc is not an ELF shared object: a clobbered
+# libc.so.1 makes every dynamic link fail with "file format not recognized".
+# The ELF type at offset 16 must be ET_DYN (big-endian 0x0003).
+sysroot-check:
+	@f="$(SYSROOT)/usr/lib/libc.so.1"; \
+	magic=$$(od -An -tx1 -N18 "$$f" 2>/dev/null | tr -d ' \n'); \
+	case "$$magic" in \
+		7f454c46*0003) echo "ok   $$f is an ELF shared object" ;; \
+		*) echo "ERROR: $$f is not an ELF shared object; run make sysroot" >&2; exit 1 ;; \
+	esac
+
+validate-sysroot: sysroot
+	@missing=0; \
+	for f in \
+		usr/include/stdio.h \
+		usr/include/sys/types.h \
+		usr/lib/libc.so.1 \
+		usr/lib/ld.so.1 \
+		usr/ccs/lib/crt1.o \
+		usr/ccs/lib/crti.o \
+		usr/ccs/lib/crtn.o; do \
+		if test ! -f "$(SYSROOT)/$$f"; then \
+			echo "Missing $(SYSROOT)/$$f"; \
+			missing=1; \
+		elif test ! -s "$(SYSROOT)/$$f"; then \
+			echo "Empty or truncated $(SYSROOT)/$$f"; \
+			missing=1; \
+		fi; \
+	done; \
+	test $$missing -eq 0
+
+check-runtime: validate-sysroot
+	@missing=0; \
+	for f in $(AMIX_CRTS); do \
+		if test ! -f "$(AMIX_CRT_DIR)/$$f" && test ! -f "$(SYSROOT)/usr/ccs/lib/$$f" && test ! -f "$(SYSROOT)/usr/lib/$$f"; then \
+			echo "Missing AMIX startup object $$f. Copy it from AMIX, usually /usr/ccs/lib or /usr/lib, then set AMIX_CRT_DIR."; \
+			missing=1; \
+		fi; \
+	done; \
+	test $$missing -eq 0
+
+github-safety-check:
+	@if test -d "$(HERE)/../../usr"; then \
+		echo "WARNING: $(HERE)/../../usr exists. Do not publish this AMIX usr tree."; \
+		echo "Create the public repository from tools/amix-cross only, or keep /usr ignored."; \
+	fi
+	@if find "$(HERE)" \( -path '*/sysroot/*' -o -path '*/usr/include/*' -o -path '*/usr/lib/*' -o -name 'libc.so.1' -o -name 'ld.so.1' -o -name 'crt*.o' \) -print -quit | grep . >/dev/null; then \
+		echo "WARNING: AMIX sysroot/runtime-looking files found under $(HERE)."; \
+		echo "Remove them before publishing, or keep them outside the repo."; \
+	else \
+		echo "No AMIX sysroot/runtime files found under $(HERE)."; \
+	fi
+
+$(GCC_BUILD)/config.status: $(GCC_SRC)/.amix-cross-extracted install-binutils sysroot | $(BUILDDIR)
+	mkdir -p $(GCC_BUILD)
+	cd $(GCC_BUILD) && PATH="$(PATH_FOR_BUILD)" CC="$(HOST_CC)" CFLAGS="$(HOST_CFLAGS)" $(GCC_SRC)/configure \
+		--build=$(BUILD) \
+		--host=$(HOST) \
+		--target=$(TARGET) \
+		--prefix=$(PREFIX) \
+		--with-gnu-as \
+		--with-gnu-ld \
+		$(GCC_CONFIGURE_EXTRA)
+
+gcc: $(GCC_BUILD)/config.status
+	@if test ! -f "$(GCC_BUILD)/libgcc1.a" && test ! -f "$(GCC_BUILD)/libgcc1.cross"; then \
+		echo "Creating empty target libgcc1.a for compile-only bootstrap"; \
+		cd "$(GCC_BUILD)" && "$(TARGET_AR)" rc libgcc1.a; \
+		"$(TARGET_RANLIB)" "$(GCC_BUILD)/libgcc1.a" || true; \
+	fi
+	PATH="$(PATH_FOR_BUILD)" $(MAKE) -C $(GCC_BUILD) -j$(MAKE_JOBS) \
+		LANGUAGES=c \
+		CC="$(HOST_CC)" \
+		CFLAGS="$(HOST_CFLAGS)" \
+		MAKEINFO="$(AMIX_MAKEINFO)" \
+		$(GCC_BUILD_TARGETS)
+
+install-gcc: gcc
+	mkdir -p $(PREFIX)/bin $(GCC_LIBDIR)
+	cp $(GCC_BUILD)/xgcc $(PREFIX)/bin/$(TARGET)-gcc
+	cp $(GCC_BUILD)/xgcc $(GCC_REAL)
+	cp $(GCC_BUILD)/cc1 $(GCC_LIBDIR)/cc1
+	cp $(GCC_BUILD)/cccp $(GCC_LIBDIR)/cpp
+	PATH="$(PATH_FOR_BUILD)" $(GCC_BUILD)/xgcc -B$(GCC_BUILD)/ -dumpspecs > $(GCC_LIBDIR)/specs
+	chmod 755 $(PREFIX)/bin/$(TARGET)-gcc $(GCC_REAL) $(GCC_LIBDIR)/cc1 $(GCC_LIBDIR)/cpp
+
+gcc-full: $(GCC_BUILD)/config.status check-runtime
+	PATH="$(PATH_FOR_BUILD)" $(MAKE) -C $(GCC_BUILD) -j$(MAKE_JOBS) \
+		CC="$(HOST_CC)" \
+		CFLAGS="$(HOST_CFLAGS)" \
+		MAKEINFO="$(AMIX_MAKEINFO)" \
+		$(GCC_FULL_BUILD_TARGETS)
+
+define install_gcc_wrapper
+	sed 's/@TARGET@/$(TARGET)/g' $(HERE)/amix-gcc-wrapper.sh > $(PREFIX)/bin/$(TARGET)-gcc
+	chmod 755 $(PREFIX)/bin/$(TARGET)-gcc
+endef
+
+install-gcc-wrapper: install-gcc
+	$(install_gcc_wrapper)
+
+# Reinstall only the wrapper script over an already installed compiler.  The
+# test targets use this instead of install-gcc-wrapper, whose install-gcc chain
+# reconfigures gcc and reinstalls binutils (which replaces the ar/ranlib
+# wrappers from install-target-ar) on every run.
+refresh-gcc-wrapper: sysroot-check
+	@test -x "$(GCC_REAL)" || { echo "Missing $(GCC_REAL); run 'make all' first"; exit 1; }
+	$(install_gcc_wrapper)
+
+# Replace the fortify-aborting binutils 2.8.1 ar/ranlib with thin wrappers that
+# delegate to the host ar/ranlib (see amix-ar-wrapper.sh for the rationale).
+# The shipped ar/ranlib are hardlinked to $(TARGET)/bin/ar etc., so remove the
+# target path first to break the link before writing the wrapper in its place.
+# Self-contained (the wrappers only need the host ar/ranlib); `all' sequences
+# this after install-binutils so it overwrites the binutils-installed ar.
+install-target-ar:
+	@hostar="$$(command -v $(HOST_AR) 2>/dev/null)"; \
+	hostranlib="$$(command -v $(HOST_RANLIB) 2>/dev/null)"; \
+	test -n "$$hostar" || { echo "Host '$(HOST_AR)' not found in PATH"; exit 1; }; \
+	test -n "$$hostranlib" || { echo "Host '$(HOST_RANLIB)' not found in PATH"; exit 1; }; \
+	mkdir -p "$(PREFIX)/bin"; \
+	for tool in ar ranlib; do \
+		dest="$(PREFIX)/bin/$(TARGET)-$$tool"; \
+		sed -e 's/@TARGET@/$(TARGET)/g' \
+		    -e "s|@HOST_AR@|$$hostar|g" \
+		    -e "s|@HOST_RANLIB@|$$hostranlib|g" \
+		    "$(HERE)/amix-ar-wrapper.sh" > "$$dest.amix-tmp"; \
+		rm -f "$$dest"; \
+		mv "$$dest.amix-tmp" "$$dest"; \
+		chmod 755 "$$dest"; \
+		echo "Installed $$dest (delegates to host $$tool)"; \
+	done
+
+# Build libgcc.a from the freestanding libgcc2 helper routines.  One object per
+# function (-DL<name>), compiled through the installed wrapper compiler so the
+# assembler fixups apply, then archived with the (now working) target ar.
+# libgcc2's soft-arithmetic helpers are freestanding, so this needs no AMIX
+# sysroot/libc; it only requires the wrapper compiler + working ar to be
+# installed already.  `all' sequences install-gcc-wrapper before this; the
+# guards below give a clear error if libgcc is built before that.
+libgcc: install-target-ar
+	@test -f "$(GCC_SRC)/libgcc2.c" || { echo "Missing $(GCC_SRC)/libgcc2.c; run 'make extract'"; exit 1; }
+	@test -f "$(GCC_BUILD)/tm.h" || { echo "Missing $(GCC_BUILD)/tm.h; run 'make install-gcc' first"; exit 1; }
+	@grep -q 'amix gcc wrapper' "$(TARGET_CC)" 2>/dev/null || { \
+		echo "$(TARGET_CC) is not the AMIX wrapper compiler; run 'make install-gcc-wrapper' first"; exit 1; }
+	rm -rf $(LIBGCC2_BUILD_DIR)
+	mkdir -p $(LIBGCC2_BUILD_DIR)
+	@set -e; objs=""; \
+	for name in $(LIBGCC2_FUNCS); do \
+		echo "libgcc2: $$name"; \
+		PATH="$(PATH_FOR_BUILD)" "$(TARGET_CC)" $(LIBGCC2_BUILD_CFLAGS) $(LIBGCC2_BUILD_INCLUDES) \
+			-DL$$name -c "$(GCC_SRC)/libgcc2.c" -o "$(LIBGCC2_BUILD_DIR)/$$name.o"; \
+		objs="$$objs $$name.o"; \
+	done; \
+	cd "$(LIBGCC2_BUILD_DIR)" && rm -f libgcc.a && \
+		"$(TARGET_AR)" rc libgcc.a $$objs && \
+		"$(TARGET_RANLIB)" libgcc.a
+	@echo "Built $(LIBGCC2_BUILD_DIR)/libgcc.a"
+
+install-libgcc: libgcc
+	mkdir -p $(GCC_LIBDIR)
+	cp $(LIBGCC2_BUILD_DIR)/libgcc.a $(LIBGCC_A)
+	"$(TARGET_RANLIB)" $(LIBGCC_A)
+	@echo "Installed $(LIBGCC_A)"
+
+env:
+	@mkdir -p $(BUILDDIR)
+	@printf '%s\n' '# Source this file before cross-compiling for AMIX.' > $(BUILDDIR)/env.sh
+	@printf '%s\n' 'export AMIX_CROSS_TARGET="$(TARGET)"' >> $(BUILDDIR)/env.sh
+	@printf '%s\n' 'export AMIX_CROSS_PREFIX="$(PREFIX)"' >> $(BUILDDIR)/env.sh
+	@printf '%s\n' 'export PATH="$(PREFIX)/bin:$$PATH"' >> $(BUILDDIR)/env.sh
+	@printf '%s\n' 'export AMIX_ROOT="$(AMIX_ROOT)"' >> $(BUILDDIR)/env.sh
+	@printf '%s\n' 'export AMIX_SYSROOT="$(SYSROOT)"' >> $(BUILDDIR)/env.sh
+	@printf '%s\n' 'export AMIX_CRT_DIR="$(AMIX_CRT_DIR)"' >> $(BUILDDIR)/env.sh
+	@printf '%s\n' 'export AMIX_KERNEL_CFLAGS="$(AMIX_KERNEL_CFLAGS)"' >> $(BUILDDIR)/env.sh
+	@printf '%s\n' 'export AMIX_USER_CFLAGS="$(AMIX_USER_CFLAGS)"' >> $(BUILDDIR)/env.sh
+	@printf '%s\n' 'case "$$(od -An -tx1 -N18 "$$AMIX_SYSROOT/usr/lib/libc.so.1" 2>/dev/null | tr -d " \\n")" in 7f454c46*0003) ;; *) echo "env.sh: $$AMIX_SYSROOT/usr/lib/libc.so.1 is not an ELF shared object; run make sysroot" >&2; return 1 2>/dev/null || exit 1 ;; esac' >> $(BUILDDIR)/env.sh
+	@echo "Wrote $(BUILDDIR)/env.sh"
+
+test-random: refresh-gcc-wrapper env
+	mkdir -p $(BUILDDIR)/test
+	$(TARGET_CC) -S $(AMIX_KERNEL_CFLAGS) \
+		-o $(BUILDDIR)/test/random.s \
+		$(AMIX_ROOT)/usr/sys/amiga/driver/random.c
+	perl -pi -e 's/^(\s*\.lcomm\s+[^,]+,[^,]+),\d+\s*$$/$$1\n/' $(BUILDDIR)/test/random.s
+	$(PREFIX)/bin/$(TARGET)-as -m68020 -o $(BUILDDIR)/test/random.o $(BUILDDIR)/test/random.s
+	file $(BUILDDIR)/test/random.o
+	$(PREFIX)/bin/$(TARGET)-nm -a $(BUILDDIR)/test/random.o | head
+
+test-hello: all check-runtime sysroot-check
+	mkdir -p $(BUILDDIR)/test
+	printf '%s\n' '#include <stdio.h>' 'int main(void) { puts("hello from AMIX cross"); return 0; }' > $(BUILDDIR)/test/hello.c
+	AMIX_SYSROOT="$(SYSROOT)" AMIX_CRT_DIR="$(AMIX_CRT_DIR)" $(TARGET_CC) $(CPUFLAGS) -o $(BUILDDIR)/test/hello $(BUILDDIR)/test/hello.c
+	file $(BUILDDIR)/test/hello
+
+# End-to-end proof that a program using 64-bit integer arithmetic both
+# compiles and links: the division/modulo/shift below force calls to
+# __udivdi3/__umoddi3/__lshrdi3, which must resolve from the installed
+# libgcc.a.  Requires the AMIX crt objects + libc.so.1 in the sysroot (like
+# test-hello).  A successful link with no unresolved symbols is the proof.
+test-uint64: install-libgcc env
+	mkdir -p $(BUILDDIR)/test
+	printf '%s\n' \
+		'/* Forces the 64-bit soft-integer helpers __udivdi3/__umoddi3/__lshrdi3. */' \
+		'unsigned long long udiv(unsigned long long a, unsigned long long b) { return a / b; }' \
+		'unsigned long long umod(unsigned long long a, unsigned long long b) { return a % b; }' \
+		'unsigned long long shr (unsigned long long a, int n)                { return a >> n; }' \
+		'int main(void) {' \
+		'	return (int)(udiv(1000000000000ULL, 7ULL) + umod(1000003ULL, 7ULL)' \
+		'	           + shr((unsigned long long) 1 << 40, 8));' \
+		'}' \
+		> $(BUILDDIR)/test/uint64.c
+	$(TARGET_CC) $(CPUFLAGS) -o $(BUILDDIR)/test/uint64 $(BUILDDIR)/test/uint64.c
+	file $(BUILDDIR)/test/uint64
+	@echo "64-bit helpers pulled from libgcc.a (expect T, defined):"
+	$(PREFIX)/bin/$(TARGET)-nm $(BUILDDIR)/test/uint64 | grep -E '__udivdi3|__umoddi3|__lshrdi3'
+
+# Regression test for the SGS "tdivs.l/tdivu.l <ea>,%dR:%dQ" assembler fixup
+# (see fix_asm in amix-gcc-wrapper.sh).  gcc emits the 68020 32/32 divide-with-
+# remainder for every variable-divisor "%"/"/"; GNU as 2.8.1 mis-assembles the
+# raw SGS spelling as the 64-bit-dividend "DIVS.L Dr:Dq" (SIZE bit set), which
+# overflows and leaves the operands unchanged -> wrong results.  The wrapper
+# rewrites it to "divsl.l"/"divul.l" (32-bit dividend, 32r:32q).  This target
+# compiles signed+unsigned "%"/"/" through the installed wrapper at both the
+# -O0 and -O register shapes and checks the *object code*: every emitted divide
+# must disassemble as the 32-bit-dividend form ("divsll"/"divull", SIZE clear,
+# both registers preserved) and NONE as the broken 64-bit form ("divsl"/"divul").
+#
+# Failure mode against the PRE-FIX wrapper (proof this test bites): the modulo
+# ops assemble to the 64-bit "divsl"/"divul" form, so the "no broken form" check
+# below fails; at -O0 the divides do too, so the "correct form present" check
+# also fails.  A pass therefore requires the fixup to be installed.
+test-divmod: refresh-gcc-wrapper env
+	mkdir -p $(BUILDDIR)/test
+	printf '%s\n' \
+		'/* Variable-divisor signed+unsigned % and / force gcc to emit the' \
+		'   68020 32/32 divide-with-remainder (SGS tdivs.l/tdivu.l ea,%dR:%dQ).' \
+		'   Known answers on target: smod/umod(351,151)=49, sdiv/udiv(351,151)=2.' \
+		'   The objdump check in the Makefile is what actually gates the test. */' \
+		'int          smod(int a, int b)                   { return a % b; }' \
+		'unsigned int umod(unsigned int a, unsigned int b) { return a % b; }' \
+		'int          sdiv(int a, int b)                   { return a / b; }' \
+		'unsigned int udiv(unsigned int a, unsigned int b) { return a / b; }' \
+		'int main(void) {' \
+		'	return smod(351,151) + (int)umod(351u,151u)' \
+		'	     + sdiv(351,151) + (int)udiv(351u,151u); /* = 102 */' \
+		'}' \
+		> $(BUILDDIR)/test/divmod.c
+	@set -e; status=0; \
+	for opt in -O0 -O; do \
+		obj="$(BUILDDIR)/test/divmod$$opt.o"; \
+		$(TARGET_CC) $(CPUFLAGS) $$opt -c -o "$$obj" $(BUILDDIR)/test/divmod.c; \
+		dis="$$($(PREFIX)/bin/$(TARGET)-objdump -d "$$obj")"; \
+		echo "==== $$opt ===="; echo "$$dis" | grep -Ew 'divsl|divul|divsll|divull' || true; \
+		if ! printf '%s\n' "$$dis" | grep -Ewq 'divsll|divull'; then \
+			echo "FAIL$$opt: no 32-bit-dividend divide (divsll/divull) emitted"; status=1; \
+		fi; \
+		if printf '%s\n' "$$dis" | grep -Ewq 'divsl|divul'; then \
+			echo "FAIL$$opt: broken 64-bit-dividend form (divsl/divul) still emitted"; status=1; \
+		fi; \
+	done; \
+	test $$status -eq 0 && echo "test-divmod PASS: both registers preserved, no 64-bit-dividend form"
+
+# Regression test for the SGS "fsgldiv.s/fsglmul.s %fpN,%fpM" assembler fixup
+# (see fix_asm in amix-gcc-wrapper.sh).  gcc spells single-precision FP multiply
+# and divide as the 68881/68882 "fsglmul"/"fsgldiv"; config/m68k/amix.h defines
+# FSGLMUL_USE_S/FSGLDIV_USE_S, so the REGISTER-TO-REGISTER form comes out with an
+# SGS ".s" suffix.  GNU as 2.8.1 requires ".x" there: with both operands in FPU
+# registers the data is 80-bit extended by definition, and the single-precision
+# rounding is encoded in the "sgl" of the mnemonic, not in the suffix.
+#
+# This target compiles float "/" and "*" through the installed wrapper at both
+# -O0 and -O and checks the *object code* for BOTH halves of the fix:
+#   (a) the register-to-register ops became the ".x" form, i.e. they disassemble
+#       as "fsgldivx %fpN,%fpM" / "fsglmulx %fpN,%fpM"; and
+#   (b) the legal single-precision NON-register-source ops were NOT touched --
+#       a memory source ("fsgldivs %fp@(N),%fpM") and a data-register source
+#       ("fsglmuls %dN,%fpM") are both valid and encode a genuinely different
+#       instruction (R/M=1, source format "single") from the ".x" register form
+#       (R/M=0), so rewriting them would be a miscompile.  gcc emits all three
+#       shapes from the source below.
+#
+# Failure mode against the PRE-FIX wrapper (proof this test bites): it fails at
+# ASSEMBLY time, before any objdump check runs --
+#   Error: operands mismatch -- statement `fsgldiv.s %fp1,%fp0' ignored
+# which is exactly why cross-building C that divides or multiplies "float"
+# previously needed a -Dfloat=double workaround.  A too-greedy rewrite that also
+# hit the memory/data-register forms fails check (b) instead.
+test-float: refresh-gcc-wrapper env
+	mkdir -p $(BUILDDIR)/test
+	printf '%s\n' \
+		'/* Single-precision multiply/divide in three operand shapes.' \
+		'   rr_*  : both operands end up in FPU registers -- the form GNU as' \
+		'           rejects when it carries the SGS ".s" suffix (the bug).' \
+		'   mem_* : single-precision MEMORY source -- ".s" is legal and must' \
+		'           NOT be rewritten.' \
+		'   dreg  : single-precision DATA-REGISTER source -- likewise legal.' \
+		'   Deliberately no float COMPARISONS: the SGS fcmp operand order is a' \
+		'   separate fixup with its own gate, "make test-fcmp". */' \
+		'float rr_div (float a, float b) { float t = a + b; return (a * t) / (b * t); }' \
+		'float rr_mul (float a, float b) { float t = a + b; return (a * t) * (b * t); }' \
+		'float mem_div(float a, float b) { return a / b; }' \
+		'float mem_mul(float a, float b) { return a * b; }' \
+		'float dreg   (float a, float b) { return (a * b) * (a + b); }' \
+		'int main(void) { return (int)(rr_div(6.0f, 3.0f) + rr_mul(1.0f, 1.0f)' \
+		'                            + mem_div(8.0f, 4.0f) + mem_mul(2.0f, 3.0f)' \
+		'                            + dreg(1.0f, 2.0f)); }' \
+		> $(BUILDDIR)/test/float.c
+	@set -e; status=0; sawdreg=0; \
+	for opt in -O0 -O; do \
+		obj="$(BUILDDIR)/test/float$$opt.o"; \
+		$(TARGET_CC) $(CPUFLAGS) $$opt -c -o "$$obj" $(BUILDDIR)/test/float.c; \
+		dis="$$($(PREFIX)/bin/$(TARGET)-objdump -d "$$obj")"; \
+		echo "==== $$opt ===="; \
+		printf '%s\n' "$$dis" | grep -oE 'fsgl(div|mul)[sx][ \t]+[^ ]+' | sort | uniq -c || true; \
+		if ! printf '%s\n' "$$dis" | grep -Eq 'fsgldivx[ \t]+%fp[0-7],%fp[0-7]'; then \
+			echo "FAIL$$opt: no register-to-register fsgldiv in the .x form"; status=1; \
+		fi; \
+		if ! printf '%s\n' "$$dis" | grep -Eq 'fsglmulx[ \t]+%fp[0-7],%fp[0-7]'; then \
+			echo "FAIL$$opt: no register-to-register fsglmul in the .x form"; status=1; \
+		fi; \
+		if ! printf '%s\n' "$$dis" | grep -Eq 'fsgldivs[ \t]+%fp@\('; then \
+			echo "FAIL$$opt: legal memory-source fsgldiv.s was rewritten away"; status=1; \
+		fi; \
+		if ! printf '%s\n' "$$dis" | grep -Eq 'fsglmuls[ \t]+%fp@\('; then \
+			echo "FAIL$$opt: legal memory-source fsglmul.s was rewritten away"; status=1; \
+		fi; \
+		if printf '%s\n' "$$dis" | grep -Eq 'fsgl(div|mul)s[ \t]+%fp[0-7],'; then \
+			echo "FAIL$$opt: an FPU-register-source op kept the illegal .s suffix"; status=1; \
+		fi; \
+		if printf '%s\n' "$$dis" | grep -Eq 'fsglmuls[ \t]+%d[0-7],%fp[0-7]'; then sawdreg=1; fi; \
+	done; \
+	test $$sawdreg -eq 1 || { echo "FAIL: legal data-register-source fsglmul.s never seen"; status=1; }; \
+	test $$status -eq 0 && echo "test-float PASS: reg-reg fsgl ops are .x, memory/data-register .s forms untouched"
+
+# Regression test for the SGS compare-operand-order fixup as it applies to the
+# 68881 "fcmp" (see fix_asm in amix-gcc-wrapper.sh).  config/m68k/sgs.h defines
+# SGS_CMP_ORDER, so gcc prints both compare operands the other way round from
+# what GNU as expects.  The wrapper swaps them back.  Two distinct failure modes
+# hide behind this, and this target has to catch BOTH:
+#
+#   FP register vs memory  -- GNU as needs an FPU register as the DESTINATION,
+#     so the SGS spelling is rejected outright and the build stops:
+#       Error: operands mismatch -- statement `fcmp.d %fp0,16(%fp)' ignored
+#
+#   FP register vs FP register -- the reversed spelling is still VALID syntax,
+#     so it assembles silently to a different encoding ("fcmp.x %fp2,%fp0" is
+#     f200 0838, "fcmp.x %fp0,%fp2" is f200 0138).  FCMP computes destination
+#     minus source, so the wrong order makes every following fbgt/fsgt test the
+#     REVERSED relation, with no diagnostic anywhere.  Same severity class as
+#     the tdivs defect: cross-built code that looks fine and computes garbage.
+#
+# Checking the sense mechanically, without being able to RUN the code, needs an
+# invariant that does not depend on register allocation or stack offsets.  Each
+# function below compares a MULTIPLY result against something else, C-source
+# left-hand side first ("x > y" where x = a * b).  Because FCMP computes
+# <second operand> minus <first operand>, a correctly ordered fcmp must name the
+# register holding the multiply result as its SECOND operand.  So the invariant
+# is simply: the destination of the fcmp is the register the fmul wrote.  That
+# holds at -O0 (values reloaded from the stack) and at -O (values kept in FPU
+# registers) alike, and it is exactly what breaks when the operands are reversed.
+#
+# Failure mode against a wrapper WITHOUT the fcmp half of the fixup (proof this
+# test bites): rm_* fail to assemble with the "operands mismatch" above, and the
+# rr_* pair assemble cleanly but report the fcmp destination as the fadd result
+# rather than the fmul result -- a MISMATCH line and a non-zero exit.
+test-fcmp: refresh-gcc-wrapper env
+	mkdir -p $(BUILDDIR)/test
+	printf '%s\n' \
+		'/* Every comparison puts a MULTIPLY result on the left of ">", so a' \
+		'   correctly ordered fcmp must carry that register as its SECOND' \
+		'   operand (FCMP computes second minus first).' \
+		'   rr_* keep both values in FPU registers -> the SILENT failure shape.' \
+		'   rm_* compare against a memory operand   -> the LOUD failure shape. */' \
+		'int rr_d(double a, double b){ double x = a * b, y = a + b; return x > y; }' \
+		'int rr_f(float  a, float  b){ float  x = a * b, y = a + b; return x > y; }' \
+		'int rm_d(double a, double b){ double x = a * b;            return x > b; }' \
+		'int rm_f(float  a, float  b){ float  x = a * b;            return x > b; }' \
+		'int main(void) { return rr_d(3.0, 2.0) + rr_f(3.0f, 2.0f)' \
+		'                      + rm_d(3.0, 2.0) + rm_f(3.0f, 2.0f); }' \
+		> $(BUILDDIR)/test/fcmp.c
+	@set -e; status=0; \
+	for opt in -O0 -O; do \
+		obj="$(BUILDDIR)/test/fcmp$$opt.o"; \
+		$(TARGET_CC) $(CPUFLAGS) $$opt -c -o "$$obj" $(BUILDDIR)/test/fcmp.c; \
+		echo "==== $$opt ===="; \
+		$(PREFIX)/bin/$(TARGET)-objdump -d "$$obj" | awk ' \
+			/^[0-9a-f]+ <.*>:/ { fn=$$2; gsub(/[<>:]/,"",fn); mul=""; next } \
+			/f(sgl)?mul[sdx]/  { n=split($$0,p,","); mul=p[n]; sub(/[ \t]+$$/,"",mul) } \
+			/fcmp[sdx]/ { \
+				n=split($$0,p,","); d=p[n]; sub(/[ \t]+$$/,"",d); \
+				src=$$0; sub(/.*fcmp[sdx][ \t]+/,"",src); sub(/,.*/,"",src); \
+				if (mul == "" || d != mul) { \
+					printf "  FAIL %s: fcmp destination %s is not the fmul result %s (comparison reversed)\n", fn, d, mul; bad=1 \
+				} else { \
+					printf "  ok   %s: fcmp %s,%s computes (fmul result %s) - src\n", fn, src, d, d \
+				} \
+				seen++ \
+			} \
+			END { \
+				if (seen != 4) { printf "  FAIL: expected 4 fcmp sites, saw %d\n", seen; bad=1 } \
+				exit bad ? 1 : 0 \
+			}' || status=1; \
+	done; \
+	test $$status -eq 0 && echo "test-fcmp PASS: compare operands in GNU order, branch sense matches the C source"
+
+# Regression test for the SGS/Motorola bit-field operand assembler fixup (see
+# fix_asm in amix-gcc-wrapper.sh).  gcc copies an inline "asm" template into its
+# output verbatim, so portable m68k C that writes the bit-field offset and width
+# the Motorola way -- "bfffo %d3{#0:#32},%d2" -- hands GNU as 2.8.1 a "#" it
+# treats as a COMMENT introducer (line_comment_chars in gas/config/tc-m68k.c;
+# the immediate prefix on this target is "&").  The rest of the line disappears
+# and the instruction is lost.  The wrapper rewrites the "#" inside the braces
+# to "&", the spelling gcc's own bit-field patterns already emit.
+#
+# This target drives all eight m68k bit-field mnemonics through the installed
+# wrapper at both -O0 and -O and checks the *object code*.  Asserting only that
+# the file assembled would be worthless -- a mangled offset or width assembles
+# just as quietly -- so the awk below decodes each instruction's EXTENSION WORD
+# and requires:
+#   (a) offset in bits 10:6 and width in bits 4:0 to equal the values the C
+#       source asked for (each site uses a different pair; a width of 32
+#       encodes as 0), with the Do/Dw register-select bits CLEAR; and
+#   (b) the two controls to come through untouched -- ctl_amp, already spelled
+#       "{&7:&9}", and ctl_reg, whose offset and width are REGISTERS
+#       ("{%d2:%d3}", Do=1 Dw=1), which a careless rewrite would corrupt.
+# The extension word's register field is deliberately not pinned: it follows
+# register allocation and differs between -O0 and -O.
+#
+# Failure mode against the PRE-FIX wrapper (proof this test bites): it fails at
+# ASSEMBLY time, before any objdump check runs, with eight pairs of
+#   Error: Missing operand
+#   Error: operands mismatch -- statement `bfffo %d0{' ignored
+# while the two controls assemble cleanly.
+test-bitfield: refresh-gcc-wrapper env
+	mkdir -p $(BUILDDIR)/test
+	printf '%s\n' \
+		'/* Hand-written Motorola-syntax bit-field inline asm, "{#offset:#width}".' \
+		'   gcc copies an asm template through verbatim, so this is exactly what' \
+		'   reaches the assembler.  Every site uses a DISTINCT offset/width pair so' \
+		'   the objdump check can prove the numbers survived the rewrite and not' \
+		'   merely that the line assembled.  ctl_* are the untouched controls. */' \
+		'unsigned int bf_ffo (unsigned int x) { unsigned int n; __asm__("bfffo %1{#0:#32},%0"   : "=d"(n) : "d"(x)); return n; }' \
+		'unsigned int bf_extu(unsigned int x) { unsigned int n; __asm__("bfextu %1{#7:#9},%0"   : "=d"(n) : "d"(x)); return n; }' \
+		'int          bf_exts(unsigned int x) { int n;          __asm__("bfexts %1{#11:#13},%0" : "=d"(n) : "d"(x)); return n; }' \
+		'unsigned int bf_ins (unsigned int x, unsigned int v) { __asm__("bfins %1,%0{#3:#5}"    : "=d"(x) : "d"(v), "0"(x)); return x; }' \
+		'int          bf_tst (unsigned int x) { int n;          __asm__("bftst %1{#4:#8}\n\tsne %0" : "=d"(n) : "d"(x)); return n; }' \
+		'unsigned int bf_clr (unsigned int x) {                 __asm__("bfclr %0{#17:#6}"      : "=d"(x) : "0"(x)); return x; }' \
+		'unsigned int bf_set (unsigned int x) {                 __asm__("bfset %0{#21:#2}"      : "=d"(x) : "0"(x)); return x; }' \
+		'unsigned int bf_chg (unsigned int x) {                 __asm__("bfchg %0{#25:#3}"      : "=d"(x) : "0"(x)); return x; }' \
+		'/* control: already spelled with this assembler immediate prefix "&" -- no change */' \
+		'unsigned int ctl_amp(unsigned int x) { unsigned int n; __asm__("bfextu %1{&7:&9},%0"   : "=d"(n) : "d"(x)); return n; }' \
+		'/* control: offset and width in REGISTERS -- must not change */' \
+		'unsigned int ctl_reg(unsigned int x, int o, int w) { unsigned int n; __asm__("bfextu %1{%2:%3},%0" : "=d"(n) : "d"(x), "d"(o), "d"(w)); return n; }' \
+		> $(BUILDDIR)/test/bitfield.c
+	@set -e; status=0; \
+	for opt in -O0 -O; do \
+		obj="$(BUILDDIR)/test/bitfield$$opt.o"; \
+		$(TARGET_CC) $(CPUFLAGS) $$opt -c -o "$$obj" $(BUILDDIR)/test/bitfield.c; \
+		echo "==== $$opt ===="; \
+		$(PREFIX)/bin/$(TARGET)-objdump -d "$$obj" | awk ' \
+			function hex(s,  i,c,v,n) { n=0; s=tolower(s); \
+				for (i=1;i<=length(s);i++) { c=substr(s,i,1); v=index("0123456789abcdef",c)-1; \
+					if (v<0) return -1; n=n*16+v } \
+				return n } \
+			BEGIN { \
+				mn["bf_ffo"] ="bfffo";  wo["bf_ffo"] = 0; ww["bf_ffo"] =32; \
+				mn["bf_extu"]="bfextu"; wo["bf_extu"]= 7; ww["bf_extu"]= 9; \
+				mn["bf_exts"]="bfexts"; wo["bf_exts"]=11; ww["bf_exts"]=13; \
+				mn["bf_ins"] ="bfins";  wo["bf_ins"] = 3; ww["bf_ins"] = 5; \
+				mn["bf_tst"] ="bftst";  wo["bf_tst"] = 4; ww["bf_tst"] = 8; \
+				mn["bf_clr"] ="bfclr";  wo["bf_clr"] =17; ww["bf_clr"] = 6; \
+				mn["bf_set"] ="bfset";  wo["bf_set"] =21; ww["bf_set"] = 2; \
+				mn["bf_chg"] ="bfchg";  wo["bf_chg"] =25; ww["bf_chg"] = 3; \
+				mn["ctl_amp"]="bfextu"; wo["ctl_amp"]= 7; ww["ctl_amp"]= 9; \
+			} \
+			/^[0-9a-f]+ <.*>:/ { fn=$$2; gsub(/[<>:]/,"",fn); next } \
+			{ \
+				op=""; \
+				for (i=1;i<=NF;i++) if ($$i ~ /^bf(chg|clr|exts|extu|ffo|ins|set|tst)$$/) { op=$$i; ext=$$(i-1); break } \
+				if (op == "") next; \
+				n=hex(ext); do_bit=int(n/2048)%2; off=int(n/64)%32; dw_bit=int(n/32)%2; wid=n%32; sites++; \
+				if (fn == "ctl_reg") { \
+					if (op == "bfextu" && do_bit == 1 && dw_bit == 1) \
+						printf "  ok   %-8s %s ext=%s: register offset/width left alone (Do=1 Dw=1)\n", fn, op, ext; \
+					else { \
+						printf "  FAIL %-8s register bit-field form damaged: %s ext=%s Do=%d Dw=%d\n", fn, op, ext, do_bit, dw_bit; bad=1 \
+					} \
+					next \
+				} \
+				if (!(fn in mn)) { printf "  FAIL %-8s unexpected bit-field instruction %s\n", fn, op; bad=1; next } \
+				if (op == mn[fn] && do_bit == 0 && dw_bit == 0 && off == wo[fn] && wid == ww[fn]%32) \
+					printf "  ok   %-8s %s ext=%s: offset %d width %d intact\n", fn, op, ext, wo[fn], ww[fn]; \
+				else { \
+					printf "  FAIL %-8s expected %s offset %d width %d, got %s offset %d width %d (Do=%d Dw=%d ext=%s)\n", \
+						fn, mn[fn], wo[fn], ww[fn], op, off, wid, do_bit, dw_bit, ext; bad=1 \
+				} \
+			} \
+			END { \
+				if (sites != 10) { printf "  FAIL: expected 10 bit-field sites, saw %d\n", sites; bad=1 } \
+				exit bad ? 1 : 0 \
+			}' || status=1; \
+	done; \
+	test $$status -eq 0 && echo "test-bitfield PASS: all eight bit-field mnemonics assemble, offset/width encodings intact"
+
+# Regression test for object placement with "-c" and no "-o" (see the -c
+# dispatch in amix-gcc-wrapper.sh).  A C compiler writes the object into the
+# CURRENT WORKING DIRECTORY under the input's basename: "cc -c ../src/foo.c"
+# produces "./foo.o", and so does "cc -c ../src/foo.s".  The wrapper got this
+# wrong in two different ways, one per input kind, and both are gated here.
+#
+# .c sources: the wrapper stripped only the suffix and kept the directory part,
+# so it wrote "../src/foo.o" -- next to the SOURCE.  That breaks any build whose
+# sources are not in the directory make runs in: a VPATH/srcdir build (gcc's own
+# build compiles "../gcc-src/*.c" into the build directory; imake/X11 and
+# autoconf packages configured from a separate build tree do the same), and
+# equally a plain non-recursive Makefile naming its sources "sub/foo.c".  The
+# compile reports success, so the failure surfaces later and somewhere else --
+# "ld: cannot open c-parse.o: No such file or directory" -- and meanwhile the
+# stray objects are left in the source tree where another build can pick them up.
+#
+# .s/.S inputs: these are passed to the real compiler rather than assembled by
+# the wrapper, and that path forwarded an EMPTY "-o" when the command line
+# carried none.  gcc 2.7.2.3 drops an empty argument from the command line it
+# builds, so the assembler ran as
+#
+#     as -V -Qy -o ../src/foo.s
+#
+# with the SOURCE as its output file and stdin as its input.  In a
+# non-interactive build as read an empty stdin, WROTE AN OBJECT OVER THE
+# ASSEMBLY SOURCE, produced no .o anywhere and exited 0; on a terminal the
+# compile hung.  A plain ".s.o:  $(CC) -c $<" suffix rule hit this on every file
+# it touched, so the source-integrity check below is the important one.
+#
+# The halves checked here, for .c, .s and .S alike:
+#   (a) no -o: the object lands in the cwd as ./<basename>.o, NOT beside the
+#       source, and the source file itself is byte-for-byte unchanged; and
+#   (b) an explicit -o is still honoured verbatim, including a path that points
+#       into another directory (the wrapper must not "helpfully" relocate it).
+# Everything is checked by looking at the FILES, not by trusting the exit status
+# -- the pre-fix wrapper exits 0 in every failing case.  Each compile runs in a
+# subshell so the recipe shell stays in the make directory and a relative
+# BUILDDIR keeps resolving; stdin is /dev/null so a reintroduced empty "-o"
+# fails the gate instead of hanging it.
+#
+# Failure modes against the PRE-FIX wrapper (proof this test bites).  Against the
+# previous wrapper the .c case fails on two counts -- the object is missing from
+# objdir/ and present in objdir-src/ -- and each of .s and .S fails with
+#
+#     FAIL -c without -o did not write ./objdir_asm.o into the working directory
+#     FAIL the compile overwrote its own source file ../objdir-src/objdir_asm.s
+#
+# and, because the source is by then an ELF object, the explicit-o compile of
+# that same file fails too.  The .S case loses only the object: there the file
+# the assembler clobbers is gcc's own preprocessed temporary, not the input.
+test-objdir: refresh-gcc-wrapper env
+	rm -rf $(BUILDDIR)/test/objdir $(BUILDDIR)/test/objdir-src $(BUILDDIR)/test/objdir-pristine
+	mkdir -p $(BUILDDIR)/test/objdir $(BUILDDIR)/test/objdir-src $(BUILDDIR)/test/objdir-pristine
+	printf '%s\n' \
+		'/* Compiled from a DIFFERENT directory than the one it lives in. */' \
+		'int objdir_probe(int n) { return n + 1; }' \
+		> $(BUILDDIR)/test/objdir-src/objdir_src.c
+	printf '%s\n' \
+		'| Assembled from a DIFFERENT directory than the one it lives in.' \
+		'	.text' \
+		'	.globl	objdir_asm_probe' \
+		'objdir_asm_probe:' \
+		'	rts' \
+		> $(BUILDDIR)/test/objdir-src/objdir_asm.s
+	printf '%s\n' \
+		'/* Preprocessed then assembled, from a DIFFERENT directory. */' \
+		'#define OBJDIR_CPP_PROBE objdir_cpp_probe' \
+		'	.text' \
+		'	.globl	OBJDIR_CPP_PROBE' \
+		'OBJDIR_CPP_PROBE:' \
+		'	rts' \
+		> $(BUILDDIR)/test/objdir-src/objdir_cpp.S
+	cp $(BUILDDIR)/test/objdir-src/objdir_src.c $(BUILDDIR)/test/objdir-src/objdir_asm.s \
+		$(BUILDDIR)/test/objdir-src/objdir_cpp.S $(BUILDDIR)/test/objdir-pristine/
+	@set -e; status=0; \
+	for probe in objdir_src.c objdir_asm.s objdir_cpp.S; do \
+		base=$${probe%.*}; \
+		echo "$$probe:"; \
+		( cd $(BUILDDIR)/test/objdir && \
+			$(TARGET_CC) $(CPUFLAGS) -O -c ../objdir-src/$$probe < /dev/null ) \
+			|| { echo "  FAIL -c without -o exited nonzero"; status=1; }; \
+		if test -f $(BUILDDIR)/test/objdir/$$base.o; then \
+			echo "  ok   -c without -o wrote ./$$base.o into the working directory"; \
+		else \
+			echo "  FAIL -c without -o did not write ./$$base.o into the working directory"; status=1; \
+		fi; \
+		if test -e $(BUILDDIR)/test/objdir-src/$$base.o; then \
+			echo "  FAIL -c without -o wrote the object next to the source (../objdir-src/$$base.o)"; status=1; \
+		else \
+			echo "  ok   the source directory was left clean"; \
+		fi; \
+		if cmp -s $(BUILDDIR)/test/objdir-src/$$probe $(BUILDDIR)/test/objdir-pristine/$$probe; then \
+			echo "  ok   the source file itself is byte-for-byte unchanged"; \
+		else \
+			echo "  FAIL the compile overwrote its own source file ../objdir-src/$$probe"; status=1; \
+		fi; \
+		rm -f $(BUILDDIR)/test/objdir/$$base.o; \
+		( cd $(BUILDDIR)/test/objdir && \
+			$(TARGET_CC) $(CPUFLAGS) -O -c ../objdir-src/$$probe -o ../objdir-src/$$base-explicit.o < /dev/null ) \
+			|| { echo "  FAIL explicit -o exited nonzero"; status=1; }; \
+		if test -f $(BUILDDIR)/test/objdir-src/$$base-explicit.o; then \
+			echo "  ok   explicit -o still honoured verbatim, including a path elsewhere"; \
+		else \
+			echo "  FAIL explicit -o was not honoured"; status=1; \
+		fi; \
+	done; \
+	if test -f $(BUILDDIR)/test/objdir-src/objdir_cpp-explicit.o && \
+		$(PREFIX)/bin/$(TARGET)-nm $(BUILDDIR)/test/objdir-src/objdir_cpp-explicit.o \
+		| grep -q ' objdir_cpp_probe$$'; then \
+		echo "  ok   the .S input went through the preprocessor (macro expanded)"; \
+	else \
+		echo "  FAIL the .S input was assembled without preprocessing"; status=1; \
+	fi; \
+	test $$status -eq 0 && echo "test-objdir PASS: -c writes ./basename.o for .c/.s/.S, sources untouched, -o unchanged"
+
+# Regression test for the DT_NEEDED entries a dynamic link records (see
+# resolve_lib in amix-gcc-wrapper.sh).  Only libc.so.1 carries a DT_SONAME on
+# this target; libsocket.so, libnsl.so and the stock libX*.so have none.  For a
+# SONAME-less shared object ld records the name it was GIVEN, so handing it an
+# absolute path -- as the wrapper used to, having resolved every -lNAME to a
+# file in the build host's sysroot -- baked that host path into the executable:
+#
+#   NEEDED  [/home/<user>/opt/amix-cross/m68k-cbm-sysv4/sysroot/usr/lib/libsocket.so]
+#
+# which exists on no AMIX box.  The link succeeded, the binary looked fine, and
+# it died at exec time on the guest.  The wrapper now passes -L<dir> -lNAME, so
+# ld records the bare "libsocket.so" that the guest's /usr/lib actually holds.
+#
+# This target links a program against -lsocket -lnsl and reads the dynamic
+# section.  It requires, at once:
+#   (a) no NEEDED entry mentioning the build host's sysroot (the defect);
+#   (b) "libsocket.so" and "libnsl.so" present under their bare names, so the
+#       libraries are still linked and not merely dropped; and
+#   (c) "/usr/lib/libc.so.1" still present -- libc is the one library named by
+#       path on purpose, because its DT_SONAME is what ld records.
+# (c) is the half a careless fix breaks: routing libc through -lc as well would
+# make ld pick up the static stub archive in /usr/ccs/lib and the executable
+# would lose its libc dependency entirely.
+#
+# The test program defines select/syslog/seteuid itself.  Those are BSD entry
+# points that libsocket.so imports but the stock shared libc.so.1 does not
+# export (it has _abi_select and friends; the plain names live in the static
+# /usr/ccs/lib stubs), so without them the link stops on libsocket.so's own
+# undefined references.  That gap is a property of the AMIX sysroot, not of the
+# wrapper, and stubbing it here keeps this gate about DT_NEEDED alone.
+#
+# Failure mode against the PRE-FIX wrapper (proof this test bites): check (a)
+# reports two NEEDED entries carrying the absolute sysroot path.
+test-dtneeded: refresh-gcc-wrapper env check-runtime
+	mkdir -p $(BUILDDIR)/test
+	printf '%s\n' \
+		'/* Pulls in two SONAME-less shared libraries from the AMIX sysroot. */' \
+		'extern int socket();' \
+		'extern int t_open();' \
+		'/* BSD entry points libsocket.so imports; absent from the shared libc. */' \
+		'int select(void)  { return -1; }' \
+		'int syslog(void)  { return 0; }' \
+		'int seteuid(void) { return -1; }' \
+		'int main(void) { return socket(2, 1, 0) + t_open(); }' \
+		> $(BUILDDIR)/test/dtneeded.c
+	$(TARGET_CC) $(CPUFLAGS) -o $(BUILDDIR)/test/dtneeded $(BUILDDIR)/test/dtneeded.c -lsocket -lnsl
+	@set -e; status=0; \
+	needed="$$($(PREFIX)/bin/$(TARGET)-objdump -p $(BUILDDIR)/test/dtneeded \
+		| sed -n 's/^[ \t]*NEEDED[ \t]*//p')"; \
+	echo "NEEDED entries:"; printf '%s\n' "$$needed" | sed 's/^/  /'; \
+	if printf '%s\n' "$$needed" | grep -Fq '$(SYSROOT)'; then \
+		echo "  FAIL a NEEDED entry carries the build host's sysroot path"; status=1; \
+	else \
+		echo "  ok   no NEEDED entry carries the build host's sysroot path"; \
+	fi; \
+	for lib in libsocket.so libnsl.so; do \
+		if printf '%s\n' "$$needed" | grep -qx "$$lib"; then \
+			echo "  ok   $$lib recorded under its bare name"; \
+		else \
+			echo "  FAIL $$lib is not recorded as a bare name"; status=1; \
+		fi; \
+	done; \
+	if printf '%s\n' "$$needed" | grep -qx '/usr/lib/libc.so.1'; then \
+		echo "  ok   /usr/lib/libc.so.1 still recorded from its DT_SONAME"; \
+	else \
+		echo "  FAIL the libc.so.1 dependency is gone"; status=1; \
+	fi; \
+	test $$status -eq 0 && echo "test-dtneeded PASS: guest-resolvable names only, libc SONAME intact"
+
+# Regression test for AMIX_KERNEL_CFLAGS and the AMIX headers' "volatile".
+#
+# -traditional clears __STDC__, and the stock <sys/types.h> then does
+# "#define volatile" and "#define const" (both empty) in its non-ANSI section.
+# That strips the volatile from the "asm volatile" in <sys/inline.h>'s GNU spl
+# primitives: each becomes a plain asm with an output, and gcc deletes it when
+# the output is unused -- splx() always, and an spl6() whose result only feeds
+# that splx().  The same macro erases every volatile on an MMIO access, so a
+# 32-bit register poll is read once, as a byte, and the loop spins on a
+# register.  -Dvolatile=__volatile__ -Dconst=__const__ define the names first,
+# so the header's #ifndef guards skip the empty definitions.
+#
+# Checks, on a kernel-style unit compiled with the exact AMIX_KERNEL_CFLAGS:
+#   (a) the preprocessor output has no empty "#define volatile"/"const";
+#   (b) guard() writes %sr at least twice (the spl6 and the splx);
+#   (c) pollbusy()'s loop re-reads the register with a 32-bit memory access
+#       inside the loop, and never tests it with a byte-sized btst.
+#
+# Failure mode without the two -D flags (proof this test bites): (a) finds both
+# empty defines, guard() has no %sr write at all, and pollbusy() tests
+# "%a0@(19)" once with btst and then loops on "tstl %d0".  Reproduce with
+#   make test-kernel-volatile AMIX_KERNEL_CFLAGS='-O -traditional -fno-builtin \
+#     -Dinline=__inline__ $(CPUFLAGS) $(AMIX_KERNEL_CPPFLAGS) $(AMIX_KERNEL_INCLUDES)'
+# Needs the AMIX headers: point AMIX_ROOT at a tree with usr/include/sys.
+test-kernel-volatile: refresh-gcc-wrapper
+	mkdir -p $(BUILDDIR)/test
+	@test -f $(AMIX_ROOT)/usr/include/sys/inline.h || \
+		{ echo "test-kernel-volatile: no usr/include/sys/inline.h under AMIX_ROOT=$(AMIX_ROOT)"; exit 1; }
+	printf '%s\n' \
+		'#include <sys/types.h>' \
+		'#include <sys/inline.h>' \
+		'static volatile ulong_t *regs;' \
+		'int guard(void) { int s; s = spl6(); /* critical section */ splx(s); return 0; }' \
+		'void pollbusy(void) { while (*(volatile ulong_t *)(regs + 4) & 1) ; }' \
+		> $(BUILDDIR)/test/kvolatile.c
+	$(TARGET_CC) -c $(AMIX_KERNEL_CFLAGS) -o $(BUILDDIR)/test/kvolatile.o $(BUILDDIR)/test/kvolatile.c
+	@set -e; status=0; \
+	defs="$$($(TARGET_CC) $(AMIX_KERNEL_CFLAGS) -dM -E $(BUILDDIR)/test/kvolatile.c)"; \
+	echo "==== -dM -E: volatile/const ===="; \
+	printf '%s\n' "$$defs" | grep -E '^#define[[:space:]]+(volatile|const)([[:space:]]|$$)' || true; \
+	if printf '%s\n' "$$defs" | grep -Eq '^#define[[:space:]]+(volatile|const)[[:space:]]*$$'; then \
+		echo "  FAIL <sys/types.h> defines volatile/const away (empty #define)"; status=1; \
+	else \
+		echo "  ok   no empty #define volatile/const"; \
+	fi; \
+	dis="$$($(PREFIX)/bin/$(TARGET)-objdump -d $(BUILDDIR)/test/kvolatile.o)"; \
+	guard="$$(printf '%s\n' "$$dis" | sed -n '/<guard>:$$/,/^$$/p')"; \
+	poll="$$(printf '%s\n' "$$dis" | sed -n '/<pollbusy>:$$/,/^$$/p')"; \
+	echo "==== guard ===="; printf '%s\n' "$$guard"; \
+	echo "==== pollbusy ===="; printf '%s\n' "$$poll"; \
+	srw=$$(printf '%s\n' "$$guard" | grep -Ec ',%sr[[:space:]]*$$' || true); \
+	if [ "$$srw" -ge 2 ]; then \
+		echo "  ok   guard(): $$srw %sr writes (spl6 and splx kept)"; \
+	else \
+		echo "  FAIL guard(): $$srw %sr writes, want >= 2 (spl6/splx deleted)"; status=1; \
+	fi; \
+	body="$$(printf '%s\n' "$$poll" | perl -ne ' \
+		next unless /^\s*([0-9a-f]+):\t[0-9a-f ]+\t(.*)$$/; \
+		push @l, [hex $$1, $$2]; \
+		END { for my $$i (0..$$#l) { \
+			my ($$a, $$t) = @{$$l[$$i]}; \
+			next unless $$t =~ /^(b[a-z]+|db[a-z]+)\b.*?([0-9a-f]+) </; \
+			my $$to = hex $$2; next unless $$to <= $$a; \
+			print map { "$$_->[1]\n" } grep { $$_->[0] >= $$to && $$_->[0] <= $$a } @l; last; } }')"; \
+	if [ -z "$$body" ]; then \
+		echo "  FAIL pollbusy(): no backward branch, no poll loop found"; status=1; \
+	elif printf '%s\n' "$$body" | grep -Eq '^(movel|andl|tstl|cmpl)[[:space:]].*%a[0-7]@'; then \
+		echo "  ok   pollbusy(): the loop re-reads the register (32-bit memory access)"; \
+	else \
+		echo "  FAIL pollbusy(): the loop body has no memory read (read hoisted):"; \
+		printf '%s\n' "$$body" | sed 's/^/         /'; status=1; \
+	fi; \
+	if printf '%s\n' "$$poll" | grep -Eq 'btst[[:space:]].*%a[0-7]@'; then \
+		echo "  FAIL pollbusy(): a byte-sized btst on the 32-bit register"; status=1; \
+	else \
+		echo "  ok   pollbusy(): no byte access to the 32-bit register"; \
+	fi; \
+	test $$status -eq 0 && echo "test-kernel-volatile PASS: spl masks and MMIO volatile survive AMIX_KERNEL_CFLAGS"
+
+# Regression test for AMIX_USER_CFLAGS: the same <sys/types.h> trap as above,
+# for user programs.  -traditional clears __STDC__, so every user unit that
+# includes <sys/types.h> (directly or through most system headers) had
+# "volatile" and "const" defined away: a poll through a volatile pointer is
+# read once, as a byte, and the loop spins on a register, and const tables land
+# in writable .data.  The flags carry -Dvolatile=__volatile__
+# -Dconst=__const__, as AMIX_KERNEL_CFLAGS does.
+#
+# Checks, on a user unit compiled with the exact AMIX_USER_CFLAGS:
+#   (a) the preprocessor output has no empty "#define volatile"/"const";
+#   (b) pollreg()'s loop re-reads *reg with a 32-bit memory access inside the
+#       loop, and never tests it with a byte-sized btst;
+#   (c) the const table is read-only data (nm type r), not .data.
+#
+# Failure mode without the two -D flags (proof this test bites): (a) finds both
+# empty defines, pollreg() tests "%a0@(3)" once with btst and then loops on
+# "tstl %d0", and the table is nm type d.  Reproduce with
+#   make test-user-volatile AMIX_USER_CFLAGS='-O -traditional -fno-builtin \
+#     $(CPUFLAGS) -I$(SYSROOT)/usr/include'
+test-user-volatile: refresh-gcc-wrapper
+	mkdir -p $(BUILDDIR)/test
+	@test -f $(SYSROOT)/usr/include/sys/types.h || \
+		{ echo "test-user-volatile: no usr/include/sys/types.h under SYSROOT=$(SYSROOT)"; exit 1; }
+	printf '%s\n' \
+		'#include <sys/types.h>' \
+		'static const int table[4] = { 1, 2, 3, 4 };' \
+		'int lookup(int i) { return table[i & 3]; }' \
+		'void pollreg(volatile ulong_t *reg) { while (*reg & 1) ; }' \
+		> $(BUILDDIR)/test/uvolatile.c
+	AMIX_SYSROOT="$(SYSROOT)" $(TARGET_CC) -c $(AMIX_USER_CFLAGS) -o $(BUILDDIR)/test/uvolatile.o $(BUILDDIR)/test/uvolatile.c
+	@set -e; status=0; \
+	defs="$$(AMIX_SYSROOT="$(SYSROOT)" $(TARGET_CC) $(AMIX_USER_CFLAGS) -dM -E $(BUILDDIR)/test/uvolatile.c)"; \
+	echo "==== -dM -E: volatile/const ===="; \
+	printf '%s\n' "$$defs" | grep -E '^#define[[:space:]]+(volatile|const)([[:space:]]|$$)' || true; \
+	if printf '%s\n' "$$defs" | grep -Eq '^#define[[:space:]]+(volatile|const)[[:space:]]*$$'; then \
+		echo "  FAIL <sys/types.h> defines volatile/const away (empty #define)"; status=1; \
+	else \
+		echo "  ok   no empty #define volatile/const"; \
+	fi; \
+	dis="$$($(PREFIX)/bin/$(TARGET)-objdump -d $(BUILDDIR)/test/uvolatile.o)"; \
+	poll="$$(printf '%s\n' "$$dis" | sed -n '/<pollreg>:$$/,/^$$/p')"; \
+	echo "==== pollreg ===="; printf '%s\n' "$$poll"; \
+	body="$$(printf '%s\n' "$$poll" | perl -ne ' \
+		next unless /^\s*([0-9a-f]+):\t[0-9a-f ]+\t(.*)$$/; \
+		push @l, [hex $$1, $$2]; \
+		END { for my $$i (0..$$#l) { \
+			my ($$a, $$t) = @{$$l[$$i]}; \
+			next unless $$t =~ /^(b[a-z]+|db[a-z]+)\b.*?([0-9a-f]+) </; \
+			my $$to = hex $$2; next unless $$to <= $$a; \
+			print map { "$$_->[1]\n" } grep { $$_->[0] >= $$to && $$_->[0] <= $$a } @l; last; } }')"; \
+	if [ -z "$$body" ]; then \
+		echo "  FAIL pollreg(): no backward branch, no poll loop found"; status=1; \
+	elif printf '%s\n' "$$body" | grep -Eq '^(movel|andl|tstl|cmpl)[[:space:]].*%a[0-7]@'; then \
+		echo "  ok   pollreg(): the loop re-reads the register (32-bit memory access)"; \
+	else \
+		echo "  FAIL pollreg(): the loop body has no memory read (read hoisted):"; \
+		printf '%s\n' "$$body" | sed 's/^/         /'; status=1; \
+	fi; \
+	if printf '%s\n' "$$poll" | grep -Eq 'btst[[:space:]].*%a[0-7]@'; then \
+		echo "  FAIL pollreg(): a byte-sized btst on the 32-bit register"; status=1; \
+	else \
+		echo "  ok   pollreg(): no byte access to the 32-bit register"; \
+	fi; \
+	tbl="$$($(PREFIX)/bin/$(TARGET)-nm $(BUILDDIR)/test/uvolatile.o | awk '$$3 == "table" { print $$2 }')"; \
+	if [ "$$tbl" = r ]; then \
+		echo "  ok   const table is read-only data (nm type r)"; \
+	else \
+		echo "  FAIL const table has nm type '$$tbl', want r (const dropped)"; status=1; \
+	fi; \
+	test $$status -eq 0 && echo "test-user-volatile PASS: volatile polls and const data survive AMIX_USER_CFLAGS"
+
+clean:
+	rm -rf $(BUILDDIR)
+
+distclean: clean
+	rm -rf $(SRCDIR) $(DISTDIR)

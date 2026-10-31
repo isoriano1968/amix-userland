@@ -51,7 +51,7 @@ version it names in its Makefile, and one version is linked into
 | -------------- | ------------------------------------ | ------------------------------------------------- |
 | `audio`        | sound and music                      | moved: libmikmod, pt2-clone                       |
 | `desktop`      | desktop environments                 | moved: cde, cde-apps                              |
-| `developer`    | compilers and development tools      | gcc-cross-amix; moved: vscode                     |
+| `developer`    | compilers and development tools      | moved: gcc-27, gcc-14, vscode                     |
 | `driver`       | kernel drivers, core 1 programs      | paula-amix, random-amix, hydra-amix, amix-z3660net, amix-z3660scsi, soft3d-z3660rtg-amix, core1-z3660-amix |
 | `games`        | games and their engines              | moved: iortcw, ioquake3 (patches only)            |
 | `library`      | general libraries                    | moved: pth, sdl2                                  |

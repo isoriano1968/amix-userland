@@ -1,0 +1,39 @@
+# config.sh.example -- copy to config.sh and edit.  config.sh is gitignored.
+#
+#   cp config.sh.example config.sh && $EDITOR config.sh
+#
+# Every script in this repository sources config.sh from the repository root.
+# A wrong path stops the script with a message naming the variable, rather than
+# failing somewhere deep inside a linker.
+
+# The AMIX sysroot: headers, libraries and startup objects copied out of a
+# licensed AMIX installation.  Nothing from it may be committed here.
+# usr/include, usr/lib and usr/ccs/lib, in the layout the machine itself uses.
+AMIX_SYSROOT="$HOME/opt/amix-cross/m68k-cbm-sysv4/sysroot"
+
+# The legacy AMIX cross toolchain (gcc 2.7.2.3 / binutils 2.8.1), used as the
+# reference for what the target already accepts.  Optional.
+AMIX_CROSS_BIN="$HOME/opt/amix-cross/bin"
+
+# The cross toolchain built by toolchain/build-cross.sh.  This is the one to
+# use: it is the only compiler here that can link C++ for AMIX, because its
+# libgcc uses the registry unwinder rather than asking a dynamic loader.
+TC_PREFIX="$HOME/opt/m68k-amix"
+TC_TARGET="m68k-elf"
+
+# Where the toolchain is built.  Defaults to /tmp/m68k-amix-build, which needs
+# about 5 GB free -- set this if /tmp is a small tmpfs.  Safe to delete after.
+# TC_WORK="$HOME/build/m68k-amix"
+
+# Fallback code generator, used only if TC_PREFIX is not built yet, and only for
+# C.  Debian: gcc-14-m68k-linux-gnu, binutils-m68k-linux-gnu.
+MODERN_PREFIX="m68k-linux-gnu-"
+MODERN_GCC="m68k-linux-gnu-gcc-14"
+
+# CPU the probes are built for.  The target machine runs a 68060 kernel; 68030
+# is the lowest-common-denominator setting that also runs on a stock A3000UX.
+AMIX_CPU="-mcpu=68060"
+
+# This host's address as seen from the AMIX machine, for TFTP transfers.
+# Find it with:  ip route get $AMIX_HOST
+HOST_ADDR="10.0.0.2"

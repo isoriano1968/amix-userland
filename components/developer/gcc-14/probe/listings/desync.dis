@@ -1,0 +1,24 @@
+! A deliberately desynchronised disassembly listing, as the positive control
+! for check-68060-safe.py's sync detection.  The label <desynced> claims
+! 0x80000108 and the next instruction begins at 0x8000010a, which is what a
+! listing looks like after the decoder has been knocked off boundary -- and in
+! that state a real instruction can have been swallowed as another one's
+! operand and never listed at all.  The tool must refuse to call this clean.
+!
+! Kept because a check that has only been run on inputs it passes is a check
+! whose failure path is untested, which is the mistake this file exists to
+! prevent from recurring.  objdump ignores lines it did not write, so the
+! comment markers are harmless.
+
+/tmp/x:     file format elf32-m68k
+
+Disassembly of section .text:
+
+80000100 <good>:
+80000100:	4e56 0000      	linkw %fp,#0
+80000104:	4e5e           	unlk %fp
+80000106:	4e75           	rts
+
+80000108 <desynced>:
+8000010a:	4e56 0000      	linkw %fp,#0
+8000010e:	4e75           	rts

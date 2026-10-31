@@ -1,0 +1,38 @@
+# Credentials and machine-local settings never enter version control.
+/local/*
+!/local/*.example
+/config.sh
+
+# The C++ linkage wrappers are generated from the AMIX sysroot by
+# toolchain/make-cxx-wrappers.sh -- one per header the local installation has.
+# Committing 495 generated files would be noise, and they would go stale the
+# moment the sysroot changed.
+/compat/include/cxx/
+
+# Build products and working trees
+/build/
+/staging/
+*.o
+*.a
+*.so
+*.elf
+core
+
+# Compiled probe binaries carry no extension on this target, so they cannot be
+# matched by one. Whitelist the sources instead: anything else in probe/ is a
+# build product.
+/probe/*
+!/probe/*.c
+!/probe/*.cpp
+!/probe/*.h
+!/probe/*.md
+# Test fixtures for the tools, which are text and belong in the repository.
+# A directory has to be re-allowed before anything inside it can be.
+!/probe/listings/
+!/probe/listings/*.dis
+
+# Editor / OS noise
+*~
+.DS_Store
+__pycache__/
+*.pyc
