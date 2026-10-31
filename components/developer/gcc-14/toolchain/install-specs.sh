@@ -63,16 +63,16 @@ def replace(section, value):
 # compat/amix_init.c for how a linker-script section rename causes that.
 replace("startfile",
         "%{!shared:%{!nostdlib:%{!nostartfiles:%R/usr/ccs/lib/crt1.o %R/usr/ccs/lib/crti.o}}}"
-        " crtbegin.o%s %{!nostdlib:%{!nostartfiles:amix_init.o%s}}")
+        " %{!shared:crtbegin.o%s %{!nostdlib:%{!nostartfiles:amix_init.o%s}}}")
 replace("endfile",
-        "crtend.o%s %{!shared:%{!nostdlib:%{!nostartfiles:%R/usr/ccs/lib/crtn.o}}}")
+        "%{!shared:crtend.o%s %{!nostdlib:%{!nostartfiles:%R/usr/ccs/lib/crtn.o}}}")
 # usr/ccs/lib holds libc.so, the link-time stub for the shared libc, and is not
 # on any default search path.
 # libamixc99 holds what SVR4.0's libc is missing -- snprintf, vsnprintf,
 # usleep, __cxa_atexit.  Named before -lc because it calls into libc and not
 # the other way round.
 replace("lib",
-        "%{!nostdlib:%{!nodefaultlibs:-L%R/usr/ccs/lib -L%R/usr/lib -lamixc99 -lc}}")
+        "%{!nostdlib:%{!nodefaultlibs:-L%R/usr/ccs/lib -L%R/usr/lib %{!shared:-lamixc99 -lc}%{shared:%R/usr/lib/libc.so.1}}}")
 # The platform identifies itself.  A generic m68k-elf compiler defines nothing
 # that says "AMIX", so portable code has no way to select a path for this
 # target -- and code that IS written for it, like a crash handler that reads
@@ -126,10 +126,16 @@ replace("self_spec", "%{!mno-align-int:-malign-int} %{!ffold-mem-offsets:-fno-fo
 
 # Read off the machine's own /usr/bin/ls: libc.so.1 IS the runtime linker, text
 # starts at 0x80000000, and the hash table is the classic SysV one.  Nothing
-# AMIX ships carries a RELRO segment or a build-id note.
+# AMIX ships carries a RELRO segment or a build-id note.  A shared library has
+# no interpreter and no fixed address; it takes no crt files, crtbegin.o and
+# amix_init.o included (they are not PIC), and no libamixc99.  It links libc.so.1
+# itself: the stub usr/ccs/lib/libc.so is an archive of non-PIC pieces (select,
+# __iob) that belong in the program, which then provides them to the library.
+# gcc passes -shared on only from here.
 replace("link",
-        "%{!nostdlib:--dynamic-linker /usr/lib/libc.so.1 -Ttext-segment=0x80000000"
-        " --hash-style=sysv -z norelro --build-id=none}")
+        "%{shared:-shared --hash-style=sysv -z norelro --build-id=none}"
+        "%{!shared:%{!nostdlib:--dynamic-linker /usr/lib/libc.so.1 -Ttext-segment=0x80000000"
+        " --hash-style=sysv -z norelro --build-id=none}}")
 open(path, "w").write(text)
 PY
 
