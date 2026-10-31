@@ -1,3 +1,5 @@
+<p align="center"><img src="doc/assets/amix-logo.png" alt="AMIX" width="240"></p>
+
 # amix-userland
 
 Software for AMIX (Amiga UNIX System V Release 4) on the A3000 with a Z3660,
@@ -67,7 +69,9 @@ Kernel drivers, the 68040/68060 port and the Z3660 core 1 programs are in
 [amix-gate](https://github.com/isoriano1968/amix-gate); the Z3660 firmware fork
 stays separate.
 
-To move a repository in, see [doc/moving-a-repo.md](doc/moving-a-repo.md).
+New here? **[Getting started](doc/getting-started.md)** covers the toolchains, building a
+component and copying it to the Amiga. To move a repository in, see
+[doc/moving-a-repo.md](doc/moving-a-repo.md).
 
 ## Licence
 
