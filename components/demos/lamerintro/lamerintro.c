@@ -26,7 +26,7 @@
 #include <GL/gl.h>
 #include "zzgl_enc.h"
 #include "zzgl_platform.h"
-#include "mikmod_internals.h"
+#include <mikmod.h>
 #include "letters3d.h"
 
 #define PI 3.1415927f
@@ -88,44 +88,8 @@ static Display *dpy;
 static Window win;
 static int win_x, win_y;
 static MODULE *module;
-static unsigned long mixed;     /* stream bytes written */
 
-#define RATE 24000
-#define LEAD (RATE * 4 / 2)     /* mixed ahead of what is heard: the slow frames must not reach it */
-#define CHUNK 1024
 
-static void
-HD_Update(void)
-{
-   static short buf[CHUNK / 2];
-   const unsigned long want = zzgl_sound_pos() + LEAD;
-
-   while (mixed < want) {
-      VC_WriteBytes((SBYTE *)buf, CHUNK);
-      zzgl_sound_write(mixed, buf, CHUNK);
-      mixed += CHUNK;
-   }
-}
-
-static BOOL HD_IsThere(void) { return 1; }
-
-static int
-HD_Init(void)
-{
-   md_mixfreq = RATE;
-   md_mode |= DMODE_16BITS | DMODE_STEREO | DMODE_SOFT_MUSIC;
-   mixed = zzgl_sound_pos();
-   return VC_Init();
-}
-
-static MDRIVER drv_hdmi = {
-   NULL, "HDMI", "The board's HDMI through zzgl", 255, 255, "hdmi", NULL, HD_IsThere,
-   VC_SampleLoad, VC_SampleUnload, VC_SampleSpace, VC_SampleLength, HD_Init, VC_Exit, NULL,
-   VC_SetNumVoices, VC_PlayStart, VC_PlayStop, HD_Update, NULL, VC_VoiceSetVolume,
-   VC_VoiceGetVolume, VC_VoiceSetFrequency, VC_VoiceGetFrequency, VC_VoiceSetPanning,
-   VC_VoiceGetPanning, VC_VoicePlay, VC_VoiceStop, VC_VoiceStopped, VC_VoiceGetPosition,
-   VC_VoiceRealVolume
-};
 
 enum { T_RASTER_PLAIN, T_RASTER, T_BACKGROUND, T_FONT, T_SINELOGO, T_TROMBINE, T_STAR, T_LOGO, T_TITLE, NB_TEXTURES };
 static const char *const tex_file[NB_TEXTURES] = {
@@ -182,7 +146,6 @@ stop_music(void)
    if (module) {
       Player_Stop();
       MikMod_Exit();
-      zzgl_sound_close();
    }
    module = NULL;
 }
@@ -205,11 +168,11 @@ on_signal(int s)
 static void
 start_music(const char *file)
 {
-   if (access(file, R_OK) < 0 || zzgl_sound_open(2) < 0)
+   if (access(file, R_OK) < 0)
       return;
    MikMod_RegisterDriver(&drv_hdmi);
    MikMod_RegisterAllLoaders();
-   md_device = 1;
+   md_device = MikMod_DriverFromAlias((CHAR *)"hdmi");
    if (MikMod_Init("")) {
       fprintf(stderr, "lamerintro: %s\n", MikMod_strerror(MikMod_errno));
       return;

@@ -7,13 +7,11 @@
  *
  *   halloween [module]     ESC or q quits
  *
- * HALLOWEEN_SECONDS=n stops after n seconds and prints the frame rate;
- * HALLOWEEN_DUMP=file keeps the mix (16-bit stereo, big-endian, 24 kHz).
+ * HALLOWEEN_SECONDS=n stops after n seconds and prints the frame rate.
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 #include <signal.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -23,24 +21,18 @@
 #include <X11/keysym.h>
 #include "zzgl_enc.h"
 #include "zzgl_platform.h"
-#include "mikmod_internals.h"
+#include <mikmod.h>
 
 #define W 640
 #define H 480
 
-#define RATE 24000
-#define BYTES_S (RATE * 4)
-#define LEAD (BYTES_S / 2)             /* mixed ahead of what is heard; core 1 reads 1/8 s ahead too */
-#define CHUNK 1024                     /* bytes mixed in one go: 1/96 s */
-#define BEATS 256
+#define BEATS 64
+#define HEARD 0.5f                     /* the driver mixes this far ahead of the speaker */
 
 static Display *dpy;
 static MODULE *module;
-static unsigned long mixed;            /* stream bytes written */
-static int pause_us;                   /* HALLOWEEN_PAUSE=us between frames; -1 no picture */
-static int tone;                       /* HALLOWEEN_TONE=1: 440 Hz instead of the module */
-static FILE *dump;                     /* HALLOWEEN_DUMP=file: the mix as written */
-static float beats[BEATS];             /* where in the beat each chunk was mixed */
+static struct { float t, beat; } beats[BEATS];       /* what was mixed when */
+static int beat_n;
 
 static float
 beat_now(void)
@@ -50,65 +42,14 @@ beat_now(void)
    return ((module->patpos & 3) + (float)module->vbtick / module->sngspd) / 4;
 }
 
-static void
-HD_Update(void)
-{
-   static short buf[CHUNK / 2];
-   const unsigned long want = zzgl_sound_pos() + LEAD;
-
-   while (mixed < want) {
-      if (tone) {
-         static float a;
-         int i;
-
-         for (i = 0; i < CHUNK / 2; i += 2) {
-            buf[i] = buf[i + 1] = (short)(3000 * sin(a));
-            a += 2 * 3.14159265f * 440 / RATE;
-            if (a > 6.2831853f)
-               a -= 6.2831853f;
-         }
-      } else {
-         VC_WriteBytes((SBYTE *)buf, CHUNK);
-      }
-      zzgl_sound_write(mixed, buf, CHUNK);
-      if (dump)
-         fwrite(buf, 1, CHUNK, dump);
-      beats[mixed / CHUNK % BEATS] = beat_now();
-      mixed += CHUNK;
-   }
-}
-
-static BOOL HD_IsThere(void) { return 1; }
-
-static int
-HD_Init(void)
-{
-   md_mixfreq = RATE;
-   md_mode |= DMODE_16BITS | DMODE_STEREO | DMODE_SOFT_MUSIC;
-   mixed = zzgl_sound_pos();
-   return VC_Init();
-}
-
-static MDRIVER drv_hdmi = {
-   NULL, "HDMI", "The board's HDMI through zzgl", 255, 255, "hdmi", NULL, HD_IsThere,
-   VC_SampleLoad, VC_SampleUnload, VC_SampleSpace, VC_SampleLength, HD_Init, VC_Exit, NULL,
-   VC_SetNumVoices, VC_PlayStart, VC_PlayStop, HD_Update, NULL, VC_VoiceSetVolume,
-   VC_VoiceGetVolume, VC_VoiceSetFrequency, VC_VoiceGetFrequency, VC_VoiceSetPanning,
-   VC_VoiceGetPanning, VC_VoicePlay, VC_VoiceStop, VC_VoiceStopped, VC_VoiceGetPosition,
-   VC_VoiceRealVolume
-};
 
 /* the module on the HDMI: 0, or the reason on stderr */
 static int
 start_music(const char *file)
 {
-   if (zzgl_sound_open(2) < 0) {
-      fprintf(stderr, "halloween: no HDMI sound\n");
-      return -1;
-   }
    MikMod_RegisterDriver(&drv_hdmi);
    MikMod_RegisterAllLoaders();
-   md_device = 1;
+   md_device = MikMod_DriverFromAlias((CHAR *)"hdmi");
    if (MikMod_Init("")) {
       fprintf(stderr, "halloween: %s\n", MikMod_strerror(MikMod_errno));
       return -1;
@@ -141,7 +82,6 @@ quit(int code)
    if (module) {
       Player_Stop();
       MikMod_Exit();
-      zzgl_sound_close();
    }
    zzgl_platform_close();
    exit(code);
@@ -195,11 +135,6 @@ main(int argc, char **argv)
       fprintf(stderr, "halloween: no GL on the Z3660's core 1\n");
       return 1;
    }
-   tone = getenv("HALLOWEEN_TONE") != NULL;
-   if ((e = getenv("HALLOWEEN_PAUSE")))
-      pause_us = atoi(e);
-   if ((e = getenv("HALLOWEEN_DUMP")))
-      dump = fopen(e, "wb");
    start_music(file);
    t0 = now();
    for (;;) {
@@ -228,17 +163,23 @@ main(int argc, char **argv)
       }
       if (module)
          MikMod_Update();
-      if (pause_us < 0) {             /* tests: no picture */
-         usleep(10000);
-         frames++;
-         if (t >= seconds)
-            quit(0);
-         continue;
+      /* the beat of what is heard now, mixed a little while ago */
+      {
+         float heard = t / 0.42f - (int)(t / 0.42f);
+         int k;
+
+         beats[beat_n % BEATS].t = t;
+         beats[beat_n % BEATS].beat = beat_now();
+         beat_n++;
+         if (module)
+            for (k = 1; k < BEATS && k <= beat_n; k++)
+               if (beats[(beat_n - k) % BEATS].t <= t - HEARD) {
+                  heard = beats[(beat_n - k) % BEATS].beat;
+                  break;
+               }
+         zzgl_effect(t, heard);
       }
-      zzgl_effect(t, module ? beats[zzgl_sound_pos() / CHUNK % BEATS] : t / 0.517f - (int)(t / 0.517f));
       zzgl_platform_frame();
-      if (pause_us)
-         usleep(pause_us);
       frames++;
       if (seconds > 0 && t >= seconds) {
          printf("halloween: %ld frames in %.1f s: %.1f fps\n", frames, t, frames / t);
