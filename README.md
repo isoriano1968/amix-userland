@@ -53,7 +53,7 @@ version it names in its Makefile, and one version is linked into
 | `desktop`      | desktop environments                 | moved: cde, cde-apps                              |
 | `developer`    | compilers and development tools      | gcc-cross-amix; moved: vscode                     |
 | `driver`       | kernel drivers, core 1 programs      | paula-amix, random-amix, hydra-amix, amix-z3660net, amix-z3660scsi, soft3d-z3660rtg-amix, core1-z3660-amix |
-| `games`        | games and their engines              | (quake, rtcw: source patches only)                |
+| `games`        | games and their engines              | moved: iortcw, ioquake3 (patches only)            |
 | `library`      | general libraries                    | moved: pth, sdl2                                  |
 | `multimedia`   | video                                | moved: ffmpeg                                     |
 | `runtime`      | language runtimes                    | moved: python3                                    |

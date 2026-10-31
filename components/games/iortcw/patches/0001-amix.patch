@@ -1,0 +1,95 @@
+diff -ruN a/code/qcommon/common.c b/code/qcommon/common.c
+--- a/code/qcommon/common.c	2026-10-31 09:08:41.194555176 +0100
++++ b/code/qcommon/common.c	2026-10-31 09:08:41.198555147 +0100
+@@ -46,9 +46,16 @@
+ #define MAX_NUM_ARGVS   50
+ 
+ #define MIN_DEDICATED_COMHUNKMEGS 1
++#ifdef __amix__
++/* the A3000 has 128 MB and no swap */
++#define MIN_COMHUNKMEGS		56
++#define DEF_COMHUNKMEGS 	64
++#define DEF_COMZONEMEGS		16
++#else
+ #define MIN_COMHUNKMEGS		128
+ #define DEF_COMHUNKMEGS 	256
+ #define DEF_COMZONEMEGS		32
++#endif
+ #define DEF_COMHUNKMEGS_S	XSTRING(DEF_COMHUNKMEGS)
+ #define DEF_COMZONEMEGS_S	XSTRING(DEF_COMZONEMEGS)
+ 
+diff -ruN a/code/qcommon/files.c b/code/qcommon/files.c
+--- a/code/qcommon/files.c	2026-10-31 09:08:41.214555025 +0100
++++ b/code/qcommon/files.c	2026-10-31 09:08:41.218554995 +0100
+@@ -3967,7 +3967,11 @@
+ 	}
+ 
+ 	if(!founddemo)
++#if defined(__amix__) || defined(AMIX_HOST)
++		;
++#else
+ 		FS_CheckSPPaks();
++#endif
+ 
+ }
+ #endif
+@@ -4296,8 +4300,10 @@
+ 	FS_Startup(com_basegame->string);
+ 
+ #ifndef STANDALONE
++#if !defined(__amix__) && !defined(AMIX_HOST)	/* amix/trimpaks.py: one reduced pak */
+ 	FS_CheckPak0( );
+ #endif
++#endif
+ 
+ 	// if we can't find default.cfg, assume that the paths are
+ 	// busted and error out now, rather than getting an unreadable
+@@ -4334,8 +4340,10 @@
+ 	FS_Startup(com_basegame->string);
+ 
+ #ifndef STANDALONE
++#if !defined(__amix__) && !defined(AMIX_HOST)	/* amix/trimpaks.py: one reduced pak */
+ 	FS_CheckPak0( );
+ #endif
++#endif
+ 
+ 	// if we can't find default.cfg, assume that the paths are
+ 	// busted and error out now, rather than getting an unreadable
+diff -ruN a/code/qcommon/net_ip.c b/code/qcommon/net_ip.c
+--- a/code/qcommon/net_ip.c	2026-10-31 09:08:41.246554786 +0100
++++ b/code/qcommon/net_ip.c	2026-10-31 09:08:41.250554757 +0100
+@@ -73,11 +73,11 @@
+ #	include <sys/types.h>
+ #	include <sys/time.h>
+ #	include <unistd.h>
+-#	if !defined(__sun) && !defined(__sgi)
++#	if !defined(__sun) && !defined(__sgi) && !defined(__amix__)
+ #		include <ifaddrs.h>
+ #	endif
+ 
+-#	ifdef __sun
++#	if defined(__sun) || defined(__amix__)
+ #		include <sys/filio.h>
+ #	endif
+ 
+diff -ruN a/code/qcommon/q_platform.h b/code/qcommon/q_platform.h
+--- a/code/qcommon/q_platform.h	2026-10-31 09:08:41.270554606 +0100
++++ b/code/qcommon/q_platform.h	2026-10-31 09:08:41.270554606 +0100
+@@ -167,6 +167,17 @@
+ 
+ //================================================================= LINUX ===
+ 
++#if defined(__amix__)
++
++#define OS_STRING "amix"
++#define ID_INLINE inline
++#define PATH_SEP '/'
++#define ARCH_STRING "m68k"
++#define Q3_BIG_ENDIAN
++#define DLL_EXT ".so"
++
++#endif
++
+ #if defined(__linux__) || defined(__FreeBSD_kernel__) || defined(__GNU__)
+ 
+ #include <endian.h>
