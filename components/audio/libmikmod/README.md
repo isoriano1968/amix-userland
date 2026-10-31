@@ -12,7 +12,7 @@ full-screen player:
 ## Two ways to make sound
 
 **Through Paula itself (`paula`).** On a 68040 or 68060 AMIX kernel with the
-[paula-amix](https://github.com/isoriano1968/paula-amix) driver, libmikmod
+[paula-amix](https://github.com/isoriano1968/amix-gate/tree/main/usr/src/uts/amiga/io/paula) driver, libmikmod
 drives Paula's four channels the way an Amiga tracker does:
 - Each sample is copied to chip RAM once, and the kernel replays the
   register changes at the song's tempo.

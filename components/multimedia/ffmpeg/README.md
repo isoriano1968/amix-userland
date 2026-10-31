@@ -24,7 +24,7 @@ file, p pause, m mute, q quit. 1, 2, h: normal, double and half size; f
 fullscreen. The window's title shows position and length.
 
 A seek opens core 1's player anew at the new place. For a stream of
-[AmixCast](https://github.com/isoriano1968/cde-apps-amix) the PC starts a new
+[AmixCast](https://github.com/isoriano1968/amix-userland/tree/main/components/desktop/cde-apps) the PC starts a new
 stream there; its URL carries the length (`&d=`) and the start (`&t=`). A
 stream waits for 3 s of sound before it starts.
 

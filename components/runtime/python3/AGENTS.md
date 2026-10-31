@@ -15,7 +15,7 @@
   through a relative symlink to its shell script. Binary symlinks work.
 - Publish recipe, patches, adapters and tests only. Exclude passwords, keys,
   licensed AMIX headers/libraries, binaries, VM files and kernel inventories.
-- Intended remote: https://github.com/isoriano1968/python3-amix.
+- Intended remote: https://github.com/isoriano1968/amix-userland/tree/main/components/runtime/python3.
 - Target proof: /tmp/pthreads-amix-261028/python/py311. Do not replace libc,
   system Python, kernel or boot files during these probes.
 - The user authorizes installation of this Python port under /usr/local using

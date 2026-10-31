@@ -19,7 +19,7 @@ sources are downloaded from the official X.Org archive by `install.sh`.
   On the 68040/68060 port kernel it is (see "The Z3660 and the A3000" below).
 - Dynamic `xclock`, `xterm`, and `twm` are the current validation targets.
 - There is no GLX. OpenGL programs use Mesa's Xlib driver
-  ([mesa-amix](https://github.com/isoriano1968/mesa-amix)).
+  ([mesa-amix](https://github.com/isoriano1968/amix-userland/tree/main/components/x11/mesa-31)).
 
 This is development software. Keep the existing X11R4 and X11R5 installations
 available; the port installs under `/usr/x11r6` and does not replace them.
@@ -29,8 +29,8 @@ available; the port installs under `/usr/x11r6` and does not replace them.
 Run this on a system with HTTPS access, `gzip`, `tar`, and a SHA-256 tool:
 
 ```sh
-git clone https://github.com/isoriano1968/x11r6.3-amix.git
-cd x11r6.3-amix
+git clone https://github.com/isoriano1968/amix-userland.git
+cd amix-userland/components/x11/x11r6.3
 sh install.sh /export/amix/x11r6.3
 ```
 
@@ -143,7 +143,7 @@ two patch series:
   - the monitor switch;
   - the keyboard hand-back to the console when the server ends.
 - **The ones from the A3000 + Z3660 68060 setup**
-  ([soft3d-z3660rtg-amix](https://github.com/isoriano1968/soft3d-z3660rtg-amix)):
+  ([soft3d-z3660rtg-amix](https://github.com/isoriano1968/amix-gate/tree/main/usr/src/uts/amiga/io/soft3d)):
   - correct CopyWindow box order, tiled window backgrounds, and tiled and
     stippled fills, which CDE and Motif need;
   - the keyboard bell on `/dev/audio`;
@@ -163,7 +163,7 @@ Two settings matter on a 68040/68060 kernel from the
   `x11perf -shmput` use it.
 
 The CDE desktop and Motif for this X11R6.3 are in
-[cde-amix](https://github.com/isoriano1968/cde-amix).
+[cde-amix](https://github.com/isoriano1968/amix-userland/tree/main/components/desktop/cde).
 
 ## Source and licensing
 

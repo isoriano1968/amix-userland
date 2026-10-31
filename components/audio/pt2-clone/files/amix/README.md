@@ -14,7 +14,7 @@ at 80 MHz) and its RTG output.
   - keys are mapped by position;
   - sound is pumped from the main loop, because AMIX has no threads.
 - **Sound through Paula itself.** With
-  [paula-amix](https://github.com/isoriano1968/paula-amix)'s `/dev/paula`:
+  [paula-amix](https://github.com/isoriano1968/amix-gate/tree/main/usr/src/uts/amiga/io/paula)'s `/dev/paula`:
   - pt2-clone hands its Paula register writes to the kernel, one batch per
     replayer tick, and Paula plays the samples from chip RAM, as on an Amiga;
   - the CPU mixes nothing: audio takes 3–5 % of the time instead of 19–41 %;
@@ -39,9 +39,9 @@ at 80 MHz) and its RTG output.
 - AMIX 2.1 on a **68060** (the build is for the 68060), with the
   [68040/68060 kernel port](https://github.com/asokero/amix-040-060-port). Its
   shared-memory fixes make MIT-SHM safe.
-- X11R6.3 for AMIX ([x11r6.3-amix](https://github.com/isoriano1968/x11r6.3-amix))
+- X11R6.3 for AMIX ([x11r6.3-amix](https://github.com/isoriano1968/amix-userland/tree/main/components/x11/x11r6.3))
   and an X server with 16-bit colour. On a Z3660, use the `Xzz9000` from
-  [soft3d-z3660rtg-amix](https://github.com/isoriano1968/soft3d-z3660rtg-amix).
+  [soft3d-z3660rtg-amix](https://github.com/isoriano1968/amix-gate/tree/main/usr/src/uts/amiga/io/soft3d).
 - For Paula sound: `/dev/paula` from paula-amix. Otherwise `/dev/audio`.
 
 ## Building

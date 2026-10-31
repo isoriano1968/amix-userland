@@ -20,8 +20,8 @@ GLX extension or ZZ9000 3D acceleration.
 On a host with HTTPS access, `gzip`, `tar`, and a SHA-256 utility:
 
 ```sh
-git clone https://github.com/isoriano1968/mesa-amix.git
-cd mesa-amix
+git clone https://github.com/isoriano1968/amix-userland.git
+cd amix-userland/components/x11/mesa-31
 sh install.sh /export/amix/mesa3
 ```
 
@@ -84,8 +84,8 @@ What it needs:
   is only safe there);
 - the Z3660 RTG driver built with `-DZZ9K_MAP_BOARD`, and the `Xzz9000`
   server with the ZZ9K-SOFT3D extension. Both are in
-  [soft3d-z3660rtg-amix](https://github.com/isoriano1968/soft3d-z3660rtg-amix);
-  [x11r6.3-amix](https://github.com/isoriano1968/x11r6.3-amix) carries the
+  [soft3d-z3660rtg-amix](https://github.com/isoriano1968/amix-gate/tree/main/usr/src/uts/amiga/io/soft3d);
+  [x11r6.3-amix](https://github.com/isoriano1968/amix-userland/tree/main/components/x11/x11r6.3) carries the
   same server.
 
 Building, on the Linux host, in the prepared tree:

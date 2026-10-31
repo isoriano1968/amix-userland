@@ -50,7 +50,7 @@ AMIX-adapted GCC 14 toolchain. A generic m68k compiler is insufficient.
 
 The tested toolchain is [asokero/gcc14-cross-amix](https://github.com/asokero/gcc14-cross-amix)
 at revision `58130fe7a322a19cb4c010a8257444cf1c016a07`.
-First build [GNU Pth for AMIX](https://github.com/isoriano1968/gnu-pth-amix).
+First build [GNU Pth for AMIX](https://github.com/isoriano1968/amix-userland/tree/main/components/library/pth).
 
 From this repository directory:
 

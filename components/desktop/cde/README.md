@@ -25,7 +25,7 @@ here, and your own AMIX installation.
   The binaries do not run on a 68030 (an Amiga 3000's own CPU).
 - **AMIX 2.1 with a 68040/68060 kernel** (the
   [amix-040-060-port](https://github.com/asokero/amix-040-060-port)).
-- **X11R6.3 for AMIX** ([x11r6.3-amix](https://github.com/isoriano1968/x11r6.3-amix)),
+- **X11R6.3 for AMIX** ([x11r6.3-amix](https://github.com/isoriano1968/amix-userland/tree/main/components/x11/x11r6.3)),
   built and installed on the machine, and an X server for your display.
 - About 200 MB of free disk space under `/usr/dt`.
 

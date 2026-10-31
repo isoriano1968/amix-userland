@@ -70,7 +70,7 @@ this proof.
 
 ## Reproduce the cross-build
 
-First build GNU Pth as described in [the GNU Pth recipe](https://github.com/isoriano1968/gnu-pth-amix/blob/main/docs/BUILD-RECIPE.md).
+First build GNU Pth as described in [the GNU Pth recipe](https://github.com/isoriano1968/amix-userland/tree/main/components/library/pth/blob/main/docs/BUILD-RECIPE.md).
 Use the same pinned, AMIX-adapted GCC 14 toolchain and your own AMIX sysroot.
 
 From the project directory on Linux:
