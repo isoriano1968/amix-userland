@@ -28,7 +28,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #endif
 
 #include <GL/gl.h>
+#ifdef AMIX_ZZGL
+#include "zzq_gl.h"
+#else
 #include <GL/glu.h>
+#endif
 
 void GL_BeginRendering (int *x, int *y, int *width, int *height);
 void GL_EndRendering (void);
@@ -233,8 +237,13 @@ void R_TranslatePlayerSkin (int playernum);
 void GL_Bind (int texnum);
 
 // Multitexture
+#ifdef AMIX_ZZGL
+#define    TEXTURE0_SGIS				0x84C0	/* GL_TEXTURE0_ARB: Mesa 18 has no SGIS */
+#define    TEXTURE1_SGIS				0x84C1
+#else
 #define    TEXTURE0_SGIS				0x835E
 #define    TEXTURE1_SGIS				0x835F
+#endif
 
 #ifndef _WIN32
 #define APIENTRY /* */

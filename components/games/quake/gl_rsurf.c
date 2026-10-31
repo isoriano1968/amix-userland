@@ -213,7 +213,13 @@ store:
 				t >>= 7;
 				if (t > 255)
 					t = 255;
+#ifdef AMIX_ZZGL
+				/* multitexture: GL_MODULATE, not GL_BLEND with inverted
+				   light, which core 1's fast spans do not take */
+				dest[j] = gl_mtexable ? t : 255-t;
+#else
 				dest[j] = 255-t;
+#endif
 			}
 		}
 		break;
@@ -449,7 +455,11 @@ void R_DrawSequentialPoly (msurface_t *s)
 				theRect->h = 0;
 				theRect->w = 0;
 			}
+#ifdef AMIX_ZZGL
+			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+#else
 			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_BLEND);
+#endif
 			glBegin(GL_POLYGON);
 			v = p->verts[0];
 			for (i=0 ; i<p->numverts ; i++, v+= VERTEXSIZE)
@@ -1682,7 +1692,12 @@ void GL_BuildLightmaps (void)
 		GL_Bind(lightmap_textures + i);
 		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+#ifdef AMIX_ZZGL
+		/* word texels on core 1, its fast spans' kind; a byte each in the stream */
+		glTexImage2D (GL_TEXTURE_2D, 0, 4
+#else
 		glTexImage2D (GL_TEXTURE_2D, 0, lightmap_bytes
+#endif
 		, BLOCK_WIDTH, BLOCK_HEIGHT, 0, 
 		gl_lightmap_format, GL_UNSIGNED_BYTE, lightmaps+i*BLOCK_WIDTH*BLOCK_HEIGHT*lightmap_bytes);
 	}

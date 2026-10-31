@@ -4,3 +4,5 @@
 core
 glquake
 quake.x11
+obj-zzgl/
+glquake.zzgl

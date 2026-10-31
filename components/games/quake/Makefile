@@ -7,5 +7,6 @@ include ../../../make-rules/shared.mk
 build:
 	$(MAKE) -f Makefile.amix
 	$(MAKE) -f Makefile.amix-sw
+	$(MAKE) -f Makefile.amix-zzgl
 
 .PHONY: build

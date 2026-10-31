@@ -31,7 +31,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "quakedef.h"
 
+#ifdef AMIX_ZZGL
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include "zzgl_enc.h"
+#include "zzgl_platform.h"
+#else
 #include <GL/glx.h>
+#endif
 
 #include <X11/keysym.h>
 #include <X11/cursorfont.h>
@@ -58,7 +65,14 @@ typedef struct { int dotclock, hdisplay, vdisplay; } XF86VidModeModeInfo;
 static Display *dpy = NULL;
 static int scrnum;
 static Window win;
+#ifdef AMIX_ZZGL
+/* the GL is on the Z3660's core 1: the X window takes the input and holds the
+   place, core 1 shows each frame in the RTG overlay over it */
+#define ctx dpy
+static int gl_open, place_x, place_y;
+#else
 static GLXContext ctx = NULL;
+#endif
 
 #define KEY_MASK (KeyPressMask | KeyReleaseMask)
 #define MOUSE_MASK (ButtonPressMask | ButtonReleaseMask | \
@@ -467,8 +481,14 @@ void VID_Shutdown(void)
 		return;
 	IN_DeactivateMouse();
 	if (dpy) {
+#ifdef AMIX_ZZGL
+		if (gl_open)
+			zzgl_platform_close();
+		gl_open = 0;
+#else
 		if (ctx)
 			glXDestroyContext(dpy, ctx);
+#endif
 		if (win)
 			XDestroyWindow(dpy, win);
 		if (vidmode_active)
@@ -478,7 +498,9 @@ void VID_Shutdown(void)
 	vidmode_active = false;
 	dpy = NULL;
 	win = 0;
+#ifndef AMIX_ZZGL
 	ctx = NULL;
+#endif
 }
 
 void signal_handler(int sig)
@@ -537,6 +559,7 @@ void	VID_SetPalette (unsigned char *palette)
 	}
 	d_8to24table[255] &= LittleLong (0xffffff);	// 255 is transparent
 
+#ifndef AMIX_ZZGL	/* d_15to8table is for 8-bit textures, and seconds on a 060 */
 	for (i=0; i < (1<<15); i++) {
 		/* Maps
 		000000000000000
@@ -560,12 +583,23 @@ void	VID_SetPalette (unsigned char *palette)
 		}
 		d_15to8table[i]=k;
 	}
+#endif
 }
 
 void CheckMultiTextureExtensions(void) 
 {
 	void *prjobj;
 
+#ifdef AMIX_ZZGL
+	if (strstr(gl_extensions, "GL_ARB_multitexture") && !COM_CheckParm("-nomtex")) {
+		qglMTexCoord2fSGIS = zzgl_GetProcAddress("glMultiTexCoord2fARB");
+		qglSelectTextureSGIS = zzgl_GetProcAddress("glActiveTextureARB");
+		gl_mtexable = qglMTexCoord2fSGIS && qglSelectTextureSGIS;
+		if (gl_mtexable)
+			Con_Printf("Using GL_ARB_multitexture\n");
+	}
+	return;
+#endif
 	if (strstr(gl_extensions, "GL_SGIS_multitexture ") && !COM_CheckParm("-nomtex")) {
 		Con_Printf("Found GL_SGIS_multitexture...\n");
 
@@ -602,7 +636,9 @@ void GL_Init (void)
 	gl_version = glGetString (GL_VERSION);
 	Con_Printf ("GL_VERSION: %s\n", gl_version);
 	gl_extensions = glGetString (GL_EXTENSIONS);
+#ifndef AMIX_ZZGL	/* Mesa 18's list is longer than Con_Printf's buffer */
 	Con_Printf ("GL_EXTENSIONS: %s\n", gl_extensions);
+#endif
 
 //	Con_Printf ("%s %s\n", gl_renderer, gl_version);
 
@@ -652,8 +688,27 @@ void GL_BeginRendering (int *x, int *y, int *width, int *height)
 
 void GL_EndRendering (void)
 {
+#ifdef AMIX_ZZGL
+	static int n;
+
+	zzgl_swap();
+	zzgl_platform_frame();
+	/* follow the window: dtwm moves its frame without telling us */
+	if (++n % 15 == 0) {
+		Window child;
+		int x, y;
+
+		if (XTranslateCoordinates(dpy, win, RootWindow(dpy, scrnum), 0, 0, &x, &y, &child) &&
+		    (x != place_x || y != place_y)) {
+			place_x = x;
+			place_y = y;
+			zzgl_platform_place(x, y);
+		}
+	}
+#else
 	glFlush();
 	glXSwapBuffers(dpy, win);
+#endif
 }
 
 qboolean VID_Is8bit(void)
@@ -666,6 +721,10 @@ void VID_Init8bitPalette(void)
 	// Check for 8bit Extensions and initialize them.
 	int i;
 	void *prjobj;
+
+#ifdef AMIX_ZZGL
+	return;
+#endif
 
 	if ((prjobj = dlopen(NULL, RTLD_LAZY)) == NULL) {
 		Con_Printf("Unable to open symbol list for main program.\n");
@@ -744,6 +803,7 @@ static void Check_Gamma (unsigned char *pal)
 void VID_Init(unsigned char *palette)
 {
 	int i;
+#ifndef AMIX_ZZGL
 	int attrib[] = {
 		GLX_RGBA,
 		GLX_RED_SIZE, 1,
@@ -753,6 +813,7 @@ void VID_Init(unsigned char *palette)
 		GLX_DEPTH_SIZE, 1,
 		None
 	};
+#endif
 	char	gldir[MAX_OSPATH];
 	int width = 640, height = 480;
 	XSetWindowAttributes attr;
@@ -821,11 +882,13 @@ void VID_Init(unsigned char *palette)
 		vidmode_ext = true;
 	}
 
+#ifndef AMIX_ZZGL
 	visinfo = glXChooseVisual(dpy, scrnum, attrib);
 	if (!visinfo) {
 		fprintf(stderr, "qkHack: Error couldn't get an RGB, Double-buffered, Depth visual\n");
 		exit(1);
 	}
+#endif
 
 	if (vidmode_ext) {
 		int best_fit, best_dist, dist, x, y;
@@ -866,6 +929,35 @@ void VID_Init(unsigned char *palette)
 		}
 	}
 
+#ifdef AMIX_ZZGL
+	{
+		XSizeHints hints;
+		XEvent ev;
+		Window child;
+
+		attr.background_pixel = BlackPixel(dpy, scrnum);
+		attr.border_pixel = 0;
+		attr.event_mask = X_MASK | ExposureMask;
+		win = XCreateWindow(dpy, root, 0, 0, width, height, 0, CopyFromParent, InputOutput,
+							CopyFromParent, CWBackPixel | CWBorderPixel | CWEventMask, &attr);
+		hints.flags = PSize | PMinSize | PMaxSize;
+		hints.width = hints.min_width = hints.max_width = width;
+		hints.height = hints.min_height = hints.max_height = height;
+		XSetStandardProperties(dpy, win, "GLQuake", "GLQuake", None, NULL, 0, &hints);
+		XMapWindow(dpy, win);
+		do
+			XNextEvent(dpy, &ev);
+		while (ev.type != MapNotify);
+		if (!XTranslateCoordinates(dpy, win, root, 0, 0, &place_x, &place_y, &child))
+			place_x = place_y = 0;
+		if (zzgl_platform_open(dpy, win, place_x, place_y, width, height) < 0) {
+			fprintf(stderr, "glquake: no GL on the Z3660's core 1\n");
+			exit(1);
+		}
+		gl_open = 1;
+		zq_gl_init();
+	}
+#else
 	/* window attributes */
 	attr.background_pixel = 0;
 	attr.border_pixel = 0;
@@ -899,6 +991,7 @@ void VID_Init(unsigned char *palette)
 	ctx = glXCreateContext(dpy, visinfo, NULL, True);
 
 	glXMakeCurrent(dpy, win, ctx);
+#endif
 
 	scr_width = width;
 	scr_height = height;
@@ -920,6 +1013,9 @@ void VID_Init(unsigned char *palette)
 	sprintf (gldir, "%s/glquake", com_gamedir);
 	Sys_mkdir (gldir);
 
+#ifdef AMIX_ZZGL
+	Check_Gamma(palette);
+#endif
 	VID_SetPalette(palette);
 
 	// Check for 3DFX Extensions and initialize them.
@@ -942,6 +1038,9 @@ void Force_CenterView_f (void)
 
 void IN_Init(void)
 {
+#ifdef AMIX_ZZGL
+	mouse_avail = !COM_CheckParm("-nomouse");
+#endif
 }
 
 void IN_Shutdown(void)

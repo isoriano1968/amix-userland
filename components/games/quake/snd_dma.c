@@ -79,7 +79,11 @@ cvar_t ambient_level = {"ambient_level", "0.3"};
 cvar_t ambient_fade = {"ambient_fade", "100"};
 cvar_t snd_noextraupdate = {"snd_noextraupdate", "0"};
 cvar_t snd_show = {"snd_show", "0"};
+#ifdef AMIX_ZZGL
+cvar_t _snd_mixahead = {"_snd_mixahead", "0.3", true};	/* a slow frame must not run dry */
+#else
 cvar_t _snd_mixahead = {"_snd_mixahead", "0.1", true};
+#endif
 
 
 // ====================================================================

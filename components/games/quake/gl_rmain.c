@@ -924,6 +924,9 @@ void R_SetupGL (void)
     glRotatef (-r_refdef.viewangles[1],  0, 0, 1);
     glTranslatef (-r_refdef.vieworg[0],  -r_refdef.vieworg[1],  -r_refdef.vieworg[2]);
 
+#ifdef AMIX_ZZGL
+	if (r_mirroralpha.value != 1.0)		/* a round trip to core 1, for mirrors only */
+#endif
 	glGetFloatv (GL_MODELVIEW_MATRIX, r_world_matrix);
 
 	//
