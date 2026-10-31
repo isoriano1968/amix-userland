@@ -15,6 +15,10 @@ for pk in sorted(os.listdir(src)):              # pak0, sp_pak1 ...: the last wi
                 files[i.filename.lower()] = (z, i)
 
 
+# what the first levels' scripts play, besides one track in eight
+MUSIC = ("l_briefing_1.wav", "c_military.wav", "m_mission.wav", "m_alarm.wav", "m_drums.wav")
+
+
 def keep(n):
     p = n.split("/")
     if p[0] == "video":
@@ -24,9 +28,9 @@ def keep(n):
     if p[0] == "maps" or p[0] == "levelshots":
         return any(m in n for m in maps)
     if n.startswith("sound/scenaric/"):
-        return len(p) > 3 and p[2] in maps
+        return len(p) > 3 and (p[2] in maps or p[2] in ("cs1", "general"))
     if n.startswith("sound/music/"):
-        return sum(ord(c) for c in n) % 8 == 0
+        return sum(ord(c) for c in n) % 8 == 0 or p[2] in MUSIC
     return True
 
 

@@ -21,7 +21,7 @@ MESA = os.environ.get("MESA31", HOME + "/Sources/usr-amix/amix-userland/componen
 ZZDIR = os.environ.get("Z3660GL", HOME + "/Sources/usr-amix/amix-gate/usr/src/firmware/core1")
 H264 = os.environ.get("CORE1_HDR", HOME + "/Sources/usr-amix/amix-gate/usr/src/firmware/core1/cores/h264bench")
 
-CFLAGS = ["-O2", "-m68060", "-fno-strict-aliasing", "-fcommon", "-w", "-U__linux__", "-Ulinux",
+CFLAGS = ["-O2", "-DNDEBUG", "-m68060", "-fno-strict-aliasing", "-fcommon", "-w", "-U__linux__", "-Ulinux",
           "-D__amix__", "-DSVR4", "-DAMIX_ZZGL", "-DBOTLIB", '-DPRODUCT_VERSION="1.51-amix"',
           "-DNO_GZIP", "-DUSE_INTERNAL_JPEG",
           "-DUSE_INTERNAL_ZLIB", "-DUSE_FILE32API", "-DNO_VM_COMPILED",  "-fno-builtin-sin", "-fno-builtin-cos",

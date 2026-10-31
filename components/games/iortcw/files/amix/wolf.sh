@@ -11,7 +11,10 @@ if /usr/amiga/bin/ztop | grep "ARM core 1" | grep -v " gpu," >/dev/null; then
 fi
 [ $# -gt 0 ] || set -- +spmap escape1	# spmap: single player, devmap is multiplayer: no AI, no scripts
 cd /opt/rtcw
-exec /opt/amix/bin/xrun ./iowolfsp.m68k +set fs_basepath /opt/rtcw +set fs_homepath /opt/rtcw/home \
-	+set com_hunkmegs 64 +set com_recommendedSet 1 +set r_texturemode GL_LINEAR_MIPMAP_NEAREST +set r_mode -1 +set r_customwidth 512 +set r_customheight 384 \
-	+set s_initsound 0 +set s_mixahead 0.8 +set com_soundMegs 8 +set cg_drawFPS 1 \
+# the game leaves the terminal without echo when it is stopped: restore it
+T=`stty -g 2>/dev/null`
+/opt/amix/bin/xrun ./iowolfsp.m68k +set fs_basepath /opt/rtcw +set fs_homepath /opt/rtcw/home \
+	+set com_hunkmegs 64 +set com_recommendedSet 1 +set r_texturemode GL_LINEAR_MIPMAP_NEAREST +set r_mode -1 +set r_customwidth 640 +set r_customheight 480 \
+	+set s_initsound 1 +set s_mixahead 0.8 +set com_soundMegs 4 +set cg_drawFPS 1 +bind F10 quit \
 	+set vm_cgame 0 +set vm_game 0 +set vm_ui 0 +set sv_pure 0 +set r_ext_multitexture 1 "$@"
+[ -n "$T" ] && stty "$T"
