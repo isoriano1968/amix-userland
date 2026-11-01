@@ -9,7 +9,7 @@ include ../../../make-rules/shared.mk
 
 GATE = $(HOME)/Sources/usr-amix/amix-gate/usr/src/firmware/core1
 L060 = $(HOME)/Sources/usr-amix/amix-userland/components/library/lib060
-X    = $(HOME)/opt/m68k-amix-sysroot/usr/x11r6/xc/exports
+X    = $(HOME)/opt/m68k-amix-sysroot/usr/x11r6
 CC   = $(AMIX_TOOLS)/m68k-elf-gcc
 CFLAGS = -O2 -DNDEBUG -m68060 -ffast-math -fno-strict-aliasing -fcommon -w -U__linux__ -Ulinux \
 	-D__amix__ -DSVR4 -I$(GATE)/zzgl -I$(GATE)/src/mesa-18.3.6/include -I$(GATE)/compat/amix \
@@ -19,10 +19,8 @@ CFLAGS = -O2 -DNDEBUG -m68060 -ffast-math -fno-strict-aliasing -fcommon -w -U__l
 build:
 	mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) `$(PKG_CONFIG) --cflags libmikmod` -c halloween.c -o $(BUILD_DIR)/halloween.o
-	$(CC) $(CFLAGS) -c $(GATE)/zzgl/zzgl_enc.c -o $(BUILD_DIR)/zzgl_enc.o
-	$(CC) $(CFLAGS) -c $(GATE)/zzgl/zzgl_amix.c -o $(BUILD_DIR)/zzgl_amix.o
 	$(CC) -m68060 -Wl,--allow-multiple-definition -o $(BUILD_DIR)/halloween $(BUILD_DIR)/halloween.o \
-		$(BUILD_DIR)/zzgl_enc.o $(BUILD_DIR)/zzgl_amix.o `$(PKG_CONFIG) --libs libmikmod` -L$(X)/lib -lX11 -lsocket -lnsl \
+		`$(PKG_CONFIG) --libs libmikmod zzgl x11` -lsocket -lnsl -L$(L060) -lm060 -lc060 -lm
 		-L$(L060) -lm060 -lc060 -lm
 
 .PHONY: build

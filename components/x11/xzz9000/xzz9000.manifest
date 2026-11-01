@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     x11/xzz9000
+version  1
+summary  X server for ZZ9000 and Z3660 RTG
+require  x11/x11r6.3
+require  library/soft3d

@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     x11/mesa-31
+version  3.1
+summary  Mesa 3.1, source of GLU and GLUT
+require  x11/x11r6.3

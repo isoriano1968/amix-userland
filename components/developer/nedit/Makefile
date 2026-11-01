@@ -11,6 +11,7 @@ include ../../../make-rules/shared.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 S = nedit-$(COMPONENT_VERSION)
+DT = $(STAGE_DIR)/etc/dt/appconfig
 export XCFLAGS := $(shell $(PKG_CONFIG) --cflags xm xt x11)
 export XLIBS := $(shell $(PKG_CONFIG) --libs xm xt x11) -lgen -lsocket -lnsl -lm
 
@@ -25,7 +26,12 @@ build: $(COMPONENT_ARCHIVE)
 
 stage:
 	rm -rf $(STAGE_DIR)
-	mkdir -p $(STAGE_DIR)$(PREFIX)/bin
+	mkdir -p $(STAGE_DIR)$(PREFIX)/bin $(DT)/types/C $(DT)/icons/C $(DT)/appmanager/C/Desktop_Apps
 	cp build/nedit build/nc $(STAGE_DIR)$(PREFIX)/bin/
+	cp files/nedit.dt $(DT)/types/C/
+	python3 -I files/mkicons.py $(DT)/icons/C
+	: > $(DT)/appmanager/C/Desktop_Apps/NEdit
+	chmod 755 $(DT)/appmanager/C/Desktop_Apps/NEdit
+	tar --format=ustar --numeric-owner --owner=0 --group=0 -C $(STAGE_DIR) -cf build/nedit-amix.tar etc usr
 
 .PHONY: build stage

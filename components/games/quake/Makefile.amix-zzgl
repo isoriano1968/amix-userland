@@ -2,7 +2,8 @@
 # (amix-gate firmware/core1) and the sound on the board's HDMI: glquake.zzgl.
 # make -f Makefile.amix-zzgl
 CC = $(HOME)/opt/m68k-amix/bin/m68k-elf-gcc
-X = $(HOME)/opt/m68k-amix-sysroot/usr/x11r6/xc/exports
+X = $(HOME)/opt/m68k-amix-sysroot/usr/x11r6
+PKG = ../../../tools/amix-pkg-config
 GATE = $(HOME)/Sources/usr-amix/amix-gate/usr/src/firmware/core1
 L060 = $(abspath ../../library/lib060)
 O = obj-zzgl
@@ -12,7 +13,7 @@ CFLAGS = -O2 -DNDEBUG -m68060 -ffast-math -fno-strict-aliasing -fcommon -w \
 	-U__linux__ -Ulinux -D__amix__ -DSVR4 -DGLQUAKE -DAMIX -DAMIX_ZZGL \
 	-I$(GATE)/src/mesa-18.3.6/include -I$(X)/include -I$(GATE)/zzgl
 ZFLAGS = $(CFLAGS) -I$(GATE)/compat/amix -I$(GATE)/cores/h264bench
-LIBS = -L$(X)/lib -lX11 -lsocket -lnsl -L$(L060) -lm060 -lc060 -lm
+LIBS = `$(PKG) --libs zzgl x11` -lsocket -lnsl -L$(L060) -lm060 -lc060 -lm
 
 SRCS = cl_demo cl_input cl_main cl_parse cl_tent chase cmd common console crc cvar \
 	gl_draw gl_mesh gl_model gl_refrag gl_rlight gl_rmain gl_rmisc gl_rsurf gl_screen \
@@ -20,14 +21,10 @@ SRCS = cl_demo cl_input cl_main cl_parse cl_tent chase cmd common console crc cv
 	net_udp net_bsd pr_cmds pr_edict pr_exec r_part sbar sv_main sv_phys sv_move sv_user \
 	zone view wad world cd_null sys_linux snd_dma snd_mem snd_mix snd_zzgl \
 	gl_vidlinuxglx zzq_gl
-OBJS = $(SRCS:%=$(O)/%.o) $(O)/zzgl_enc.o $(O)/zzgl_amix.o
+OBJS = $(SRCS:%=$(O)/%.o)
 
 glquake.zzgl: $(OBJS)
 	$(CC) -m68060 -Wl,--allow-multiple-definition -o $@ $(OBJS) $(LIBS)
-
-$(O)/zzgl_%.o: $(GATE)/zzgl/zzgl_%.c
-	@mkdir -p $(O)
-	$(CC) $(ZFLAGS) -c $< -o $@
 
 $(O)/%.o: %.c
 	@mkdir -p $(O)

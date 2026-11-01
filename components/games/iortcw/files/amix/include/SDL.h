@@ -18,7 +18,8 @@ static __inline__ int SDL_WasInit(unsigned int f) { (void) f; return 1; }
 static __inline__ char *SDL_GetClipboardText(void) { return NULL; }
 static __inline__ void SDL_free(void *p) { free(p); }
 static __inline__ void SDL_Quit(void) { }
-static __inline__ const char *SDL_GetError(void) { return "no SDL on AMIX"; }
+extern char *dlerror(void);
+static __inline__ const char *SDL_GetError(void) { const char *e = dlerror(); return e ? e : "no SDL on AMIX"; }
 static __inline__ int SDL_HasRDTSC(void) { return 0; }
 static __inline__ int SDL_Has3DNow(void) { return 0; }
 static __inline__ int SDL_HasMMX(void) { return 0; }

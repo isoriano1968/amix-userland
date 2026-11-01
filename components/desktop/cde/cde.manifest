@@ -4,3 +4,12 @@ version  2.2.4a
 summary  Common Desktop Environment
 require  x11/x11r6.3
 require  desktop/motif
+provide  tt
+provide  dtsvc
+provide  dthelp
+provide  dtwidget
+provide  dtterm
+provide  dtprint
+provide  dtsearch
+provide  dtmrm
+provide  csa

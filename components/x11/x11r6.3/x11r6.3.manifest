@@ -6,3 +6,9 @@ provide  x11
 provide  xt
 provide  xext
 provide  xmu
+provide  xaw
+provide  ice
+provide  sm
+provide  xi
+provide  xau
+provide  xdmcp

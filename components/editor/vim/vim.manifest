@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     editor/vim
+version  9.1.0000
+summary  Vim
+require  library/ncurses

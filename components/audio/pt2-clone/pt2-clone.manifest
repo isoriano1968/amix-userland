@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     audio/pt2-clone
+version  18954f2
+summary  ProTracker 2 clone
+require  library/sdl2
+require  x11/x11r6.3

@@ -1,0 +1,3 @@
+# name, version and what building and running it needs
+name     developer/gcc-14
+summary  gcc 14 cross compiler for userland

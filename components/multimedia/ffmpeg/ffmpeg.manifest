@@ -1,0 +1,7 @@
+# name, version and what building and running it needs
+name     multimedia/ffmpeg
+version  4.4.8
+summary  FFmpeg 4.4.8
+require  library/pth
+require  library/sdl2
+require  x11/x11r6.3

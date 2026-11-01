@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     audio/libmikmod
+version  3.1.23
+summary  MikMod sound library
+require  library/ncurses
+provide  libmikmod

@@ -75,7 +75,7 @@ ENGINE = {
                 "tr_surface tr_world",
 }
 EXTRA = [os.path.join(H, n) for n in ("amix_glimp_zzgl.c", "amix_input.c", "amix_snd.c", "amix_compat.c", "amix_cxx.cpp")]
-ZZSRC = [ZZDIR + "/zzgl/zzgl_enc.c", ZZDIR + "/zzgl/zzgl_amix.c"]
+ZZSRC = []
 JPEG = sorted(os.path.join(C, "jpeg-8c", n) for n in os.listdir(os.path.join(C, "jpeg-8c"))
               if n.startswith("j") and n.endswith(".c") and n not in ("jmemansi.c", "jmemdos.c", "jmemmac.c",
               "jmemname.c", "jpegtran.c"))
@@ -168,8 +168,7 @@ def main():
     if failed:
         sys.exit(1)
     out = os.path.join(H, "iowolfsp.m68k")
-    r = subprocess.run([CC, "-O2", "-m68060", "-Wl,--allow-multiple-definition", "-o", out] + allobjs + ["-L" + X + "/lib", "-lXext", "-lX11",
-                       "-lsocket", "-lnsl", "-ldl", "-L" + L060, "-lm060", "-lc060", "-lm"],
+    r = subprocess.run([CC, "-O2", "-m68060", "-Wl,--allow-multiple-definition", "-o", out] + allobjs + subprocess.check_output([HOME + "/Sources/usr-amix/amix-userland/tools/amix-pkg-config", "--libs", "zzgl", "xext", "x11"], text=True).split() + ["-lsocket", "-lnsl", "-ldl", "-L" + L060, "-lm060", "-lc060", "-lm"],
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     open(os.path.join(H, "log", "link.log"), "w").write(r.stdout)
     print("link:", "ok" if r.returncode == 0 else "FAILED (amix/log/link.log)")

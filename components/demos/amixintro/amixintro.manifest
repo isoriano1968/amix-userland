@@ -1,0 +1,7 @@
+# name, version and what building and running it needs
+name     demos/amixintro
+summary  AMIX intro on Mesa 3.1 and TinyGL
+require  x11/mesa-31
+require  library/tinygl
+require  library/lib060
+require  x11/x11r6.3

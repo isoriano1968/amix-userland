@@ -1,0 +1,8 @@
+# name, version and what building and running it needs
+name     library/ncurses
+version  6.6
+summary  ncurses
+provide  ncurses
+provide  form
+provide  menu
+provide  panel

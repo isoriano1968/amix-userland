@@ -1,0 +1,4 @@
+# name, version and what building and running it needs
+name     sysutils/fileutils
+version  4.1
+summary  GNU fileutils

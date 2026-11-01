@@ -1,0 +1,13 @@
+#
+# nedit.dt -- NEdit in CDE.  Installed in /etc/dt/appconfig/types/C.
+#
+ACTION NEdit
+{
+	LABEL		NEdit
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/usr/local/bin/nedit %(File)Arg_1%
+	ICON		NEdit
+	DESCRIPTION	A text editor with syntax highlighting. Its Shell \
+			menu runs make in the file's directory.
+}

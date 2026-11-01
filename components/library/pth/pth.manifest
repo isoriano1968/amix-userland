@@ -1,0 +1,4 @@
+# name, version and what building and running it needs
+name     library/pth
+version  2.0.7
+summary  GNU Pth threads

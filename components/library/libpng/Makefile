@@ -36,6 +36,8 @@ stage:
 	ln -sf libpng16.so.16 $(STAGE_DIR)$(PREFIX)/lib/libpng16.so
 	ln -sf libpng16.so.16 $(STAGE_DIR)$(PREFIX)/lib/libpng.so
 	cp $(S)/png.h $(S)/pngconf.h build/pnglibconf.h $(STAGE_DIR)$(PREFIX)/include/
+	mkdir -p $(STAGE_DIR)$(PREFIX)/include/libpng16
+	for h in png.h pngconf.h pnglibconf.h; do ln -sf ../$$h $(STAGE_DIR)$(PREFIX)/include/libpng16/; done
 	sed -e 's|@PREFIX@|$(PREFIX)|' -e 's|@VERSION@|$(COMPONENT_VERSION)|' libpng.pc.in > $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/libpng.pc
 	ln -sf libpng.pc $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/libpng16.pc
 

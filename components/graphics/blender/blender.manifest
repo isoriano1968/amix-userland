@@ -1,0 +1,9 @@
+# name, version and what building and running it needs
+name     graphics/blender
+version  2.31a
+summary  Blender 2.31a
+require  x11/mesa-31
+require  x11/x11r6.3
+require  library/zlib
+require  library/libpng
+require  library/lib060

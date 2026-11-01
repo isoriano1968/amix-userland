@@ -1,0 +1,8 @@
+# name, version and what building and running it needs
+name     x11/mesa-demos
+version  60ad664
+summary  Mesa demos on Mesa 18.3
+require  x11/x11r6.3
+require  x11/mesa-183
+require  library/libpng
+require  library/zlib

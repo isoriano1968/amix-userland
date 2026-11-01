@@ -1,0 +1,4 @@
+# name, version and what building and running it needs
+name     library/tinygl
+summary  TinyGL
+require  x11/x11r6.3

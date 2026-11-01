@@ -1,0 +1,4 @@
+# name, version and what building and running it needs
+name     developer/pkgconf
+version  2.3.0
+summary  pkg-config for AMIX

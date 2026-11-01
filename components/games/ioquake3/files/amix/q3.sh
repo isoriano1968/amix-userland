@@ -6,7 +6,6 @@
 # contiguous pages (hat_sdtalloc) while the map loaded; 128 MB, no swap.
 ulimit -d 196608
 ulimit -v 262144
-LD_LIBRARY_PATH=/usr/x11r6/lib/r63; export LD_LIBRARY_PATH
 MESA_SOFT3D=${MESA_SOFT3D-1}; export MESA_SOFT3D
 cd /opt/ioq3
 exec /opt/amix/bin/xrun ./ioquake3 +set fs_basepath /opt/ioq3 +set fs_homepath /opt/ioq3/home \

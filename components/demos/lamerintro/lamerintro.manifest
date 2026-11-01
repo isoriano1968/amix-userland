@@ -1,0 +1,8 @@
+# name, version and what building and running it needs
+name     demos/lamerintro
+version  1
+summary  LamerIntro on core 1
+require  x11/x11r6.3
+require  audio/libmikmod
+require  x11/mesa-183
+require  library/lib060

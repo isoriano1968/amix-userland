@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     library/libpng
+version  1.6.44
+summary  PNG library
+require  library/zlib
+provide  libpng16

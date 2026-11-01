@@ -80,7 +80,6 @@ if ZZGL:
     GROUPS = [(g, [x for x in srcs if not x.endswith(("tr_amix_s3d.c", "amix_glprocs.c"))])
               for g, srcs in GROUPS]
     GROUPS = [(g, [x.replace("amix_glimp.c", "amix_glimp_zzgl.c") for x in srcs]) for g, srcs in GROUPS]
-    GROUPS.append(("zzgl", [ZZDIR + "/zzgl/zzgl_enc.c", ZZDIR + "/zzgl/zzgl_amix.c"]))
 # the zzgl sources see Mesa 18.3's GL headers and vplay's board layout
 GROUP_FLAGS = {"zzgl": ["-I" + ZZDIR + "/src/mesa-18.3.6/include", "-I" + ZZDIR + "/compat/amix",
                         "-I" + HOME + "/Sources/usr-amix/amix-gate/usr/src/firmware/core1/cores/h264bench"]}
@@ -89,7 +88,7 @@ OBJ = "obj-zzgl" if ZZGL else "obj"
 LIBS = ["-L" + MESA + "/shm-static", "-L" + MESA + "/lib", "-L" + X + "/lib", "-lGL", "-lXext", "-lX11",
         "-lshmsys", "-lsocket", "-lnsl", "-ldl", "-L" + L060, "-lm060", "-lc060", "-lm"]
 if ZZGL:
-    LIBS = ["-L" + X + "/lib", "-lXext", "-lX11", "-lsocket", "-lnsl", "-ldl",
+    LIBS = subprocess.check_output([HOME + "/Sources/usr-amix/amix-userland/tools/amix-pkg-config", "--libs", "zzgl", "xext", "x11"], text=True).split() + ["-lsocket", "-lnsl", "-ldl",
             "-L" + L060, "-lm060", "-lc060", "-lm"]
 
 

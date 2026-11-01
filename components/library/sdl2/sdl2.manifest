@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     library/sdl2
+version  2.30.12
+summary  SDL 2 for AMIX
+require  x11/x11r6.3
+require  library/pth

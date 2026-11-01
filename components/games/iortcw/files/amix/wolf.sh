@@ -2,9 +2,8 @@
 # wolf.sh [iortcw options] -- Return to Castle Wolfenstein with the GL on the
 # Z3660's second ARM core (zzgl), sound over HDMI.  /opt/rtcw/wolf.sh; the
 # game's paks (amix/trimpaks.py reduces them) in /opt/rtcw/main.
-ulimit -d 196608
-ulimit -v 262144
-LD_LIBRARY_PATH=/usr/x11r6/lib/r63; export LD_LIBRARY_PATH
+ulimit -d 262144
+ulimit -v 393216
 C=/root/z3660ARMCores
 if /usr/amiga/bin/ztop | grep "ARM core 1" | grep -v " gpu," >/dev/null; then
 	$C/armbench -reload $C/z3660ARM_Core_gpu.bin || exit 1

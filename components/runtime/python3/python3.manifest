@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     runtime/python3
+version  3.11.18
+summary  Python 3.11
+require  library/pth
+require  library/zlib
