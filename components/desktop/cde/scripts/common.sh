@@ -5,6 +5,8 @@ TOP=$(cd "$(dirname "$0")" && pwd)
 [ -f "$TOP/config.sh" ] || { echo "no config.sh: cp config.sh.example config.sh and edit it" >&2; exit 1; }
 . "$TOP/config.sh"
 : "${TOOLCHAIN:?}" "${SYSROOT:?}" "${X11_EXPORTS:?}" "${X11_SRC:?}" "${DL:?}" "${WORK:?}"
+# build-shared-cde.sh builds in a tree of its own
+[ -z "$SHARED_WORK" ] || { WORK=$SHARED_WORK; }
 JOBS=${JOBS:-4}
 export PATH="$TOOLCHAIN/bin:$PATH"
 S=$TOP/scripts

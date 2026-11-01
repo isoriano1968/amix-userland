@@ -1,4 +1,5 @@
 config.sh
 dl/
 work/
+work-shared/
 __pycache__/

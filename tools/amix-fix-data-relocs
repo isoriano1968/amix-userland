@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""amix-fix-data-relocs LIB...: name exported data again in a shared library.
+
+gas for m68k turns `.long sym` into `.long .data+n` when a global sym is in the
+same file, so ld makes the word R_68K_RELATIVE and it stays on the library's own
+copy.  A program that copies that object (R_68K_COPY, say xmManagerClassRec for
+a subclass) then has two: `wc == xmManagerWidgetClass` fails in Xm and class
+initialisation runs off a Constraint record.  Each RELATIVE that points at the
+start of an exported object becomes R_68K_32 of that symbol, RELATIVEs first.
+"""
+import struct, sys
+
+RELATIVE, ABS32 = 0x16, 1
+RELACOUNT = 0x6ffffff9
+
+def sections(d):
+    shoff, = struct.unpack(">I", d[32:36])
+    shentsize, shnum = struct.unpack(">HH", d[46:50])
+    return [struct.unpack(">10I", d[shoff + i * shentsize:shoff + i * shentsize + 40]) for i in range(shnum)]
+
+def fix(path):
+    d = bytearray(open(path, "rb").read())
+    sh = sections(d)
+    dynsym = next(s for s in sh if s[1] == 11)
+    dyn = next(s for s in sh if s[1] == 6)
+    rela = next(s for s in sh if s[1] == 4 and s[7] == 0)      # .rela.dyn, not .rela.plt
+    syms = {}
+    for i in range(dynsym[5] // 16):
+        name, value, size, info, other, shndx = struct.unpack(">IIIBBH", d[dynsym[4] + i * 16:dynsym[4] + i * 16 + 16])
+        if shndx and info & 15 == 1 and info >> 4 == 1 and size:
+            syms[value] = i
+    ents = [list(struct.unpack(">III", d[rela[4] + i * 12:rela[4] + i * 12 + 12])) for i in range(rela[5] // 12)]
+    n = 0
+    for e in ents:
+        if e[1] & 255 == RELATIVE and e[2] in syms:
+            e[1], e[2] = syms[e[2]] << 8 | ABS32, 0
+            n += 1
+    ents.sort(key=lambda e: e[1] & 255 != RELATIVE)
+    for i, e in enumerate(ents):
+        d[rela[4] + i * 12:rela[4] + i * 12 + 12] = struct.pack(">III", *e)
+    count = sum(e[1] & 255 == RELATIVE for e in ents)
+    for i in range(dyn[5] // 8):
+        tag, _ = struct.unpack(">II", d[dyn[4] + i * 8:dyn[4] + i * 8 + 8])
+        if tag == RELACOUNT:
+            d[dyn[4] + i * 8 + 4:dyn[4] + i * 8 + 8] = struct.pack(">I", count)
+    open(path, "wb").write(d)
+    print("%s: %d of %d named" % (path, n, len(ents)))
+
+for p in sys.argv[1:]:
+    fix(p)

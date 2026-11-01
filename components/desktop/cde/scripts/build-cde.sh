@@ -25,6 +25,17 @@ echo "== unpack and patch CDE"
 rm -rf "$CDE"
 tar -C "$WORK" -xzf "$DL/cde-src-$CDE_VER.tar.gz"
 for p in "$TOP"/patches/cde/*.patch; do patch -s -d "$CDE" -p1 < "$p"; done
+# CDE_SHARED=STAGE, from build-shared-cde.sh: position-independent, X and Motif
+# from STAGE, and programs that find the libraries at their AMIX paths.  ld reads
+# a library that only another .so names after the archives, so what those need
+# from libgen, libm and the C++ runtime is asked for again at the end of the line.
+if [ -n "$CDE_SHARED" ]; then
+	sed -i -e 's|bin/m68k-elf-gcc$|bin/m68k-elf-gcc -fPIC|' \
+		-e 's|bin/m68k-elf-g++ -fpermissive$|bin/m68k-elf-g++ -fpermissive -fPIC|' "$CDE/config/cf/host.def"
+	cat >> "$CDE/config/cf/host.def" <<D
+#define ExtraLoadFlags -Wl,-R,/usr/dt/lib:/usr/motif/lib:/usr/x11r6/lib -Wl,-rpath-link,$CDE_SHARED/usr/x11r6/lib -Wl,-rpath-link,$CDE_SHARED/usr/motif/lib -Wl,-rpath-link,$CDE_SHARED/usr/dt/lib -Wl,--as-needed -lXm -ltt -Wl,--no-as-needed -lgen -lm -lstdc++ -lsupc++ -lamixcde
+D
+fi
 cat > "$CDE/config/cf/amixpaths.def" <<E
 /* written by build-cde.sh */
 #define AmixCrossPrefix		$TOOLCHAIN
@@ -42,6 +53,10 @@ ln -s "$(command -v bdftopcf)" "$(command -v mkfontdir)" x11/bin/
 ln -s "$MOTIF_ROOT/usr/motif/include" motif/include
 ln -s "$MOTIF_ROOT/usr/motif/lib/libXm.a" "$MOTIF_ROOT/usr/motif/lib/libMrm.a" motif/lib/
 ln -s "$MOTIF_SRC/lib/Xm" motif/lib/Xm
+if [ -n "$CDE_SHARED" ]; then
+	ln -s "$CDE_SHARED"/usr/x11r6/lib/*.so "$CDE_SHARED"/usr/x11r6/lib/*.so.7 x11/lib/
+	ln -s "$CDE_SHARED"/usr/motif/lib/*.so "$CDE_SHARED"/usr/motif/lib/*.so.4 motif/lib/
+fi
 python3 -I "$S/amix-cxxfix.py" "$SYSROOT" "$FIXED" "$CDE/amix-cxxfix"
 
 echo "== imake and the Makefiles"
@@ -69,8 +84,20 @@ make -k -f xmakefile includes < /dev/null > make-includes.log 2>&1 || true
 sh "$H" programs/dthelp/parser all > hb-dthelp-parser.log 2>&1 || true
 echo "== libraries (make-lib.log)"
 (cd lib && make -k < /dev/null > ../make-lib.log 2>&1) || true
+[ -z "$CDE_SHARED" ] || sh "$S/shared-cde-libs.sh" "$CDE" "$CDE_SHARED"
 echo "== programs (make-programs.log)"
 (cd programs && make -k < /dev/null > ../make-programs.log 2>&1) || true
+if [ -n "$CDE_SHARED" ]; then
+	# tools that get Motif and ToolTalk only through other libraries: named
+	# here, before the archives their needs come from
+	F=$(sed -n 's/^#define ExtraLoadFlags //p' config/cf/host.def | sed 's/-Wl,--as-needed.*//')
+	O=$(sed -n 's/^ *EXTRA_LIBRARIES = //p' programs/dtsr/Makefile | head -1)
+	for d in programs/dtcm/dtcm programs/dtlogin programs/dtsr; do
+		make -C "$d" -k EXTRA_LOAD_FLAGS="$F" < /dev/null \
+			EXTRA_LIBRARIES="-lDtHelp -lDtSvc -lXm -ltt $O -lgen -lm -lstdc++ -lsupc++ -lamixcde -lamixc99" \
+			>> make-programs.log 2>&1 || true
+	done
+fi
 echo "== fonts (make-fonts.log)"
 make -C programs/fontaliases/linux/C FONTC=bdftopcf MKFONTDIR=mkfontdir < /dev/null > make-fonts.log 2>&1 || true
 echo "== help volumes (make-help.log)"
