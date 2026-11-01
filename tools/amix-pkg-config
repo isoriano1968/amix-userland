@@ -2,10 +2,11 @@
 # amix-pkg-config: pkg-config for cross builds, reading only the sysroot's .pc
 # files, so that a library of the build machine is never picked up.  Paths in
 # the .pc files are those on AMIX; the -I and -L it prints point into the
-# sysroot, and -R, which gcc takes only as -Wl,-R, stays the path on AMIX.
+# sysroot.  AMIX's ld has no -R, so the .pc files carry none and a build on the
+# box takes LD_RUN_PATH; here each -L also gives -Wl,-R with the path on AMIX.
 # AMIX_SYSROOT says where the sysroot is.
 S=${AMIX_SYSROOT:-$HOME/opt/m68k-amix-sysroot}
-PKG_CONFIG_LIBDIR=$S/usr/local/lib/pkgconfig:$S/usr/gnu/lib/pkgconfig:$S/usr/X/lib/pkgconfig:$S/usr/lib/pkgconfig
+PKG_CONFIG_LIBDIR=$S/usr/local/lib/pkgconfig:$S/usr/gnu/lib/pkgconfig:$S/usr/dt/lib/pkgconfig:$S/usr/motif/lib/pkgconfig:$S/usr/x11r6/lib/pkgconfig:$S/usr/X/lib/pkgconfig:$S/usr/lib/pkgconfig
 PKG_CONFIG_SYSROOT_DIR=$S
 PKG_CONFIG_SYSTEM_INCLUDE_PATH=/usr/include
 PKG_CONFIG_SYSTEM_LIBRARY_PATH=/usr/lib
@@ -14,4 +15,4 @@ export PKG_CONFIG_SYSTEM_INCLUDE_PATH PKG_CONFIG_SYSTEM_LIBRARY_PATH
 unset PKG_CONFIG_PATH
 out=`pkg-config "$@"` || exit $?
 [ -n "$out" ] || exit 0
-printf '%s\n' "$out" | sed "s|-R$S|-Wl,-R,|g"
+printf '%s\n' "$out" | sed "s|-L$S\(/[^ ]*\)|-L$S\1 -Wl,-R,\1|g"

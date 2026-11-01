@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""amix-link-stub LIB OUT.s: what AMIX's own ld needs to link against LIB.
+
+The 1991 ld crashes on a library from current binutils.  This writes assembler
+that defines LIB's exported symbols with their types and sizes; on the box
+`as` and `ld -G -h <soname>` turn it into libX.so, for links only.  A program
+linked to it asks for the soname, so it runs with the real library.  What LIB
+wants from archives, which no shared library has (pow, regcmp), is named in the
+stub so that a link pulls it into the program: -k OTHER.so... lists the shared
+libraries whose symbols do not count.
+"""
+import subprocess, sys
+
+SKIP = {"_init", "_fini", "_etext", "_edata", "_end", "__bss_start", "_DYNAMIC",
+	"_GLOBAL_OFFSET_TABLE_", "_PROCEDURE_LINKAGE_TABLE_"}
+lib, out = sys.argv[1:3]
+known = set()
+for k in sys.argv[4:]:
+	for l in subprocess.check_output(["readelf", "-W", "--dyn-syms", "--syms", k], text=True).splitlines():
+		p = l.split()
+		if len(p) == 8 and p[0].rstrip(":").isdigit() and p[6] != "UND":
+			known.add(p[7].split("@")[0])
+funcs, objs, needs = [], [], []
+for l in subprocess.check_output(["readelf", "-W", "--dyn-syms", lib], text=True).splitlines():
+	p = l.split()
+	if len(p) == 8 and p[0].rstrip(":").isdigit() and p[6] == "UND" and p[4] != "WEAK" and p[7].split("@")[0] not in known:
+		needs.append(p[7].split("@")[0])
+	if len(p) != 8 or not p[0].rstrip(":").isdigit() or p[6] == "UND" or p[4] == "LOCAL":
+		continue
+	name = p[7].split("@")[0]
+	if name in SKIP:
+		continue
+	if p[3] == "OBJECT":
+		objs.append((name, int(p[2], 0) or 4))
+	elif p[3] in ("FUNC", "NOTYPE"):
+		funcs.append(name)
+with open(out, "w") as f:
+	f.write("\t.text\n")
+	for n in funcs:
+		f.write("\t.globl %s\n\t.type %s,@function\n%s:\n" % (n, n, n))
+	f.write("\trts\n\t.data\n")
+	for n, s in objs:
+		f.write("\t.globl %s\n\t.type %s,@object\n\t.size %s,%d\n\t.align 4\n%s:\n\t.space %d\n" % (n, n, n, s, n, s))
+	for n in needs:
+		f.write("\t.long %s\n" % n)
+print("%s: needs %s" % (lib.split("/")[-1], " ".join(needs) or "nothing"))

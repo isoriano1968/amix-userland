@@ -56,7 +56,7 @@ includedir=\${prefix}/include
 Name: $l
 Description: X11R6.3 lib$l
 Version: 6.3
-Libs: -L\${libdir} -R\${libdir} -l$l
+Libs: -L\${libdir} -l$l
 Cflags: -I\${includedir}
 P
 }

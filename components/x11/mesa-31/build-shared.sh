@@ -36,7 +36,7 @@ includedir=\${prefix}/include
 Name: $n
 Description: Mesa 3.1 lib$n, soft3D on the Z3660
 Version: 3.1
-Libs: -L\${libdir} -R\${libdir} -l$n
+Libs: -L\${libdir} -l$n
 Cflags: -I\${includedir}
 P
 	echo "$n: $(wc -c < "$L/lib$n.so.3") bytes"

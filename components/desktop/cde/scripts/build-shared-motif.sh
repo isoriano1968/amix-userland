@@ -50,7 +50,7 @@ Name: $l
 Description: Motif 2.3.8 lib$l
 Version: 2.3.8
 Requires: xt x11
-Libs: -L\${libdir} -R\${libdir} -l$l -lgen
+Libs: -L\${libdir} -l$l -lgen
 Cflags: -I\${includedir}
 P
 done

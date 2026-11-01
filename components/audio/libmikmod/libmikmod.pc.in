@@ -5,6 +5,7 @@ includedir=${prefix}/include
 Name: libmikmod
 Description: Library for playing Module Files and for Sound Effects
 Version: @VERSION@
-Libs: -L${libdir} -R${libdir} -lmikmod
+Requires: amixc99
+Libs: -L${libdir} -lmikmod
 Libs.private: -lm
 Cflags: -I${includedir}
