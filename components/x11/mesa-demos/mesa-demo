@@ -1,0 +1,10 @@
+#!/bin/sh
+# mesa-demo [name ...] -- run a demo of /opt/mesa-demos on Mesa 18; none: list them.
+# GL programs need the larger limits. Close the window or press Esc to end one.
+ulimit -d 98304
+ulimit -v 131072
+cd /opt/mesa-demos/data
+[ $# = 0 ] && { ls /opt/mesa-demos/bin; exit 0; }
+for d in "$@"; do
+	/opt/mesa-demos/bin/$d
+done

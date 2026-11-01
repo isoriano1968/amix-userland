@@ -1,0 +1,10 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: libpng
+Description: PNG images
+Version: @VERSION@
+Requires: zlib
+Libs: -L${libdir} -lpng16 -lm
+Cflags: -I${includedir}
