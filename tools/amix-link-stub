@@ -7,13 +7,15 @@ that defines LIB's exported symbols with their types and sizes; on the box
 linked to it asks for the soname, so it runs with the real library.  What LIB
 wants from archives, which no shared library has (pow, regcmp), is named in the
 stub so that a link pulls it into the program: -k OTHER.so... lists the shared
-libraries whose symbols do not count.
+libraries whose symbols do not count.  STUB_ONLY=regex keeps the names matching
+it, for a library that exports far more than its API: as has little memory.
 """
-import subprocess, sys
+import os, re, subprocess, sys
 
 SKIP = {"_init", "_fini", "_etext", "_edata", "_end", "__bss_start", "_DYNAMIC",
 	"_GLOBAL_OFFSET_TABLE_", "_PROCEDURE_LINKAGE_TABLE_"}
 lib, out = sys.argv[1:3]
+only = re.compile(os.environ["STUB_ONLY"]) if "STUB_ONLY" in os.environ else None
 known = set()
 for k in sys.argv[4:]:
 	for l in subprocess.check_output(["readelf", "-W", "--dyn-syms", "--syms", k], text=True).splitlines():
@@ -28,7 +30,7 @@ for l in subprocess.check_output(["readelf", "-W", "--dyn-syms", lib], text=True
 	if len(p) != 8 or not p[0].rstrip(":").isdigit() or p[6] == "UND" or p[4] == "LOCAL":
 		continue
 	name = p[7].split("@")[0]
-	if name in SKIP:
+	if name in SKIP or (only and not only.match(name)):
 		continue
 	if p[3] == "OBJECT":
 		objs.append((name, int(p[2], 0) or 4))

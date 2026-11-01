@@ -1,0 +1,37 @@
+# Makefile.amix-m18 -- GLQuake for AMIX on a standard libGL, with GLX: Mesa 18 and
+# its Gallium driver, sound on the board's HDMI: glquake.m18.
+# make -f Makefile.amix-m18 STAGE=<shared libraries>
+CC = $(HOME)/opt/m68k-amix/bin/m68k-elf-gcc
+STAGE ?= $(abspath ../../../../private/shared-build/stage)
+X = $(STAGE)/usr/x11r6
+GATE = $(HOME)/Sources/usr-amix/amix-gate/usr/src/firmware/core1
+L060 = $(abspath ../../library/lib060)
+O = obj-m18
+CFLAGS = -O2 -DNDEBUG -m68060 -ffast-math -fno-strict-aliasing -fcommon -w \
+	-Wno-error=implicit-function-declaration -Wno-error=int-conversion \
+	-Wno-error=incompatible-pointer-types -Wno-error=implicit-int -Wno-error=return-mismatch \
+	-U__linux__ -Ulinux -D__amix__ -DSVR4 -DGLQUAKE -DAMIX -DAMIX_ZZGL \
+	-Dzzgl_platform_open=zq_open -Dzzgl_platform_place=zq_place -Dzzgl_platform_close=zq_close \
+	-Dzzgl_platform_frame=zq_frame -Dzzgl_swap=zq_swap -Dzzgl_GetProcAddress=zq_getproc \
+	-I$(GATE)/src/mesa-18.3.6/include -I$(X)/include -I$(GATE)/zzgl -I$(GATE)/compat/amix \
+	-I$(GATE)/cores/h264bench
+LIBS = -L$(GATE)/build/amix-glx -lGL -L$(X)/lib -lXext -lX11 -lsocket -lnsl \
+	-L$(L060) -lm060 -lc060 -lm -lstdc++ -Wl,-R,/usr/local/lib:/usr/x11r6/lib
+
+SRCS = cl_demo cl_input cl_main cl_parse cl_tent chase cmd common console crc cvar \
+	gl_draw gl_mesh gl_model gl_refrag gl_rlight gl_rmain gl_rmisc gl_rsurf gl_screen \
+	gl_test gl_warp host host_cmd keys menu mathlib net_dgrm net_loop net_main net_vcr \
+	net_udp net_bsd pr_cmds pr_edict pr_exec r_part sbar sv_main sv_phys sv_move sv_user \
+	zone view wad world cd_null sys_linux snd_dma snd_mem snd_mix snd_zzgl \
+	gl_vidlinuxglx zzq_gl zzq_m18
+OBJS = $(SRCS:%=$(O)/%.o)
+
+glquake.m18: $(OBJS)
+	$(CC) -m68060 -Wl,--allow-multiple-definition -o $@ $(OBJS) $(LIBS)
+
+$(O)/%.o: %.c
+	@mkdir -p $(O)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -rf $(O) glquake.m18
