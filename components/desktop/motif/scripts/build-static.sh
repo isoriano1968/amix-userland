@@ -1,5 +1,5 @@
 #!/bin/sh
-# build-motif.sh -- Motif 2.3.8 for AMIX: static libXm/libMrm and mwm.
+# build-static.sh -- Motif 2.3.8 for AMIX: static libXm/libMrm and mwm.
 #
 # Two builds of the same source: a host build for the tools Motif runs while
 # it builds (makestrs, wml, wmluiltok), and the cross build for AMIX, which
@@ -21,8 +21,8 @@ mkdir -p "$WORK"
 
 echo "== unpack and patch Motif"
 rm -rf "$MOTIF_SRC"
-tar -C "$WORK" -xzf "$DL/motif-$MOTIF_VER.tar.gz"
-for p in "$TOP"/patches/motif/*.patch; do patch -s -d "$MOTIF_SRC" -p1 < "$p"; done
+tar -C "$WORK" -xzf "$TOP/motif-$MOTIF_VER.tar.gz"
+for p in "$TOP"/patches/*.patch; do patch -s -d "$MOTIF_SRC" -p1 < "$p"; done
 
 echo "== host tools (makestrs, wml)"
 rm -rf "$MOTIF_HOST"; mkdir -p "$MOTIF_HOST"

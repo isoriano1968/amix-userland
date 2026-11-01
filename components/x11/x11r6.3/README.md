@@ -12,14 +12,17 @@ sources are downloaded from the official X.Org archive by `install.sh`.
 - The `Xzz9000` server links and starts at 16-bit modes including 1920x800.
 - The ZZ9000 framebuffer uses R6 pixmap-private storage correctly for both
   16-bit drawing and depth-1 font/cursor bitmaps.
-- Shared libraries use the native AMIX model: `gcc -fpic`, ELF runtime
-  images linked by `ld -G -h`, and companion `.sa` stub archives for Xt
-  and Xmu. Xaw has no `.sa` archive.
+- The native AMIX build has shared libraries in the AMIX model: `gcc -fpic`,
+  ELF runtime images linked by `ld -G -h`, and companion `.sa` stub archives
+  for Xt and Xmu. They stay in `/usr/x11r6/lib/r63`.
+- `files/build-shared.sh` builds the libraries the system uses now with gcc 14:
+  `libX*.so.7` in `/usr/x11r6/lib`, with `.pc` files and `libXtInherit.a`.
 - MIT-SHM is off by default because it is not safe on the stock AMIX kernel.
   On the 68040/68060 port kernel it is (see "The Z3660 and the A3000" below).
 - Dynamic `xclock`, `xterm`, and `twm` are the current validation targets.
-- There is no GLX. OpenGL programs use Mesa's Xlib driver
-  ([mesa-amix](https://github.com/isoriano1968/amix-userland/tree/main/components/x11/mesa-31)).
+- The server has no GLX extension. OpenGL programs use Mesa 18.3's `libGL.so.18`
+  from [x11/mesa-183](../mesa-183), which draws on the client side and shows
+  frames through the Z3660's overlay.
 
 This is development software. Keep the existing X11R4 and X11R5 installations
 available; the port installs under `/usr/x11r6` and does not replace them.
@@ -107,9 +110,9 @@ Use `:1` instead if display `:0` is occupied. The launcher supports
 `ZZ9K_MODE`, `ZZ9K_FONT_PATH`, and `X11R6_TOP` environment overrides.
 
 The shipped `twmrc.zz9000` adds root-menu entries for `xterm`, `xclock`, root
-background refresh, and the Mesa gears demo. The gears menu entry looks first
-for `/usr/mesa3/Mesa-3.1/demos/gears` and then for
-`/usr/mesa/Mesa3.1/demos/gears`.
+background refresh, and a gears demo entry. That entry still looks for the
+retired Mesa 3.1 demos in `/usr/mesa3/Mesa-3.1/demos/gears` and
+`/usr/mesa/Mesa3.1/demos/gears`; `mesa-demo gears` runs the current one.
 
 The session loads `/usr/x11r6/xc/config/util/Xmodmap.de` by default when
 `xmodmap` is available. Override or disable it with `ZZ9K_XMODMAP`:
@@ -162,8 +165,8 @@ Two settings matter on a 68040/68060 kernel from the
   port kernel's shared-memory fixes make it safe; Mesa's back buffer and
   `x11perf -shmput` use it.
 
-The CDE desktop and Motif for this X11R6.3 are in
-[cde-amix](https://github.com/isoriano1968/amix-userland/tree/main/components/desktop/cde).
+CDE and Motif for this X11R6.3 are in [desktop/cde](../../desktop/cde) and
+[desktop/motif](../../desktop/motif).
 
 ## Source and licensing
 

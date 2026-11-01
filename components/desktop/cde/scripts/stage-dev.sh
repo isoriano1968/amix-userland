@@ -10,7 +10,7 @@ PRIV=$(cd "$ROOT/../private/shared-build" && pwd)
 export PATH=$HOME/opt/m68k-amix/bin:$PATH
 XI=$PRIV/xc/exports/include
 XL=$STAGE/usr/x11r6/lib
-MR=$TOP/work-shared/motif-root/usr/motif
+MR=$TOP/../motif/work/motif-root/usr/motif
 CI=$TOP/work-shared/cde-2.2.4a/exports/include
 GL=$ROOT/components/x11/mesa-31/work-pic/include/GL
 

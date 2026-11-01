@@ -1,19 +1,17 @@
-# cde-amix: CDE and Motif for AMIX
+# CDE for AMIX
 
-Build scripts and patches for **Motif 2.3.8** and the **Common Desktop
+Build scripts and patches for the **Common Desktop
 Environment 2.2.4a** on **AMIX 2.1** (Commodore's Amiga UNIX, SVR4.0),
 cross-built on a Linux host with
 [gcc14-cross-amix](https://github.com/asokero/gcc14-cross-amix).
 
 The result is the full CDE desktop on an Amiga: dtlogin, dtsession, dtwm
 with the front panel, dtterm, the file manager, dtpad, the style manager,
-the help viewer, dtcalc, dtcm, dtmail and the rest of `/usr/dt/bin`. It also
-gives you `mwm`, Motif's window manager, as a package of its own
-(`motif-amix.tar`). Motif is part of this repository because CDE is built
-against it.
+the help viewer, dtcalc, dtcm, dtmail and the rest of `/usr/dt/bin`. Motif and `mwm` are a component of their own,
+[desktop/motif](../motif): build that first (see `cde.manifest`).
 
 This repository contains **no binaries and no AMIX material**. You build
-everything yourself from the original Motif and CDE releases, the patches
+everything yourself from the original CDE release, the patches
 here, and your own AMIX installation.
 
 ## Requirements
@@ -63,11 +61,9 @@ $EDITOR config.sh
 
 | Step | What it does |
 |---|---|
-| `fetch.sh` | Downloads `motif-2.3.8.tar.gz` and `cde-src-2.2.4a.tar.gz` from SourceForge and checks their SHA-256. |
-| `scripts/build-motif.sh` | Unpacks and patches Motif, builds its host tools, then `libXm`, `libMrm` and `mwm` for AMIX. |
+| `fetch.sh` | Downloads `cde-src-2.2.4a.tar.gz` from SourceForge and checks its SHA-256. |
 | `scripts/build-libxp.sh` | A static `libXp` from the X11R6.3 tree. |
 | `scripts/build-cde.sh` | Unpacks and patches CDE, prepares the build (see below), and builds the libraries, the programs and the fonts. |
-| `scripts/package-motif.sh` | `work/motif-amix.tar`: `mwm`, its `system.mwmrc`, and app-defaults that give it its proper colours. |
 | `scripts/package-cde.sh` | `work/cde-amix.tar`: the `/usr/dt` tree, laid out by CDE's own install databases. |
 
 What `build-cde.sh` prepares:
@@ -78,8 +74,11 @@ What `build-cde.sh` prepares:
 - the tools CDE runs during its own build, compiled for the host by
   `scripts/hostbuild.sh`.
 
-Every CDE program links X, Motif and libstdc++ statically; AMIX's `libc`,
-`libsocket` and `libnsl` stay shared. Logs are in the build directories:
+`build.sh` links X, Motif and libstdc++ statically, about 166 MB in all.
+`scripts/build-shared-cde.sh STAGE` builds the same tree in `work-shared/`
+against shared X and Motif, with `libDt*.so.2` in `/usr/dt/lib`: about 38 MB,
+and what the system runs now. AMIX's `libc`, `libsocket` and `libnsl` are
+shared in both. Logs are in the build directories:
 `make-lib.log`, `make-programs.log` and the others in `work/cde-2.2.4a/`.
 
 ## Installing on AMIX
@@ -147,8 +146,8 @@ Not built (`work/dtroot/MISSING` lists the files):
 
 - dtwm can report `Could not connect to ToolTalk: TT_ERR_AUTHORIZATION` right
   after login. ToolTalk works afterwards; it looks like a start-up race.
-- The binaries are large (about 5 MB each), because everything is linked
-  statically.
+- The static build's binaries are large, about 5 MB each. The shared build
+  does not have this.
 - The patches favour working on AMIX over generality. Some areas are untested
   on the A3000: dtmail, dtcm and printing.
 
@@ -163,8 +162,6 @@ The patches in `patches/cde/` are one commit each. They cover these areas:
 - **dtlogin:** reads `/etc/shadow`.
 - **dtterm:** STREAMS ptys.
 - **SVR4.0 differences**, for gcc 14, in ToolTalk, DtSvc, DtHelp and DtSearch.
-
-The Motif patch is a single `<wchar.h>` workaround.
 
 ## Licences
 

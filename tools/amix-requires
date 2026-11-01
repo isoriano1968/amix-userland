@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""amix-requires DIR -- check the requirements in a component's manifest.
+
+A manifest is NAME.manifest in the component.  Lines:
+  name     area/component     as its place under components/
+  version  1.2.3
+  summary  one line
+  require  area/component     another component, which must have a manifest
+  provide  PKG                a pkg-config name it installs
+
+Every require must be a component, all the way down, without a cycle, and what
+it provides must be in the sysroot.  What is missing is built from its component
+and installed there, as a package system would pull it in; we have no repository
+of built packages, so the source is the package.  Prints the order; exit 1 if it fails.
+"""
+import glob, os, subprocess, sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+COMPONENTS = os.path.join(ROOT, "components")
+
+
+def read(path):
+    m = {"require": [], "provide": []}
+    for n, line in enumerate(open(path), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, _, value = line.partition(" ")
+        value = value.strip()
+        if key in ("require", "provide"):
+            m[key].append(value)
+        elif key in ("name", "version", "summary"):
+            m[key] = value
+        else:
+            sys.exit("%s:%d: unknown line: %s" % (path, n, line))
+    return m
+
+
+def manifest(comp):
+    found = glob.glob(os.path.join(COMPONENTS, comp, "*.manifest"))
+    if len(found) != 1:
+        return None
+    m = read(found[0])
+    if m.get("name") != comp:
+        sys.exit("%s: name is %s, it is at %s" % (found[0], m.get("name"), comp))
+    return m
+
+
+def present(pkg):
+    tool = os.path.join(ROOT, "tools", "amix-pkg-config")
+    return subprocess.call([tool, "--exists", pkg], stderr=subprocess.DEVNULL) == 0
+
+
+def walk(comp, path, order, bad):
+    if comp in path:
+        bad.append("cycle: " + " -> ".join(path + [comp]))
+        return
+    if comp in order:
+        return
+    m = manifest(comp)
+    if m is None:
+        bad.append("%s: no such component, or no manifest (needed by %s)" % (comp, path[-1] if path else "?"))
+        return
+    for r in m["require"]:
+        walk(r, path + [comp], order, bad)
+    order.append(comp)
+    if not path:
+        return
+    missing = [p for p in m["provide"] if not present(p)]
+    if missing:
+        print("amix-requires: %s needs %s: building %s" % (path[-1], " ".join(missing), comp), file=sys.stderr)
+        d = os.path.join(COMPONENTS, comp)
+        if subprocess.call(["make", "-C", d, "-q", "-n", "build"], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL) == 2:
+            bad.append("%s: cannot be built here, see its README (needed by %s)" % (comp, path[-1]))
+        elif subprocess.call(["make", "-C", d, "build", "sysroot-install"], stdout=sys.stderr) != 0:
+            bad.append("%s: build failed (needed by %s)" % (comp, path[-1]))
+        elif not all(present(p) for p in missing):
+            bad.append("%s: built, but %s still missing" % (comp, " ".join(missing)))
+
+
+def main():
+    here = os.path.abspath(sys.argv[1])
+    comp = os.path.relpath(here, COMPONENTS)
+    order, bad = [], []
+    walk(comp, [], order, bad)
+    for b in bad:
+        print("amix-requires:", b, file=sys.stderr)
+    if bad:
+        return 1
+    print(" ".join(order))
+    return 0
+
+
+sys.exit(main())

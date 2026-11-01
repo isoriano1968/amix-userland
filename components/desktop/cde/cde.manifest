@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     desktop/cde
+version  2.2.4a
+summary  Common Desktop Environment
+require  x11/x11r6.3
+require  desktop/motif

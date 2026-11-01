@@ -1,5 +1,9 @@
 # Mesa 3.1 for AMIX
 
+Retired as the system's GL: that is [Mesa 18.3](../mesa-183) now. GLU and GLUT
+for it are still built from this source. The rest is kept for reference and for
+comparing performance.
+
 An independent Mesa 3.1 software-rendering port for Commodore Amiga UNIX
 (AMIX), using X11R6.3 and the MNT ZZ9000 framebuffer X server.
 

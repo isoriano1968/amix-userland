@@ -1,0 +1,10 @@
+# NEdit on AMIX, cross with gcc 14: Motif and X through pkg-config
+CC=m68k-elf-gcc
+AR=m68k-elf-ar
+CFLAGS=-O2 -m68060 -w -fno-strict-aliasing -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4 -DUSE_DIRENT \
+	-include sys/time.h -include stdint.h -DNO_XMIM -DUSE_LPR_PRINT_CMD -DDONT_HAVE_GLOB -std=gnu89 $(XCFLAGS)
+ARFLAGS=-urs
+LIBS=$(XLIBS)
+include Makefile.common
+
+verify_config:

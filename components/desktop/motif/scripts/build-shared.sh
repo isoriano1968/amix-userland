@@ -1,13 +1,13 @@
 #!/bin/sh
-# build-shared-motif.sh STAGE -- libXm and libMrm as shared libraries and mwm
+# build-shared.sh STAGE -- libXm and libMrm as shared libraries and mwm
 # linked to them, against the shared X of x11/x11r6.3's build-shared.sh in
-# STAGE.  Needs build-motif.sh's work tree (the sources and host tools).
+# STAGE.  Needs build-static.sh's work tree (the sources and host tools).
 # Installs to STAGE/usr/motif; libtool does not know this target, so the
 # libraries are made from -fPIC archives.
 set -e
 . "$(dirname "$0")/common.sh"
 STAGE=$1
-XL=$STAGE/usr/x11r6/lib
+XL=${X_STAGE:-$STAGE}/usr/x11r6/lib
 X=$X11_EXPORTS
 PIC=$WORK/motif-pic
 ROOT=$STAGE/usr/motif
@@ -49,7 +49,7 @@ includedir=\${prefix}/include
 Name: $l
 Description: Motif 2.3.8 lib$l
 Version: 2.3.8
-Requires: xt x11
+Requires: xmu xt xext x11
 Libs: -L\${libdir} -l$l -lgen
 Cflags: -I\${includedir}
 P

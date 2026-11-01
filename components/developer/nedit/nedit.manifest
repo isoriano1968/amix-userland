@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     developer/nedit
+version  5.7
+summary  Motif text editor with syntax highlighting and make
+require  x11/x11r6.3
+require  desktop/motif

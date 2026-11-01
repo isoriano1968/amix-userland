@@ -1,0 +1,7 @@
+# name, version and what building and running it needs
+name     desktop/motif
+version  2.3.8
+summary  Motif toolkit: libXm, libMrm, their headers and mwm
+require  x11/x11r6.3
+provide  xm
+provide  mrm

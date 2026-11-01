@@ -1,4 +1,4 @@
-# Motif 2.3.8 and CDE 2.2.4a for AMIX.
+# CDE 2.2.4a for AMIX.  Needs desktop/motif, built first.
 COMPONENT_NAME    = cde
 COMPONENT_VERSION = 2.2.4a
 

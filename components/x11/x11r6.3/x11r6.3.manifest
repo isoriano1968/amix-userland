@@ -1,0 +1,8 @@
+# name, version and what building and running it needs
+name     x11/x11r6.3
+version  6.3
+summary  X11R6.3 libraries, as shared libraries in /usr/x11r6/lib
+provide  x11
+provide  xt
+provide  xext
+provide  xmu

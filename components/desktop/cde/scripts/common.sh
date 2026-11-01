@@ -10,12 +10,12 @@ TOP=$(cd "$(dirname "$0")" && pwd)
 JOBS=${JOBS:-4}
 export PATH="$TOOLCHAIN/bin:$PATH"
 S=$TOP/scripts
+# desktop/motif, built first
 MOTIF_VER=2.3.8
+MOTIF_WORK=$TOP/../motif/work
+MOTIF_SRC=$MOTIF_WORK/motif-$MOTIF_VER
+MOTIF_ROOT=$MOTIF_WORK/motif-root
 CDE_VER=2.2.4a
-MOTIF_SRC=$WORK/motif-$MOTIF_VER          # unpacked and patched
-MOTIF_HOST=$WORK/motif-host               # host build: makestrs, wml
-MOTIF_BUILD=$WORK/motif-amix              # cross build
-MOTIF_ROOT=$WORK/motif-root               # its install tree (DESTDIR)
 LIBXP=$WORK/libxp
 CDE=$WORK/cde-$CDE_VER                    # unpacked, patched, built in place
 need() { for t in "$@"; do command -v "$t" >/dev/null 2>&1 || { echo "missing on the build host: $t" >&2; exit 1; }; done; }

@@ -24,6 +24,11 @@ A component holds what it takes to build it, not the built result
       <name>.license  the upstream licence
       patches/        the AMIX changes, numbered
       files/          files that are ours (drivers, scripts, config)
+      <name>.manifest name, version, what it requires and provides
+
+`make build` runs `tools/amix-requires` first: each `require` must be another
+component, and what that component `provide`s must be in the sysroot, or nothing
+is built.
 
 No binaries, and no game data or other third-party content that may not be
 redistributed.
@@ -52,8 +57,8 @@ version it names in its Makefile, and one version is linked into
 | Category       | For                                  | Today's repos                                     |
 | -------------- | ------------------------------------ | ------------------------------------------------- |
 | `audio`        | sound and music                      | moved: libmikmod, pt2-clone                       |
-| `desktop`      | desktop environments                 | moved: cde, cde-apps                              |
-| `developer`    | compilers and development tools      | moved: gcc-27, gcc-14, vscode                     |
+| `desktop`      | desktop environments                 | moved: cde, cde-apps, motif |
+| `developer`    | compilers and development tools      | moved: gcc-27, gcc-14, vscode, nedit, pkgconf |
 | `demos`        | demos and intros                     | moved: amixintro                                  |
 | `editor`       | editors                              | moved: vim                                        |
 | `games`        | games and their engines              | moved: iortcw, ioquake3, quake                    |
@@ -63,7 +68,7 @@ version it names in its Makefile, and one version is linked into
 | `runtime`      | language runtimes                    | moved: python3                                    |
 | `shell`        | shells                               | (bash)                                            |
 | `sysutils`     | system tools                         | moved: amtop, fileutils                           |
-| `x11`          | X server, libraries, GL              | moved: x11r6.3, mesa-31, mesa-183                 |
+| `x11`          | X server, libraries, GL              | moved: x11r6.3, mesa-31, mesa-183, mesa-demos, xzz9000                 |
 
 Kernel drivers, the 68040/68060 port and the Z3660 core 1 programs are in
 [amix-gate](https://github.com/isoriano1968/amix-gate); the Z3660 firmware fork

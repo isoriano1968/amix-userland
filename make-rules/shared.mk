@@ -14,6 +14,13 @@ STAGE_DIR  = $(CURDIR)/build/stage
 # where a component belongs on AMIX: /usr/local, /usr/gnu, /usr/X, /usr
 PREFIX     ?= /usr/local
 
+# a manifest's requirements are checked before anything is built
+ifneq ($(wildcard *.manifest),)
+build: requires
+endif
+requires:
+	$(abspath $(dir $(lastword $(MAKEFILE_LIST)))../tools/amix-requires) $(CURDIR)
+
 clean:
 	rm -rf build $(CLEAN_FILES)
 
@@ -21,7 +28,7 @@ clean:
 sysroot-install: stage
 	cp -R $(STAGE_DIR)/. $(AMIX_SYSROOT)/
 
-.PHONY: clean sysroot-install
+.PHONY: clean sysroot-install requires
 
 # the source: fetched into the component, checked against COMPONENT_SHA256
 $(COMPONENT_ARCHIVE):
