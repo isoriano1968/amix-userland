@@ -92,6 +92,7 @@ if [ -n "$CDE_SHARED" ]; then
 	# here, before the archives their needs come from
 	F=$(sed -n 's/^#define ExtraLoadFlags //p' config/cf/host.def | sed 's/-Wl,--as-needed.*//')
 	O=$(sed -n 's/^ *EXTRA_LIBRARIES = //p' programs/dtsr/Makefile | head -1)
+	rm -f programs/dtcm/dtcm/dtcm
 	for d in programs/dtcm/dtcm programs/dtlogin programs/dtsr; do
 		make -C "$d" -k EXTRA_LOAD_FLAGS="$F" < /dev/null \
 			EXTRA_LDOPTIONS="-Wl,-u,_XtInherit -L$CDE_SHARED/usr/x11r6/lib -lXtInherit" EXTRA_LIBRARIES="-lDtHelp -lDtSvc -lXm -ltt $O -lgen -lm -lstdc++ -lsupc++ -lamixcde -lamixc99" \

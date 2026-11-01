@@ -925,7 +925,8 @@ void R_SetupGL (void)
     glTranslatef (-r_refdef.vieworg[0],  -r_refdef.vieworg[1],  -r_refdef.vieworg[2]);
 
 #ifdef AMIX_ZZGL
-	if (r_mirroralpha.value != 1.0)		/* a round trip to core 1, for mirrors only */
+	/* a round trip to core 1: for mirrors and translucent water only */
+	if (r_mirroralpha.value != 1.0 || r_wateralpha.value != 1.0)
 #endif
 	glGetFloatv (GL_MODELVIEW_MATRIX, r_world_matrix);
 

@@ -561,7 +561,11 @@ void R_DrawSequentialPoly (msurface_t *s)
 			theRect->h = 0;
 			theRect->w = 0;
 		}
+#ifdef AMIX_ZZGL
+		glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+#else
 		glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_BLEND);
+#endif
 		glBegin (GL_TRIANGLE_FAN);
 		v = p->verts[0];
 		for (i=0 ; i<p->numverts ; i++, v+= VERTEXSIZE)
@@ -967,7 +971,12 @@ void R_DrawWaterSurfaces (void)
 	msurface_t	*s;
 	texture_t	*t;
 
+#ifdef AMIX_ZZGL
+	/* solid water is drawn with the world, and r_world_matrix is not there */
+	if (r_wateralpha.value == 1.0)
+#else
 	if (r_wateralpha.value == 1.0 && gl_texsort.value)
+#endif
 		return;
 
 	//
