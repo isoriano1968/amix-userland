@@ -28,6 +28,13 @@ rm -f "$XL/libXtInherit.a"
 m68k-elf-ar rcs "$XL/libXtInherit.a" "$XL/xtinherit.o"
 rm -f "$XL/xtinherit.o"
 
+DL=$STAGE/usr/dt/lib
+m68k-elf-gcc -O2 -m68060 -c "$TOP/files/amixcxx.c" -o "$DL/amixcxx.o"
+rm -f "$DL/libamixcxx.a"
+m68k-elf-ar rcs "$DL/libamixcxx.a" "$DL/amixcxx.o"
+rm -f "$DL/amixcxx.o"
+cp "$TOP/work-shared/cde-2.2.4a/lib/amixcde/libamixcde.a" "$DL/"
+
 # dependencies; Requires are read by both pkg-configs
 need() {	# file requires
 	f=$1; shift
@@ -61,6 +68,7 @@ Cflags: -I\${includedir}
 P
 }
 cpc tt tt "xt x11"
+sed -i 's/ -ltt$/ -ltt -lamixcxx -lamixcde/' "$STAGE/usr/dt/lib/pkgconfig/tt.pc"
 cpc csa csa "xt x11"
 cpc dtsvc DtSvc "tt xm"
 cpc dthelp DtHelp "dtsvc xm"
