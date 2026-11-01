@@ -94,8 +94,14 @@ if [ -n "$CDE_SHARED" ]; then
 	O=$(sed -n 's/^ *EXTRA_LIBRARIES = //p' programs/dtsr/Makefile | head -1)
 	for d in programs/dtcm/dtcm programs/dtlogin programs/dtsr; do
 		make -C "$d" -k EXTRA_LOAD_FLAGS="$F" < /dev/null \
-			EXTRA_LIBRARIES="-lDtHelp -lDtSvc -lXm -ltt $O -lgen -lm -lstdc++ -lsupc++ -lamixcde -lamixc99" \
+			EXTRA_LDOPTIONS="-Wl,-u,_XtInherit -L$CDE_SHARED/usr/x11r6/lib -lXtInherit" EXTRA_LIBRARIES="-lDtHelp -lDtSvc -lXm -ltt $O -lgen -lm -lstdc++ -lsupc++ -lamixcde -lamixc99" \
 			>> make-programs.log 2>&1 || true
+	done
+	# with widget classes of their own: one _XtInherit, in the program
+	for p in dtwm/dtwm dtfile/dtfile dtprintinfo/dtprintinfo; do
+		rm -f "programs/$p"
+		d=programs/${p%/*}
+		make -C "$d" -k EXTRA_LDOPTIONS="-Wl,-u,_XtInherit -L$CDE_SHARED/usr/x11r6/lib -lXtInherit" < /dev/null >> make-programs.log 2>&1 || true
 	done
 fi
 echo "== fonts (make-fonts.log)"

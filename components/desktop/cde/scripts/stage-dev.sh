@@ -1,6 +1,6 @@
 #!/bin/sh
 # stage-dev.sh STAGE -- what development needs beside the shared libraries:
-# headers in each prefix, libXtInherit.a, and .pc files that say all a program
+# headers in each prefix, and .pc files that say all a program
 # must link, on the machine itself as on the PC.
 set -e
 STAGE=$1
@@ -22,11 +22,6 @@ cp -RL "$MR/include/." "$STAGE/usr/motif/include/"
 for h in gl.h gl_mangle.h glu.h glu_mangle.h glut.h glx.h glx_mangle.h; do cp "$GL/$h" "$STAGE/usr/local/include/GL/"; done
 for d in Dt Tt csa; do cp -RL "$CI/$d" "$STAGE/usr/dt/include/"; done
 chmod -R u+w,go+rX "$STAGE/usr/x11r6/include" "$STAGE/usr/motif/include" "$STAGE/usr/local/include/GL" "$STAGE/usr/dt/include"
-
-m68k-elf-gcc -O2 -m68060 -I"$XI" -D__amix__ -DSVR4 -w -c "$ROOT/components/x11/x11r6.3/files/xtinherit.c" -o "$XL/xtinherit.o"
-rm -f "$XL/libXtInherit.a"
-m68k-elf-ar rcs "$XL/libXtInherit.a" "$XL/xtinherit.o"
-rm -f "$XL/xtinherit.o"
 
 DL=$STAGE/usr/dt/lib
 m68k-elf-gcc -O2 -m68060 -c "$TOP/files/amixcxx.c" -o "$DL/amixcxx.o"

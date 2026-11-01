@@ -71,3 +71,9 @@ lib Xi Xext X11
 lib Xt SM ICE X11
 lib Xmu Xt Xext X11
 lib Xaw Xmu Xt Xext X11
+
+# a program's own _XtInherit: xtinherit.c says why
+m68k-elf-gcc -O2 -m68060 -I"$XC/exports/include" -D__amix__ -DSVR4 -w -c "$HERE/xtinherit.c" -o "$L/xtinherit.o"
+rm -f "$L/libXtInherit.a"
+m68k-elf-ar rcs "$L/libXtInherit.a" "$L/xtinherit.o"
+rm -f "$L/xtinherit.o"
