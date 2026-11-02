@@ -25,6 +25,6 @@ stage:
 	mkdir -p $(STAGE_DIR)/usr/share/lib/terminfo $(STAGE_DIR)/usr/local/lib
 	cp -R build/ti/. $(STAGE_DIR)/usr/share/lib/terminfo/
 	cp files/amix-term.sh $(STAGE_DIR)/usr/local/lib/
-	tar --format=ustar --numeric-owner --owner=0 --group=0 -C $(STAGE_DIR) -cf build/terminfo-amix.tar usr
+	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) -cf build/terminfo-amix.tar usr
 
 .PHONY: build stage

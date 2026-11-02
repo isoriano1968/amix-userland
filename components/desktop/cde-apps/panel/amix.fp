@@ -1,6 +1,6 @@
 #
 # amix.fp -- the AMIX control in CDE's front panel, with the AMIX logo: its
-# subpanel holds the Z3660 window and AmixCast.  Installed in
+# subpanel holds the Z3660 window, AmixCast, NEdit and fsv.  Installed in
 # /etc/dt/appconfig/types/C in place of ztopcde.fp; dtwm reads it when the
 # workspace manager starts (Restart Workspace Manager).
 #
@@ -44,4 +44,30 @@ CONTROL Z3660
 	LABEL		Z3660
 	PUSH_ACTION	ZtopCDE
 	HELP_STRING	The Z3660 board and its second ARM core
+}
+
+CONTROL NEditPanel
+{
+	TYPE		icon
+	CONTAINER_NAME	AmixPanel
+	CONTAINER_TYPE	SUBPANEL
+	POSITION_HINTS	3
+	ICON		NEdit
+	LABEL		NEdit
+	PUSH_ACTION	NEdit
+	DROP_ACTION	NEdit
+	HELP_STRING	Text editor (developer/nedit)
+}
+
+CONTROL FsvPanel
+{
+	TYPE		icon
+	CONTAINER_NAME	AmixPanel
+	CONTAINER_TYPE	SUBPANEL
+	POSITION_HINTS	4
+	ICON		Fsv
+	LABEL		fsv
+	PUSH_ACTION	Fsv
+	DROP_ACTION	Fsv
+	HELP_STRING	3D file system visualizer (graphics/fsv)
 }

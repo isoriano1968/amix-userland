@@ -1,0 +1,19 @@
+# Makefile.motif -- fsv with the Motif interface, no autoconf.
+# make -f Makefile.motif CC=... XCFLAGS=... XLIBS=... [EXTRA_SRC=...]
+SRC   = src/about.c src/animation.c src/callbacks.c src/camera.c src/colexp.c \
+	src/color.c src/common.c src/dialog.c src/dirtree.c src/filelist.c \
+	src/fsv.c src/geometry.c src/glib-mini.c src/gui.c src/ogl.c src/scanfs.c \
+	src/tmaptext.c src/viewport.c src/window.c \
+	lib/getopt.c lib/getopt1.c lib/nvstore.c $(EXTRA_SRC)
+OBJ   = $(SRC:.c=.o)
+CFLAGS ?= -O2
+CPPFLAGS = -I. -Isrc -Ilib $(EXTRA_CPPFLAGS) $(XCFLAGS)
+
+fsv: $(OBJ)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ) $(XLIBS)
+
+.c.o:
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
+clean:
+	rm -f fsv $(OBJ)

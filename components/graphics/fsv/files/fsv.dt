@@ -1,0 +1,14 @@
+#
+# fsv.dt -- fsv in CDE.  Installed in /etc/dt/appconfig/types/C.
+#
+ACTION Fsv
+{
+	LABEL		fsv
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/usr/local/bin/fsv %(Arg_1)"Directory to show:"%
+	ICON		Fsv
+	DESCRIPTION	The 3D file system visualizer, a clone of IRIX's fsn: \
+			the directory tree as a landscape of pedestals and \
+			boxes. Drop a folder on it, or give a directory.
+}

@@ -143,7 +143,7 @@ address:
 cd /tmp
 netget 192.168.0.10 5555 amtop.tar
 cd /
-tar xf /tmp/amtop.tar
+/usr/gnu/bin/tar --no-overwrite-dir -xf /tmp/amtop.tar
 rm /tmp/amtop.tar
 ```
 

@@ -14,6 +14,6 @@ stage:
 	rm -rf $(STAGE_DIR)
 	mkdir -p $(STAGE_DIR)
 	for t in $(TOOLS); do $(MAKE) -C ../../$$t stage && cp -R ../../$$t/build/stage/. $(STAGE_DIR)/ || exit 1; done
-	tar --format=ustar --numeric-owner --owner=0 --group=0 -C $(STAGE_DIR) -cf $(BUILD_DIR)/gnu-tools.tar usr
+	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) -cf $(BUILD_DIR)/gnu-tools.tar usr
 
 .PHONY: build stage

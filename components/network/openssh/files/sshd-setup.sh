@@ -15,6 +15,9 @@ for t in ed25519 ecdsa; do
 	k=/etc/ssh/ssh_host_${t}_key
 	[ -f $k ] || /usr/local/bin/ssh-keygen -q -t $t -f $k -N '' || exit 1
 done
-[ -f /etc/rc2.d/S85sshd ] || ln /etc/init.d/sshd /etc/rc2.d/S85sshd
-[ -f /etc/rc0.d/K15sshd ] || ln /etc/init.d/sshd /etc/rc0.d/K15sshd
+# always again: a reinstall replaces /etc/init.d/sshd, and old links
+# would keep the old script
+rm -f /etc/rc2.d/S85sshd /etc/rc0.d/K15sshd
+ln /etc/init.d/sshd /etc/rc2.d/S85sshd
+ln /etc/init.d/sshd /etc/rc0.d/K15sshd
 echo "sshd is set up: /etc/init.d/sshd start, or at the next boot"

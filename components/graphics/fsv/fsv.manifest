@@ -1,0 +1,8 @@
+# name, version and what building and running it needs
+name     graphics/fsv
+version  4ef9040
+summary  fsv: 3D file system visualizer (IRIX fsn clone), Motif interface
+require  x11/x11r6.3
+require  desktop/motif
+require  x11/mesa-183
+require  library/glu

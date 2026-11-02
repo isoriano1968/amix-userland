@@ -1,0 +1,880 @@
+diff --git a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/animation.c b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/animation.c
+index 7e68ed4..2f1d877 100644
+--- a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/animation.c
++++ b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/animation.c
+@@ -24,8 +24,8 @@
+ #include "common.h"
+ #include "animation.h"
+ 
+-#include <gtk/gtk.h>
+ 
++#include "gui.h" /* gui_idle_add( ) */
+ #include "ogl.h" /* ogl_draw( ) */
+ 
+ 
+@@ -449,7 +449,7 @@ redraw( void )
+ {
+ 	/* Ensure that animation loop is active */
+ 	if (!animation_active)
+-		gtk_idle_add_priority( G_PRIORITY_LOW, (GtkFunction)animation_loop, NULL );
++		gui_idle_add( animation_loop );
+ 
+ 	animation_active = TRUE;
+ 	globals.need_redraw = TRUE;
+diff --git a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/camera.c b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/camera.c
+index 55ccec9..fd07236 100644
+--- a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/camera.c
++++ b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/camera.c
+@@ -24,7 +24,7 @@
+ #include "common.h"
+ #include "camera.h"
+ 
+-#include <gtk/gtk.h>
++#include <Xm/Xm.h>
+ 
+ #include "animation.h"
+ #include "dirtree.h" /* dirtree_entry_expanded( ) */
+@@ -59,12 +59,13 @@ static union AnyCamera the_camera;
+ Camera *camera = CAMERA(&the_camera);
+ 
+ /* Viewport scrollbar adjustments */
+-static GtkAdjustment *x_scrollbar_adj;
+-static GtkAdjustment *y_scrollbar_adj;
++static GuiAdjustment x_scrollbar_adj_store, y_scrollbar_adj_store;
++static GuiAdjustment *x_scrollbar_adj = &x_scrollbar_adj_store;
++static GuiAdjustment *y_scrollbar_adj = &y_scrollbar_adj_store;
+ 
+ /* Scrollbar adjustments at outset of a camera pan */
+-static GtkAdjustment prev_x_scrollbar_adj;
+-static GtkAdjustment prev_y_scrollbar_adj;
++static GuiAdjustment prev_x_scrollbar_adj;
++static GuiAdjustment prev_y_scrollbar_adj;
+ 
+ /* Strings for message passing */
+ static char x_axis_mesg[] = "x_axis";
+@@ -306,8 +307,9 @@ treev_scrollbar_move( double value, int axis )
+ /* This callback services the viewport scrollbars (or, more precisely,
+  * their adjustments) whenever either is moved by the user */
+ static void
+-camera_scrollbar_move_cb( GtkAdjustment *adj, const char *mesg )
++camera_scrollbar_move_cb( GuiAdjustment *adj, void *data )
+ {
++	const char *mesg = (const char *)data;
+ 	double value;
+ 	int axis;
+ 
+@@ -348,21 +350,16 @@ camera_scrollbar_move_cb( GtkAdjustment *adj, const char *mesg )
+ 
+ /* Correspondence from window_init( ) */
+ void
+-camera_pass_scrollbar_widgets( GtkWidget *x_scrollbar_w, GtkWidget *y_scrollbar_w )
++camera_pass_scrollbar_widgets( Widget x_scrollbar_w, Widget y_scrollbar_w )
+ {
+-	/* Get the adjustments */
+-	x_scrollbar_adj = GTK_RANGE(x_scrollbar_w)->adjustment;
+-	y_scrollbar_adj = GTK_RANGE(y_scrollbar_w)->adjustment;
+-
+-	/* Connect signal handlers */
+-	gtk_signal_connect( GTK_OBJECT(x_scrollbar_adj), "value_changed", GTK_SIGNAL_FUNC(camera_scrollbar_move_cb), x_axis_mesg );
+-	gtk_signal_connect( GTK_OBJECT(y_scrollbar_adj), "value_changed", GTK_SIGNAL_FUNC(camera_scrollbar_move_cb), y_axis_mesg );
++	gui_adjustment_init( x_scrollbar_adj, x_scrollbar_w, camera_scrollbar_move_cb, x_axis_mesg );
++	gui_adjustment_init( y_scrollbar_adj, y_scrollbar_w, camera_scrollbar_move_cb, y_axis_mesg );
+ }
+ 
+ 
+ /* Default scrollbar states */
+ static void
+-null_get_scrollbar_states( GtkAdjustment *x_adj, GtkAdjustment *y_adj )
++null_get_scrollbar_states( GuiAdjustment *x_adj, GuiAdjustment *y_adj )
+ {
+ 	x_adj->lower = 0.0;
+ 	x_adj->upper = 100.0;
+@@ -377,7 +374,7 @@ null_get_scrollbar_states( GtkAdjustment *x_adj, GtkAdjustment *y_adj )
+ /* This produces the exact state the viewport scrollbars should have in
+  * DiscV mode, given the current camera state and current node */
+ static void
+-discv_get_scrollbar_states( GtkAdjustment *x_adj, GtkAdjustment *y_adj )
++discv_get_scrollbar_states( GuiAdjustment *x_adj, GuiAdjustment *y_adj )
+ {
+ 
+ 	/* TODO: To be implemented... */
+@@ -389,7 +386,7 @@ discv_get_scrollbar_states( GtkAdjustment *x_adj, GtkAdjustment *y_adj )
+ 
+ /* Same as above, but for MapV mode */
+ static void
+-mapv_get_scrollbar_states( GtkAdjustment *x_adj, GtkAdjustment *y_adj )
++mapv_get_scrollbar_states( GuiAdjustment *x_adj, GuiAdjustment *y_adj )
+ {
+ 	GNode *dnode;
+ 	XYvec dims, margin;
+@@ -453,7 +450,7 @@ mapv_get_scrollbar_states( GtkAdjustment *x_adj, GtkAdjustment *y_adj )
+ 
+ /* Same as above, but for TreeV mode */
+ static void
+-treev_get_scrollbar_states( GtkAdjustment *x_adj, GtkAdjustment *y_adj )
++treev_get_scrollbar_states( GuiAdjustment *x_adj, GuiAdjustment *y_adj )
+ {
+ 	GNode *dnode;
+ 	RTvec area_dims, dir_pos;
+@@ -533,7 +530,7 @@ treev_get_scrollbar_states( GtkAdjustment *x_adj, GtkAdjustment *y_adj )
+ /* Copies the values of from_adj into to_adj
+  * (cannot do a struct assign, otherwise ID info is copied as well) */
+ static void
+-adj_copy( GtkAdjustment *to_adj, GtkAdjustment *from_adj )
++adj_copy( GuiAdjustment *to_adj, GuiAdjustment *from_adj )
+ {
+ 	to_adj->lower = from_adj->lower;
+ 	to_adj->upper = from_adj->upper;
+@@ -549,7 +546,7 @@ adj_copy( GtkAdjustment *to_adj, GtkAdjustment *from_adj )
+  * (i.e. if k == 0, then adj = a_adj; if k == 1, then adj = b_adj, etc.
+  * k should be between 0 and 1 inclusive, of course) */
+ static void
+-adj_interpolate( GtkAdjustment *adj, double k, GtkAdjustment *a_adj, GtkAdjustment *b_adj )
++adj_interpolate( GuiAdjustment *adj, double k, GuiAdjustment *a_adj, GuiAdjustment *b_adj )
+ {
+ 	adj->lower = a_adj->lower + k * (b_adj->lower - a_adj->lower);
+ 	adj->upper = a_adj->upper + k * (b_adj->upper - a_adj->upper);
+@@ -567,7 +564,7 @@ adj_interpolate( GtkAdjustment *adj, double k, GtkAdjustment *a_adj, GtkAdjustme
+ void
+ camera_update_scrollbars( boolean hard_update )
+ {
+-	GtkAdjustment x_adj, y_adj;
++	GuiAdjustment x_adj, y_adj;
+ 
+ 	/* Get current scrollbar states */
+ 	switch (globals.fsv_mode) {
+@@ -603,16 +600,10 @@ camera_update_scrollbars( boolean hard_update )
+ 	}
+ 
+ 	/* Update the scrollbar widgets */
+-	if (hard_update || !gui_adjustment_widget_busy( x_scrollbar_adj )) {
+-		gtk_signal_handler_block_by_func( GTK_OBJECT(x_scrollbar_adj), GTK_SIGNAL_FUNC(camera_scrollbar_move_cb), x_axis_mesg );
+-		gtk_signal_emit_by_name( GTK_OBJECT(x_scrollbar_adj), "changed" );
+-		gtk_signal_handler_unblock_by_func( GTK_OBJECT(x_scrollbar_adj), GTK_SIGNAL_FUNC(camera_scrollbar_move_cb), x_axis_mesg );
+-	}
+-	if (hard_update || !gui_adjustment_widget_busy( y_scrollbar_adj )) {
+-		gtk_signal_handler_block_by_func( GTK_OBJECT(y_scrollbar_adj), GTK_SIGNAL_FUNC(camera_scrollbar_move_cb), y_axis_mesg );
+-		gtk_signal_emit_by_name( GTK_OBJECT(y_scrollbar_adj), "changed" );
+-		gtk_signal_handler_unblock_by_func( GTK_OBJECT(y_scrollbar_adj), GTK_SIGNAL_FUNC(camera_scrollbar_move_cb), y_axis_mesg );
+-	}
++	if (hard_update || !gui_adjustment_widget_busy( x_scrollbar_adj ))
++		gui_adjustment_changed( x_scrollbar_adj );
++	if (hard_update || !gui_adjustment_widget_busy( y_scrollbar_adj ))
++		gui_adjustment_changed( y_scrollbar_adj );
+ }
+ 
+ 
+diff --git a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/color.c b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/color.c
+index 40e42f5..9ed4cb4 100644
+--- a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/color.c
++++ b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/color.c
+@@ -47,8 +47,8 @@
+ static const ColorMode default_color_mode = COLOR_BY_NODETYPE;
+ static const char *default_nodetype_colors[NUM_NODE_TYPES] = {
+ 	NULL,		/* Metanode (not used) */
+-	"#A0A0A0",	/* Directory */
+-	"#FFFFA0",	/* Regular file */
++	"#C85A6E",	/* Directory: fsn's pedestals, as on IRIX */
++	"#2EC8D2",	/* Regular file: fsn's cyan boxes */
+ 	"#FFFFFF",	/* Symlink */
+ 	"#00FF00",	/* FIFO */
+ 	"#FF8000",	/* Socket */
+diff --git a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/fsv.c b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/fsv.c
+index 33a28b1..8768ab2 100644
+--- a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/fsv.c
++++ b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/fsv.c
+@@ -26,8 +26,6 @@
+ #include "common.h"
+ #include "fsv.h"
+ 
+-#include <gtk/gtk.h>
+-#include <gtkgl/gdkgl.h>
+ #include "getopt.h"
+ 
+ #include "about.h"
+@@ -296,12 +294,8 @@ main( int argc, char **argv )
+ 		root_dir = xstrdup( "." );
+ 	}
+ 
+-	/* Initialize GTK+ */
+-	gtk_init( &argc, &argv );
+-
+-	/* Check for OpenGL support */
+-	if (!gdk_gl_query( ))
+-		quit( _("fsv requires OpenGL support.") );
++	/* Display, OpenGL visual, main shell */
++	gui_init( &argc, argv );
+ 
+ 	window_init( initial_fsv_mode );
+ 	color_init( );
+@@ -309,7 +303,7 @@ main( int argc, char **argv )
+ 	fsv_load( root_dir );
+ 	xfree( root_dir );
+ 
+-	gtk_main( );
++	gui_main( );
+ 
+ 	return 0;
+ }
+diff --git a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/geometry.c b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/geometry.c
+index 7e28ff8..b3df4bb 100644
+--- a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/geometry.c
++++ b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/geometry.c
+@@ -3036,150 +3036,48 @@ draw_node( GNode *node )
+ }
+ 
+ 
+-/* Highlights a node. This isn't a draw function per se, as it manipulates
+- * the front and back buffers directly to do its work. "strong" flag
+- * indicates whether a noticeably heavier highlight should be drawn.
+- * Passing NULL/FALSE clears the existing highlight;
+- * passing NULL/TRUE resets internal state (ogl_draw( ) only, please) */
++/* The highlighted node, drawn with each frame. (fsv drew it straight
++ * into the front buffer, which software GL such as Mesa's xlib and
++ * llvmpipe drivers does not keep as the picture on screen.) */
++static GNode *highlighted_node = NULL;
++static boolean highlight_strong = FALSE;
++
++
++/* Highlights a node. "strong" flag indicates whether a noticeably
++ * heavier highlight should be drawn. Passing NULL/FALSE clears the
++ * highlight; NULL/TRUE (from ogl_draw( )) changes nothing */
+ void
+ geometry_highlight_node( GNode *node, boolean strong )
+ {
+-	static boolean highlight_drawn = FALSE;
+-	static boolean highlight_strong = FALSE;
+-	static GNode *highlighted_node;
+-	static double prev_proj_matrix[16];
+-	static double prev_mview_matrix[16];
+-	static int prev_vp_x1, prev_vp_y1;
+-	static int prev_vp_x2, prev_vp_y2;
+-	GLfloat feedback_buf[1024];
+-	GLint viewport[4];
+-	int width, height;
+-	int vp_x, vp_y;
+-	int vp_x1 = INT_MAX, vp_y1 = INT_MAX;
+-	int vp_x2 = -1, vp_y2 = -1;
+-	int val_count;
+-	int i = 0, v;
+-
+-	if ((node == NULL) && strong) {
+-		highlight_drawn = FALSE;
++	if ((node == NULL) && strong)
++		return;
++	if ((node == highlighted_node) && ((node == NULL) || (strong == highlight_strong)))
+ 		return;
+-	}
+ 
+-	/* Disable active per-fragment operations
+-	 * (for a faster glCopyPixels( )) */
+-	glDisable( GL_DITHER );
+-	glDisable( GL_DEPTH_TEST );
+-	glDisable( GL_LIGHTING );
++	highlighted_node = node;
++	highlight_strong = strong;
++	redraw( );
++}
+ 
+-	if (highlight_drawn) {
+-		if ((node != highlighted_node) || (!strong && highlight_strong)) {
+-			/* Remove the previously drawn highlight
+-			 * (i.e. restore the previously saved portion
+-			 * of the screen) */
+-			glMatrixMode( GL_PROJECTION );
+-			glPushMatrix( );
+-			glLoadMatrixd( prev_proj_matrix );
+-			glMatrixMode( GL_MODELVIEW );
+-			glPushMatrix( );
+-			glLoadMatrixd( prev_mview_matrix );
+-
+-			glReadBuffer( GL_BACK );
+-			glDrawBuffer( GL_FRONT );
+-			glCopyPixels( prev_vp_x1, prev_vp_y1, prev_vp_x2, prev_vp_y2, GL_COLOR );
+-			glDrawBuffer( GL_BACK );
+-
+-			glMatrixMode( GL_PROJECTION );
+-			glPopMatrix( );
+-			glMatrixMode( GL_MODELVIEW );
+-			glPopMatrix( );
+-		}
+-		else if (strong == highlight_strong) {
+-			/* Desired highlight is already drawn */
+-			glEnable( GL_LIGHTING );
+-			glEnable( GL_DEPTH_TEST );
+-			glEnable( GL_DITHER );
+-			return;
+-		}
+-	}
+ 
+-	if ((node == NULL) && !strong) {
+-		/* Highlight has been cleared, we're done */
+-		highlight_drawn = FALSE;
+-		glEnable( GL_LIGHTING );
+-		glEnable( GL_DEPTH_TEST );
+-		glEnable( GL_DITHER );
+-		glFlush( );
++/* Draws the highlight over the frame just drawn (ogl_draw( ) only) */
++void
++geometry_draw_highlight( void )
++{
++	GNode *node = highlighted_node;
++
++	if (globals.fsv_mode == FSV_SPLASH) {
++		/* A new scan frees the nodes */
++		highlighted_node = NULL;
+ 		return;
+ 	}
++	if (node == NULL)
++		return;
+ 
++	glDisable( GL_DEPTH_TEST );
++	glDisable( GL_LIGHTING );
+ 	glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+-
+-	if (!highlight_drawn || (node != highlighted_node)) {
+-		/* Use feedback to determine what portion of the screen
+-		 * will need to be saved */
+-		glFeedbackBuffer( 1024, GL_2D, feedback_buf );
+-		glRenderMode( GL_FEEDBACK );
+-		draw_node( node );
+-		val_count = glRenderMode( GL_RENDER );
+-
+-		/* Parse values returned in feedback buffer */
+-		while (i < val_count) {
+-			i++; /* or: ptype = feedback_buf[i++]; */
+-			/* (ptype == GL_LINE_TOKEN or GL_LINE_RESET_TOKEN) */
+-			for (v = 0; v < 2; v++) {
+-				vp_x = (int)feedback_buf[i++];
+-				vp_y = (int)feedback_buf[i++];
+-				/* Find corners */
+-				vp_x1 = MIN(vp_x, vp_x1);
+-				vp_y1 = MIN(vp_y, vp_y1);
+-				vp_x2 = MAX(vp_x, vp_x2);
+-				vp_y2 = MAX(vp_y, vp_y2);
+-			}
+-		}
+-
+-		/* Get viewport dimensions */
+-		glGetIntegerv( GL_VIEWPORT, viewport );
+-		width = viewport[2];
+-		height = viewport[3];
+-
+-		/* Allow a 4-pixel margin of safety */
+-		vp_x1 = MAX(0, vp_x1 - 4);
+-		vp_y1 = MAX(0, vp_y1 - 4);
+-		vp_x2 = MIN(width - 1, vp_x2 + 4);
+-		vp_y2 = MIN(height - 1, vp_y2 + 4);
+-
+-		/* Copy affected portion of front buffer to back buffer */
+-		glMatrixMode( GL_PROJECTION );
+-		glPushMatrix( ); /* Save for upcoming highlight draw */
+-		glLoadIdentity( );
+-		glOrtho( 0.0, (double)width, 0.0, (double)height, -1.0, 1.0 );
+-		glGetDoublev( GL_PROJECTION_MATRIX, prev_proj_matrix );
+-		glMatrixMode( GL_MODELVIEW );
+-		glPushMatrix( ); /* Save for upcoming highlight draw */
+-		glLoadIdentity( );
+-		glRasterPos2i( vp_x1, vp_y1 );
+-		glGetDoublev( GL_MODELVIEW_MATRIX, prev_mview_matrix );
+-
+-		glReadBuffer( GL_FRONT );
+-		glCopyPixels( vp_x1, vp_y1, vp_x2, vp_y2, GL_COLOR );
+-
+-		prev_vp_x1 = vp_x1;
+-		prev_vp_y1 = vp_y1;
+-		prev_vp_x2 = vp_x2;
+-		prev_vp_y2 = vp_y2;
+-
+-		/* Restore matrices for upcoming highlight draw */
+-		glMatrixMode( GL_PROJECTION );
+-		glPopMatrix( );
+-		glMatrixMode( GL_MODELVIEW );
+-		glPopMatrix( );
+-	}
+-
+-	/* Draw highlight directly to front buffer */
+-	glDrawBuffer( GL_FRONT );
+-
+-	/* Draw highlight */
+-	if (strong) {
++	if (highlight_strong) {
+ 		glLineWidth( 7.0 );
+ 		glColor3f( 1.0, 0.75, 0.0 );
+ 		draw_node( node );
+@@ -3190,19 +3088,9 @@ geometry_highlight_node( GNode *node, boolean strong )
+ 	glLineWidth( 3.0 );
+ 	draw_node( node );
+ 	glLineWidth( 1.0 );
+-
+-	/* Restore normal GL state */
+-	glDrawBuffer( GL_BACK );
+ 	glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+ 	glEnable( GL_LIGHTING );
+ 	glEnable( GL_DEPTH_TEST );
+-	glEnable( GL_DITHER );
+-
+-	glFlush( );
+-
+-	highlight_drawn = TRUE;
+-	highlight_strong = strong;
+-	highlighted_node = node;
+ }
+ 
+ 
+diff --git a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/geometry.h b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/geometry.h
+index 6adf3d2..1a3fca6 100644
+--- a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/geometry.h
++++ b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/geometry.h
+@@ -106,6 +106,7 @@ void geometry_colexp_initiated( GNode *dnode );
+ void geometry_colexp_in_progress( GNode *dnode );
+ boolean geometry_should_highlight( GNode *node, unsigned int face_id );
+ void geometry_highlight_node( GNode *node, boolean strong );
++void geometry_draw_highlight( void );
+ void geometry_free_recursive( GNode *dnode );
+ 
+ 
+diff --git a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/ogl.c b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/ogl.c
+index b89d1d0..5d424a2 100644
+--- a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/ogl.c
++++ b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/ogl.c
+@@ -24,19 +24,23 @@
+ #include "common.h"
+ #include "ogl.h"
+ 
+-#include <gtk/gtk.h>
+-#include <gtkgl/gtkglarea.h>
++#include <Xm/Xm.h>
++#include <Xm/DrawingA.h>
+ #include <GL/gl.h>
++#include <GL/glx.h>
+ #include <GL/glu.h> /* gluPickMatrix( ) */
+ 
+ #include "animation.h" /* redraw( ) */
+ #include "camera.h"
+ #include "geometry.h"
++#include "gui.h"
+ #include "tmaptext.h" /* text_init( ) */
+ 
+ 
+-/* Main viewport OpenGL area widget */
+-static GtkWidget *viewport_gl_area_w = NULL;
++/* Main viewport OpenGL area widget, and its context */
++static Widget viewport_gl_area_w = NULL;
++static GLXContext viewport_glx_context = NULL;
++extern XVisualInfo *gui_gl_visual;
+ 
+ 
+ /* Initializes OpenGL state */
+@@ -92,11 +96,10 @@ ogl_init( void )
+ void
+ ogl_resize( void )
+ {
+-	int width, height;
++	Dimension width, height;
+ 
+-	width = viewport_gl_area_w->allocation.width;
+-	height = viewport_gl_area_w->allocation.height;
+-	glViewport( 0, 0, width, height );
++	XtVaGetValues( viewport_gl_area_w, XmNwidth, &width, XmNheight, &height, NULL );
++	glViewport( 0, 0, width, MAX(height, 1) );
+ }
+ 
+ 
+@@ -177,6 +180,45 @@ setup_modelview_matrix( void )
+ }
+ 
+ 
++/* The sky of fsn on IRIX: black overhead, green at the horizon, black
++ * ground below it */
++static void
++draw_sky( void )
++{
++	glPushAttrib( GL_ENABLE_BIT | GL_DEPTH_BUFFER_BIT | GL_LIGHTING_BIT );
++	glDisable( GL_LIGHTING );
++	glDisable( GL_DEPTH_TEST );
++	glDisable( GL_TEXTURE_2D );
++	glDisable( GL_CULL_FACE );
++	glDepthMask( GL_FALSE );
++	glShadeModel( GL_SMOOTH );
++	glMatrixMode( GL_PROJECTION );
++	glPushMatrix( );
++	glLoadIdentity( );
++	glMatrixMode( GL_MODELVIEW );
++	glPushMatrix( );
++	glLoadIdentity( );
++	glBegin( GL_QUAD_STRIP );
++	glColor3f( 0.0, 0.0, 0.0 );
++	glVertex2d( -1.0, 1.0 );
++	glVertex2d( 1.0, 1.0 );
++	glColor3f( 0.098, 0.369, 0.188 );	/* #195E30 */
++	glVertex2d( -1.0, 0.1 );
++	glVertex2d( 1.0, 0.1 );
++	glColor3f( 0.0, 0.0, 0.0 );
++	glVertex2d( -1.0, -0.15 );
++	glVertex2d( 1.0, -0.15 );
++	glVertex2d( -1.0, -1.0 );
++	glVertex2d( 1.0, -1.0 );
++	glEnd( );
++	glPopMatrix( );
++	glMatrixMode( GL_PROJECTION );
++	glPopMatrix( );
++	glMatrixMode( GL_MODELVIEW );
++	glPopAttrib( );
++}
++
++
+ /* (Re)draws the viewport
+  * NOTE: Don't call this directly! Use redraw( ) */
+ void
+@@ -187,10 +229,13 @@ ogl_draw( void )
+ 
+ 	geometry_highlight_node( NULL, TRUE );
+ 	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
++	if (globals.fsv_mode != FSV_SPLASH)
++		draw_sky( );
+ 
+ 	setup_projection_matrix( TRUE );
+ 	setup_modelview_matrix( );
+ 	geometry_draw( TRUE );
++	geometry_draw_highlight( );
+ 
+ 	/* Error check */
+ 	err = glGetError( );
+@@ -205,7 +250,7 @@ ogl_draw( void )
+ 			return;
+ 	}
+ 
+-	gtk_gl_area_swapbuffers( GTK_GL_AREA(viewport_gl_area_w) );
++	glXSwapBuffers( XtDisplay(viewport_gl_area_w), XtWindow(viewport_gl_area_w) );
+ }
+ 
+ 
+@@ -247,37 +292,49 @@ ogl_select( int x, int y, const GLuint **selectbuf_ptr )
+ }
+ 
+ 
+-/* Helper callback for ogl_area_new( ) */
+ static void
+-realize_cb( GtkWidget *gl_area_w )
++expose_cb( Widget w, XtPointer data, XtPointer call )
+ {
+-	gtk_gl_area_make_current( GTK_GL_AREA(gl_area_w) );
+-	ogl_init( );
++	if (viewport_glx_context != NULL)
++		ogl_refresh( );
++}
++
++
++static void
++resize_cb( Widget w, XtPointer data, XtPointer call )
++{
++	if (viewport_glx_context != NULL) {
++		ogl_resize( );
++		redraw( );
++	}
+ }
+ 
+ 
+-/* Creates the viewport GL widget */
+-GtkWidget *
+-ogl_widget_new( void )
++/* Creates the viewport GL widget (a drawing area) */
++Widget
++ogl_widget_new( Widget parent_w )
+ {
+-	int gl_area_attributes[] = {
+-		GDK_GL_RGBA,
+-		GDK_GL_RED_SIZE, 1,
+-		GDK_GL_GREEN_SIZE, 1,
+-		GDK_GL_BLUE_SIZE, 1,
+-		GDK_GL_DEPTH_SIZE, 1,
+-		GDK_GL_DOUBLEBUFFER,
+-		GDK_GL_NONE
+-	};
+-
+-	/* Create the widget */
+-	viewport_gl_area_w = gtk_gl_area_new( gl_area_attributes );
+-
+-	/* Initialize widget's GL state when realized */
+-	gtk_signal_connect( GTK_OBJECT(viewport_gl_area_w), "realize", GTK_SIGNAL_FUNC(realize_cb), NULL );
++	viewport_gl_area_w = XtVaCreateManagedWidget( "viewport", xmDrawingAreaWidgetClass, parent_w,
++		XmNwidth, 320, XmNheight, 240, XmNtraversalOn, False, NULL );
++	XtAddCallback( viewport_gl_area_w, XmNexposeCallback, expose_cb, NULL );
++	XtAddCallback( viewport_gl_area_w, XmNresizeCallback, resize_cb, NULL );
+ 
+ 	return viewport_gl_area_w;
+ }
+ 
+ 
++/* After the window is realized: the context, and GL's initial state */
++void
++ogl_realize( void )
++{
++	Display *dpy = XtDisplay(viewport_gl_area_w);
++
++	viewport_glx_context = glXCreateContext( dpy, gui_gl_visual, NULL, True );
++	if (viewport_glx_context == NULL)
++		quit( _("fsv: cannot create an OpenGL context") );
++	glXMakeCurrent( dpy, XtWindow(viewport_gl_area_w), viewport_glx_context );
++	ogl_init( );
++}
++
++
+ /* end ogl.c */
+diff --git a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/scanfs.c b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/scanfs.c
+index 0df0b5d..d7b3e18 100644
+--- a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/scanfs.c
++++ b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/scanfs.c
+@@ -27,7 +27,6 @@
+ #include <dirent.h>
+ #include <unistd.h>
+ #include <sys/stat.h>
+-#include <gtk/gtk.h>
+ 
+ #include "dirtree.h"
+ #include "filelist.h"
+@@ -298,7 +297,7 @@ scanfs( const char *dir )
+ {
+ 	const char *root_dir;
+         GNode **node_table;
+-	guint handler_id;
++	unsigned long handler_id;
+ 	char *name;
+ 
+ 	if (globals.fstree != NULL) {
+@@ -361,13 +360,13 @@ scanfs( const char *dir )
+ 
+ 	/* GUI stuff */
+ 	filelist_scan_monitor_init( );
+-	handler_id = gtk_timeout_add( SCAN_MONITOR_PERIOD, (GtkFunction)scan_monitor, NULL );
++	handler_id = gui_timeout_add( SCAN_MONITOR_PERIOD, scan_monitor );
+ 
+ 	/* Let the disk thrashing begin */
+ 	process_dir( root_dir, root_dnode );
+ 
+ 	/* GUI stuff again */
+-	gtk_timeout_remove( handler_id );
++	gui_timeout_remove( handler_id );
+ 	window_statusbar( SB_RIGHT, "" );
+ 	dirtree_no_more_entries( );
+ 	gui_update( );
+diff --git a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/viewport.c b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/viewport.c
+index f7cf04a..483e008 100644
+--- a/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/viewport.c
++++ b/fsv-4ef9040fcf14cddd52d79dad87a80355fc885602/src/viewport.c
+@@ -24,7 +24,8 @@
+ #include "common.h"
+ #include "viewport.h"
+ 
+-#include <gtk/gtk.h>
++#include <Xm/Xm.h>
++#include <X11/cursorfont.h>
+ #include <GL/gl.h> /* GLuint */
+ 
+ #include "about.h"
+@@ -50,6 +51,10 @@ static GNode *indicated_node = NULL;
+ /* Previous mouse pointer coordinates */
+ static int prev_x = 0, prev_y = 0;
+ 
++/* Node under button 3 when pressed: its menu comes on release, so that
++ * a click leaves the Motif menu posted */
++static GNode *menu_node = NULL;
++
+ 
+ /* Receives a newly created node table from scanfs( ) */
+ void
+@@ -108,12 +113,13 @@ node_at_location( int x, int y, unsigned int *face_id )
+ }
+ 
+ 
+-/* This callback catches all events for the viewport */
+-int
+-viewport_cb( GtkWidget *gl_area_w, GdkEvent *event )
++/* Handles the mouse in the viewport (expose and resize are the drawing
++ * area's callbacks, in ogl.c) */
++static void
++viewport_event( Widget gl_area_w, XtPointer data, XEvent *event, Boolean *go_on )
+ {
+-	GdkEventButton *ev_button;
+-	GdkEventMotion *ev_motion;
++	static Time prev_press_time = 0;
++	static unsigned int prev_press_button = 0;
+ 	GNode *node;
+ 	double dx, dy;
+ 	unsigned int face_id;
+@@ -121,43 +127,34 @@ viewport_cb( GtkWidget *gl_area_w, GdkEvent *event )
+ 	boolean btn1, btn2, btn3;
+ 	boolean ctrl_key;
+ 
+-	/* Handle low-level GL area widget events */
+-	switch (event->type) {
+-		case GDK_EXPOSE:
+-		ogl_refresh( );
+-		return FALSE;
+-
+-		case GDK_CONFIGURE:
+-		ogl_resize( );
+-		return FALSE;
+-
+-		default:
+-		/* Event is probably coming from the mouse */
+-		break;
+-	}
+-
+-	if (event->type == GDK_BUTTON_PRESS) {
++	if (event->type == ButtonPress) {
+ 		/* Exit the About presentation if it is up */
+ 		if (about( ABOUT_END )) {
+ 			indicated_node = NULL;
+-			return FALSE;
++			return;
+ 		}
+ 	}
+ 
+ 	/* If we're in splash screen mode, proceed no further */
+ 	if (globals.fsv_mode == FSV_SPLASH)
+-		return FALSE;
++		return;
+ 
+ 	/* Mouse-related events */
+ 	switch (event->type) {
+-		case GDK_BUTTON_PRESS:
+-		ev_button = (GdkEventButton *)event;
+-		btn1 = ev_button->button == 1;
+-		btn2 = ev_button->button == 2;
+-		btn3 = ev_button->button == 3;
+-		ctrl_key = ev_button->state & GDK_CONTROL_MASK;
+-		x = (int)ev_button->x;
+-		y = (int)ev_button->y;
++		case ButtonPress:
++		/* Ignore second click of a double-click */
++		if (event->xbutton.button == prev_press_button && (event->xbutton.time - prev_press_time) < 300) {
++			prev_press_time = 0;
++			break;
++		}
++		prev_press_time = event->xbutton.time;
++		prev_press_button = event->xbutton.button;
++		btn1 = event->xbutton.button == Button1;
++		btn2 = event->xbutton.button == Button2;
++		btn3 = event->xbutton.button == Button3;
++		ctrl_key = event->xbutton.state & ControlMask;
++		x = event->xbutton.x;
++		y = event->xbutton.y;
+ 		if (camera_moving( )) {
+ 			/* Yipe! Impatient user */
+ 			camera_pan_finish( );
+@@ -179,8 +176,7 @@ viewport_cb( GtkWidget *gl_area_w, GdkEvent *event )
+ 					geometry_highlight_node( NULL, FALSE );
+ 				window_statusbar( SB_RIGHT, node_absname( indicated_node ) );
+ 				if (btn3) {
+-					/* Bring up context-sensitive menu */
+-					context_menu( indicated_node, ev_button );
++					menu_node = indicated_node;
+ 					filelist_show_entry( indicated_node );
+ 				}
+ 			}
+@@ -189,38 +185,41 @@ viewport_cb( GtkWidget *gl_area_w, GdkEvent *event )
+ 		prev_y = y;
+ 		break;
+ 
+-		case GDK_2BUTTON_PRESS:
+-		/* Ignore second click of a double-click */
+-		break;
+-
+-		case GDK_BUTTON_RELEASE:
+-		ev_button = (GdkEventButton *)event;
+-		btn1 = ev_button->state & GDK_BUTTON1_MASK;
+-		ctrl_key = ev_button->state & GDK_CONTROL_MASK;
++		case ButtonRelease:
++		if (event->xbutton.button == Button3 && menu_node != NULL) {
++			/* Bring up context-sensitive menu */
++			context_menu( menu_node, &event->xbutton );
++			menu_node = NULL;
++			break;
++		}
++		btn1 = event->xbutton.state & Button1Mask;
++		ctrl_key = event->xbutton.state & ControlMask;
+ 		if (btn1 && !ctrl_key && !camera_moving( ) && (indicated_node != NULL))
+ 			camera_look_at( indicated_node );
+ 		gui_cursor( gl_area_w, -1 );
+ 		break;
+ 
+-		case GDK_MOTION_NOTIFY:
+-		ev_motion = (GdkEventMotion *)event;
+-		btn1 = ev_motion->state & GDK_BUTTON1_MASK;
+-		btn2 = ev_motion->state & GDK_BUTTON2_MASK;
+-		btn3 = ev_motion->state & GDK_BUTTON3_MASK;
+-		ctrl_key = ev_motion->state & GDK_CONTROL_MASK;
+-		x = (int)ev_motion->x;
+-		y = (int)ev_motion->y;
+-		if (!camera_moving( ) && !gtk_events_pending( )) {
++		case MotionNotify:
++		/* Only the latest position counts */
++		while (XCheckTypedWindowEvent( XtDisplay(gl_area_w), XtWindow(gl_area_w), MotionNotify, event ))
++			;
++		btn1 = event->xmotion.state & Button1Mask;
++		btn2 = event->xmotion.state & Button2Mask;
++		btn3 = event->xmotion.state & Button3Mask;
++		ctrl_key = event->xmotion.state & ControlMask;
++		x = event->xmotion.x;
++		y = event->xmotion.y;
++		if (!camera_moving( )) {
+ 			if (btn2) {
+ 				/* Dolly the camera */
+-				gui_cursor( gl_area_w, GDK_DOUBLE_ARROW );
++				gui_cursor( gl_area_w, XC_sb_v_double_arrow );
+ 				dy = MOUSE_SENSITIVITY * (y - prev_y);
+ 				camera_dolly( - dy );
+ 				indicated_node = NULL;
+ 			}
+ 			else if (ctrl_key && btn1) {
+ 				/* Revolve the camera */
+-				gui_cursor( gl_area_w, GDK_FLEUR );
++				gui_cursor( gl_area_w, XC_fleur );
+ 				dx = MOUSE_SENSITIVITY * (x - prev_x);
+ 				dy = MOUSE_SENSITIVITY * (y - prev_y);
+ 				camera_revolve( dx, dy );
+@@ -234,7 +233,7 @@ viewport_cb( GtkWidget *gl_area_w, GdkEvent *event )
+ 						indicated_node = NULL;
+ 				}
+ 			}
+-                        else
++			else
+ 				indicated_node = node_at_location( x, y, &face_id );
+ 			/* Update node highlighting */
+ 			if (indicated_node == NULL) {
+@@ -245,7 +244,7 @@ viewport_cb( GtkWidget *gl_area_w, GdkEvent *event )
+ 				if (geometry_should_highlight( indicated_node, face_id ) || btn1)
+ 					geometry_highlight_node( indicated_node, btn1 );
+ 				else
+-					geometry_highlight_node( NULL, FALSE);
++					geometry_highlight_node( NULL, FALSE );
+ 				window_statusbar( SB_RIGHT, node_absname( indicated_node ) );
+ 			}
+ 			prev_x = x;
+@@ -253,7 +252,7 @@ viewport_cb( GtkWidget *gl_area_w, GdkEvent *event )
+ 		}
+ 		break;
+ 
+-		case GDK_LEAVE_NOTIFY:
++		case LeaveNotify:
+ 		/* The mouse has left the viewport */
+ 		geometry_highlight_node( NULL, FALSE );
+ 		window_statusbar( SB_RIGHT, "" );
+@@ -265,8 +264,14 @@ viewport_cb( GtkWidget *gl_area_w, GdkEvent *event )
+ 		/* Ignore event */
+ 		break;
+ 	}
++}
++
+ 
+-	return FALSE;
++void
++viewport_pass_widget( Widget gl_area_w )
++{
++	XtAddEventHandler( gl_area_w, ButtonPressMask | ButtonReleaseMask | PointerMotionMask | LeaveWindowMask,
++		False, viewport_event, NULL );
+ }
+ 
+ 

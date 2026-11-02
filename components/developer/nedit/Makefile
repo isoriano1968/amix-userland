@@ -32,6 +32,6 @@ stage:
 	python3 -I files/mkicons.py $(DT)/icons/C
 	: > $(DT)/appmanager/C/Desktop_Apps/NEdit
 	chmod 755 $(DT)/appmanager/C/Desktop_Apps/NEdit
-	tar --format=ustar --numeric-owner --owner=0 --group=0 -C $(STAGE_DIR) -cf build/nedit-amix.tar etc usr
+	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) -cf build/nedit-amix.tar etc usr
 
 .PHONY: build stage

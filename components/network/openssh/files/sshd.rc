@@ -8,6 +8,10 @@ start)
 		echo "sshd: no host key, run /usr/local/libexec/sshd-setup"
 		exit 1
 	fi
+	# the kernel's default soft limits (16 MB of data and memory) are
+	# what every ssh login would get: too small for libGL and friends
+	ulimit -d unlimited
+	ulimit -v unlimited
 	/usr/local/bin/sshd
 	;;
 stop)

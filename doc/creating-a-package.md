@@ -157,7 +157,7 @@ Install into the sysroot and on the Amiga, then run it there:
 
 ```sh
 make build sysroot-install
-tar cf foo.tar -C build/stage usr
+tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -cf foo.tar -C build/stage usr
 python3 ../../../tools/net/netsend.py foo.tar 5555
 ```
 
@@ -167,9 +167,15 @@ On the Amiga, as root:
 cd /tmp
 netget <your PC> 5555 foo.tar
 cd /
-tar xf /tmp/foo.tar
+/usr/gnu/bin/tar --no-overwrite-dir -xf /tmp/foo.tar
 rm /tmp/foo.tar
 ```
+
+Two rules keep a package from changing the system around it. The tar is made
+with `--mode=go-w`, so nothing in it is group- or world-writable. It is
+unpacked with GNU tar and `--no-overwrite-dir`, so directories that exist,
+such as `/etc` or `/usr/local`, keep their owner and mode. AMIX's own `tar`
+applies the archive's directory modes to them.
 
 A library must also pass a native test: compile a small program on the Amiga with its
 `gcc` through `pkg-config --cflags --libs foo`, and run it.

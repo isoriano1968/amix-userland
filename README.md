@@ -74,7 +74,7 @@ version it names in its Makefile, and one version is linked into
 | `editor`       | editors                              | moved: vim                                        |
 | `gnu`          | GNU tools, in `/usr/gnu`             | bison, diffutils, findutils, gawk, grep, m4, make, sed, tar, and the metapackage gnu-tools |
 | `games`        | games and their engines              | moved: iortcw, ioquake3, quake                    |
-| `graphics`     | 3D and images                        | moved: blender                                    |
+| `graphics`     | 3D and images                        | moved: blender; fsv                               |
 | `library`      | general libraries                    | moved: freeglut, glu, lib060, libpng, openssl, ncurses, pth, sdl2, soft3d, tinygl, zlib |
 | `network`      | network tools                        | openssh                                           |
 | `multimedia`   | video                                | moved: ffmpeg                                     |

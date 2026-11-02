@@ -50,6 +50,6 @@ stage:
 	chmod 744 $(STAGE_DIR)/etc/init.d/sshd
 	chmod 755 $(STAGE_DIR)$(PREFIX)/libexec/sshd-setup
 	chmod 755 $(STAGE_DIR)$(PREFIX)/bin/* $(STAGE_DIR)$(PREFIX)/libexec/*
-	tar --format=ustar --numeric-owner --owner=0 --group=0 -C $(STAGE_DIR) -cf build/openssh-amix.tar usr etc
+	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) -cf build/openssh-amix.tar usr etc
 
 .PHONY: build stage
