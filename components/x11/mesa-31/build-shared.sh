@@ -13,12 +13,11 @@ rm -rf "$H/work-pic"; cp -a "$H/work" "$H/work-pic"
 cd "$H/work-pic"
 for d in src src-glu src-glut; do
 	rm -f $d/*.o
-	sed -i 's/"CFLAGS = -O2 -m68060 /"CFLAGS = -O2 -m68060 -fPIC /' $d/Make-config Make-config 2>/dev/null || true
 done
 rm -f lib/lib*.a
 for d in src src-glu src-glut; do
 	touch $d/depend
-	(cd $d && make -f Makefile.X11 amix060) > build-$d.log 2>&1 || { echo "failed: $d, see build-$d.log"; exit 1; }
+	(cd $d && make -f Makefile.X11 amix060 AMIX_PIC=-fPIC) > build-$d.log 2>&1 || { echo "failed: $d, see build-$d.log"; exit 1; }
 done
 "$H/../../../tools/amix-got-check" src/*.o src-glu/*.o src-glut/*.o
 mkdir -p "$L/pkgconfig"

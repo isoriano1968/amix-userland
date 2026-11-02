@@ -7,8 +7,9 @@ programs linked to it and for comparing performance.
 An independent Mesa 3.1 software-rendering port for Commodore Amiga UNIX
 (AMIX), using X11R6.3 and the MNT ZZ9000 framebuffer X server.
 
-The repository contains only the AMIX port overlay and deterministic source
-installer. Unmodified Mesa sources come from the official Mesa archive.
+The repository contains only the AMIX changes, as `patches/0001-amix-port.patch`
+against the unmodified Mesa archives, and `install.sh`, which unpacks the
+checksummed archives and applies the patch.
 
 ## Layout
 
@@ -35,7 +36,7 @@ Copy or mount `/export/amix/mesa3/Mesa-3.1` as
 ## Initial AMIX build
 
 The upstream Mesa 3.1 distribution already contains an historical AMIX
-target. This overlay keeps that target but selects GCC 2.7.2.3 and the
+target. The patch keeps that target but selects GCC 2.7.2.3 and the
 independent X11R6 tree. MIT-SHM, pthreads, CPU assembly, and hardware drivers
 are not enabled.
 
@@ -68,7 +69,7 @@ sh amix-build.sh mech
 
 ## The 68060 build with soft3D (Z3660)
 
-For a 68060 with a Z3660, the same overlay also builds a second variant,
+For a 68060 with a Z3660, the same patched tree also builds a second variant,
 cross-compiled on a Linux host with
 [gcc14-cross-amix](https://github.com/asokero/gcc14-cross-amix):
 
@@ -122,4 +123,12 @@ target).
 The Mesa archives are downloaded from the
 [official Mesa archive](https://archive.mesa3d.org/older-versions/3.x/).
 The `glutmech` demo comes from the official GLUT 3.7 archive; its original
-source header and GLUT notice are kept in the overlay.
+source header and GLUT notice are kept in the patch.
+
+## Shared libraries
+
+`build-shared.sh STAGE` builds `libGL`, `libGLU` and `libglut` as `.so.3`
+(`make amix060 AMIX_PIC=-fPIC`). It writes `libGL.so`, `libGLU.so`,
+`libglut.so` and `gl.pc`, `glu.pc`, `glut.pc` into `STAGE/usr/local/lib`,
+the names Mesa 18.3, `library/glu` and `library/freeglut` install now: run it
+into a stage of its own, never the system's.

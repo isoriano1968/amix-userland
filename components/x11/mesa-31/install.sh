@@ -88,13 +88,14 @@ done
 ROOT=$DEST/Mesa-3.1
 test -f "$ROOT/Make-config" || fail "Mesa 3.1 extraction is incomplete"
 
-echo "Installing AMIX compiler configuration"
-cp "$REPO_DIR/config/Make-config.amix" "$ROOT/Make-config"
+echo "Applying the AMIX patches"
+for p in "$REPO_DIR"/patches/*.patch
+do
+    (cd "$DEST" && patch -s -p1 < "$p") || fail "patch failed: $p"
+done
+chmod +x "$ROOT/amix-build.sh" "$ROOT/amix060-build.sh" "$ROOT/bin/mklib.amix060"
 
-echo "Installing AMIX build files"
-(cd "$REPO_DIR/overlay" && tar cf - Mesa-3.1) | (cd "$DEST" && tar xpf -)
-
-test -f "$ROOT/amix-build.sh" || fail "AMIX overlay was not installed"
+test -f "$ROOT/amix-build.sh" || fail "AMIX patches were not applied"
 grep 'CC = gcc' "$ROOT/Make-config" >/dev/null || \
     fail "AMIX compiler configuration was not installed"
 echo "Mesa 3.1 AMIX source tree prepared at $ROOT"

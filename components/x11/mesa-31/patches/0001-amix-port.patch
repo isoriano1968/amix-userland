@@ -1,0 +1,5520 @@
+diff -ruN a/Mesa-3.1/amix060-build.sh b/Mesa-3.1/amix060-build.sh
+--- a/Mesa-3.1/amix060-build.sh
++++ b/Mesa-3.1/amix060-build.sh
+@@ -0,0 +1,16 @@
++#!/bin/sh
++# amix060-build.sh [demos] -- Mesa 3.1 for the 68060, cross-built on a Linux
++# host with gcc14-cross-amix (Make-config: amix060): static libGL, libGLU and
++# libglut in lib/, with the Z3660 soft3D driver and MIT-SHM.  "demos" also
++# builds the demos (demos/build060.sh).  m68k-elf-gcc must be on PATH;
++# AMIX_SYSROOT names the sysroot (default ~/opt/m68k-amix-sysroot).
++set -e
++cd "$(dirname "$0")"
++mkdir -p lib
++for d in src src-glu src-glut; do
++	echo "== $d"
++	(cd $d && make -f Makefile.X11 amix060 ${AMIX_SYSROOT:+AMIX_SYSROOT=$AMIX_SYSROOT}) > $d-amix060.log 2>&1 || { echo "failed: $d/../$d-amix060.log"; exit 1; }
++done
++ls -l lib
++[ "$1" = demos ] && sh demos/build060.sh
++exit 0
+diff -ruN a/Mesa-3.1/amix-build.sh b/Mesa-3.1/amix-build.sh
+--- a/Mesa-3.1/amix-build.sh
++++ b/Mesa-3.1/amix-build.sh
+@@ -0,0 +1,69 @@
++#!/bin/sh
++
++set -e
++
++MODE=${1-libs}
++
++build_dir()
++{
++    dir=$1
++    echo "=== $dir ==="
++    touch "$dir/depend"
++    (cd "$dir" && make -f Makefile.X11 amix)
++}
++
++build_target()
++{
++    dir=$1
++    target=$2
++    echo "=== $dir/$target ==="
++    touch "$dir/depend"
++    (cd "$dir" && make -f Makefile.X11 amix "AMIX_TARGETS=$target")
++}
++
++build_libraries()
++{
++    if test -d lib
++    then
++        :
++    else
++        mkdir lib
++    fi
++
++    build_dir src
++    build_dir src-glu
++    build_dir src-glut
++}
++
++case "$MODE" in
++libs)
++    build_libraries
++    ;;
++xdemos)
++    build_dir xdemos
++    ;;
++bounce)
++    build_target demos bounce
++    ;;
++gears)
++    build_target demos gears
++    ;;
++glutmech|mech)
++    build_target demos glutmech
++    ;;
++demos)
++    build_dir demos
++    ;;
++all)
++    build_libraries
++    build_dir xdemos
++    build_dir demos
++    ;;
++clean)
++    make clean
++    ;;
++*)
++    echo "usage: $0 [libs|xdemos|bounce|gears|glutmech|mech|demos|all|clean]" >&2
++    exit 1
++    ;;
++esac
+diff -ruN a/Mesa-3.1/bin/mklib.amix060 b/Mesa-3.1/bin/mklib.amix060
+--- a/Mesa-3.1/bin/mklib.amix060
++++ b/Mesa-3.1/bin/mklib.amix060
+@@ -0,0 +1,8 @@
++#!/bin/sh
++# mklib.amix060 LIBRARY MAJOR MINOR TINY OBJECTS... -- a static archive with
++# the cross archiver (AMIX gcc14 build of Mesa 3.1)
++LIBRARY=$1
++shift 4
++rm -f $LIBRARY
++m68k-elf-ar ruv $LIBRARY "$@"
++m68k-elf-ranlib $LIBRARY
+diff -ruN a/Mesa-3.1/bin/mklib.ar-ruv b/Mesa-3.1/bin/mklib.ar-ruv
+--- a/Mesa-3.1/bin/mklib.ar-ruv
++++ b/Mesa-3.1/bin/mklib.ar-ruv
+@@ -1,38 +1,8 @@
+ #!/bin/sh
+-
+-# Make a standard Unix .a library file with 'ar ruv'
+-
+-#--identification------------------------------------------------------
+-
+-# $Id: mklib.ar-ruv,v 1.2 1999/09/15 15:10:20 brianp Exp $
+-
+-# $Log: mklib.ar-ruv,v $
+-# Revision 1.2  1999/09/15 15:10:20  brianp
+-# added third, tiny version number to arguments
+-#
+-# Revision 1.1  1999/08/19 13:52:57  brianp
+-# initial check-in (post-crash)
+-#
+-
+-
+-#--common--------------------------------------------------------------
+-
++# mklib.ar-ruv LIBRARY MAJOR MINOR TINY OBJECTS... -- a static archive with
++# the cross archiver (AMIX gcc14 build of Mesa 3.1)
+ LIBRARY=$1
+-shift 1
+-
+-MAJOR=$1
+-shift 1
+-
+-MINOR=$1
+-shift 1
+-
+-TINY=$1
+-shift 1
+-
+-OBJECTS=$*
+-
+-#--platform-------------------------------------------------------------
+-
+-#ar ruv $LIBRARY $OBJECTS
+-ar ru $LIBRARY $OBJECTS
+-
++shift 4
++rm -f $LIBRARY
++m68k-elf-ar ruv $LIBRARY "$@"
++m68k-elf-ranlib $LIBRARY
+diff -ruN a/Mesa-3.1/demos/bounce.c b/Mesa-3.1/demos/bounce.c
+--- a/Mesa-3.1/demos/bounce.c
++++ b/Mesa-3.1/demos/bounce.c
+@@ -229,6 +229,15 @@
+   glutVisibilityFunc(visible);
+   glutKeyboardFunc(key);
+ 
++#ifdef AMIX
++  /*
++   * AMIX can deliver the first VisibilityNotify before the callback is
++   * registered, leaving the demo with a single rendered frame.  Seed the
++   * idle loop so animation starts even if that initial event was missed.
++   */
++  glutIdleFunc(idle);
++#endif
++
+   if (IndexMode) {
+     glutSetColor(RED, 1.0, 0.0, 0.0);
+     glutSetColor(WHITE, 1.0, 1.0, 1.0);
+diff -ruN a/Mesa-3.1/demos/build060.sh b/Mesa-3.1/demos/build060.sh
+--- a/Mesa-3.1/demos/build060.sh
++++ b/Mesa-3.1/demos/build060.sh
+@@ -0,0 +1,17 @@
++#!/bin/sh
++# build060.sh [demo ...] -- the Mesa 3.1 demos for the 68060 (gcc14), static,
++# against ../lib (libGL with the soft3D driver; MESA_SOFT3D=0 is off), MIT-SHM and
++# lib060 (fast sin/cos/memcpy).  Output in bin060/.
++set -e
++cd "$(dirname "$0")"
++CC=$HOME/opt/m68k-amix/bin/m68k-elf-gcc
++X=$HOME/opt/m68k-amix-sysroot/usr/x11r6/xc/exports
++M=..
++L060=$HOME/Sources/usr-amix/amix-userland/components/library/lib060
++mkdir -p bin060 xmu-static
++ln -sf $X/lib/libXmu.a xmu-static/libXmu.a
++CFLAGS="-O2 -m68060 -ffast-math -w -U__linux__ -Ulinux -D__amix__ -DSVR4 -I$M/include -I$X/include"
++LIBS="-L$M/shm-static -Lxmu-static -L$M/lib -L$X/lib -lglut -lGLU -lGL -lXmu -lXext -lX11 -lshmsys -lsocket -lnsl -L$L060 -lm060 -lc060 -lm"
++for d in ${*:-gears texobj morph3d isosurf gloss reflect texcyl bounce trispd clearspd spectex stex3d glutmech}; do
++	$CC $CFLAGS -o bin060/$d $d.c $LIBS && echo "built $d" || echo "FAILED $d"
++done
+diff -ruN a/Mesa-3.1/demos/gears.c b/Mesa-3.1/demos/gears.c
+--- a/Mesa-3.1/demos/gears.c
++++ b/Mesa-3.1/demos/gears.c
+@@ -220,6 +220,7 @@
+         GLfloat seconds = (t - T0) / 1000.0;
+         GLfloat fps = Frames / seconds;
+         printf("%d frames in %g seconds = %g FPS\n", Frames, seconds, fps);
++        fflush(stdout);
+         T0 = t;
+         Frames = 0;
+      }
+@@ -366,6 +367,16 @@
+   glutSpecialFunc(special);
+   glutVisibilityFunc(visible);
+ 
++#ifdef AMIX
++  /*
++   * Creating the display lists is slow enough on AMIX that the initial
++   * VisibilityNotify can arrive before glutVisibilityFunc is registered.
++   * Seed the idle callback so the first Expose does not become the only
++   * rendered frame.  Later visibility events still suspend and resume it.
++   */
++  glutIdleFunc(idle);
++#endif
++
+   glutMainLoop();
+   return 0;             /* ANSI C requires main to return int. */
+ }
+diff -ruN a/Mesa-3.1/demos/GLUT-3.7-NOTICE b/Mesa-3.1/demos/GLUT-3.7-NOTICE
+--- a/Mesa-3.1/demos/GLUT-3.7-NOTICE
++++ b/Mesa-3.1/demos/GLUT-3.7-NOTICE
+@@ -0,0 +1,9 @@
++NOTICE:  The OpenGL Utility Toolkit (GLUT) distribution contains source
++code published in a book titled "Programming OpenGL for the X Window
++System" (ISBN: 0-201-48359-9) published by Addison-Wesley.  The
++programs and associated files contained in the distribution were
++developed by Mark J. Kilgard and are Copyright 1994, 1995, 1996 by Mark
++J. Kilgard (unless otherwise noted).  The programs are not in the
++public domain, but they are freely distributable without licensing
++fees.  These programs are provided without guarantee or warrantee
++expressed or implied.
+diff -ruN a/Mesa-3.1/demos/glutmech.c b/Mesa-3.1/demos/glutmech.c
+--- a/Mesa-3.1/demos/glutmech.c
++++ b/Mesa-3.1/demos/glutmech.c
+@@ -0,0 +1,1764 @@
++
++/**
++* program	: glutmech V1.1
++* author	: Simon Parkinson-Bates.
++* E-mail	: sapb@yallara.cs.rmit.edu.au
++* Copyright Simon Parkinson-Bates.
++* "source if freely avaliable to anyone to copy as long as they
++*  acknowledge me in their work."
++*
++* Funtional features 
++* ------------------
++* * online menu system avaliable by pressing left mouse button
++* * online cascading help system avaliable, providing information on
++*	the several  key strokes and what they do.
++* * animation sequence coded which makes the mech walk through an
++*	environment.  Shadows will soon be added to make it look
++*	more realistic.
++* * menu control to view mech in wireframe or sold mode.
++* * various key strokes avaliable to control idependently the mechs
++*	many joints.
++* * various key strokes avaliable to view mech and environment from 
++*	different angles
++* * various key strokes avaliable to alter positioning of the single
++*	light source.
++*
++*
++* Program features
++* ----------------
++* * uses double buffering
++* * uses display lists
++* * uses glut to manage windows, callbacks, and online menu.
++* * uses glpolygonfill() to maintain colors in wireframe and solid
++*	mode.
++*
++**/
++
++/* start of compilation conditions */
++#define SPHERE
++#define COLOR
++#define LIGHT
++#define TORSO
++#define HIP
++#define SHOULDER
++#define UPPER_ARM
++#define LOWER_ARM
++#define ROCKET_POD
++#define UPPER_LEG
++#define LOWER_LEG
++#define NO_NORM
++#define ANIMATION
++#define DRAW_MECH
++#define DRAW_ENVIRO
++#define MOVE_LIGHT
++/* end of compilation conditions */
++
++/* start various header files needed */
++#include <stdlib.h>
++#include <math.h>
++#define GLUT
++#define GLUT_KEY
++#define GLUT_SPEC
++#include <GL/glut.h>
++/* end of header files */
++
++/* start of display list definitions */
++#define SOLID_MECH_TORSO       	1
++#define SOLID_MECH_HIP          2
++#define SOLID_MECH_SHOULDER     3
++#define SOLID_MECH_UPPER_ARM    4
++#define SOLID_MECH_FOREARM	5
++#define SOLID_MECH_UPPER_LEG   	6
++#define SOLID_MECH_FOOT        	7
++#define SOLID_MECH_ROCKET      	8
++#define SOLID_MECH_VULCAN	9
++#define SOLID_ENVIRO		10
++/* end of display list definitions */
++
++/* start of motion rate variables */
++#define ANKLE_RATE	3
++#define HEEL_RATE	3
++#define ROTATE_RATE	10
++#define TILT_RATE	10
++#define ELBOW_RATE	2
++#define SHOULDER_RATE	5
++#define LAT_RATE	5
++#define CANNON_RATE	40
++#define UPPER_LEG_RATE	3
++#define UPPER_LEG_RATE_GROIN 10
++#define LIGHT_TURN_RATE	10
++#define VIEW_TURN_RATE	10
++/* end of motion rate variables */
++
++/* start of motion  variables */
++
++/* Some <math.h> files do not define M_PI... */
++#ifndef M_PI
++#define M_PI 3.14159265358979323846
++#endif
++
++GLUquadricObj *qobj;
++
++char leg = 0;
++
++int shoulder1 = 0, shoulder2 = 0, shoulder3 = 0, shoulder4 = 0, lat1 = 20, lat2 = 20,
++  elbow1 = 0, elbow2 = 0, pivot = 0, tilt = 10, ankle1 = 0, ankle2 = 0, heel1 = 0,
++  heel2 = 0, hip11 = 0, hip12 = 10, hip21 = 0, hip22 = 10, fire = 0, solid_part = 0,
++  anim = 0, turn = 0, turn1 = 0, lightturn = 0, lightturn1 = 0;
++
++float elevation = 0.0, distance = 0.0, frame = 3.0
++ /* foot1v[] = {} foot2v[] = {} */ ;
++
++/* end of motion variables */
++
++/* start of material definitions */
++#ifdef LIGHT
++GLfloat mat_specular[] =
++{0.628281, 0.555802, 0.366065, 1.0};
++GLfloat mat_ambient[] =
++{0.24725, 0.1995, 0.0745, 1.0};
++GLfloat mat_diffuse[] =
++{0.75164, 0.60648, 0.22648, 1.0};
++GLfloat mat_shininess[] =
++{128.0 * 0.4};
++
++GLfloat mat_specular2[] =
++{0.508273, 0.508273, 0.508373};
++GLfloat mat_ambient2[] =
++{0.19225, 0.19225, 0.19225};
++GLfloat mat_diffuse2[] =
++{0.50754, 0.50754, 0.50754};
++GLfloat mat_shininess2[] =
++{128.0 * 0.6};
++
++GLfloat mat_specular3[] =
++{0.296648, 0.296648, 0.296648};
++GLfloat mat_ambient3[] =
++{0.25, 0.20725, 0.20725};
++GLfloat mat_diffuse3[] =
++{1, 0.829, 0.829};
++GLfloat mat_shininess3[] =
++{128.0 * 0.088};
++
++GLfloat mat_specular4[] =
++{0.633, 0.727811, 0.633};
++GLfloat mat_ambient4[] =
++{0.0215, 0.1745, 0.0215};
++GLfloat mat_diffuse4[] =
++{0.07568, 0.61424, 0.07568};
++GLfloat mat_shininess4[] =
++{128 * 0.6};
++
++GLfloat mat_specular5[] =
++{0.60, 0.60, 0.50};
++GLfloat mat_ambient5[] =
++{0.0, 0.0, 0.0};
++GLfloat mat_diffuse5[] =
++{0.5, 0.5, 0.0};
++GLfloat mat_shininess5[] =
++{128.0 * 0.25};
++
++#endif
++/* end of material definitions */
++
++/* start of the body motion functions */
++void
++Heel1Add(void)
++{
++  heel1 = (heel1 + HEEL_RATE) % 360;
++}
++
++void
++Heel1Subtract(void)
++{
++  heel1 = (heel1 - HEEL_RATE) % 360;
++}
++
++void
++Heel2Add(void)
++{
++  heel2 = (heel2 + HEEL_RATE) % 360;
++}
++
++void
++Heel2Subtract(void)
++{
++  heel2 = (heel2 - HEEL_RATE) % 360;
++}
++
++void
++Ankle1Add(void)
++{
++  ankle1 = (ankle1 + ANKLE_RATE) % 360;
++}
++
++void
++Ankle1Subtract(void)
++{
++  ankle1 = (ankle1 - ANKLE_RATE) % 360;
++}
++
++void
++Ankle2Add(void)
++{
++  ankle2 = (ankle2 + ANKLE_RATE) % 360;
++}
++
++void
++Ankle2Subtract(void)
++{
++  ankle2 = (ankle2 - ANKLE_RATE) % 360;
++}
++
++void
++RotateAdd(void)
++{
++  pivot = (pivot + ROTATE_RATE) % 360;
++}
++
++void
++RotateSubtract(void)
++{
++  pivot = (pivot - ROTATE_RATE) % 360;
++}
++
++void
++MechTiltSubtract(void)
++{
++  tilt = (tilt - TILT_RATE) % 360;
++}
++
++void
++MechTiltAdd(void)
++{
++  tilt = (tilt + TILT_RATE) % 360;
++}
++
++void
++elbow1Add(void)
++{
++  elbow1 = (elbow1 + ELBOW_RATE) % 360;
++}
++
++void
++elbow1Subtract(void)
++{
++  elbow1 = (elbow1 - ELBOW_RATE) % 360;
++}
++
++void
++elbow2Add(void)
++{
++  elbow2 = (elbow2 + ELBOW_RATE) % 360;
++}
++
++void
++elbow2Subtract(void)
++{
++  elbow2 = (elbow2 - ELBOW_RATE) % 360;
++}
++
++void
++shoulder1Add(void)
++{
++  shoulder1 = (shoulder1 + SHOULDER_RATE) % 360;
++}
++
++void
++shoulder1Subtract(void)
++{
++  shoulder1 = (shoulder1 - SHOULDER_RATE) % 360;
++}
++
++void
++shoulder2Add(void)
++{
++  shoulder2 = (shoulder2 + SHOULDER_RATE) % 360;
++}
++
++void
++shoulder2Subtract(void)
++{
++  shoulder2 = (shoulder2 - SHOULDER_RATE) % 360;
++}
++
++void
++shoulder3Add(void)
++{
++  shoulder3 = (shoulder3 + SHOULDER_RATE) % 360;
++}
++
++void
++shoulder3Subtract(void)
++{
++  shoulder3 = (shoulder3 - SHOULDER_RATE) % 360;
++}
++
++void
++shoulder4Add(void)
++{
++  shoulder4 = (shoulder4 + SHOULDER_RATE) % 360;
++}
++
++void
++shoulder4Subtract(void)
++{
++  shoulder4 = (shoulder4 - SHOULDER_RATE) % 360;
++}
++
++void
++lat1Raise(void)
++{
++  lat1 = (lat1 + LAT_RATE) % 360;
++}
++
++void
++lat1Lower(void)
++{
++  lat1 = (lat1 - LAT_RATE) % 360;
++}
++
++void
++lat2Raise(void)
++{
++  lat2 = (lat2 + LAT_RATE) % 360;
++}
++
++void
++lat2Lower(void)
++{
++  lat2 = (lat2 - LAT_RATE) % 360;
++}
++
++void
++FireCannon(void)
++{
++  fire = (fire + CANNON_RATE) % 360;
++}
++
++void
++RaiseLeg1Forward(void)
++{
++  hip11 = (hip11 + UPPER_LEG_RATE) % 360;
++}
++
++void
++LowerLeg1Backwards(void)
++{
++  hip11 = (hip11 - UPPER_LEG_RATE) % 360;
++}
++
++void
++RaiseLeg1Outwards(void)
++{
++  hip12 = (hip12 + UPPER_LEG_RATE_GROIN) % 360;
++}
++
++void
++LowerLeg1Inwards(void)
++{
++  hip12 = (hip12 - UPPER_LEG_RATE_GROIN) % 360;
++}
++
++void
++RaiseLeg2Forward(void)
++{
++  hip21 = (hip21 + UPPER_LEG_RATE) % 360;
++}
++
++void
++LowerLeg2Backwards(void)
++{
++  hip21 = (hip21 - UPPER_LEG_RATE) % 360;
++}
++
++void
++RaiseLeg2Outwards(void)
++{
++  hip22 = (hip22 + UPPER_LEG_RATE_GROIN) % 360;
++}
++
++void
++LowerLeg2Inwards(void)
++{
++  hip22 = (hip22 - UPPER_LEG_RATE_GROIN) % 360;
++}
++
++/* end of body motion functions */
++
++/* start of light source position functions */
++void
++TurnRight(void)
++{
++  turn = (turn - VIEW_TURN_RATE) % 360;
++}
++
++void
++TurnLeft(void)
++{
++  turn = (turn + VIEW_TURN_RATE) % 360;
++}
++
++void
++TurnForwards(void)
++{
++  turn1 = (turn1 - VIEW_TURN_RATE) % 360;
++}
++
++void
++TurnBackwards(void)
++{
++  turn1 = (turn1 + VIEW_TURN_RATE) % 360;
++}
++
++void
++LightTurnRight(void)
++{
++  lightturn = (lightturn + LIGHT_TURN_RATE) % 360;
++}
++
++void
++LightTurnLeft(void)
++{
++  lightturn = (lightturn - LIGHT_TURN_RATE) % 360;
++}
++
++void
++LightForwards(void)
++{
++  lightturn1 = (lightturn1 + LIGHT_TURN_RATE) % 360;
++}
++
++void
++LightBackwards(void)
++{
++  lightturn1 = (lightturn1 - LIGHT_TURN_RATE) % 360;
++}
++
++/* end of light source position functions */
++
++/* start of geometric shape functions */
++void
++Box(float width, float height, float depth, char solid)
++{
++  char i, j = 0;
++  float x = width / 2.0, y = height / 2.0, z = depth / 2.0;
++
++  for (i = 0; i < 4; i++) {
++    glRotatef(90.0, 0.0, 0.0, 1.0);
++    if (j) {
++      if (!solid)
++        glBegin(GL_LINE_LOOP);
++      else
++        glBegin(GL_QUADS);
++      glNormal3f(-1.0, 0.0, 0.0);
++      glVertex3f(-x, y, z);
++      glVertex3f(-x, -y, z);
++      glVertex3f(-x, -y, -z);
++      glVertex3f(-x, y, -z);
++      glEnd();
++      if (solid) {
++        glBegin(GL_TRIANGLES);
++        glNormal3f(0.0, 0.0, 1.0);
++        glVertex3f(0.0, 0.0, z);
++        glVertex3f(-x, y, z);
++        glVertex3f(-x, -y, z);
++        glNormal3f(0.0, 0.0, -1.0);
++        glVertex3f(0.0, 0.0, -z);
++        glVertex3f(-x, -y, -z);
++        glVertex3f(-x, y, -z);
++        glEnd();
++      }
++      j = 0;
++    } else {
++      if (!solid)
++        glBegin(GL_LINE_LOOP);
++      else
++        glBegin(GL_QUADS);
++      glNormal3f(-1.0, 0.0, 0.0);
++      glVertex3f(-y, x, z);
++      glVertex3f(-y, -x, z);
++      glVertex3f(-y, -x, -z);
++      glVertex3f(-y, x, -z);
++      glEnd();
++      if (solid) {
++        glBegin(GL_TRIANGLES);
++        glNormal3f(0.0, 0.0, 1.0);
++        glVertex3f(0.0, 0.0, z);
++        glVertex3f(-y, x, z);
++        glVertex3f(-y, -x, z);
++        glNormal3f(0.0, 0.0, -1.0);
++        glVertex3f(0.0, 0.0, -z);
++        glVertex3f(-y, -x, -z);
++        glVertex3f(-y, x, -z);
++        glEnd();
++      }
++      j = 1;
++    }
++  }
++}
++
++void
++Octagon(float side, float height, char solid)
++{
++  char j;
++  float x = sin(0.785398163) * side, y = side / 2.0, z = height / 2.0, c;
++
++  c = x + y;
++  for (j = 0; j < 8; j++) {
++    glTranslatef(-c, 0.0, 0.0);
++    if (!solid)
++      glBegin(GL_LINE_LOOP);
++    else
++      glBegin(GL_QUADS);
++    glNormal3f(-1.0, 0.0, 0.0);
++    glVertex3f(0.0, -y, z);
++    glVertex3f(0.0, y, z);
++    glVertex3f(0.0, y, -z);
++    glVertex3f(0.0, -y, -z);
++    glEnd();
++    glTranslatef(c, 0.0, 0.0);
++    if (solid) {
++      glBegin(GL_TRIANGLES);
++      glNormal3f(0.0, 0.0, 1.0);
++      glVertex3f(0.0, 0.0, z);
++      glVertex3f(-c, -y, z);
++      glVertex3f(-c, y, z);
++      glNormal3f(0.0, 0.0, -1.0);
++      glVertex3f(0.0, 0.0, -z);
++      glVertex3f(-c, y, -z);
++      glVertex3f(-c, -y, -z);
++      glEnd();
++    }
++    glRotatef(45.0, 0.0, 0.0, 1.0);
++  }
++}
++
++/* end of geometric shape functions */
++#ifdef NORM
++void
++Normalize(float v[3])
++{
++  GLfloat d = sqrt(v[1] * v[1] + v[2] * v[2] + v[3] * v[3]);
++
++  if (d == 0.0) {
++    printf("zero length vector");
++    return;
++  }
++  v[1] /= d;
++  v[2] /= d;
++  v[3] /= d;
++}
++
++void
++NormXprod(float v1[3], float v2[3], float v[3], float out[3])
++{
++  GLint i, j;
++  GLfloat length;
++
++  out[0] = v1[1] * v2[2] - v1[2] * v2[1];
++  out[1] = v1[2] * v2[0] - v1[0] * v2[2];
++  out[2] = v1[0] * v2[1] - v1[1] * v2[0];
++  Normalize(out);
++}
++
++#endif
++
++void
++SetMaterial(GLfloat spec[], GLfloat amb[], GLfloat diff[], GLfloat shin[])
++{
++
++  glMaterialfv(GL_FRONT, GL_SPECULAR, spec);
++  glMaterialfv(GL_FRONT, GL_SHININESS, shin);
++  glMaterialfv(GL_FRONT, GL_AMBIENT, amb);
++  glMaterialfv(GL_FRONT, GL_DIFFUSE, diff);
++}
++
++void
++MechTorso(char solid)
++{
++  glNewList(SOLID_MECH_TORSO, GL_COMPILE);
++#ifdef LIGHT
++  SetMaterial(mat_specular, mat_ambient, mat_diffuse, mat_shininess);
++#endif
++  glColor3f(1.0, 1.0, 0.0);
++  Box(1.0, 1.0, 3.0, solid);
++  glTranslatef(0.75, 0.0, 0.0);
++#ifdef LIGHT
++  SetMaterial(mat_specular2, mat_ambient2, mat_diffuse2, mat_shininess2);
++#endif
++  glColor3f(0.5, 0.5, 0.5);
++  Box(0.5, 0.6, 2.0, solid);
++  glTranslatef(-1.5, 0.0, 0.0);
++  Box(0.5, 0.6, 2.0, solid);
++  glTranslatef(0.75, 0.0, 0.0);
++  glEndList();
++}
++
++void
++MechHip(char solid)
++{
++  int i;
++
++  glNewList(SOLID_MECH_HIP, GL_COMPILE);
++#ifdef LIGHT
++  SetMaterial(mat_specular, mat_ambient, mat_diffuse, mat_shininess);
++#endif
++  glColor3f(1.0, 1.0, 0.0);
++  Octagon(0.7, 0.5, solid);
++#ifdef SPHERE
++  for (i = 0; i < 2; i++) {
++    if (i)
++      glScalef(-1.0, 1.0, 1.0);
++    glTranslatef(1.0, 0.0, 0.0);
++#ifdef LIGHT
++    SetMaterial(mat_specular2, mat_ambient2, mat_diffuse2, mat_shininess2);
++#endif
++    glColor3f(0.5, 0.5, 0.5);
++    if (!solid)
++      gluQuadricDrawStyle(qobj, GLU_LINE);
++    gluSphere(qobj, 0.2, 16, 16);
++    glTranslatef(-1.0, 0.0, 0.0);
++  }
++  glScalef(-1.0, 1.0, 1.0);
++#endif
++  glEndList();
++}
++
++void
++Shoulder(char solid)
++{
++  glNewList(SOLID_MECH_SHOULDER, GL_COMPILE);
++#ifdef LIGHT
++  SetMaterial(mat_specular, mat_ambient, mat_diffuse, mat_shininess);
++#endif
++  glColor3f(1.0, 1.0, 0.0);
++  Box(1.0, 0.5, 0.5, solid);
++  glTranslatef(0.9, 0.0, 0.0);
++#ifdef LIGHT
++  SetMaterial(mat_specular2, mat_ambient2, mat_diffuse2, mat_shininess2);
++#endif
++  glColor3f(0.5, 0.5, 0.5);
++#ifdef SPHERE
++  if (!solid)
++    gluQuadricDrawStyle(qobj, GLU_LINE);
++  gluSphere(qobj, 0.6, 16, 16);
++#endif
++  glTranslatef(-0.9, 0.0, 0.0);
++  glEndList();
++}
++
++void
++UpperArm(char solid)
++{
++  int i;
++
++  glNewList(SOLID_MECH_UPPER_ARM, GL_COMPILE);
++#ifdef LIGHT
++  SetMaterial(mat_specular, mat_ambient, mat_diffuse, mat_shininess);
++#endif
++  glColor3f(1.0, 1.0, 0.0);
++  Box(1.0, 2.0, 1.0, solid);
++  glTranslatef(0.0, -0.95, 0.0);
++  glRotatef(90.0, 1.0, 0.0, 0.0);
++#ifdef LIGHT
++  SetMaterial(mat_specular2, mat_ambient2, mat_diffuse2, mat_shininess2);
++#endif
++  glColor3f(0.5, 0.5, 0.5);
++  if (!solid)
++    gluQuadricDrawStyle(qobj, GLU_LINE);
++  gluCylinder(qobj, 0.4, 0.4, 1.5, 16, 10);
++#ifdef LIGHT
++  SetMaterial(mat_specular, mat_ambient, mat_diffuse, mat_shininess);
++#endif
++  glColor3f(1.0, 1.0, 0.0);
++  glRotatef(-90.0, 1.0, 0.0, 0.0);
++  glTranslatef(-0.4, -1.85, 0.0);
++  glRotatef(90.0, 0.0, 1.0, 0.0);
++  for (i = 0; i < 2; i++) {
++    if (!solid)
++      gluQuadricDrawStyle(qobj, GLU_LINE);
++    if (i)
++      gluCylinder(qobj, 0.5, 0.5, 0.8, 16, 10);
++    else
++      gluCylinder(qobj, 0.2, 0.2, 0.8, 16, 10);
++  }
++  for (i = 0; i < 2; i++) {
++    if (i)
++      glScalef(-1.0, 1.0, 1.0);
++    if (!solid)
++      gluQuadricDrawStyle(qobj, GLU_LINE);
++    if (i)
++      glTranslatef(0.0, 0.0, 0.8);
++    gluDisk(qobj, 0.2, 0.5, 16, 10);
++    if (i)
++      glTranslatef(0.0, 0.0, -0.8);
++  }
++  glScalef(-1.0, 1.0, 1.0);
++  glRotatef(-90.0, 0.0, 1.0, 0.0);
++  glTranslatef(0.4, 2.9, 0.0);
++  glEndList();
++}
++
++void
++VulcanGun(char solid)
++{
++  int i;
++
++  glNewList(SOLID_MECH_VULCAN, GL_COMPILE);
++
++#ifdef LIGHT
++  SetMaterial(mat_specular2, mat_ambient2, mat_diffuse2, mat_shininess2);
++#endif
++  glColor3f(0.5, 0.5, 0.5);
++
++  if (!solid) {
++    gluQuadricDrawStyle(qobj, GLU_LINE);
++  }
++  gluCylinder(qobj, 0.5, 0.5, 0.5, 16, 10);
++  glTranslatef(0.0, 0.0, 0.5);
++  gluDisk(qobj, 0.0, 0.5, 16, 10);
++
++  for (i = 0; i < 5; i++) {
++    glRotatef(72.0, 0.0, 0.0, 1.0);
++    glTranslatef(0.0, 0.3, 0.0);
++    if (!solid) {
++      gluQuadricDrawStyle(qobj, GLU_LINE);
++    }
++    gluCylinder(qobj, 0.15, 0.15, 2.0, 16, 10);
++    gluCylinder(qobj, 0.06, 0.06, 2.0, 16, 10);
++    glTranslatef(0.0, 0.0, 2.0);
++    gluDisk(qobj, 0.1, 0.15, 16, 10);
++    gluCylinder(qobj, 0.1, 0.1, 0.1, 16, 5);
++    glTranslatef(0.0, 0.0, 0.1);
++    gluDisk(qobj, 0.06, 0.1, 16, 5);
++    glTranslatef(0.0, -0.3, -2.1);
++  }
++  glEndList();
++}
++
++void
++ForeArm(char solid)
++{
++  char i;
++
++  glNewList(SOLID_MECH_FOREARM, GL_COMPILE);
++#ifdef LIGHT
++  SetMaterial(mat_specular, mat_ambient, mat_diffuse, mat_shininess);
++#endif
++  glColor3f(1.0, 1.0, 0.0);
++  for (i = 0; i < 5; i++) {
++    glTranslatef(0.0, -0.1, -0.15);
++    Box(0.6, 0.8, 0.2, solid);
++    glTranslatef(0.0, 0.1, -0.15);
++    Box(0.4, 0.6, 0.1, solid);
++  }
++  glTranslatef(0.0, 0.0, 2.45);
++  Box(1.0, 1.0, 2.0, solid);
++  glTranslatef(0.0, 0.0, -1.0);
++  glEndList();
++}
++
++void
++UpperLeg(char solid)
++{
++  int i;
++
++  glNewList(SOLID_MECH_UPPER_LEG, GL_COMPILE);
++#ifdef LIGHT
++  SetMaterial(mat_specular, mat_ambient, mat_diffuse, mat_shininess);
++#endif
++  glColor3f(1.0, 1.0, 0.0);
++  if (!solid) {
++    gluQuadricDrawStyle(qobj, GLU_LINE);
++  }
++  glTranslatef(0.0, -1.0, 0.0);
++  Box(0.4, 1.0, 0.7, solid);
++  glTranslatef(0.0, -0.65, 0.0);
++  for (i = 0; i < 5; i++) {
++    Box(1.2, 0.3, 1.2, solid);
++    glTranslatef(0.0, -0.2, 0.0);
++    Box(1.0, 0.1, 1.0, solid);
++    glTranslatef(0.0, -0.2, 0.0);
++  }
++  glTranslatef(0.0, -0.15, -0.4);
++  Box(2.0, 0.5, 2.0, solid);
++  glTranslatef(0.0, -0.3, -0.2);
++  glRotatef(90.0, 1.0, 0.0, 0.0);
++#ifdef LIGHT
++  SetMaterial(mat_specular2, mat_ambient2, mat_diffuse2, mat_shininess2);
++#endif
++  glColor3f(0.5, 0.5, 0.5);
++  gluCylinder(qobj, 0.6, 0.6, 3.0, 16, 10);
++#ifdef LIGHT
++  SetMaterial(mat_specular, mat_ambient, mat_diffuse, mat_shininess);
++#endif
++  glColor3f(1.0, 1.0, 0.0);
++  glRotatef(-90.0, 1.0, 0.0, 0.0);
++  glTranslatef(0.0, -1.5, 1.0);
++  Box(1.5, 3.0, 0.5, solid);
++  glTranslatef(0.0, -1.75, -0.8);
++  Box(2.0, 0.5, 2.0, solid);
++  glTranslatef(0.0, -0.9, -0.85);
++#ifdef LIGHT
++  SetMaterial(mat_specular2, mat_ambient2, mat_diffuse2, mat_shininess2);
++#endif
++  glColor3f(0.5, 0.5, 0.5);
++  gluCylinder(qobj, 0.8, 0.8, 1.8, 16, 10);
++  for (i = 0; i < 2; i++) {
++    if (i)
++      glScalef(-1.0, 1.0, 1.0);
++    if (!solid)
++      gluQuadricDrawStyle(qobj, GLU_LINE);
++    if (i)
++      glTranslatef(0.0, 0.0, 1.8);
++    gluDisk(qobj, 0.0, 0.8, 16, 10);
++    if (i)
++      glTranslatef(0.0, 0.0, -1.8);
++  }
++  glScalef(-1.0, 1.0, 1.0);
++  glEndList();
++}
++
++void
++Foot(char solid)
++{
++
++  glNewList(SOLID_MECH_FOOT, GL_COMPILE);
++#ifdef LIGHT
++  SetMaterial(mat_specular2, mat_ambient2, mat_diffuse2, mat_shininess2);
++#endif
++  glColor3f(0.5, 0.5, 0.5);
++  glRotatef(90.0, 1.0, 0.0, 0.0);
++  Octagon(1.5, 0.6, solid);
++  glRotatef(-90.0, 1.0, 0.0, 0.0);
++  glEndList();
++}
++
++void
++LowerLeg(char solid)
++{
++  float k, l;
++
++#ifdef LIGHT
++  SetMaterial(mat_specular, mat_ambient, mat_diffuse, mat_shininess);
++#endif
++  glColor3f(1.0, 1.0, 0.0);
++  for (k = 0.0; k < 2.0; k++) {
++    for (l = 0.0; l < 2.0; l++) {
++      glPushMatrix();
++      glTranslatef(k, 0.0, l);
++#ifdef LIGHT
++      SetMaterial(mat_specular, mat_ambient, mat_diffuse, mat_shininess);
++#endif
++      glColor3f(1.0, 1.0, 0.0);
++      Box(1.0, 0.5, 1.0, solid);
++      glTranslatef(0.0, -0.45, 0.0);
++#ifdef LIGHT
++      SetMaterial(mat_specular2, mat_ambient2, mat_diffuse2, mat_shininess2);
++#endif
++      glColor3f(0.5, 0.5, 0.5);
++#ifdef SPHERE
++      if (!solid)
++        glutWireSphere(0.2, 16, 10);
++      else
++        glutSolidSphere(0.2, 16, 10);
++#endif
++      if (leg)
++        glRotatef((GLfloat) heel1, 1.0, 0.0, 0.0);
++      else
++        glRotatef((GLfloat) heel2, 1.0, 0.0, 0.0);
++      /* glTranslatef(0.0, -0.2, 0.0); */
++      glTranslatef(0.0, -1.7, 0.0);
++#ifdef LIGHT
++      SetMaterial(mat_specular, mat_ambient, mat_diffuse, mat_shininess);
++#endif
++      glColor3f(1.0, 1.0, 0.0);
++      Box(0.25, 3.0, 0.25, solid);
++      glTranslatef(0.0, -1.7, 0.0);
++#ifdef LIGHT
++      SetMaterial(mat_specular2, mat_ambient2, mat_diffuse2, mat_shininess2);
++#endif
++      glColor3f(0.5, 0.5, 0.5);
++#ifdef SPHERE
++      if (!solid)
++        glutWireSphere(0.2, 16, 10);
++      else
++        glutSolidSphere(0.2, 16, 10);
++#endif
++      if (leg)
++        glRotatef((GLfloat) - heel1, 1.0, 0.0, 0.0);
++      else
++        glRotatef((GLfloat) - heel2, 1.0, 0.0, 0.0);
++      glTranslatef(0.0, -0.45, 0.0);
++#ifdef LIGHT
++      SetMaterial(mat_specular, mat_ambient, mat_diffuse, mat_shininess);
++#endif
++      glColor3f(1.0, 1.0, 0.0);
++      Box(1.0, 0.5, 1.0, solid);
++      if (!k && !l) {
++        int j;
++
++        glTranslatef(-0.4, -0.8, 0.5);
++        if (leg)
++          glRotatef((GLfloat) ankle1, 1.0, 0.0, 0.0);
++        else
++          glRotatef((GLfloat) ankle2, 1.0, 0.0, 0.0);
++        glRotatef(90.0, 0.0, 1.0, 0.0);
++        if (!solid)
++          gluQuadricDrawStyle(qobj, GLU_LINE);
++        gluCylinder(qobj, 0.8, 0.8, 1.8, 16, 10);
++        for (j = 0; j < 2; j++) {
++          if (!solid)
++            gluQuadricDrawStyle(qobj, GLU_LINE);
++          if (j) {
++            glScalef(-1.0, 1.0, 1.0);
++            glTranslatef(0.0, 0.0, 1.8);
++          }
++          gluDisk(qobj, 0.0, 0.8, 16, 10);
++          if (j)
++            glTranslatef(0.0, 0.0, -1.8);
++        }
++        glScalef(-1.0, 1.0, 1.0);
++        glRotatef(-90.0, 0.0, 1.0, 0.0);
++        glTranslatef(0.95, -0.8, 0.0);
++        glCallList(SOLID_MECH_FOOT);
++      }
++      glPopMatrix();
++    }
++  }
++}
++
++void
++RocketPod(char solid)
++{
++
++  int i, j, k = 0;
++
++  glNewList(SOLID_MECH_ROCKET, GL_COMPILE);
++#ifdef LIGHT
++  SetMaterial(mat_specular2, mat_ambient2, mat_diffuse2, mat_shininess2);
++#endif
++  glColor3f(0.5, 0.5, 0.5);
++  glScalef(0.4, 0.4, 0.4);
++  glRotatef(45.0, 0.0, 0.0, 1.0);
++  glTranslatef(1.0, 0.0, 0.0);
++  Box(2.0, 0.5, 3.0, solid);
++  glTranslatef(1.0, 0.0, 0.0);
++  glRotatef(45.0, 0.0, 0.0, 1.0);
++  glTranslatef(0.5, 0.0, 0.0);
++  Box(1.2, 0.5, 3.0, solid);
++  glTranslatef(2.1, 0.0, 0.0);
++  glRotatef(-90.0, 0.0, 0.0, 1.0);
++#ifdef LIGHT
++  SetMaterial(mat_specular, mat_ambient, mat_diffuse, mat_shininess);
++#endif
++  glColor3f(1.0, 1.0, 0.0);
++  Box(2.0, 3.0, 4.0, solid);
++  glTranslatef(-0.5, -1.0, 1.3);
++  for (i = 0; i < 2; i++) {
++    for (j = 0; j < 3; j++) {
++      if (!solid) {
++        gluQuadricDrawStyle(qobj, GLU_LINE);
++      }
++      glTranslatef(i, j, 0.6);
++#ifdef LIGHT
++      SetMaterial(mat_specular3, mat_ambient3, mat_diffuse3, mat_shininess3);
++#endif
++      glColor3f(1.0, 1.0, 1.0);
++      gluCylinder(qobj, 0.4, 0.4, 0.3, 16, 10);
++      glTranslatef(0.0, 0.0, 0.3);
++#ifdef LIGHT
++      SetMaterial(mat_specular4, mat_ambient4, mat_diffuse4, mat_shininess4);
++#endif
++      glColor3f(0.0, 1.0, 0.0);
++      gluCylinder(qobj, 0.4, 0.0, 0.5, 16, 10);
++      k++;
++      glTranslatef(-i, -j, -0.9);
++    }
++  }
++  glEndList();
++}
++
++void
++Enviro(char solid)
++{
++
++  int i, j;
++
++  glNewList(SOLID_ENVIRO, GL_COMPILE);
++  SetMaterial(mat_specular4, mat_ambient4, mat_diffuse4, mat_shininess4);
++  glColor3f(0.0, 1.0, 0.0);
++  Box(20.0, 0.5, 30.0, solid);
++  SetMaterial(mat_specular4, mat_ambient3, mat_diffuse2, mat_shininess);
++  glColor3f(0.6, 0.6, 0.6);
++  glTranslatef(0.0, 0.0, -10.0);
++  for (j = 0; j < 6; j++) {
++    for (i = 0; i < 2; i++) {
++      if (i)
++        glScalef(-1.0, 1.0, 1.0);
++      glTranslatef(10.0, 4.0, 0.0);
++      Box(4.0, 8.0, 2.0, solid);
++      glTranslatef(0.0, -1.0, -3.0);
++      Box(4.0, 6.0, 2.0, solid);
++      glTranslatef(-10.0, -3.0, 3.0);
++    }
++    glScalef(-1.0, 1.0, 1.0);
++    glTranslatef(0.0, 0.0, 5.0);
++  }
++  glEndList();
++}
++
++void
++Toggle(void)
++{
++  if (solid_part)
++    solid_part = 0;
++  else
++    solid_part = 1;
++}
++
++void
++disable(void)
++{
++  glDisable(GL_LIGHTING);
++  glDisable(GL_DEPTH_TEST);
++  glDisable(GL_NORMALIZE);
++  glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
++}
++
++void
++lighting(void)
++{
++
++  GLfloat position[] =
++  {0.0, 0.0, 2.0, 1.0};
++
++#ifdef MOVE_LIGHT
++  glRotatef((GLfloat) lightturn1, 1.0, 0.0, 0.0);
++  glRotatef((GLfloat) lightturn, 0.0, 1.0, 0.0);
++  glRotatef(0.0, 1.0, 0.0, 0.0);
++#endif
++  glEnable(GL_LIGHTING);
++  glEnable(GL_LIGHT0);
++  glEnable(GL_NORMALIZE);
++  glDepthFunc(GL_LESS);
++  glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
++
++  glLightfv(GL_LIGHT0, GL_POSITION, position);
++  glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 80.0);
++
++  glTranslatef(0.0, 0.0, 2.0);
++  glDisable(GL_LIGHTING);
++  Box(0.1, 0.1, 0.1, 0);
++  glEnable(GL_LIGHTING);
++}
++
++void
++DrawMech(void)
++{
++  int i, j;
++
++  glScalef(0.5, 0.5, 0.5);
++  glPushMatrix();
++  glTranslatef(0.0, -0.75, 0.0);
++  glRotatef((GLfloat) tilt, 1.0, 0.0, 0.0);
++
++  glRotatef(90.0, 1.0, 0.0, 0.0);
++#ifdef HIP
++  glCallList(SOLID_MECH_HIP);
++#endif
++  glRotatef(-90.0, 1.0, 0.0, 0.0);
++
++  glTranslatef(0.0, 0.75, 0.0);
++  glPushMatrix();
++  glRotatef((GLfloat) pivot, 0.0, 1.0, 0.0);
++  glPushMatrix();
++#ifdef TORSO
++  glCallList(SOLID_MECH_TORSO);
++#endif
++  glPopMatrix();
++  glPushMatrix();
++  glTranslatef(0.5, 0.5, 0.0);
++#ifdef ROCKET_POD
++  glCallList(SOLID_MECH_ROCKET);
++#endif
++  glPopMatrix();
++  for (i = 0; i < 2; i++) {
++    glPushMatrix();
++    if (i)
++      glScalef(-1.0, 1.0, 1.0);
++    glTranslatef(1.5, 0.0, 0.0);
++#ifdef SHOULDER
++    glCallList(SOLID_MECH_SHOULDER);
++#endif
++    glTranslatef(0.9, 0.0, 0.0);
++    if (i) {
++      glRotatef((GLfloat) lat1, 0.0, 0.0, 1.0);
++      glRotatef((GLfloat) shoulder1, 1.0, 0.0, 0.0);
++      glRotatef((GLfloat) shoulder3, 0.0, 1.0, 0.0);
++    } else {
++      glRotatef((GLfloat) lat2, 0.0, 0.0, 1.0);
++      glRotatef((GLfloat) shoulder2, 1.0, 0.0, 0.0);
++      glRotatef((GLfloat) shoulder4, 0.0, 1.0, 0.0);
++    }
++    glTranslatef(0.0, -1.4, 0.0);
++#ifdef UPPER_ARM
++    glCallList(SOLID_MECH_UPPER_ARM);
++#endif
++    glTranslatef(0.0, -2.9, 0.0);
++    if (i)
++      glRotatef((GLfloat) elbow1, 1.0, 0.0, 0.0);
++    else
++      glRotatef((GLfloat) elbow2, 1.0, 0.0, 0.0);
++    glTranslatef(0.0, -0.9, -0.2);
++#ifdef LOWER_ARM
++    glCallList(SOLID_MECH_FOREARM);
++    glPushMatrix();
++    glTranslatef(0.0, 0.0, 2.0);
++    glRotatef((GLfloat) fire, 0.0, 0.0, 1.0);
++    glCallList(SOLID_MECH_VULCAN);
++    glPopMatrix();
++#endif
++    glPopMatrix();
++  }
++  glPopMatrix();
++
++  glPopMatrix();
++
++  for (j = 0; j < 2; j++) {
++    glPushMatrix();
++    if (j) {
++      glScalef(-0.5, 0.5, 0.5);
++      leg = 1;
++    } else {
++      glScalef(0.5, 0.5, 0.5);
++      leg = 0;
++    }
++    glTranslatef(2.0, -1.5, 0.0);
++    if (j) {
++      glRotatef((GLfloat) hip11, 1.0, 0.0, 0.0);
++      glRotatef((GLfloat) hip12, 0.0, 0.0, 1.0);
++    } else {
++      glRotatef((GLfloat) hip21, 1.0, 0.0, 0.0);
++      glRotatef((GLfloat) hip22, 0.0, 0.0, 1.0);
++    }
++    glTranslatef(0.0, 0.3, 0.0);
++#ifdef UPPER_LEG
++    glPushMatrix();
++    glCallList(SOLID_MECH_UPPER_LEG);
++    glPopMatrix();
++#endif
++    glTranslatef(0.0, -8.3, -0.4);
++    if (j)
++      glRotatef((GLfloat) - hip12, 0.0, 0.0, 1.0);
++    else
++      glRotatef((GLfloat) - hip22, 0.0, 0.0, 1.0);
++    glTranslatef(-0.5, -0.85, -0.5);
++#ifdef LOWER_LEG
++    LowerLeg(1);
++#endif
++    glPopMatrix();
++  }
++}
++
++void
++display(void)
++{
++  glClearColor(0.0, 0.0, 0.0, 0.0);
++  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
++  glEnable(GL_DEPTH_TEST);
++
++  glPushMatrix();
++  glRotatef((GLfloat) turn, 0.0, 1.0, 0.0);
++  glRotatef((GLfloat) turn1, 1.0, 0.0, 0.0);
++#ifdef LIGHT
++  if (solid_part) {
++    glPushMatrix();
++    lighting();
++    glPopMatrix();
++  } else
++    disable();
++#endif
++#ifdef DRAW_MECH
++  glPushMatrix();
++  glTranslatef(0.0, elevation, 0.0);
++  DrawMech();
++  glPopMatrix();
++#endif
++#ifdef DRAW_ENVIRO
++  glPushMatrix();
++  if (distance >= 20.136)
++    distance = 0.0;
++  glTranslatef(0.0, -5.0, -distance);
++  glCallList(SOLID_ENVIRO);
++  glTranslatef(0.0, 0.0, 10.0);
++  glCallList(SOLID_ENVIRO);
++  glPopMatrix();
++#endif
++  glPopMatrix();
++  glFlush();
++  glutSwapBuffers();
++}
++
++void
++myinit(void)
++{
++  char i = 1;
++
++  qobj = gluNewQuadric();
++#ifdef LIGHT
++  SetMaterial(mat_specular2, mat_ambient2, mat_diffuse2, mat_shininess2);
++#endif
++  glEnable(GL_DEPTH_TEST);
++  MechTorso(i);
++  MechHip(i);
++  Shoulder(i);
++  RocketPod(i);
++  UpperArm(i);
++  ForeArm(i);
++  UpperLeg(i);
++  Foot(i);
++  VulcanGun(i);
++  Enviro(i);
++}
++
++void
++myReshape(int w, int h)
++{
++  glViewport(0, 0, w, h);
++  glMatrixMode(GL_PROJECTION);
++  glLoadIdentity();
++  gluPerspective(65.0, (GLfloat) w / (GLfloat) h, 1.0, 20.0);
++  glMatrixMode(GL_MODELVIEW);
++  glLoadIdentity();
++  glTranslatef(0.0, 1.2, -5.5);  /* viewing transform  */
++}
++
++#ifdef ANIMATION
++void
++animation_walk(void)
++{
++  float angle;
++  static int step;
++
++  if (step == 0 || step == 2) {
++    /* for(frame=3.0; frame<=21.0; frame=frame+3.0){ */
++    if (frame >= 0.0 && frame <= 21.0) {
++      if (frame == 0.0)
++        frame = 3.0;
++      angle = (180 / M_PI) * (acos(((cos((M_PI / 180) * frame) * 2.043) + 1.1625) / 3.2059));
++      if (frame > 0) {
++        elevation = -(3.2055 - (cos((M_PI / 180) * angle) * 3.2055));
++      } else
++        elevation = 0.0;
++      if (step == 0) {
++        hip11 = -(frame * 1.7);
++        if (1.7 * frame > 15)
++          heel1 = frame * 1.7;
++        heel2 = 0;
++        ankle1 = frame * 1.7;
++        if (frame > 0)
++          hip21 = angle;
++        else
++          hip21 = 0;
++        ankle2 = -hip21;
++        shoulder1 = frame * 1.5;
++        shoulder2 = -frame * 1.5;
++        elbow1 = frame;
++        elbow2 = -frame;
++      } else {
++        hip21 = -(frame * 1.7);
++        if (1.7 * frame > 15)
++          heel2 = frame * 1.7;
++        heel1 = 0;
++        ankle2 = frame * 1.7;
++        if (frame > 0)
++          hip11 = angle;
++        else
++          hip11 = 0;
++        ankle1 = -hip11;
++        shoulder1 = -frame * 1.5;
++        shoulder2 = frame * 1.5;
++        elbow1 = -frame;
++        elbow2 = frame;
++      }
++      if (frame == 21)
++        step++;
++      if (frame < 21)
++        frame = frame + 3.0;
++    }
++  }
++  if (step == 1 || step == 3) {
++    /* for(x=21.0; x>=0.0; x=x-3.0){ */
++    if (frame <= 21.0 && frame >= 0.0) {
++      angle = (180 / M_PI) * (acos(((cos((M_PI / 180) * frame) * 2.043) + 1.1625) / 3.2029));
++      if (frame > 0)
++        elevation = -(3.2055 - (cos((M_PI / 180) * angle) * 3.2055));
++      else
++        elevation = 0.0;
++      if (step == 1) {
++        elbow2 = hip11 = -frame;
++        elbow1 = heel1 = frame;
++        heel2 = 15;
++        ankle1 = frame;
++        if (frame > 0)
++          hip21 = angle;
++        else
++          hip21 = 0;
++        ankle2 = -hip21;
++        shoulder1 = 1.5 * frame;
++        shoulder2 = -frame * 1.5;
++      } else {
++        elbow1 = hip21 = -frame;
++        elbow2 = heel2 = frame;
++        heel1 = 15;
++        ankle2 = frame;
++        if (frame > 0)
++          hip11 = angle;
++        else
++          hip11 = 0;
++        ankle1 = -hip11;
++        shoulder1 = -frame * 1.5;
++        shoulder2 = frame * 1.5;
++      }
++      if (frame == 0.0)
++        step++;
++      if (frame > 0)
++        frame = frame - 3.0;
++    }
++  }
++  if (step == 4)
++    step = 0;
++  distance += 0.1678;
++  glutPostRedisplay();
++}
++
++void
++animation(void)
++{
++  animation_walk();
++}
++
++#endif
++
++#ifdef GLUT
++#ifdef GLUT_KEY
++/* ARGSUSED1 */
++void
++keyboard(unsigned char key, int x, int y)
++{
++
++  int i = 0;
++
++  switch (key) {
++    /* start arm control functions */
++  case 'q':{
++      shoulder2Subtract();
++      i++;
++    }
++    break;
++  case 'a':{
++      shoulder2Add();
++      i++;
++    }
++    break;
++  case 'w':{
++      shoulder1Subtract();
++      i++;
++    }
++    break;
++  case 's':{
++      shoulder1Add();
++      i++;
++    }
++    break;
++  case '2':{
++      shoulder3Add();
++      i++;
++    }
++    break;
++  case '1':{
++      shoulder4Add();
++      i++;
++    }
++    break;
++  case '4':{
++      shoulder3Subtract();
++      i++;
++    }
++    break;
++  case '3':{
++      shoulder4Subtract();
++      i++;
++    }
++    break;
++
++  case 'z':{
++      lat2Raise();
++      i++;
++    }
++    break;
++  case 'Z':{
++      lat2Lower();
++      i++;
++    }
++    break;
++  case 'x':{
++      lat1Raise();
++      i++;
++    }
++    break;
++  case 'X':{
++      lat1Lower();
++      i++;
++    }
++    break;
++
++  case 'A':{
++      elbow2Add();
++      i++;
++    }
++    break;
++  case 'Q':{
++      elbow2Subtract();
++      i++;
++    }
++    break;
++  case 'S':{
++      elbow1Add();
++      i++;
++    }
++    break;
++  case 'W':{
++      elbow1Subtract();
++      i++;
++    }
++    break;
++    /* end of arm control functions */
++
++    /* start of torso control functions */
++  case 'd':{
++      RotateAdd();
++      i++;
++    }
++    break;
++  case 'g':{
++      RotateSubtract();
++      i++;
++    }
++    break;
++  case 'r':{
++      MechTiltAdd();
++      i++;
++    }
++    break;
++  case 'f':{
++      MechTiltSubtract();
++      i++;
++    }
++    break;
++    /* end of torso control functions */
++
++    /* start of leg control functions */
++  case 'h':{
++      RaiseLeg2Forward();
++      i++;
++    }
++    break;
++  case 'y':{
++      LowerLeg2Backwards();
++      i++;
++    }
++    break;
++  case 'Y':{
++      RaiseLeg2Outwards();
++      i++;
++    }
++    break;
++  case 'H':{
++      LowerLeg2Inwards();
++      i++;
++    }
++    break;
++
++  case 'j':{
++      RaiseLeg1Forward();
++      i++;
++    }
++    break;
++  case 'u':{
++      LowerLeg1Backwards();
++      i++;
++    }
++    break;
++  case 'U':{
++      RaiseLeg1Outwards();
++      i++;
++    }
++    break;
++  case 'J':{
++      LowerLeg1Inwards();
++      i++;
++    }
++    break;
++
++  case 'N':{
++      Heel2Add();
++      i++;
++    }
++    break;
++  case 'n':{
++      Heel2Subtract();
++      i++;
++    }
++    break;
++  case 'M':{
++      Heel1Add();
++      i++;
++    }
++    break;
++  case 'm':{
++      Heel1Subtract();
++      i++;
++    }
++    break;
++
++  case 'k':{
++      Ankle2Add();
++      i++;
++    }
++    break;
++  case 'K':{
++      Ankle2Subtract();
++      i++;
++    }
++    break;
++  case 'l':{
++      Ankle1Add();
++      i++;
++    }
++    break;
++  case 'L':{
++      Ankle1Subtract();
++      i++;
++    }
++    break;
++    /* end of leg control functions */
++
++    /* start of light source position functions */
++  case 'p':{
++      LightTurnRight();
++      i++;
++    }
++    break;
++  case 'i':{
++      LightTurnLeft();
++      i++;
++    }
++    break;
++  case 'o':{
++      LightForwards();
++      i++;
++    }
++    break;
++  case '9':{
++      LightBackwards();
++      i++;
++    }
++    break;
++    /* end of light source position functions */
++  }
++  if (i)
++    glutPostRedisplay();
++}
++
++#endif
++
++#ifdef GLUT_SPEC
++/* ARGSUSED1 */
++void
++special(int key, int x, int y)
++{
++
++  int i = 0;
++
++  switch (key) {
++    /* start of view position functions */
++  case GLUT_KEY_RIGHT:{
++      TurnRight();
++      i++;
++    }
++    break;
++  case GLUT_KEY_LEFT:{
++      TurnLeft();
++      i++;
++    }
++    break;
++  case GLUT_KEY_DOWN:{
++      TurnForwards();
++      i++;
++    }
++    break;
++  case GLUT_KEY_UP:{
++      TurnBackwards();
++      i++;
++    }
++    break;
++    /* end of view postions functions */
++    /* start of miseclleneous functions */
++  case GLUT_KEY_PAGE_UP:{
++      FireCannon();
++      i++;
++    }
++    break;
++    /* end of miscelleneous functions */
++  }
++  if (i)
++    glutPostRedisplay();
++}
++
++#endif
++#endif
++void
++menu_select(int mode)
++{
++  switch (mode) {
++#ifdef ANIMATION
++  case 1:
++    glutIdleFunc(animation);
++    break;
++#endif
++  case 2:
++    glutIdleFunc(NULL);
++    break;
++  case 3:
++    Toggle();
++    glutPostRedisplay();
++    break;
++  case 4:
++    exit(EXIT_SUCCESS);
++  }
++}
++
++/* ARGSUSED */
++void
++null_select(int mode)
++{
++}
++
++void
++glutMenu(void)
++{
++
++  int glut_menu[13];
++
++  glut_menu[5] = glutCreateMenu(null_select);
++  glutAddMenuEntry("forward       : q,w", 0);
++  glutAddMenuEntry("backwards     : a,s", 0);
++  glutAddMenuEntry("outwards      : z,x", 0);
++  glutAddMenuEntry("inwards       : Z,X", 0);
++
++  glut_menu[6] = glutCreateMenu(null_select);
++  glutAddMenuEntry("upwards       : Q,W", 0);
++  glutAddMenuEntry("downwards     : A,S", 0);
++  glutAddMenuEntry("outwards      : 1,2", 0);
++  glutAddMenuEntry("inwards       : 3,4", 0);
++
++  glut_menu[1] = glutCreateMenu(null_select);
++  glutAddMenuEntry(" : Page_up", 0);
++
++  glut_menu[8] = glutCreateMenu(null_select);
++  glutAddMenuEntry("forward       : y,u", 0);
++  glutAddMenuEntry("backwards     : h.j", 0);
++  glutAddMenuEntry("outwards      : Y,U", 0);
++  glutAddMenuEntry("inwards       : H,J", 0);
++
++  glut_menu[9] = glutCreateMenu(null_select);
++  glutAddMenuEntry("forward       : n,m", 0);
++  glutAddMenuEntry("backwards     : N,M", 0);
++
++  glut_menu[9] = glutCreateMenu(null_select);
++  glutAddMenuEntry("forward       : n,m", 0);
++  glutAddMenuEntry("backwards     : N,M", 0);
++
++  glut_menu[10] = glutCreateMenu(null_select);
++  glutAddMenuEntry("toes up       : K,L", 0);
++  glutAddMenuEntry("toes down     : k,l", 0);
++
++  glut_menu[11] = glutCreateMenu(null_select);
++  glutAddMenuEntry("right         : right arrow", 0);
++  glutAddMenuEntry("left          : left arrow", 0);
++  glutAddMenuEntry("down          : up arrow", 0);
++  glutAddMenuEntry("up            : down arrow", 0);
++
++  glut_menu[12] = glutCreateMenu(null_select);
++  glutAddMenuEntry("right         : p", 0);
++  glutAddMenuEntry("left          : i", 0);
++  glutAddMenuEntry("up            : 9", 0);
++  glutAddMenuEntry("down          : o", 0);
++
++  glut_menu[4] = glutCreateMenu(NULL);
++  glutAddSubMenu("at the shoulders? ", glut_menu[5]);
++  glutAddSubMenu("at the elbows?", glut_menu[6]);
++
++  glut_menu[7] = glutCreateMenu(NULL);
++  glutAddSubMenu("at the hip? ", glut_menu[8]);
++  glutAddSubMenu("at the knees?", glut_menu[9]);
++  glutAddSubMenu("at the ankles? ", glut_menu[10]);
++
++  glut_menu[2] = glutCreateMenu(null_select);
++  glutAddMenuEntry("turn left    : d", 0);
++  glutAddMenuEntry("turn right    : g", 0);
++
++  glut_menu[3] = glutCreateMenu(null_select);
++  glutAddMenuEntry("tilt backwards : f", 0);
++  glutAddMenuEntry("tilt forwards  : r", 0);
++
++  glut_menu[0] = glutCreateMenu(NULL);
++  glutAddSubMenu("move the arms.. ", glut_menu[4]);
++  glutAddSubMenu("fire the vulcan guns?", glut_menu[1]);
++  glutAddSubMenu("move the legs.. ", glut_menu[7]);
++  glutAddSubMenu("move the torso?", glut_menu[2]);
++  glutAddSubMenu("move the hip?", glut_menu[3]);
++  glutAddSubMenu("rotate the scene..", glut_menu[11]);
++#ifdef MOVE_LIGHT
++  glutAddSubMenu("rotate the light source..", glut_menu[12]);
++#endif
++
++  glutCreateMenu(menu_select);
++#ifdef ANIMATION
++  glutAddMenuEntry("Start Walk", 1);
++  glutAddMenuEntry("Stop Walk", 2);
++#endif
++  glutAddMenuEntry("Toggle Wireframe", 3);
++  glutAddSubMenu("How do I ..", glut_menu[0]);
++  glutAddMenuEntry("Quit", 4);
++  glutAttachMenu(GLUT_LEFT_BUTTON);
++  glutAttachMenu(GLUT_RIGHT_BUTTON);
++}
++
++int
++main(int argc, char **argv)
++{
++#ifdef GLUT
++  /* start of glut windowing and control functions */
++  glutInit(&argc, argv);
++  glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
++  glutInitWindowSize(800, 600);
++  glutCreateWindow("glutmech: Vulcan Gunner");
++  myinit();
++  glutDisplayFunc(display);
++  glutReshapeFunc(myReshape);
++#ifdef GLUT_KEY
++  glutKeyboardFunc(keyboard);
++#endif
++#ifdef GLUT_SPEC
++  glutSpecialFunc(special);
++#endif
++  glutMenu();
++  glutMainLoop();
++  /* end of glut windowing and control functions */
++#endif
++  return 0;             /* ANSI C requires main to return int. */
++}
+diff -ruN a/Mesa-3.1/demos/Makefile.X11 b/Mesa-3.1/demos/Makefile.X11
+--- a/Mesa-3.1/demos/Makefile.X11
++++ b/Mesa-3.1/demos/Makefile.X11
+@@ -17,7 +17,7 @@
+ 
+ LIB_DEP = $(LIBDIR)/$(GL_LIB) $(LIBDIR)/$(GLU_LIB) $(LIBDIR)/$(GLUT_LIB)
+ 
+-PROGS = bounce clearspd drawpix gamma gears glinfo gloss glutfx isosurf \
++PROGS = bounce clearspd drawpix gamma gears glinfo gloss glutfx glutmech isosurf \
+ 	morph3d multiarb osdemo paltex pointblast reflect \
+ 	renormal spectex stex3d tessdemo texcyl texobj trispd winpos \
+ 
+@@ -57,4 +57,3 @@
+ 
+ 
+ include ../Make-config
+-
+diff -ruN a/Mesa-3.1/.gitignore b/Mesa-3.1/.gitignore
+--- a/Mesa-3.1/.gitignore
++++ b/Mesa-3.1/.gitignore
+@@ -0,0 +1,17 @@
++*.o
++*.a
++*.so
++*.log
++core
++*.xwd
++*.png.tmp
++# build output
++lib/
++shm-static/
++xmu-static/
++demos/bin060/
++demos/xmu-static/
++build-*.log
++src/depend
++src-glu/depend
++src-glut/depend
+diff -ruN a/Mesa-3.1/Make-config b/Mesa-3.1/Make-config
+--- a/Mesa-3.1/Make-config
++++ b/Mesa-3.1/Make-config
+@@ -1,1303 +1,35 @@
+-# $Id: Make-config,v 1.10 1999/11/02 10:11:44 brianp Exp $
+-
+ MESA_MAJOR=3
+ MESA_MINOR=1
+ MESA_TINY=0
+-VERSION=$(MESA_MAJOR).$(MESA_MINOR)
+-
+-# Mesa 3-D graphics library
+-# 
+-# Copyright (C) 1999  Brian Paul   All Rights Reserved.
+-# 
+-# Permission is hereby granted, free of charge, to any person obtaining a
+-# copy of this software and associated documentation files (the "Software"),
+-# to deal in the Software without restriction, including without limitation
+-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+-# and/or sell copies of the Software, and to permit persons to whom the
+-# Software is furnished to do so, subject to the following conditions:
+-# 
+-# The above copyright notice and this permission notice shall be included
+-# in all copies or substantial portions of the Software.
+-# 
+-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+-# BRIAN PAUL BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+-# AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+-# CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-
+-
+-# The following variables are passed to each Makefile:
+-#
+-# GL_LIB      the name of the Mesa "GL" library file (usually libGL.a)
+-# GLU_LIB     the name of the Mesa "GLU" library file (usually libGLU.a)
+-# GLUT_LIB    the name of the GLUT library file (usually libglut.a)
+-# CC          the C compiler (usually cc or gcc)
+-# CFLAGS      flags to C compiler (usually -O)
+-# MAKELIB     the script or command to make a library file
+-# XLIBS       libraries needed to link X apps (at least -lX11)
+-#
+-# Optionally, you can add definitions for the INCDIR and LIBDIR variables
+-# which specify where to find the Mesa include files and where to put the
+-# Mesa libraries.  The defaults are ../include and ../lib.  This use of
+-# overriding makefile macros on the command line should work with most
+-# variants of make.
+-#
+-# To enable profiling add -DPROFILE to the CFLAGS line.  Be sure to set the
+-# MESA_PROFILE environment variable to enable printing of the profile report.
+-#
+-# If your system supports the X Shared Memory extension add -DSHM to the
+-# CFLAGS line and add -lXext to the XLIBS line.
+-#
+-# Some compilers complain about const parameters.  Adding -DNO_CONST to the
+-# CFLAGS line should silence suth warnings.
+-#
+-#
+-# To add a new system configuration just follow the examples below and update
+-# the top-level Makefile.
+ 
++AMIX_TARGETS=targets
+ 
+-
+-aix:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
++# AMIX_PIC=-fPIC on the command line: objects for the shared libraries (build-shared.sh)
++amix060:
++	$(MAKE) $(MFLAGS) -f Makefile.X11 $(AMIX_TARGETS) \
+ 	"GL_LIB = libGL.a" \
+ 	"GLU_LIB = libGLU.a" \
+ 	"GLUT_LIB = libglut.a" \
+ 	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = -O -DAIXV3" \
++	"CC = m68k-elf-gcc" \
++	"CFLAGS = -O2 -m68060 $(AMIX_PIC) -ffast-math -DSHM -fno-strict-aliasing -fcommon \
++		-U__linux__ -Ulinux -DAMIX -Dm68k -DSVR4 -D__amix__ \
++		-Wno-error=implicit-function-declaration -Wno-error=int-conversion \
++		-Wno-error=incompatible-pointer-types -Wno-error=return-mismatch \
++		-Wno-error=implicit-int -I$(HOME)/opt/m68k-amix-sysroot/usr/x11r6/xc/exports/include" \
+ 	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -lX11 -lXext -lXmu -lXi -lm"
+-
+-aix-sl:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = -O -DAIXV3" \
+-	"MAKELIB = ../bin/mklib.aix" \
+-	"XLIBS = -lX11 -lXext -lXmu -lXi -lm"
++	"AR = m68k-elf-ar" "RANLIB = m68k-elf-ranlib" \
++	"XLIBS = -lXmu -lXext -lX11 -lsocket -lnsl -lm"
+ 
+-# Make-config additions for the Amiga 3000 UX
+-# Carlyn Voss Iuzzolino   5/8/95: 
+-# Modified gcc part as follows:
+-# Needed to take out -pedantic because that makes gcc complain about 
+-# ANSI-CC not allowing #ident in Amiga's /usr/include/*.h files.
+-# Took out -O2 (unrecognized option for gcc on the Amiga).
+-# Needs /usr/lib/libsocket.a file. 
+ amix:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS =" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -lX11 -lsocket -lnsl -lm"
+-
+-beos-r4:
+-	$(MAKE) -f Makefile.BeOS-R4 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = g++" \
+-	"CFLAGS = -O -DNO_CONST" \
+-	"MAKELIB = ../bin/mklib.beos-r4" \
+-	"XLIBS = "
+-
+-bsdos:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -I/usr/X11/include -O2" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/X11/lib -lX11 -lipc -lm"
+-
+-bsdos4:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -I/usr/X11/include -O2 -fPIC" \
+-	"MAKELIB = ../bin/mklib.bsdos4" \
+-	"XLIBS = -L/usr/X11/lib -lX11 -lipc -lm"
+-
+-cygnus:
+-	$(MAKE) -f Makefile.cygnus $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"DLLTOOL = dlltool" \
+-	"WING_DIR= /wing" \
+-	"LD = ld" \
+-	"CFLAGS = -I. -DWIN32 -D__WIN32__ -D_WINDOWS \
+-		-O2 -funroll-loops \
+-		-fexpensive-optimizations -fomit-frame-pointer -ffast-math \
+-		-malign-loops=2 -malign-jumps=2 -malign-functions=2" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"WLIBS = ../lib/wing32.a -lkernel32 -luser32 -lgdi32"
+-
+-cygnus-linux:
+-	$(MAKE) -f Makefile.cygnus $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gnuwin32gcc" \
+-	"DLLTOOL = gnuwin32dlltool --as gnuwin32as" \
+-	"LD = gnuwin32ld" \
+-	"WING_DIR= /dos/wing" \
+-	"CFLAGS = -I. -DWIN32 -D__WIN32__ -D_WINDOWS \
+-		-O2 -funroll-loops \
+-		-fexpensive-optimizations -fomit-frame-pointer -ffast-math \
+-		-malign-loops=2 -malign-jumps=2 -malign-functions=2" \
+-	"MAKELIB = ../bin/mklib.cygnus-linux" \
+-	"WLIBS = ../lib/wing32.a -lkernel32 -luser32 -lgdi32"
+-
+-dgux:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -lX11 -lm"
+-
+-freebsd:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O2 -fPIC -pedantic -I/usr/X11R6/include -DSHM -DHZ=100" \
+-	"MAKELIB = ../bin/mklib.freebsd" \
+-	"XLIBS = -L/usr/X11R6/lib -lXext -lXmu -lXi -lX11 -lm"
+-
+-freebsd-386:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -ffast-math -fPIC -pedantic -I/usr/X11R6/include -DSHM -DHZ=100 -DUSE_X86_ASM -DFREEBSD" \
+-	"MAKELIB = ../bin/mklib.freebsd" \
+-	"XLIBS = -L/usr/X11R6/lib -lXext -lXmu -lXi -lX11 -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S"
+-
+-gcc:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -pedantic -O2" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -lX11 -lm"
+-
+-hpux9:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = +O3 -Aa -D_HPUX_SOURCE -I/usr/include/X11R5 -DSHM" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/lib/X11R5 -lXext -lXmu -lXi -lX11 -lm"
+-
+-hpux9-gcc:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -ansi -O3 -D_HPUX_SOURCE -I/usr/include/X11R5 -DSHM" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/lib/X11R5 -lXext -lXmu -lXi -lX11 -lm"
+-
+-hpux9-sl:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.sl" \
+-	"GLU_LIB = libGLU.sl" \
+-	"GLUT_LIB = libglut.sl" \
+-	"GLW_LIB = libGLw.sl" \
+-	"CC = cc" \
+-	"CFLAGS = +z +O3 +Olibcalls +ESlit -Aa +Onolimit -D_HPUX_SOURCE -I/usr/include/X11R5 -DSHM" \
+-	"MAKELIB = ../bin/mklib.hpux" \
+-	"XLIBS = -L/usr/lib/X11R5 -s -Wl,+s,-B,nonfatal,-B,immediate -lXext -lXmu -lXi -lX11 -lm"
+-
+-hpux9-gcc-sl:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.sl" \
+-	"GLU_LIB = libGLU.sl" \
+-	"GLUT_LIB = libglut.sl" \
+-	"GLW_LIB = libGLw.sl" \
+-	"CC = gcc" \
+-	"CFLAGS = -fPIC -ansi -O3 -D_HPUX_SOURCE -I/usr/include/X11R5 -DSHM" \
+-	"MAKELIB = ../bin/mklib.hpux" \
+-	"XLIBS = -L/usr/lib/X11R5 -lXext -lXmu -lXi -lX11 -lm"
+-
+-hpux10:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = +O3 +DAportable -Aa -D_HPUX_SOURCE -I/usr/include/X11R6 -I/usr/contrib/X11R6/include -DSHM" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/lib/X11R6 -L/usr/contrib/X11R6/lib -lXext -lXmu -lXi -lX11 -lm"
+-
+-hpux10-sl:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL" \
+-	"GLU_LIB = libGLU" \
+-	"GLUT_LIB = libglut" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = +z -Ae +O2 +Onolimit +Oaggressive -D_HPUX_SOURCE -I/usr/include/X11R6 -I/usr/contrib/X11R6/include -DSHM" \
+-	"MAKELIB = ../bin/mklib.hpux" \
+-	"XLIBS = -L/usr/lib/X11R6 -L/usr/contrib/X11R6/lib -lXext -lXmu -lXi -lX11 -lm"
+-
+-hpux10-gcc:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -ansi -O3 -D_HPUX_SOURCE -I/usr/include/X11R6 -I/usr/contrib/X11R6/include  -DSHM" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/lib/X11R6 -L/usr/contrib/X11R6/lib -lXext -lXmu -lXi -lX11 -lm"
+-
+-hpux10-gcc-sl:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.sl" \
+-	"GLU_LIB = libGLU.sl" \
+-	"GLUT_LIB = libglut.sl" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -fPIC -ansi -O3 -D_HPUX_SOURCE -I/usr/include/X11R6 -I/usr/contrib/X11R6/include -DSHM" \
+-	"MAKELIB = ../bin/mklib.hpux" \
+-	"XLIBS = -L/usr/lib/X11R6 -L/usr/contrib/X11R6/lib -lXext -lXmu -lXi -lX11 -lm"
+-
+-
+-# For IRIX 4: don't use -fullwarn because it causes too much garbage
+-irix4:
+-	pmake $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = -O2 -ansi -prototypes -DSHM" \
+-	"MAKELIB = ../bin/mklib.ar-rcv" \
+-	"XLIBS = -lXext -lXmu -lXi -lX11 -lm"
+-
+-# On IRIX 5.3 -sopt causes a problem in drawpixels.c so we don't use it
+-irix5:
+-	pmake $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = -O2 -ansi -fullwarn -DSHM -DNO_CONST" \
+-	"MAKELIB = ../bin/mklib.ar-rcv" \
+-	"XLIBS = -lX11 -lXext -lXmu -lXi -lm"
+-
+-# On IRIX 5.2+gcc
+-irix5-gcc:
+-	make $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O2 -pedantic -DSHM" \
+-	"MAKELIB = ../bin/mklib.ar-rcv" \
+-	"XLIBS = -lX11 -lXext -lXmu -lXi -lm"
+-
+-# IRIX 5 using Dynamic Shared Objects (DSO)
+-irix5-dso:
+-	pmake $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = cc" \
+-	"CFLAGS = -O2 -ansi -fullwarn -DSHM -DNO_CONST" \
+-	"MAKELIB = ../bin/mklib.irix5" \
+-	"XLIBS = -rpath ../lib -lX11 -lXmu -lXi -lm"
+-
+-irix6-o32:
+-	pmake $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = -32 -mips2 -O2 -ansi -DSHM -DNO_CONST" \
+-	"MAKELIB = ../bin/mklib.ar-rcv" \
+-	"XLIBS = -lX11 -lXext -lXmu -lXi -lm"
+-
+-irix6-o32-dso:
+-	pmake $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = cc" \
+-	"CFLAGS = -32 -mips2 -O2 -ansi -DSHM -DNO_CONST" \
+-	"MAKELIB = ../bin/mklib.irix6-32" \
+-	"XLIBS = -rpath ../lib -lX11 -lXext -lXmu -lXi -lm"
+-
+-# For IRIX 6: -woff:
+-#   1209 - controlling expression is constant
+-irix6-n32:
+-	pmake $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"LIBDIR = ../lib32" \
+-	"CC = cc" \
+-	"CFLAGS = -n32 -mips3 -O3 -ansi -woff 1209,1521" \
+-	"MAKELIB = ../bin/mklib.ar-rcv" \
+-	"XLIBS = -lX11 -lXext -lXmu -lXi -lm"
+-
+-irix6-n32-dso:
+-	pmake $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.a" \
+-	"LIBDIR = ../lib32" \
+-	"CC = cc" \
+-	"CFLAGS = -n32 -mips3 -O3 -ansi -DSHM -woff 1185,1521" \
+-	"MAKELIB = ../bin/mklib.irix6-n32" \
+-	"XLIBS = -rpath ../lib32 -lX11 -lXmu -lXi -lfpe -lm"
+-
+-irix6-gcc-n32-sl:
+-	make $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"LIBDIR = ../lib32" \
+-	"CC = gcc" \
+-	"CFLAGS = -mabi=n32 -mips3 -O3 -DSHM" \
+-	"MAKELIB = ../bin/mklib.irix6-n32" \
+-	"XLIBS = -rpath ../lib32 -lX11 -lXmu -lXi -lm"
+-
+-# For IRIX 6-64: -woff:
+-#   1068 - integer conversion resulted in a change of sign
+-#   1069 - integer conversion resulted in truncation
+-#   1174 - variable was declared but never referenced
+-#   1185 - enumerated type mixed with another type
+-#   1209 - controlling expression is constant
+-#   1474 - declaring a void parameter list with a typedef is nonstandard
+-#   1552 - variable was set but never used
+-irix6-64:
+-	pmake $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"LIBDIR = ../lib64" \
+-	"CC = cc" \
+-	"CFLAGS = -64 -O3 -ansi -woff 1068,1069,1174,1185,1209,1474,1552 -DSHM" \
+-	"MAKELIB = ../bin/mklib.ar-rcv" \
+-	"XLIBS = -lX11 -lXext -lXmu -lXi -lm"
+-
+-irix6-64-dso:
+-	pmake $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"LIBDIR = ../lib64" \
+-	"CC = cc" \
+-	"CFLAGS = -64 -O3 -ansi -woff 1068,1069,1174,1185,1209,1474,1552 -DSHM" \
+-	"MAKELIB = ../bin/mklib.irix6-64" \
+-	"XLIBS = -rpath ../lib64 -lX11 -lXmu -lXi -lm"
+-
+-# May want to try these CFLAGS for better performance under Linux and GCC:
+-# -fPIC -O2 -ansi -pedantic -mieee-fp -DSHM -funroll-loops
+-# -fexpensive-optimizations -fomit-frame-pointer -ffast-math
+-# and  -malign-loops=2 -malign-jumps=2 -malign-functions=2 for Pentium
+-
+-linux:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O2 -funroll-loops -ansi -pedantic -ffast-math -D_SVID_SOURCE -D_BSD_SOURCE -DSHM -I/usr/X11R6/include" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lm"
+-
+-# One Linux user reports having to use these XLIBS:
+-#    -lMrm -lXmu -lXi -lXt -lXext -lXmu -lXi -lSM -lICE -lX11
+-
+-linux-elf:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -ansi -pedantic -fPIC -ffast-math -D_SVID_SOURCE -D_BSD_SOURCE -DSHM -I/usr/X11R6/include" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lm"
+-
+-linux-glide:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -ansi -pedantic -fPIC -ffast-math -D_SVID_SOURCE -D_BSD_SOURCE -DSHM -DFX -I/usr/X11R6/include -I/usr/include/glide -I/usr/local/glide/include" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -L/usr/local/glide/lib -lglide2x -lm"
+-
+-# Linux on Intel X86: assembly language optimizations
+-linux-386:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O2 -funroll-loops -ansi -pedantic -ffast-math -D_SVID_SOURCE -D_BSD_SOURCE -DSHM -DUSE_X86_ASM -I/usr/X11R6/include" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S X86/vertex.S"
+-
+-linux-386-elf:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -ansi -pedantic -fPIC -ffast-math -D_SVID_SOURCE -D_BSD_SOURCE -DSHM -DUSE_X86_ASM -I/usr/X11R6/include" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S X86/vertex.S"
+-
+-linux-386-glide:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -ansi -pedantic -fPIC -ffast-math -D_SVID_SOURCE -D_BSD_SOURCE -DUSE_X86_ASM -DSHM -DFX -I/usr/X11R6/include -I/usr/include/glide -I/usr/local/glide/include" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -L/usr/local/glide/lib -lglide2x -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S X86/vertex.S"
+-
+-linux-386-glide-mits:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -ansi -pedantic -fPIC -ffast-math -D_SVID_SOURCE -D_BSD_SOURCE -DSHM -DFX -D_REENTRANT -DMITS -DUSE_X86_ASM -I/usr/X11R6/include -I/usr/include/glide -I/usr/local/glide/include" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -L/usr/local/glide/lib -lglide2x -lm -lpthread" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S X86/vertex.S"
+-
+-linux-386-opt-V2-glide:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -m486 -fomit-frame-pointer -pipe -ansi -pedantic -ffast-math -fexpensive-optimizations -malign-loops=2 -malign-jumps=2 -malign-functions=2 -D_SVID_SOURCE -D_BSD_SOURCE -DSHM -DFX -DFX_V2 -DUSE_X86_ASM -I/usr/X11R6/include -I/usr/include/glide -I/usr/local/glide/include"\
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -L/usr/local/glide/lib -lglide2x -lm -lpthread" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S X86/vertex.S"
+-
+-linux-386-opt-glide:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -m486 -fomit-frame-pointer -pipe -ansi -pedantic -ffast-math -fexpensive-optimizations -malign-loops=2 -malign-jumps=2 -malign-functions=2 -D_SVID_SOURCE -D_BSD_SOURCE -DSHM -DFX -DUSE_X86_ASM -I/usr/X11R6/include -I/usr/include/glide -I/usr/local/glide/include" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -L/usr/local/glide/lib -lglide2x -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S X86/vertex.S"
+-
+-linux-3dnow:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc -malign-loops=2 -malign-jumps=2 -malign-functions=2" \
+-	"CFLAGS = -Wall -O3 -ansi -pedantic -fPIC -ffast-math -funroll-loops -fomit-frame-pointer -D_SVID_SOURCE -D_BSD_SOURCE -DSHM -DUSE_X86_ASM -DUSE_MMX_ASM -DUSE_3DNOW_ASM -I/usr/X11R6/include" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S \
+-	X86/mmx_blend.S \
+-	X86/3dnow_xform_raw1.S X86/3dnow_xform_raw2.S \
+-	X86/3dnow_xform_raw3.S X86/3dnow_xform_raw4.S \
+-	X86/3dnow_xform_masked1.S X86/3dnow_xform_masked2.S \
+-	X86/3dnow_xform_masked3.S X86/3dnow_xform_masked4.S \
+-	X86/3dnow_norm_raw.S X86/vertex.S X86/vertex_3dnow.S" 
+-
+-linux-3dnow-glide:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc -malign-loops=2 -malign-jumps=2 -malign-functions=2" \
+-	"CFLAGS = -O3 -ansi -pedantic -fPIC -ffast-math -funroll-loops -fomit-frame-pointer -D_SVID_SOURCE -D_BSD_SOURCE -DUSE_X86_ASM -DUSE_MMX_ASM -DUSE_3DNOW_ASM -DSHM -DFX -I/usr/X11R6/include -I/usr/include/glide -I/usr/local/glide/include -I/usr/src/mesa-glx/src/FX/X86" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -L/usr/local/glide/lib -lglide2x -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S \
+-	X86/mmx_blend.S \
+-	X86/3dnow_xform_raw1.S X86/3dnow_xform_raw2.S \
+-	X86/3dnow_xform_raw3.S X86/3dnow_xform_raw4.S \
+-	X86/3dnow_xform_masked1.S X86/3dnow_xform_masked2.S \
+-	X86/3dnow_xform_masked3.S X86/3dnow_xform_masked4.S \
+-	X86/3dnow_norm_raw.S X86/vertex.S X86/vertex_3dnow.S \
+-	FX/X86/fx_3dnow_fastpath.S"
+-
+-
+-# Contributed by C. Alex. North-Keys (erlkonig@talisman.org)
+-linux-386-pthread-shared-glide:
+-	$(MAKE) $(MFLAGS) targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -fPIC -funroll-loops -ansi -pedantic -ffast-math -D_SVID_SOURCE -D_BSD_SOURCE -I/usr/X11R6/include -DSHM -DUSE_X86_ASM -D_REENTRANT -DTHREADS -DPTHREADS -DFX -I/usr/include/glide -I/usr/local/glide/include" \
+-	"MAKELIB = ../mklib.glide" \
+-	"XLIBS = -L/usr/X11/lib -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lpthread -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S \
+-	X86/mmx_blend.S X86/vertex.S"
+-
+-# Contributed by Uwe_Maurer@t-online.de
+-linux-ggi:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc"  \
+-	"CFLAGS = -O3 -fPIC -ffast-math -D_SVID_SOURCE -D_BSD_SOURCE -I/usr/X11R6/include -DSHM -DGGI -DCDECL=" \
+-	"MAKELIB = ../bin/mklib.ggi" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lggi -lm"
+-
+-# Contributed by Emmanuel marty core@ggi-project.org
+-linux-386-ggi:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc"  \
+-	"CFLAGS = -O3 -fPIC -ffast-math -D_SVID_SOURCE -D_BSD_SOURCE -I/usr/X11R6/include -DSHM -DUSE_X86_ASM -DGGI -DCDECL=" \
+-	"MAKELIB = ../bin/mklib.ggi" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lggi -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S X86/vertex.S"
+-
+-# Linux on Alpha (based on email from John Ferguson ferguson@viz.tamu.edu)
+-linux-alpha:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O2 -mieee -pedantic -L/usr/X11R6/lib -D_XOPEN_SOURCE -DSHM" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lm"
+-
+-linux-alpha-elf:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -ansi -mieee -pedantic -fPIC -D_XOPEN_SOURCE -DSHM" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXi -lm"
+-
+-# Not tested, but should be okay on any RedHat-based linux for PowerPC machines
+-# If your linux supports shared libraries, you might want to build with the 
+-# the "linux-ppc-shared" entry instead
+-# You might want to change the mcpu flag appropriately for your 
+-# processor (601, 603, 604, etc.), it but doesn't make much difference
+-linux-ppc:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -mcpu=603 -ansi -pedantic -fsigned-char -ffast-math -funroll-loops -D_SVID_SOURCE -D_BSD_SOURCE -I/usr/X11R6/include -DSHM" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lm"
+-
+-# -O5 and -fexpensive-optimizations causes a compiler crash for Linux PPC R4
+-linux-ppc-so:
+-	$(MAKE) targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -mcpu=603 -ansi -pedantic -fPIC -fsigned-char -ffast-math -funroll-loops -D_SVID_SOURCE -D_BSD_SOURCE -I/usr/X11R6/include -DSHM" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lm"
+-
+-# Contributed by John Stone
+-linux-386-pthread:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O2 -funroll-loops -ansi -pedantic -ffast-math -D_SVID_SOURCE -D_BSD_SOURCE -I/usr/X11R\6/include -DSHM -DUSE_X86_ASM -D_REENTRANT -DTHREADS -DPTHREADS" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lpthread -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S X86/vertex.S"
+-
+-# Contributed by John Gotts
+-linux-386-pthread-shared:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -fPIC -funroll-loops -ansi -pedantic -ffast-math -D_SVID_SOURCE -D_BSD_SOURCE -I/us\r/X11R6/include -DSHM -DUSE_X86_ASM -D_REENTRANT -DTHREADS -DPTHREADS" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lpthread -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S X86/vertex.S"
+-
+-linux-sparc:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -pedantic -funroll-loops -O3 -DSHM" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXt -lSM -lICE -lXmu -lXi -lm"
+-
+-# Replace -mv8 with -mcypress, -msupersparc or -msparclite as appropriate.
+-linux-sparc5-elf:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -mv8 -O2 -ffast-math -ansi -pedantic -fPIC -D_SVID_SOURCE -D_BSD_SOURCE -I/usr/X11R6/include -DSHM" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lm"
+-
+-# 32-bit Sparc ELF userland, on UltraSparc
+-linux-sparc-ultra:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -mv8 -O2 -mtune=ultrasparc -ansi -pedantic -fPIC -D_SVID_SOURCE -D_BSD_SOURCE -I/usr/X11R6/include -DSHM" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lm"
+-
+-# May want to add these CFLAGS for better performance under LynxOS and GCC:
+-# -fPIC -O2 -ansi -pedantic -mieee-fp -DSHM -funroll-loops
+-# -fexpensive-optimizations -fomit-frame-pointer -ffast-math
+-# and  -malign-loops=2 -malign-jumps=2 -malign-functions=2 for Pentium
+-
+-lynxos:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O2 -ansi -pedantic -funroll-loops -ffast-math -DSHM" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/X11/lib -lXext -lXi -lXmu -lX11 -lbsd -lm"
+-
+-machten-2.2:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -DTENON -D__MACHTEN__ -fstrength-reduce -m68881 -O2" \
+-	"MAKELIB = ../bin/mklib.ar-rcv" \
+-	"XLIBS = -L/usr/lib/X11 -lX11 -lm"
+-
+-machten-4.0:
+-	$(MAKE) targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -DTENON -D__MACHTEN__ -fstrength-reduce -O2" \
+-	"MAKELIB = ../bin/mklib.ar-rcv" \
+-	"XLIBS = -L/usr/X11R5/lib -lX11 -lm"
+-
+-mklinux:
+-	$(MAKE) targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -pedantic -O2" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -lmoto -L/usr/X11/lib -lXmu -lX11 -lm"
+-
+-netbsd:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -O2 -fPIC -DSHM -I/usr/X11R6/include -DHZ=100"  \
+-	"MAKELIB = ../bin/mklib.netbsd" \
+-	"XLIBS = -L/usr/X11R6/lib -lXext -lXmu -lXi -lX11 -lm"
+-
+-next:	
+-	$(MAKE)	$(MFLAGS) -f Makefile.X11 targets \
+-	"DRIVER_SOURCES = OSmesa/osmesa.c" \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"CC = ${MYCC}" \
+-	"CFLAGS = -traditional-cpp -DOPENSTEP -O4" \
+-	"MAKELIB = ../bin/mklib.ar-ruv"
+-
+-openbsd:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = cc" \
+-	"CFLAGS = -O2 -fPIC -I/usr/X11R6/include -DSHM -DHZ=100" \
+-	"MAKELIB = ../bin/mklib.openbsd" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXi -lm"
+-
+-openstep:	
+-	$(MAKE)	$(MFLAGS) -f Makefile.X11 targets \
+-	"DRIVER_SOURCES = OSmesa/osmesa.c" \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"CC = ${MYCC}" \
+-	"CFLAGS = -traditional-cpp -DOPENSTEP -O4" \
+-	"MAKELIB = ../bin/mklib.openstep"
+-
+-openstep-win32:	
+-	$(MAKE)	$(MFLAGS) -f Makefile.X11 targets \
+-	"DRIVER_SOURCES = OSmesa/osmesa.c" \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -DOPENSTEP -O4" \
+-	"MAKELIB = ../bin/mklib.openstep"
+-
+-os2-x11:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB   = MesaGL.a" \
+-	"GLU_LIB  = MesaGLU.a" \
+-	"GLUT_LIB = glut.a" \
+-	"GLW_LIB = GLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -Zmt -O3 -m486 -funroll-loops -Wall -Wno-unused -ansi -pedantic -ffast-math -DUSE_X86_ASM -D_SVID_SOURCE -D_BSD_SOURCE -I$(X11ROOT)/XFree86/include" \
+-	"MAKELIB = ..\\bin\\mklib-emx.cmd " \
+-	"XLIBS = -Zmt -Zcrtdll -Zexe -L$(X11ROOT)/XFree86/lib -lXt -lX11 -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S X86/vertex.S"
+-
+-osf1:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = -O2 -std1 -ieee_with_no_inexact -DSHM -DNO_CONST" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -lX11 -lXext -lXmu -lXi -lm"
+-
+-osf1-sl:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = cc" \
+-	"CFLAGS = -O2 -std1 -ieee_with_no_inexact -DSHM -DNO_CONST" \
+-	"MAKELIB = ../bin/mklib.osf1" \
+-	"XLIBS = -lX11 -lXext -lXmu -lXi -lm"
+-
+-pgi-cygnus:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = pgcc" \
+-	"CFLAGS = -fast -cyglibs -Munix -I. -DWIN32 -D__WIN32__ -D_WINDOWS " \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -lX11 -lm"
+-
+-pgi-mingw32:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = pgcc" \
+-	"CFLAGS = -fast -msvcrt -Munix -I. -DWIN32 -D__WIN32__ -D_WINDOWS " \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -lX11 -lm"
+-
+-# QNX V4 & Watcom Compiler
+-qnx:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = -O" \
+-	"MAKELIB = ../bin/mklib.qnx" \
+-	"XLIBS = -L/usr/X11/lib -lX11 -lm"
+-
+-sco:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -pedantic -O2 -mieee-fp" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/X11/lib -lX11 -lm"
+-
+-sco5:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -pedantic -O2 -mieee-fp" \
+-	"MAKELIB = ../mklib.ar-ruv" \
+-	"XLIBS = -lXm -lXt -lX11 -lXmu -lXext -lsocket -lx -lm"
+-
+-solaris-x86:
+-	$(MAKE) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = -Xa -xO3 -xpentium -KPIC -I/usr/openwin/include -DSHM" \
+-	"MAKELIB = ../bin/mklib.solaris" \
+-	"XLIBS = -L/usr/openwin/lib -R/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lm"
+-
+-solaris-x86-gcc:
+-	$(MAKE) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -m486 -fPIC -I/usr/openwin/include -DSHM" \
+-	"MAKELIB = ../bin/mklib.solaris" \
+-	"XLIBS = -L/usr/openwin/lib -R/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lm"
+-
+-sunos4:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = acc" \
+-	"CFLAGS = -O -DSHM -DSUNOS4" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -lX11 -lXext -lXmu -lXi -lm"
+-
+-sunos4-sl:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = acc" \
+-	"CFLAGS = -Kpic -O -I/usr/include/X11R5 -DSHM -DSUNOS4" \
+-	"MAKELIB = ld -assert pure-text -o" \
+-	"XLIBS = -L/usr/lib/X11R5 -lX11 -lXext -lXmu -lXi -lm"
+-
+-sunos4-gcc:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -DSHM -DSUNOS4 -I/usr/openwin/include" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lm"
+-
+-sunos4-gcc-sl:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so.$(VERSION)" \
+-	"GLU_LIB = libGLU.so.$(VERSION)" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -fPIC -O3 -I/usr/openwin/include -I/usr/include/X11R5 -I/usr/include/X11R5 -DSHM -DSUNOS4 -DSOLARIS_2_4_BUG" \
+-	"MAKELIB = ../bin/mklib.sunos4" \
+-	"XLIBS = -L/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lm"
+-
+-sunos4-gcc-x11r6-sl:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so.$(VERSION)" \
+-	"GLU_LIB = libGLU.so.$(VERSION)" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -fPIC -O3 -I/usr/X11R6.3/include -DSHM -DSUNOS4 -DSOLARIS_2_4_BUG" \
+-	"MAKELIB = ../bin/mklib.sunos4" \
+-	"XLIBS = -L/usr/X11R6.3/lib/X11 -lX11 -lXext -lXmu -lXi -lm"
+-
+-sunos5:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = -Xa -fast -xO4 -native -I/usr/openwin/include -I/usr/dt/include -DSHM -DSOLARIS_2_4_BUG" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/openwin/lib -L/usr/dt/lib -R/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lm"
+-
+-sunos5-sl:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = cc" \
+-	"CFLAGS = -KPIC -Xa -O -I/usr/openwin/include -I/usr/dt/include -DSHM -DSOLARIS_2_4_BUG" \
+-	"MAKELIB = ../bin/mklib.sunos5" \
+-	"XLIBS = -L/usr/openwin/lib -L/usr/dt/lib -R/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lm"
+-
+-sunos5-ultra:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = -Xa -fast -xO5 -xtarget=ultra -I/usr/openwin/include -I/usr/dt/include -DSHM -DSOLARIS_2_4_BUG" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/openwin/lib -L/usr/dt/lib -R/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lm"
+-
+-sunos5-ultra-sl:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = cc" \
+-	"CFLAGS = -KPIC -Xa -fast -xO5 -xtarget=ultra -I/usr/openwin/include -I/usr/dt/include -DSHM -DSOLARIS_2_4_BUG" \
+-	"MAKELIB = ../bin/mklib.sunos5" \
+-	"XLIBS = -L/usr/openwin/lib -L/usr/dt/lib -R/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lm"
+-
+-sunos5-gcc:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -I/usr/openwin/include -DSHM -DSOLARIS_2_4_BUG" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lm"
+-
+-sunos5-gcc-sl:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -fPIC -O3 -I/usr/openwin/include -DSHM -DSOLARIS_2_4_BUG" \
+-	"MAKELIB = ../bin/mklib.sunos5" \
+-	"XLIBS = -L/usr/openwin/lib -R/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lm"
+-
+-sunos5-x11r6-gcc-sl:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -fPIC -O3 -DSHM -DSOLARIS_2_4_BUG" \
+-	"MAKELIB = ../bin/mklib.sunos5" \
+-	"XLIBS = -lSM -lICE -lX11 -lXext -lXmu -lXi -lnsl -lsocket -lm"
+-
+-# Contributed by John Stone
+-sunos5-pthread:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"CC = cc" \
+-	"CFLAGS = -mt -Xa -fast -xO4 -native -I/usr/openwin/include -I/usr/dt/include -DSHM -DSOLARIS_2_4\_BUG -DTHREADS -DPTHREADS" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/openwin/lib -L/usr/dt/lib -R/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lpthread -lm"
+-
+-# Contributed by John Stone
+-sunos5-thread:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"CC = cc" \
+-	"CFLAGS = -mt -Xa -fast -xO4 -native -I/usr/openwin/include -I/usr/dt/include -DSHM -DSOLARIS_2_4\_BUG -DTHREADS -DSOLARIS_THREADS" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/openwin/lib -L/usr/dt/lib -R/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lthread -lm"
+-
+-# Contributed by John Stone
+-sunos5-gcc-thread:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -I/usr/openwin/include -DSHM -DSOLARIS_2_4_BUG -D_REENTRANT -DTHREADS -DSOLARIS_THR\EADS" \
+-      	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lthread -lm"
+-
+-# Contributed by John Stone
+-sunos5-gcc-pthread:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -O3 -I/usr/openwin/include -DSHM -DSOLARIS_2_4_BUG -D_REENTRANT -DTHREADS -DPTHREADS" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lpthread -lm"
+-
+-# from Ron Metoyer (metoyer@iexist.flw.lucent.com)
+-sunSolaris-CC:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = CC" \
+-	"CFLAGS = -O -I/usr/openwin/include -DSHM -DSOLARIS_2_4_BUG" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/openwin/lib -R/usr/openwin/lib -lX11 -lXext -lXmu -lXi -lm"
+-
+-#This config doesn't work, Ultrix C compiler isn't ANSI compliant
+-ultrix:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = -O -Dconst=/**/" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -lXmu -lX11 -lXi -lm"
+-
+-ultrix-gcc:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -pedantic -O2" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -lXmu -lX11 -lXi -lm"
+-
+-# tested on Cray C90 running UNICOS 8.0.4
+-unicos:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS =" \
+-	"MAKELIB = ../bin/mklib/ar-rcv" \
+-	"XLIBS = -lX11 -lXext -lXmu -lXi -lm"
+-
+-unixware:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = -O -I/usr/X/include -DSHM" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -lX11 -lXext -lXmu -lXi -lsocket -lnsl -lm"
+-
+-unixware-shared:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL" \
+-	"GLU_LIB = libGLU" \
+-	"GLUT_LIB = libglut" \
+-	"GLW_LIB = libGLw" \
+-	"CC = cc" \
+-	"CFLAGS = -O -I/usr/X/include -KPIC,inline -DSHM" \
+-	"MAKELIB = ../bin/mklib.solaris" \
+-	"XLIBS = -lX11 -lXext -lXmu -lXi -lsocket -lnsl -lm"
+-
+-uwin:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -pedantic -O2 -I/usr/X11/include " \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/X11/lib -lX11 -lm"
+-
+-vistra:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -pedantic -O2" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -lX11 -lsocket -lnsl -lgen -lm"
+-
+-
+-# for debugging on IRIX 5.x systems
+-# -woff 1209 = "controlling expression is constant"
+-# -woff 1210 = "controlling expression is constant"
+-# -woff 1506 = "implict conversion from unsigned long to smaller type"
+-# -woff 1521 = "nonstandard preprocessing directive is used"
+-# -woff 3496 = "bitwise operator precedence"
+-irix-debug:
+-	pmake $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"LIBDIR = ../lib32" \
+-	"CC = cc" \
+-	"CFLAGS = -g -n32 -ansi -fullwarn -DSHM -DDEBUG -woff 1209,1210,1506,1521,3496" \
+-	"MAKELIB = ../bin/mklib.ar-rcv" \
+-	"XLIBS = -rpath ../lib32 -lX11 -lXext -lXmu -lXi -lfpe -lXext -lXmu -lXi -lm"
+-
+-DEBUG:
+-	pmake $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = cc" \
+-	"CFLAGS = -g -ansi -prototypes -fullwarn -DSHM -DDEBUG" \
+-	"MAKELIB = ../bin/mklib.ar-rcv" \
+-	"XLIBS = -lX11 -lXext -lXmu -lXi -lfpe -lm"
+-
+-# for debugging on Linux systems
+-linux-debug:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.a" \
+-	"GLU_LIB = libGLU.a" \
+-	"GLUT_LIB = libglut.a" \
+-	"GLW_LIB = libGLw.a" \
+-	"CC = gcc" \
+-	"CFLAGS = -g -ansi -pedantic -Wall -DSHM -DDEBUG -DSVGA -DFX -D_SVID_SOURCE -D_BSD_SOURCE -DUSE_X86_ASM_not -I/usr/include/glide -I/usr/local/glide/include" \
+-	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/local/glide/lib -lglide2x -ltexus -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lvga -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S X86/vertex.S"
+-
+-linux-elf-debug:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -g -ansi -pedantic -Wall -fPIC -ffast-math -D_SVID_SOURCE -D_BSD_SOURCE -I/usr/X11R6/include -DSHM -DDEBUG" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lvga -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S X86/vertex.S"
+-
+-linux-glide-debug:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
+-	"GL_LIB = libGL.so" \
+-	"GLU_LIB = libGLU.so" \
+-	"GLUT_LIB = libglut.so" \
+-	"GLW_LIB = libGLw.so" \
+-	"CC = gcc" \
+-	"CFLAGS = -g -ansi -pedantic -Wall -fPIC -ffast-math -D_SVID_SOURCE -D_BSD_SOURCE -I/usr/X11R6/include -DSHM -DFX -DDEBUG -I/usr/local/glide/include -I/usr/include/glide" \
+-	"MAKELIB = ../bin/mklib.linux" \
+-	"XLIBS = -L/usr/local/glide/lib -lglide2x -L/usr/X11R6/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lvga -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S X86/vertex.S"
+-
+-# for profiling on Linux systems
+-linux-prof:
+-	$(MAKE) $(MFLAGS) -f Makefile.X11 targets \
++	$(MAKE) $(MFLAGS) -f Makefile.X11 $(AMIX_TARGETS) \
+ 	"GL_LIB = libGL.a" \
+ 	"GLU_LIB = libGLU.a" \
+ 	"GLUT_LIB = libglut.a" \
+ 	"GLW_LIB = libGLw.a" \
+ 	"CC = gcc" \
+-	"CFLAGS = -O2 -pg -ansi -pedantic -Wall -DSHM -D_SVID_SOURCE -D_BSD_SOURCE -DUSE_X86_ASM -DUSE_MMX_ASM -DUSE_3DNOW_ASM -I/usr/include/glide -I/usr/local/glide/include" \
++	"CFLAGS = -O -ansi -finline-functions -DAMIX -Dm68k -DSVR4 \
++		-I/usr/x11r6/xc/exports/include -I/usr/x11r6/include" \
+ 	"MAKELIB = ../bin/mklib.ar-ruv" \
+-	"XLIBS = -L/usr/local/glide/lib -lglide2x -L/usr/X11/lib -lX11 -lXext -lXmu -lXt -lXi -lSM -lICE -lm" \
+-	"ASM_SOURCES = X86/x86a.S X86/common_x86asm.S \
+-	X86/mmx_blend.S \
+-	X86/3dnow_xform_raw1.S X86/3dnow_xform_raw2.S \
+-	X86/3dnow_xform_raw3.S X86/3dnow_xform_raw4.S \
+-	X86/3dnow_xform_masked1.S X86/3dnow_xform_masked2.S \
+-	X86/3dnow_xform_masked3.S X86/3dnow_xform_masked4.S \
+-	X86/3dnow_norm_raw.S X86/vertex.S X86/vertex_3dnow.S \
+-	FX/X86/fx_3dnow_fastpath.S"
++	"XLIBS = -L/usr/x11r6/xc/exports/lib -L/usr/x11r6/lib \
++		-lXmu -z nodefs -lXext -lX11 -lsocket -lnsl -lm"
+diff -ruN a/Mesa-3.1/src/Makefile.X11 b/Mesa-3.1/src/Makefile.X11
+--- a/Mesa-3.1/src/Makefile.X11
++++ b/Mesa-3.1/src/Makefile.X11
+@@ -102,6 +102,8 @@
+ 	X/xmesa2.c \
+ 	X/xmesa3.c \
+ 	X/xmesa4.c \
++	X/xmesa_s3d.c \
++	X/s3d_lib.c \
+ 	OSmesa/osmesa.c \
+ 	SVGA/svgamesa.c \
+ 	FX/fxapi.c \
+@@ -165,6 +167,10 @@
+ 	$(CC) -c -I. -I$(INCDIR) $(CFLAGS) $< -o $@
+ X/xmesa4.o: X/xmesa4.c
+ 	$(CC) -c -I. -I$(INCDIR) $(CFLAGS) $< -o $@
++X/xmesa_s3d.o: X/xmesa_s3d.c
++	$(CC) -c -I. -I$(INCDIR) $(CFLAGS) $< -o $@
++X/s3d_lib.o: X/s3d_lib.c
++	$(CC) -c -I. -I$(INCDIR) $(CFLAGS) $< -o $@
+ SVGA/svgamesa.o: SVGA/svgamesa.c
+ 	$(CC) -c -I. -I$(INCDIR) $(CFLAGS) $< -o $@
+ OSmesa/osmesa.o: OSmesa/osmesa.c
+diff -ruN a/Mesa-3.1/src/X/s3d.c b/Mesa-3.1/src/X/s3d.c
+--- a/Mesa-3.1/src/X/s3d.c
++++ b/Mesa-3.1/src/X/s3d.c
+@@ -0,0 +1,1055 @@
++/*
++ * s3d.c -- libs3d: the Z3660's soft3D for any rasterizer front end on AMIX
++ * (2026-10-26).  The protocol and the traps are those of TinyGL's
++ * zsoft3d.c (tinygl-amix), where they were found; in short:
++ *
++ *  - The firmware (shanshe/Z3660 wazp3d/soft3d56.c) takes its parameters in
++ *    a block at board+0x4200000 and the operation in REG_ZZ_SOFT3D_OP, every
++ *    pointer a 68k board address, structures big-endian.  Needs a kernel
++ *    whose zz9000 driver maps the whole board and has ZZ9KIOC_SOFT3D and
++ *    ZZ9KIOC_BLITX (-DZZ9K_MAP_BOARD).
++ *  - Its heap is 16 MB and SOFT3D_End frees neither the Z buffer nor the
++ *    textures; a full heap makes ALLOCZBUFFER return NULL and the next draw
++ *    takes the ARM, and the 68k with it, down.  So everything is given back
++ *    at exit and on SIGINT/TERM/HUP, and an owner record in board memory
++ *    lets the next process free what a killed one left (shared with
++ *    TinyGL's zsoft3d.c: same place, same layout).
++ *  - The Z buffer must be as wide as the bitmap's rows (CLEARZBUFFER clears
++ *    bitmap-large x high entries).
++ *  - The ARM trusts what it gets: every triangle is checked (finite, on the
++ *    bitmap, an area) before it goes.
++ *  - Blending: Wazp3D reads the destination only when its fragment buffer
++ *    is flushed, so overlapping blended triangles in one buffer do not
++ *    layer; overlaps are detected and flushed in between.
++ *  - Colours go as A B G R (the firmware byte-reverses the long).
++ *
++ * Board memory, device offsets (device 0 = board + 0x200000):
++ *   rows 0..1079       the screen (Xzz9000)
++ *   rows 1100..        the back buffer, at the screen's stride
++ *   0x0C00000-0x23FFFFF  textures (24 MB, mapped a texture at a time)
++ *   0x2400000          prefs, state, vertex batch, owner record
++ */
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <signal.h>
++#include <errno.h>
++#include <utmp.h>
++#include <sys/types.h>
++#include <sys/mman.h>
++#include <sys/ioctl.h>
++#include <X11/Xlibint.h>
++#include "s3d.h"
++
++extern int munmap();      /* not in AMIX's sys/mman.h */
++
++/* the AMIX zz9000 driver (zz9000.h) */
++#define ZZ9K_IOC            ('Z' << 8)
++#define ZZ9KIOC_GETINFO     (ZZ9K_IOC | 1)
++#define ZZ9KIOC_GETFBINFO   (ZZ9K_IOC | 11)
++#define ZZ9KIOC_SOFT3D      (ZZ9K_IOC | 17)
++#define ZZ9KIOC_BLITX       (ZZ9K_IOC | 18)
++struct zz9k_info {
++    unsigned long base, board_size, fb_offset, fb_size;
++    unsigned short hw_version, fw_version, product, zorro;
++    unsigned short width, height, color_mode, mode;
++};
++struct zz9k_fbinfo {
++    unsigned long fb_offset, fb_size;
++    unsigned short width, height, color_mode, depth, bytes_per_pixel, stride;
++    unsigned long red_mask, green_mask, blue_mask, alpha_mask;
++    unsigned short red_shift, green_shift, blue_shift, alpha_shift;
++};
++struct zz9k_soft3d { unsigned long op, result; };
++struct zz9k_blitx {
++    unsigned short op, sx, sy, dx, dy, width, height, pad;
++    unsigned long color;
++};
++
++/* the firmware */
++enum { OP_SETBITMAP, OP_SETCLIPPING, OP_SETDRAWSTATE, OP_DRAWPRIMITIVE, OP_DOUPDATE,
++       OP_FLUSH, OP_END, OP_CREATETEXTURE, OP_FREETEXTURE, OP_UPDATETEXTURE, OP_START,
++       OP_ALLOCZBUFFER, OP_ALLOCIMAGEBUFFER, OP_CLEARZBUFFER };
++#define FB_PHYS             0x00200000UL
++#define SOFT3D_DATA         0x04200000UL
++#define PIXFMT_RGB16        5
++#define W3D_R8G8B8          4
++#define W3D_R8G8B8A8        11
++#define W3D_PRIMITIVE_TRIANGLES 0
++#define PERSP_CORRECT       1
++#define W3D_NOW             255
++#define BUTTON_SIZE         136
++#define BTN_RENDERER        9
++#define PREFS_SIZE          7760
++#define MAXPOINTS           2997
++
++struct soft3d_data {
++    unsigned long offset[4];
++    unsigned long format[2];
++    unsigned short x[2], y[2];
++};
++struct state3D {
++    unsigned char Changed, ZMode, BlendMode, TexEnvMode;
++    unsigned char PerspMode, CullingMode, FogMode, UseGouraud;
++    unsigned char UseTex, UseFog, pad3, pad4;
++    unsigned char CurrentRGBA[4], EnvRGBA[4], FogRGBA[4], BackRGBA[4];
++    unsigned long PointSize, LineSize, primitive;
++    float FogZmin, FogZmax, FogDensity;
++    unsigned long gltex, ST, ST2;
++};
++struct point3D {
++    float x, y, z, u, v, w;
++    unsigned char RGBA[4], pad[4];
++};
++
++#define BACK_ROW            1100
++#define DATA_OFF            0x2400000UL
++#define DATA_SIZE           0x40000UL
++#define TEX_OFF             0x0C00000UL
++#define TEX_SIZE            0x1800000UL
++#define TEX_PAGE            4096UL
++
++/* the owner record (zsoft3d.c has the same) */
++#define OWNER_OFF           0x38000
++#define OWNER_MAGIC         0x53334f57UL        /* "S3OW" */
++#define MAXTEX              4096
++struct owner {
++    unsigned long magic;
++    long boot, pid;
++    unsigned long sc, ntex;
++    unsigned long tex[MAXTEX];
++};
++
++struct s3d_tex {
++    unsigned long st;           /* the firmware's texture */
++    unsigned long off, bytes;   /* its texels: device offset, size */
++    int w, h, bpp;
++    int slot;                   /* in the owner record */
++};
++
++static int fd = -1, active, failed;
++static const char *who = "libs3d";
++static int verbose = 1;                /* s3d_verbose */
++static volatile struct soft3d_data *blk;
++static char *data;
++static struct state3D *state;
++static volatile struct owner *own;
++static struct point3D batch[MAXPOINTS + 3] __attribute__((aligned(16)));
++static struct point3D *bbatch;
++static unsigned long a_prefs, a_state, a_batch, board, sc;
++static int nbatch, width, height, screen_w, screen_h, stride_px, fb_rows;
++static unsigned short *back;            /* the back buffer, mapped */
++static unsigned long back_len;
++static int xmajor;
++static struct s3d_state cur;
++static int cur_valid;
++static struct s3d_state want;           /* set, not yet sent: see s3d_set_state */
++static int want_valid;
++static unsigned long st_tris, st_blended, st_sat, st_flushes;   /* S3D_STATS */
++static unsigned long st_states, st_draws, st_finishes, st_texup;
++
++#define AMIGA(ptr) (board + FB_PHYS + DATA_OFF + (unsigned long)((char *)(ptr) - data))
++
++#ifdef S3D_FAKE
++/* PC profiling (-DS3D_FAKE): no board -- every operation succeeds and does
++   nothing, so only the 68k side of the work is left to measure */
++static int fake;
++#endif
++
++/* experiments: S3D_NODRAW=1 (the ARM draws nothing), S3D_NOORDER=1 (no
++   overlap flushes for blended triangles); S3D_ORDER=1 orders every blended
++   triangle, also under a depth test (see blend_order) */
++static int nodraw = -1, noorder, order_all, nostate;
++
++static unsigned long op(int code)
++{
++    struct zz9k_soft3d s;
++
++    if (nodraw < 0) {
++        nodraw = getenv("S3D_NODRAW") != NULL;
++        noorder = getenv("S3D_NOORDER") != NULL;
++        order_all = getenv("S3D_ORDER") != NULL;
++        nostate = getenv("S3D_NOSTATE") != NULL;
++    }
++    if (nostate && code == OP_SETDRAWSTATE)
++        return 0;
++    if (nodraw && (code == OP_DRAWPRIMITIVE || code == OP_FLUSH || code == OP_CLEARZBUFFER))
++        return 0;
++
++#ifdef S3D_FAKE
++    if (fake)
++        return code == OP_START || code == OP_CREATETEXTURE || code == OP_ALLOCZBUFFER;
++#endif
++    s.op = code;
++    s.result = 0;
++    if (ioctl(fd, ZZ9KIOC_SOFT3D, &s) < 0)
++        return 0;
++    return s.result;
++}
++
++static int blitx(int o, int sx, int sy, int dx, int dy, int w, int h, unsigned long color)
++{
++    struct zz9k_blitx b;
++
++    b.op = o; b.sx = sx; b.sy = sy; b.dx = dx; b.dy = dy;
++    b.width = w; b.height = h; b.pad = 0; b.color = color;
++#ifdef S3D_FAKE
++    if (fake)
++        return 0;
++#endif
++    return ioctl(fd, ZZ9KIOC_BLITX, &b);
++}
++
++/* --- GL enums ---------------------------------------------------------- */
++
++int s3d_gl_factor(int f)
++{
++    switch (f) {
++    case 0:      return 1;              /* GL_ZERO */
++    case 1:      return 2;              /* GL_ONE */
++    case 0x0300: return 3;              /* GL_SRC_COLOR */
++    case 0x0301: return 5;              /* GL_ONE_MINUS_SRC_COLOR */
++    case 0x0302: return 7;              /* GL_SRC_ALPHA */
++    case 0x0303: return 8;              /* GL_ONE_MINUS_SRC_ALPHA */
++    case 0x0304: return 9;              /* GL_DST_ALPHA */
++    case 0x0305: return 10;             /* GL_ONE_MINUS_DST_ALPHA */
++    case 0x0306: return 4;              /* GL_DST_COLOR */
++    case 0x0307: return 6;              /* GL_ONE_MINUS_DST_COLOR */
++    case 0x0308: return 11;             /* GL_SRC_ALPHA_SATURATE */
++    }
++    return 0;
++}
++
++int s3d_gl_depthfunc(int f)
++{
++    switch (f) {
++    case 0x0200: return S3D_Z_NEVER;
++    case 0x0201: return S3D_Z_LESS;
++    case 0x0202: return S3D_Z_EQUAL;
++    case 0x0203: return S3D_Z_LEQUAL;
++    case 0x0204: return S3D_Z_GREATER;
++    case 0x0205: return S3D_Z_NOTEQUAL;
++    case 0x0206: return S3D_Z_GEQUAL;
++    case 0x0207: return S3D_Z_ALWAYS;
++    }
++    return S3D_Z_LESS;
++}
++
++int s3d_gl_texenv(int e)
++{
++    switch (e) {
++    case 0x1E01: return S3D_ENV_REPLACE;
++    case 0x2101: return S3D_ENV_DECAL;
++    case 0x0BE2: return S3D_ENV_BLEND;
++    }
++    return S3D_ENV_MODULATE;            /* GL_MODULATE, GL's default */
++}
++
++/* --- owner record, cleanup ---------------------------------------------- */
++
++static void release(unsigned long ctx, volatile struct owner *o)
++{
++    unsigned long i;
++
++    for (i = 0; i < o->ntex && i < MAXTEX; i++)
++        if (o->tex[i]) {
++            blk->offset[0] = ctx; blk->offset[1] = o->tex[i];
++            op(OP_FREETEXTURE);
++            o->tex[i] = 0;
++        }
++    blk->offset[0] = ctx; blk->x[0] = 1; blk->y[0] = 1;
++    op(OP_ALLOCZBUFFER);                        /* frees the big one */
++    blk->offset[0] = ctx;
++    op(OP_END);
++    o->ntex = 0;
++    o->magic = 0;
++}
++
++static long boot_time(void)
++{
++    struct utmp u, *b;
++    long t = 0;
++
++    setutent();
++    u.ut_type = BOOT_TIME;
++    if ((b = getutid(&u)) != NULL)
++        t = (long) b->ut_time;
++    endutent();
++    return t;
++}
++
++static void s3d_end(void)
++{
++    if (fd < 0 || !sc)
++        return;
++    if (own->magic == OWNER_MAGIC && own->pid == (long) getpid())
++        release(sc, own);
++    sc = 0;
++    active = 0;
++}
++
++static void on_signal(int sig)
++{
++    s3d_end();
++    signal(sig, SIG_DFL);
++    kill(getpid(), sig);
++}
++
++/* --- the X server's ZZ9K-SOFT3D --------------------------------------- */
++
++#define X_ZZ9KSwap 0
++typedef struct {
++    CARD8  reqType;
++    CARD8  s3dReqType;
++    CARD16 length B16;
++    CARD32 window B32;
++    INT16  srcX B16, srcY B16;
++    INT16  x B16, y B16;
++    CARD16 width B16, height B16;
++} xZZ9KSwapReq;
++#define sz_xZZ9KSwapReq 20
++
++static int xquery(Display *dpy)
++{
++    int major, ev, err;
++
++    return XQueryExtension(dpy, "ZZ9K-SOFT3D", &major, &ev, &err) ? major : 0;
++}
++
++static void xswap(Display *dpy, Window win, int sx, int sy, int w, int h)
++{
++    xZZ9KSwapReq *req;
++
++    LockDisplay(dpy);
++    GetReq(ZZ9KSwap, req);
++    req->reqType = xmajor;
++    req->s3dReqType = X_ZZ9KSwap;
++    req->window = win;
++    req->srcX = sx;
++    req->srcY = sy;
++    req->x = 0;
++    req->y = 0;
++    req->width = w;
++    req->height = h;
++    UnlockDisplay(dpy);
++    SyncHandle();
++    XSync(dpy, False);          /* copied before the next frame overwrites it */
++}
++
++/* --- start ---------------------------------------------------------------- */
++
++/* 0: say nothing when soft3D is not there (the caller falls back quietly) */
++void s3d_verbose(int on)
++{
++    verbose = on;
++}
++
++int s3d_init(Display *dpy, const char *name)
++{
++    struct zz9k_info info;
++    struct zz9k_fbinfo fbi;
++    char *p;
++
++    if (active)
++        return 0;
++    if (failed || fd >= 0)
++        return -1;
++    if (name)
++        who = name;
++#ifdef S3D_FAKE
++    if (getenv("S3D_FAKE")) {
++        fake = 1;
++        fd = 0;
++        board = 0x50000000;
++        screen_w = 1920; screen_h = 1080; stride_px = 1920; fb_rows = 12561;
++        data = (char *) calloc(1, DATA_SIZE);
++        blk = (volatile struct soft3d_data *) calloc(1, 0x1000);
++        own = (volatile struct owner *) (data + OWNER_OFF);
++        state = (struct state3D *) (data + 0x2000);
++        bbatch = (struct point3D *) (data + 0x4000);
++        sc = 1;
++        active = 1;
++        return 0;
++    }
++#endif
++    if (getenv("S3D_DIRECT") && atoi(getenv("S3D_DIRECT")) > 0)
++        xmajor = -1;
++    else if ((xmajor = xquery(dpy)) == 0) {
++        if (verbose)
++            fprintf(stderr, "%s: the X server has no ZZ9K-SOFT3D (an older Xzz9000); no soft3D\n", who);
++        failed = 1;
++        return -1;
++    }
++    fd = open("/dev/zz9000", O_RDWR);
++    if (fd < 0)
++        goto fail;
++    if (ioctl(fd, ZZ9KIOC_GETINFO, &info) < 0 || ioctl(fd, ZZ9KIOC_GETFBINFO, &fbi) < 0)
++        goto fail;
++    board = info.base;
++    screen_w = fbi.width;
++    screen_h = fbi.height;
++    stride_px = fbi.stride / 2;
++    fb_rows = fbi.fb_size / fbi.stride;
++    data = (char *) mmap(0, DATA_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, (off_t) DATA_OFF);
++    if (data == (char *) -1)
++        goto fail;
++    p = (char *) mmap(0, 0x1000, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
++                      (off_t) (SOFT3D_DATA - FB_PHYS));
++    if (p == (char *) -1)
++        goto fail;
++    blk = (volatile struct soft3d_data *) p;
++    own = (volatile struct owner *) (data + OWNER_OFF);
++    if (own->magic == OWNER_MAGIC && own->boot == boot_time() && own->pid != (long) getpid()) {
++        if (kill((pid_t) own->pid, 0) == 0 || errno == EPERM) {
++            fprintf(stderr, "%s: soft3D is in use by process %ld\n", who, own->pid);
++            close(fd);
++            fd = -1;
++            failed = 1;
++            return -1;
++        }
++        release(own->sc, own);                  /* a dead owner's leftovers */
++    }
++    state = (struct state3D *) (data + 0x2000);
++    bbatch = (struct point3D *) (data + 0x4000);
++    a_prefs = AMIGA(data); a_state = AMIGA(state); a_batch = AMIGA(bbatch);
++    memset(data, 0, PREFS_SIZE);
++    data[BTN_RENDERER * BUTTON_SIZE + 1] = 1;   /* soft to bitmap */
++    blk->offset[0] = a_prefs;
++    sc = op(OP_START);
++    if (!sc)
++        goto fail;
++    own->sc = sc;
++    own->ntex = 0;
++    own->pid = (long) getpid();
++    own->boot = boot_time();
++    own->magic = OWNER_MAGIC;
++    atexit(s3d_end);
++    signal(SIGINT, on_signal);
++    signal(SIGTERM, on_signal);
++    signal(SIGHUP, on_signal);
++    active = 1;
++    return 0;
++fail:
++    if (verbose)
++        fprintf(stderr, "%s: soft3D not available (needs the Z3660 and a ZZ9K_MAP_BOARD kernel)\n", who);
++    if (fd >= 0)
++        close(fd);
++    fd = -1;
++    failed = 1;
++    return -1;
++}
++
++int s3d_active(void)
++{
++    return active;
++}
++
++int s3d_resize(int w, int h)
++{
++    if (!active)
++        return -1;
++    s3d_finish();
++    if (w > screen_w)
++        w = screen_w;
++    if (h > fb_rows - BACK_ROW)
++        h = fb_rows - BACK_ROW;
++    if (w < 1 || h < 1)
++        return -1;
++    width = w;
++    height = h;
++    blk->offset[0] = sc; blk->offset[1] = a_prefs;
++    blk->offset[2] = board + FB_PHYS + (unsigned long) BACK_ROW * stride_px * 2;
++    blk->format[0] = PIXFMT_RGB16;
++    blk->x[0] = 0; blk->y[0] = 0; blk->x[1] = stride_px; blk->y[1] = h;
++    op(OP_SETBITMAP);
++    blk->offset[0] = sc; blk->x[0] = stride_px; blk->y[0] = h;
++    if (!op(OP_ALLOCZBUFFER)) {
++        fprintf(stderr, "%s: soft3D has no memory for a %dx%d Z buffer\n", who, w, h);
++        s3d_end();
++        failed = 1;
++        return -1;
++    }
++    blk->offset[0] = sc; blk->x[0] = 0; blk->x[1] = w - 1; blk->y[0] = 0; blk->y[1] = h - 1;
++    op(OP_SETCLIPPING);
++    if (back) {
++#ifdef S3D_FAKE
++        if (fake)
++            free(back);
++        else
++#endif
++        munmap((caddr_t) back, back_len);
++        back = 0;
++    }
++    cur_valid = want_valid = 0;
++    nbatch = 0;
++    return 0;
++}
++
++/* --- state ---------------------------------------------------------------- */
++
++static int nov;                         /* blended triangles in the fragment buffer */
++
++/* A state change costs the firmware about 1.2 ms (2026-10-27, the A3000),
++   so s3d_set_state only records it; it goes to the board with the first
++   triangle drawn in it.  States nothing is drawn in cost nothing. */
++void s3d_set_state(const struct s3d_state *d)
++{
++    want = *d;
++    want_valid = 1;
++}
++
++/* the state the next triangle is drawn in; 0 if there is none */
++int s3d_get_state(struct s3d_state *d)
++{
++    if (want_valid)
++        *d = want;
++    else if (cur_valid)
++        *d = cur;
++    else
++        return 0;
++    return 1;
++}
++
++static void apply_state(const struct s3d_state *d)
++{
++    struct state3D st;
++    unsigned long *to, *from;
++    unsigned i;
++
++    if (!active)
++        return;
++    if (cur_valid && d->tex == cur.tex && d->blend == cur.blend &&
++        d->zmode == cur.zmode && d->texenv == cur.texenv)
++        return;
++    s3d_flush();
++    st_states++;
++    /* built here, then written to the board a long at a time (libc's
++       memset and byte stores are slow over Zorro III) */
++    memset(&st, 0, sizeof st);
++    st.Changed = 1;
++    st.ZMode = d->zmode;
++    st.BlendMode = d->blend;
++    st.UseGouraud = 1;
++    st.CullingMode = W3D_NOW;                   /* the caller culls */
++    st.UseTex = d->tex != 0;
++    st.TexEnvMode = d->texenv;
++    st.PerspMode = PERSP_CORRECT;
++    st.CurrentRGBA[0] = st.CurrentRGBA[1] = st.CurrentRGBA[2] = st.CurrentRGBA[3] = 255;
++    st.PointSize = st.LineSize = 1;
++    st.primitive = W3D_PRIMITIVE_TRIANGLES;
++    st.ST = d->tex ? d->tex->st : 0;
++    to = (unsigned long *) state;
++    from = (unsigned long *) &st;
++    for (i = 0; i < sizeof st / 4; i++)
++        to[i] = from[i];
++    blk->offset[0] = sc; blk->offset[1] = a_state;
++    op(OP_SETDRAWSTATE);                        /* flushes the fragments */
++    nov = 0;
++    cur = *d;
++    cur_valid = 1;
++}
++
++/* --- triangles ------------------------------------------------------------ */
++
++static void to_board(struct point3D *dst, const struct point3D *src, int n)
++{
++#ifdef __m68k__
++    register const struct point3D *s __asm__("a0") = src;
++    register struct point3D *d __asm__("a1") = dst;
++
++    if (((unsigned long) src | (unsigned long) dst) & 15) {
++        memcpy(dst, src, n * sizeof *src);
++        return;
++    }
++    while (n-- > 0)
++        __asm__ volatile (".word 0xf620,0x9000\n\t"     /* move16 (a0)+,(a1)+ */
++                          ".word 0xf620,0x9000"
++                          : "+a" (s), "+a" (d) : : "memory");
++#else
++    memcpy(dst, src, n * sizeof *src);          /* S3D_FAKE on the PC */
++#endif
++}
++
++void s3d_flush(void)
++{
++    if (!active || nbatch == 0)
++        return;
++    to_board(bbatch, batch, nbatch);
++    st_draws++;
++    blk->offset[0] = sc; blk->offset[1] = a_batch;
++    blk->format[0] = nbatch; blk->format[1] = W3D_PRIMITIVE_TRIANGLES;
++    op(OP_DRAWPRIMITIVE);
++    nbatch = 0;
++}
++
++void s3d_finish(void)
++{
++    if (!active)
++        return;
++    s3d_flush();
++    st_finishes++;
++    blk->offset[0] = sc;
++    op(OP_FLUSH);
++    nov = 0;
++}
++
++/* every test is written so that it holds for good values: a NaN fails
++   any comparison, so it is rejected without a test of its own, and an
++   infinity is out of range (8,500 triangles a Quake III frame: it counts).
++   Callers build with -ffast-math, which would let gcc assume no NaNs and
++   turn !(a >= b) into a < b: not here. */
++__attribute__((optimize("no-finite-math-only")))
++static int sane(struct point3D *p)
++{
++    float a, xmax = width + 1.0f, ymax = height + 1.0f;
++    int i;
++
++    for (i = 0; i < 3; i++) {
++        if (!(p[i].x >= -1.0f && p[i].x <= xmax && p[i].y >= -1.0f && p[i].y <= ymax &&
++              p[i].z >= -0.01f && p[i].z <= 1.01f && p[i].w > 0.0f && p[i].w < 1e30f &&
++              p[i].u > -1e6f && p[i].u < 1e6f && p[i].v > -1e6f && p[i].v < 1e6f))
++            return 0;
++        if (p[i].x < 0.0f) p[i].x = 0.0f;
++        if (p[i].x > width - 1) p[i].x = width - 1;
++        if (p[i].y < 0.0f) p[i].y = 0.0f;
++        if (p[i].y > height - 1) p[i].y = height - 1;
++        if (p[i].z < 0.0f) p[i].z = 0.0f;
++        if (p[i].z > 1.0f) p[i].z = 1.0f;
++    }
++    a = (p[1].x - p[0].x) * (p[2].y - p[0].y) - (p[2].x - p[0].x) * (p[1].y - p[0].y);
++    return a >= 0.01f || a <= -0.01f;
++}
++
++#define MAXOV 48
++static float ov[MAXOV][6];
++static float ovbox[MAXOV][4];           /* their bounding boxes: x0 y0 x1 y1 */
++
++static int separated(const float *a, const float *b)
++{
++    int i, k, j;
++    const float *t;
++
++    for (k = 0; k < 2; k++) {
++        t = k ? b : a;
++        for (i = 0; i < 3; i++) {
++            float nx = t[((i + 1) % 3) * 2 + 1] - t[i * 2 + 1];
++            float ny = t[i * 2] - t[((i + 1) % 3) * 2];
++            float amin = 1e30f, amax = -1e30f, bmin = 1e30f, bmax = -1e30f, d;
++            for (j = 0; j < 3; j++) {
++                d = a[j * 2] * nx + a[j * 2 + 1] * ny;
++                if (d < amin) amin = d;
++                if (d > amax) amax = d;
++                d = b[j * 2] * nx + b[j * 2 + 1] * ny;
++                if (d < bmin) bmin = d;
++                if (d > bmax) bmax = d;
++            }
++            d = 0.01f * ((nx < 0 ? -nx : nx) + (ny < 0 ? -ny : ny));
++            if (amax <= bmin + d || bmax <= amin + d)
++                return 1;
++        }
++    }
++    return 0;
++}
++
++static void blend_order(void)
++{
++    struct point3D *p = &batch[nbatch - 3], keep[3];
++    float t[6];
++    int i;
++
++    float bx0, by0, bx1, by1;
++
++    st_blended++;
++    for (i = 0; i < 3; i++) {
++        t[i * 2] = p[i].x;
++        t[i * 2 + 1] = p[i].y;
++    }
++    bx0 = bx1 = t[0];
++    by0 = by1 = t[1];
++    for (i = 1; i < 3; i++) {
++        if (t[i * 2] < bx0) bx0 = t[i * 2];
++        if (t[i * 2] > bx1) bx1 = t[i * 2];
++        if (t[i * 2 + 1] < by0) by0 = t[i * 2 + 1];
++        if (t[i * 2 + 1] > by1) by1 = t[i * 2 + 1];
++    }
++    /* boxes first: only triangles whose boxes meet need the exact test */
++    for (i = 0; i < nov; i++)
++        if (bx0 < ovbox[i][2] && ovbox[i][0] < bx1 && by0 < ovbox[i][3] && ovbox[i][1] < by1) {
++            st_sat++;
++            if (!separated(t, ov[i]))
++                break;
++        }
++    if (i < nov || nov == MAXOV) {
++        memcpy(keep, p, sizeof keep);
++        nbatch -= 3;
++        s3d_finish();
++        st_flushes++;
++        memcpy(&batch[0], keep, sizeof keep);
++        nbatch = 3;
++    }
++    ovbox[nov][0] = bx0; ovbox[nov][1] = by0; ovbox[nov][2] = bx1; ovbox[nov][3] = by1;
++    memcpy(ov[nov++], t, sizeof t);
++}
++
++static void put(struct point3D *p, const struct s3d_vertex *v)
++{
++    p->x = v->x; p->y = v->y; p->z = v->z; p->w = v->w;
++    p->u = v->u; p->v = v->v;
++    /* A B G R in memory (see the top): one long on the big-endian 68k */
++    *(unsigned long *) p->RGBA = ((unsigned long) v->a << 24) | ((unsigned long) v->b << 16) |
++                                 ((unsigned long) v->g << 8) | v->r;
++}
++
++void s3d_tri(const struct s3d_vertex *a, const struct s3d_vertex *b, const struct s3d_vertex *c)
++{
++    if (!active)
++        return;
++    st_tris++;
++    if (want_valid) {
++        want_valid = 0;
++        apply_state(&want);
++    }
++    if (nbatch + 3 > MAXPOINTS)
++        s3d_flush();
++    put(&batch[nbatch], a);
++    put(&batch[nbatch + 1], b);
++    put(&batch[nbatch + 2], c);
++    nbatch += 3;
++    /* Blended triangles are ordered (see blend_order) when there is no
++       depth test: 2D, HUD and console.  Under a depth test the usual
++       multi-pass drawing (Quake III, GLQuake: the passes after the first
++       blend over surfaces the first pass put into the Z buffer, with depth
++       writes off) lets at most one fragment a pixel through anyway, and
++       ordering there cost Quake III 450 ms a frame; overlapping transparent
++       effects may lose some of their overlap.  S3D_ORDER=1: order all. */
++    if (!sane(&batch[nbatch - 3]))
++        nbatch -= 3;
++    else if (cur.blend != S3D_REPLACE && !noorder &&
++             (order_all || (cur.zmode & 7) == S3D_Z_ALWAYS - 1))
++        blend_order();
++}
++
++/* a triangle the caller has clipped to the drawing area (x, y in range up to
++   rounding, w > 0): only what can still go wrong is checked -- NaNs, x and y
++   a hair outside, z rounding past 0..1, zero area */
++__attribute__((optimize("no-finite-math-only")))
++void s3d_tri_clipped(const struct s3d_vertex *a, const struct s3d_vertex *b, const struct s3d_vertex *c)
++{
++    struct point3D *p;
++    float xm = width - 1, ym = height - 1, ar;
++    int i;
++
++    if (!active)
++        return;
++    st_tris++;
++    if (want_valid) {
++        want_valid = 0;
++        apply_state(&want);
++    }
++    if (nbatch + 3 > MAXPOINTS)
++        s3d_flush();
++    p = &batch[nbatch];
++    put(&p[0], a);
++    put(&p[1], b);
++    put(&p[2], c);
++    for (i = 0; i < 3; i++) {
++        if (!(p[i].x >= -1.0f && p[i].y >= -1.0f && p[i].x <= xm + 2.0f && p[i].y <= ym + 2.0f &&
++              p[i].z > -1.0f && p[i].z < 2.0f &&
++              p[i].u > -1e6f && p[i].u < 1e6f && p[i].v > -1e6f && p[i].v < 1e6f))
++            return;                             /* NaN or worse */
++        if (p[i].x < 0.0f) p[i].x = 0.0f; else if (p[i].x > xm) p[i].x = xm;
++        if (p[i].y < 0.0f) p[i].y = 0.0f; else if (p[i].y > ym) p[i].y = ym;
++        if (p[i].z < 0.0f) p[i].z = 0.0f; else if (p[i].z > 1.0f) p[i].z = 1.0f;
++    }
++    ar = (p[1].x - p[0].x) * (p[2].y - p[0].y) - (p[2].x - p[0].x) * (p[1].y - p[0].y);
++    if (!(ar >= 0.01f || ar <= -0.01f))
++        return;
++    nbatch += 3;
++    if (cur.blend != S3D_REPLACE && !noorder && (order_all || (cur.zmode & 7) == S3D_Z_ALWAYS - 1))
++        blend_order();
++}
++
++/* --- clear, swap, back buffer --------------------------------------------- */
++
++void s3d_clear_color(int x, int y, int w, int h, unsigned short rgb)
++{
++    if (!active)
++        return;
++    s3d_finish();
++    if (x < 0) { w += x; x = 0; }
++    if (y < 0) { h += y; y = 0; }
++    if (x + w > width) w = width - x;
++    if (y + h > height) h = height - y;
++    if (w > 0 && h > 0)
++        blitx(0, 0, 0, x, BACK_ROW + y, w, h, rgb);
++}
++
++void s3d_clear_depth(float z)
++{
++    if (!active)
++        return;
++    s3d_flush();
++    blk->offset[0] = sc;
++    memcpy((void *) &blk->format[0], &z, 4);
++    op(OP_CLEARZBUFFER);
++}
++
++void s3d_swap(Display *dpy, Window win)
++{
++    int x, y, sx = 0, sy = BACK_ROW, w = width, h = height;
++    Window child;
++    static int stats = -1;
++    static unsigned long frames;
++
++    if (!active)
++        return;
++    if (stats < 0)
++        stats = getenv("S3D_STATS") != NULL;
++    if (stats && ++frames % 20 == 0) {
++        fprintf(stderr, "s3d stats per frame: %lu triangles, %lu blended, %lu exact tests, %lu overlap flushes, "
++                "%lu state changes, %lu draws, %lu finishes, %lu texture updates\n",
++                st_tris / 20, st_blended / 20, st_sat / 20, st_flushes / 20,
++                st_states / 20, st_draws / 20, st_finishes / 20, st_texup / 20);
++        st_tris = st_blended = st_sat = st_flushes = st_states = st_draws = st_finishes = st_texup = 0;
++    }
++    s3d_finish();
++    blk->offset[0] = sc;
++    op(OP_DOUPDATE);
++#ifdef S3D_FAKE
++    if (fake)
++        return;
++#endif
++    if (xmajor > 0) {
++        xswap(dpy, win, 0, BACK_ROW, w, h);
++        return;
++    }
++    /* S3D_DIRECT: straight onto the screen, over whatever is there */
++    XTranslateCoordinates(dpy, win, DefaultRootWindow(dpy), 0, 0, &x, &y, &child);
++    if (x < 0) { sx -= x; w += x; x = 0; }
++    if (y < 0) { sy -= y; h += y; y = 0; }
++    if (x + w > screen_w) w = screen_w - x;
++    if (y + h > screen_h) h = screen_h - y;
++    if (w > 0 && h > 0)
++        blitx(1, sx, sy, x, y, w, h, 0);
++}
++
++unsigned short *s3d_backbuffer(int *stride)
++{
++    char *p;
++
++    if (!active)
++        return 0;
++    if (!back) {
++        back_len = (unsigned long) height * stride_px * 2;
++#ifdef S3D_FAKE
++        if (fake) {
++            back = (unsigned short *) calloc(1, back_len);
++            *stride = stride_px;
++            return back;
++        }
++#endif
++        p = (char *) mmap(0, back_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
++                          (off_t) ((unsigned long) BACK_ROW * stride_px * 2));
++        if (p == (char *) -1)
++            return 0;
++        back = (unsigned short *) p;
++    }
++    *stride = stride_px;
++    return back;
++}
++
++/* --- textures --------------------------------------------------------------- */
++
++/* the texture area, first fit over a list of free ranges (device offsets) */
++#define MAXFREE 512
++static struct range { unsigned long off, len; } fr[MAXFREE];
++static int nfr = -1;
++
++static unsigned long tex_alloc(unsigned long len)
++{
++    int i;
++    unsigned long off;
++
++    if (nfr < 0) {
++        fr[0].off = TEX_OFF;
++        fr[0].len = TEX_SIZE;
++        nfr = 1;
++    }
++    len = (len + TEX_PAGE - 1) & ~(TEX_PAGE - 1);
++    for (i = 0; i < nfr; i++)
++        if (fr[i].len >= len) {
++            off = fr[i].off;
++            fr[i].off += len;
++            fr[i].len -= len;
++            if (fr[i].len == 0) {
++                memmove(&fr[i], &fr[i + 1], (nfr - i - 1) * sizeof fr[0]);
++                nfr--;
++            }
++            return off;
++        }
++    return 0;
++}
++
++static void tex_release(unsigned long off, unsigned long len)
++{
++    int i;
++
++    len = (len + TEX_PAGE - 1) & ~(TEX_PAGE - 1);
++    for (i = 0; i < nfr && fr[i].off < off; i++)
++        ;
++    /* merge with the neighbours where they touch */
++    if (i > 0 && fr[i - 1].off + fr[i - 1].len == off) {
++        fr[i - 1].len += len;
++        if (i < nfr && off + len == fr[i].off) {
++            fr[i - 1].len += fr[i].len;
++            memmove(&fr[i], &fr[i + 1], (nfr - i - 1) * sizeof fr[0]);
++            nfr--;
++        }
++        return;
++    }
++    if (i < nfr && off + len == fr[i].off) {
++        fr[i].off = off;
++        fr[i].len += len;
++        return;
++    }
++    if (nfr == MAXFREE)
++        return;                                 /* lost: too fragmented */
++    memmove(&fr[i + 1], &fr[i], (nfr - i) * sizeof fr[0]);
++    fr[i].off = off;
++    fr[i].len = len;
++    nfr++;
++}
++
++/* The texels go into board memory through one mapped window of the texture
++   area, moved only when a texture falls outside it.  Mapping each upload
++   (as before) costs the kernel a segment table -- two physically contiguous
++   pages -- every time; hundreds of them per Quake III run helped exhaust
++   the contiguous pages until hat_sdtalloc failed for the X server and the
++   machine went down (2026-10-27).  The window stays small, as the process's
++   address space is (16 MB by default). */
++#define TEXWIN_SIZE  0x200000UL         /* 2 MB */
++#define TEXWIN_ALIGN 0x10000UL
++static char *texwin;
++static unsigned long texwin_off, texwin_len;
++
++static char *tex_window(unsigned long off, unsigned long bytes)
++{
++    unsigned long base, len;
++
++    if (texwin && off >= texwin_off && off + bytes <= texwin_off + texwin_len)
++        return texwin + (off - texwin_off);
++    if (texwin)
++        munmap((caddr_t) texwin, texwin_len);
++    texwin = 0;
++    base = off & ~(TEXWIN_ALIGN - 1);
++    len = TEXWIN_SIZE;
++    if (off + bytes - base > len)
++        len = (off + bytes - base + TEXWIN_ALIGN - 1) & ~(TEXWIN_ALIGN - 1);
++    if (base + len > TEX_OFF + TEX_SIZE)        /* stay inside the texture area */
++        base = (TEX_OFF + TEX_SIZE - len) & ~(TEXWIN_ALIGN - 1);    /* still <= off */
++    texwin = (char *) mmap(0, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, (off_t) base);
++    if (texwin == (char *) -1) {
++        texwin = 0;
++        return 0;
++    }
++    texwin_off = base;
++    texwin_len = len;
++    return texwin + (off - base);
++}
++
++static int tex_copy(struct s3d_tex *t, const unsigned char *texels)
++{
++    char *p;
++#ifdef S3D_FAKE
++    static char *fakemem;
++    if (fake) {
++        if (!fakemem)
++            fakemem = (char *) malloc(TEX_SIZE);
++        memcpy(fakemem + (t->off - TEX_OFF), texels, (size_t) t->w * t->h * t->bpp);
++        return 0;
++    }
++#endif
++    p = tex_window(t->off, t->bytes);
++    if (!p)
++        return -1;
++    memcpy(p, texels, (size_t) t->w * t->h * t->bpp);
++    return 0;
++}
++
++struct s3d_tex *s3d_tex_new(int w, int h, int bpp, const unsigned char *texels)
++{
++    struct s3d_tex *t;
++    unsigned long i;
++
++    if (!active || w < 1 || h < 1 || (bpp != 3 && bpp != 4))
++        return 0;
++    t = (struct s3d_tex *) calloc(1, sizeof *t);
++    if (!t)
++        return 0;
++    t->w = w;
++    t->h = h;
++    t->bpp = bpp;
++    t->bytes = ((unsigned long) w * h * bpp + TEX_PAGE - 1) & ~(TEX_PAGE - 1);
++    t->off = tex_alloc(t->bytes);
++    if (!t->off || tex_copy(t, texels) < 0) {
++        if (t->off)
++            tex_release(t->off, t->bytes);
++        free(t);
++        return 0;
++    }
++    s3d_flush();
++    blk->offset[0] = sc; blk->offset[1] = board + FB_PHYS + t->off;
++    blk->x[0] = w; blk->y[0] = h;
++    blk->x[1] = bpp == 4 ? W3D_R8G8B8A8 : W3D_R8G8B8; blk->y[1] = 0;
++    t->st = op(OP_CREATETEXTURE);
++    if (!t->st) {
++        tex_release(t->off, t->bytes);
++        free(t);
++        return 0;
++    }
++    /* recorded for the cleanup: a free slot, or a new one */
++    for (i = 0; i < own->ntex && own->tex[i]; i++)
++        ;
++    if (i < MAXTEX) {
++        own->tex[i] = t->st;
++        if (i == own->ntex)
++            own->ntex = i + 1;
++        t->slot = (int) i;
++    } else
++        t->slot = -1;
++    return t;
++}
++
++int s3d_tex_update(struct s3d_tex *t, const unsigned char *texels)
++{
++    if (!active || !t)
++        return -1;
++    s3d_finish();                               /* drawing may still read the old */
++    st_texup++;
++    if (tex_copy(t, texels) < 0)
++        return -1;
++    blk->offset[0] = sc; blk->offset[1] = t->st; blk->offset[2] = board + FB_PHYS + t->off;
++    op(OP_UPDATETEXTURE);
++    return 0;
++}
++
++void s3d_tex_free(struct s3d_tex *t)
++{
++    if (!t)
++        return;
++    if (active) {
++        if (cur_valid && cur.tex == t)
++            cur_valid = 0;
++        if (want_valid && want.tex == t)
++            want_valid = 0;
++        s3d_finish();
++        blk->offset[0] = sc; blk->offset[1] = t->st;
++        op(OP_FREETEXTURE);
++        if (t->slot >= 0 && own->tex[t->slot] == t->st)
++            own->tex[t->slot] = 0;
++        tex_release(t->off, t->bytes);
++    }
++    free(t);
++}
+diff -ruN a/Mesa-3.1/src/X/s3d.h b/Mesa-3.1/src/X/s3d.h
+--- a/Mesa-3.1/src/X/s3d.h
++++ b/Mesa-3.1/src/X/s3d.h
+@@ -0,0 +1,82 @@
++/*
++ * s3d.h -- libs3d: the Z3660's soft3D (Wazp3D on the board's ARM) for any
++ * rasterizer front end on AMIX (2026-10-26).  Mesa's X driver uses it
++ * (on by default, MESA_SOFT3D=0 off); TinyGL has its own copy of the same logic (zsoft3d.c).
++ *
++ * The caller transforms, lights, clips and culls; libs3d takes window-space
++ * triangles, batches them, keeps soft3D's state, uploads textures, clears,
++ * and presents the back buffer (off-screen VRAM) through the X server's
++ * ZZ9K-SOFT3D request, which copies only the visible parts of the window.
++ * One soft3D user at a time on the machine.  See s3d.c for the traps.
++ */
++#ifndef S3D_H
++#define S3D_H
++
++#include <X11/Xlib.h>
++
++/* a vertex: window coordinates with y DOWN from the top of the drawing
++   area, z 0 (near) .. 1, w = 1/clip w (perspective), u v normalized */
++struct s3d_vertex {
++    float x, y, z, w, u, v;
++    unsigned char r, g, b, a;
++};
++
++/* soft3D's draw state */
++struct s3d_state {
++    struct s3d_tex *tex;        /* 0: untextured */
++    int blend;                  /* S3D_BLEND(src, dst) or S3D_REPLACE */
++    int zmode;                  /* S3D_ZMODE(update, compare) */
++    int texenv;                 /* S3D_ENV_* */
++};
++
++#define S3D_ZMODE(upd, cmp) ((upd) * 8 + ((cmp) - 1))
++#define S3D_Z_NEVER     1
++#define S3D_Z_LESS      2
++#define S3D_Z_GEQUAL    3
++#define S3D_Z_LEQUAL    4
++#define S3D_Z_GREATER   5
++#define S3D_Z_NOTEQUAL  6
++#define S3D_Z_EQUAL     7
++#define S3D_Z_ALWAYS    8
++#define S3D_BLEND(s, d) ((s) * 16 + (d))
++#define S3D_REPLACE     S3D_BLEND(2, 1)         /* ONE, ZERO */
++#define S3D_ENV_REPLACE 1
++#define S3D_ENV_DECAL   2
++#define S3D_ENV_MODULATE 3
++#define S3D_ENV_BLEND   4
++
++/* GL enum -> soft3D (GL's numbers; no GL header needed): 0 = none */
++int s3d_gl_factor(int glenum);          /* blend factors */
++int s3d_gl_depthfunc(int glenum);       /* GL_NEVER.. -> S3D_Z_* */
++int s3d_gl_texenv(int glenum);          /* GL_MODULATE.. -> S3D_ENV_* */
++
++/* who: the program's name for messages.  0 on success. */
++int  s3d_init(Display *dpy, const char *who);
++void s3d_verbose(int on);               /* 0: no message when unavailable */
++int  s3d_active(void);
++int  s3d_resize(int width, int height); /* the drawing area; 0 on success */
++void s3d_set_state(const struct s3d_state *st);
++int  s3d_get_state(struct s3d_state *st);  /* what the next triangle is drawn in */
++void s3d_tri(const struct s3d_vertex *a, const struct s3d_vertex *b,
++             const struct s3d_vertex *c);
++/* the same for a triangle already clipped to the drawing area (fewer checks) */
++void s3d_tri_clipped(const struct s3d_vertex *a, const struct s3d_vertex *b,
++                     const struct s3d_vertex *c);
++void s3d_flush(void);                   /* hand the batch to the ARM */
++void s3d_finish(void);                  /* ... and have every pixel written */
++/* a rectangle of the drawing area (y down) in RGB565; the whole Z buffer
++   (soft3D cannot clear part of it) */
++void s3d_clear_color(int x, int y, int w, int h, unsigned short rgb565);
++void s3d_clear_depth(float z);
++void s3d_swap(Display *dpy, Window win);
++/* the back buffer for the CPU (glBitmap, glDrawPixels, glReadPixels):
++   RGB565 pixels, stride in pixels; call s3d_finish() first */
++unsigned short *s3d_backbuffer(int *stride_px);
++
++/* textures: w x h (any size), 3 (RGB) or 4 (RGBA) bytes a texel, rows from
++   v = 0; the texels are copied into board memory */
++struct s3d_tex *s3d_tex_new(int w, int h, int bpp, const unsigned char *texels);
++int  s3d_tex_update(struct s3d_tex *t, const unsigned char *texels);
++void s3d_tex_free(struct s3d_tex *t);
++
++#endif
+diff -ruN a/Mesa-3.1/src/X/s3d_lib.c b/Mesa-3.1/src/X/s3d_lib.c
+--- a/Mesa-3.1/src/X/s3d_lib.c
++++ b/Mesa-3.1/src/X/s3d_lib.c
+@@ -0,0 +1,2 @@
++/* libs3d (soft3d-amix/libs3d/s3d.c) built into libGL for xmesa_s3d.c */
++#include "../../../soft3d-amix/libs3d/s3d.c"
+diff -ruN a/Mesa-3.1/src/X/xmesa1.c b/Mesa-3.1/src/X/xmesa1.c
+--- a/Mesa-3.1/src/X/xmesa1.c
++++ b/Mesa-3.1/src/X/xmesa1.c
+@@ -491,8 +491,17 @@
+       return GL_FALSE;
+    }
+ 
++   /* 16 bytes spare: shm_align_phase() may start the image up to 7 pixels
++    * in.  AMIX's SHMMAX is 327680, a 512x320 16-bit image exactly; then
++    * without the spare and without the phase (shm_spare 0). */
++   b->shm_spare = 16;
+    b->shminfo.shmid = shmget( IPC_PRIVATE, b->backimage->bytes_per_line
+-			     * b->backimage->height, IPC_CREAT|0777 );
++			     * b->backimage->height + 16, IPC_CREAT|0777 );
++   if (b->shminfo.shmid < 0) {
++      b->shm_spare = 0;
++      b->shminfo.shmid = shmget( IPC_PRIVATE, b->backimage->bytes_per_line
++				* b->backimage->height, IPC_CREAT|0777 );
++   }
+    if (b->shminfo.shmid < 0) {
+       if (getenv("MESA_DEBUG"))
+           perror("alloc_back_buffer");
+@@ -537,6 +546,7 @@
+    }
+ 
+    shmctl( b->shminfo.shmid, IPC_RMID, 0 ); /* nobody else needs it */
++   b->shm_swaps = 0;
+ 
+    /* Finally, try an XShmPutImage to be really sure the extension works */
+    gc = XCreateGC( b->xm_visual->display, b->frontbuffer, 0, NULL );
+@@ -1986,6 +1996,7 @@
+ 
+       gl_make_current( c->gl_ctx, b->gl_buffer );
+       XMesa = c;
++      xmesa_s3d_attach( b );     /* AMIX: soft3D unless MESA_SOFT3D=0 (xmesa_s3d.c) */
+ 
+       if (c->gl_ctx->Viewport.Width==0) {
+ 	 /* initialize viewport to window size */
+@@ -2194,6 +2205,45 @@
+ #endif
+ 
+ 
++#if defined(SHM) && !defined(XFree86Server)
++/*
++ * AMIX Xzz9000: the server's PutImage moves rows with the 68060's move16,
++ * which needs source and screen on the same 16-byte phase (26 MB/s against
++ * 10.6 with plain writes).  The segment and the screen rows are 16-byte
++ * aligned, so a 16-bit image whose rows are a multiple of 16 bytes matches
++ * when it starts at the window's root x modulo 8 pixels inside the segment.
++ * Checked on the first swap and every 32nd (a round trip; a moved window
++ * only falls back to the plain copy until then).  The new start applies to
++ * the next frame Mesa renders.
++ */
++static void shm_align_phase( XMesaBuffer b )
++{
++   XMesaDisplay *dpy = b->xm_visual->display;
++   int rx, ry;
++   Window child;
++   long delta;
++
++   if (!b->shm_spare || b->backimage->bits_per_pixel != 16
++       || (b->backimage->bytes_per_line & 15) != 0)
++      return;
++   if (!XTranslateCoordinates( dpy, b->frontbuffer,
++                               RootWindow( dpy, b->xm_visual->visinfo->screen ),
++                               0, 0, &rx, &ry, &child ))
++      return;
++   delta = (b->shminfo.shmaddr + (rx & 7) * 2) - b->backimage->data;
++   if (delta == 0)
++      return;
++   b->backimage->data += delta;
++   if (b->ximage_origin1) {
++      b->ximage_origin1 = (GLubyte *) ((char *) b->ximage_origin1 + delta);
++      b->ximage_origin2 = (GLushort *) ((char *) b->ximage_origin2 + delta);
++      b->ximage_origin3 = (bgr_t *) ((char *) b->ximage_origin3 + delta);
++      b->ximage_origin4 = (GLuint *) ((char *) b->ximage_origin4 + delta);
++   }
++}
++#endif
++
++
+ /*
+  * Copy the back buffer to the front buffer.  If there's no back buffer
+  * this is a no-op.
+@@ -2206,6 +2256,9 @@
+ 
+     FLUSH_VB( XMesa->gl_ctx, "swap buffers" );
+ 
++   if (xmesa_s3d_swap( b ))     /* AMIX: soft3D's back buffer (xmesa_s3d.c) */
++      return;
++
+    if (b->db_state) {
+ #ifdef FX
+       if (XMesa->xm_buffer->FXctx) {
+@@ -2226,6 +2279,8 @@
+ 			  b->backimage, 0, 0,
+ 			  0, 0, b->width, b->height, False );
+ 	    /* wait for finished event??? */
++	    if ((b->shm_swaps++ & 31) == 0)
++	       shm_align_phase( b );
+ 	 }
+ 	 else
+ #endif
+diff -ruN a/Mesa-3.1/src/X/xmesa2.c b/Mesa-3.1/src/X/xmesa2.c
+--- a/Mesa-3.1/src/X/xmesa2.c
++++ b/Mesa-3.1/src/X/xmesa2.c
+@@ -176,6 +176,7 @@
+       xmesa->xm_buffer->width = winwidth;
+       xmesa->xm_buffer->height = winheight;
+       xmesa_alloc_back_buffer( xmesa->xm_buffer );
++      xmesa_s3d_resize( xmesa->xm_buffer );
+    }
+ 
+    /* Needed by FLIP macro */
+@@ -602,6 +603,56 @@
+ }
+ 
+ 
++#if defined(__amix__) && (defined(__mc68060__) || defined(__mc68040__))
++/*
++ * AMIX on a 68040/060: fill n bytes (n even) with a 16-bit pattern, the
++ * 16-byte-aligned middle by move16 bursts from a pattern line.  The A3000
++ * with a Z3660 68060 writes single longs through its data cache at about
++ * 10.6 MB/s; move16 cleared a 512x320 buffer in 1.7 ms against 16.7, and
++ * stayed coherent with lines the cache held (bench/m16fill.c, 2026-10-26).
++ * MESA_NOMOVE16 in the environment keeps the plain stores.
++ */
++static int use_move16 = -1;
++
++static void fill16( GLushort *p, GLuint n, GLuint pixel )
++{
++   static GLuint line[16 + 4];
++   GLuint *src, *s, *l, two = (pixel & 0xffff) | (pixel << 16);
++   int i;
++
++   if (use_move16 < 0)
++      use_move16 = getenv("MESA_NOMOVE16") == NULL;
++   if (((unsigned long) p & 2) && n >= 2) {     /* to a long boundary */
++      *p++ = pixel;
++      n -= 2;
++   }
++   l = (GLuint *) p;
++   if (use_move16 && n >= 128) {
++      while (((unsigned long) l & 15) && n >= 4) {
++         *l++ = two;
++         n -= 4;
++      }
++      src = (GLuint *) (((unsigned long) line + 15) & ~15UL);
++      for (i = 0; i < 16; i++)
++         src[i] = two;
++      for (; n >= 64; n -= 64) {                /* 64 bytes per step */
++         s = src;
++         __asm__ volatile( "move16 (%0)+,(%1)+\n\t"
++                           "move16 (%0)+,(%1)+\n\t"
++                           "move16 (%0)+,(%1)+\n\t"
++                           "move16 (%0)+,(%1)+"
++                           : "+a" (s), "+a" (l) : : "memory" );
++      }
++   }
++   for (; n >= 4; n -= 4)
++      *l++ = two;
++   if (n >= 2)
++      *(GLushort *) l = pixel;
++}
++#define HAVE_FILL16
++#endif
++
++
+ static GLbitfield clear_16bit_ximage( GLcontext *ctx, GLbitfield mask,
+                                       GLboolean all, GLint x, GLint y,
+                                       GLint width, GLint height )
+@@ -615,6 +666,11 @@
+       if (all) {
+          register GLuint n;
+          register GLuint *ptr4 = (GLuint *) xmesa->xm_buffer->backimage->data;
++#ifdef HAVE_FILL16
++         fill16( (GLushort *) ptr4, xmesa->xm_buffer->backimage->bytes_per_line
++                 * xmesa->xm_buffer->height, pixel );
++         return mask & (~GL_COLOR_BUFFER_BIT);
++#endif
+          if ((pixel & 0xff) == ((pixel >> 8) & 0xff)) {
+             /* low and high bytes are equal so use memset() */
+             n = xmesa->xm_buffer->backimage->bytes_per_line
+@@ -639,6 +695,10 @@
+          register int i, j;
+          for (j=0;j<height;j++) {
+             register GLushort *ptr2 = PIXELADDR2( x, y+j );
++#ifdef HAVE_FILL16
++            fill16( ptr2, width * 2, pixel );
++            continue;
++#endif
+             for (i=0;i<width;i++) {
+                *ptr2++ = pixel;
+             }
+@@ -5073,4 +5133,7 @@
+    ctx->Driver.ReadRGBASpan = read_color_span;
+    ctx->Driver.ReadCI32Pixels = read_index_pixels;
+    ctx->Driver.ReadRGBAPixels = read_color_pixels;
++
++   /* AMIX: the Z3660's soft3D takes over the back buffer (xmesa_s3d.c) */
++   xmesa_s3d_update_state( ctx );
+ }
+diff -ruN a/Mesa-3.1/src/X/xmesaP.h b/Mesa-3.1/src/X/xmesaP.h
+--- a/Mesa-3.1/src/X/xmesaP.h
++++ b/Mesa-3.1/src/X/xmesaP.h
+@@ -181,6 +181,8 @@
+ 				/*    2 = Pixmap support available too	*/
+ #ifdef SHM
+    XShmSegmentInfo shminfo;
++   GLuint shm_swaps;		/* XShmPutImages since the phase check */
++   GLuint shm_spare;		/* bytes past the image in the segment */
+ #endif
+ #endif
+ 
+@@ -533,4 +535,11 @@
+ extern GLboolean XMesaLoseCurrent(XMesaContext c);
+ extern void XMesaReset( void );
+ 
++/* AMIX: the Z3660's soft3D (xmesa_s3d.c) */
++extern void xmesa_s3d_attach( XMesaBuffer b );
++extern int  xmesa_s3d_buffer( XMesaBuffer b );
++extern void xmesa_s3d_resize( XMesaBuffer b );
++extern int  xmesa_s3d_swap( XMesaBuffer b );
++extern void xmesa_s3d_update_state( GLcontext *ctx );
++
+ #endif
+diff -ruN a/Mesa-3.1/src/X/xmesa_s3d.c b/Mesa-3.1/src/X/xmesa_s3d.c
+--- a/Mesa-3.1/src/X/xmesa_s3d.c
++++ b/Mesa-3.1/src/X/xmesa_s3d.c
+@@ -0,0 +1,740 @@
++/*
++ * xmesa_s3d.c -- XMesa on the Z3660's soft3D (AMIX, 2026-10-26).
++ *
++ * Unless MESA_SOFT3D=0 is in the environment, a double-buffered RGB window gets
++ * its back buffer in off-screen VRAM, and Mesa hands every triangle, line
++ * and point -- transformed, lit, clipped and culled on the 68060 -- to the
++ * Z3660's ARM rasterizer through libs3d (soft3d-amix/libs3d).  The swap is
++ * a blitter copy by the X server (ZZ9K-SOFT3D), through the window's clip
++ * list.  Drawing to the front buffer stays on Mesa's own X path.
++ *
++ * What soft3D does: Z (any GL depth function, depth mask), Gouraud and
++ * flat shading, one 2D texture (level 0 of the bound object, any GL
++ * format, converted to RGB or RGBA), the GL texture environments, every
++ * GL blend factor pair, alpha test as alpha blending.  What it does not:
++ * fog, stencil, logic ops, polygon stipple, multitexture beyond unit 0,
++ * scissoring of triangles (glClear honours the scissor box) -- these are
++ * ignored, the rest of the picture is right.
++ *
++ * glBitmap, glDrawPixels, glReadPixels and anything else Mesa draws itself
++ * go through the span functions here, into the VRAM back buffer (after the
++ * ARM has finished).  One soft3D buffer per machine at a time; the first
++ * window that asks gets it.
++ */
++#include <stdlib.h>
++#include <string.h>
++#include <math.h>
++#include <X11/Xlib.h>
++#include "GL/xmesa.h"
++#include "xmesaP.h"
++#include "context.h"
++#include "macros.h"
++#include "types.h"
++#include "vb.h"
++#include "../../../soft3d-amix/libs3d/s3d.h"
++
++static XMesaBuffer s3dbuf;              /* the buffer soft3D draws for */
++static struct s3d_state base;           /* the state without the texture */
++static int flat;
++
++/* --- textures ------------------------------------------------------------- */
++
++/* bumped by everything that can change the state a triangle needs (Mesa's
++   UpdateState, texture images, deletions, a resize): use_state recomputes
++   only then, not for each of Quake III's 8,500 triangles a frame */
++static unsigned tex_epoch = 1;
++
++struct tdata {
++    struct s3d_tex *tex;
++    const struct gl_texture_image *image;       /* what tex was made from */
++    int dirty;
++};
++
++/* level 0 of a texture object as RGB or RGBA bytes, for libs3d */
++static unsigned char *convert(const struct gl_texture_image *img,
++                              const GLubyte *palette, int *bpp)
++{
++    int n = img->Width * img->Height, i, b;
++    const GLubyte *s = img->Data;
++    unsigned char *d, *p;
++
++    switch (img->Format) {
++    case GL_RGB:
++    case GL_LUMINANCE:
++        b = 3; break;
++    default:
++        b = 4; break;
++    }
++    if (!s || !(d = (unsigned char *) malloc((size_t) n * b)))
++        return 0;
++    for (i = 0, p = d; i < n; i++, p += b) {
++        switch (img->Format) {
++        case GL_RGB:
++            p[0] = s[0]; p[1] = s[1]; p[2] = s[2]; s += 3; break;
++        case GL_RGBA:
++            p[0] = s[0]; p[1] = s[1]; p[2] = s[2]; p[3] = s[3]; s += 4; break;
++        case GL_LUMINANCE:
++            p[0] = p[1] = p[2] = s[0]; s += 1; break;
++        case GL_LUMINANCE_ALPHA:
++            p[0] = p[1] = p[2] = s[0]; p[3] = s[1]; s += 2; break;
++        case GL_ALPHA:
++            p[0] = p[1] = p[2] = 255; p[3] = s[0]; s += 1; break;
++        case GL_INTENSITY:
++            p[0] = p[1] = p[2] = p[3] = s[0]; s += 1; break;
++        case GL_COLOR_INDEX:
++            if (palette) {
++                const GLubyte *c = palette + s[0] * 4;
++                p[0] = c[0]; p[1] = c[1]; p[2] = c[2]; p[3] = c[3];
++            } else
++                p[0] = p[1] = p[2] = p[3] = s[0];
++            s += 1;
++            break;
++        default:
++            p[0] = p[1] = p[2] = p[3] = 255; break;
++        }
++    }
++    *bpp = b;
++    return d;
++}
++
++/* the soft3D texture of the current 2D texture, made or refreshed */
++/* unit 0 draws a 2D texture: ReallyEnabled from the raw state, so that it
++   holds before gl_update_state too (completeness must be current: no dirty
++   texture objects) */
++static int tex2d(GLcontext *ctx)
++{
++    const struct gl_texture_unit *u = &ctx->Texture.Unit[0];
++    if ((u->Enabled & TEXTURE0_3D) && u->CurrentD[3]->Complete)
++        return 0;
++    return (u->Enabled & TEXTURE0_2D) && u->CurrentD[2]->Complete;
++}
++
++static struct s3d_tex *current_texture(GLcontext *ctx)
++{
++    struct gl_texture_object *t;
++    const struct gl_texture_image *img;
++    struct tdata *td;
++    unsigned char *texels;
++    int bpp;
++
++    if (!tex2d(ctx))
++        return 0;
++    t = ctx->Texture.Unit[0].CurrentD[2];
++    if (!t || !(img = t->Image[t->BaseLevel]) || !img->Data)
++        return 0;
++    td = (struct tdata *) t->DriverData;
++    if (!td) {
++        if (!(td = (struct tdata *) calloc(1, sizeof *td)))
++            return 0;
++        td->dirty = 1;
++        t->DriverData = td;
++    }
++    if (td->image != img)
++        td->dirty = 1;
++    if (!td->dirty)
++        return td->tex;
++    texels = convert(img, t->PaletteSize ? t->Palette : 0, &bpp);
++    if (!texels)
++        return td->tex;
++    if (td->tex && (td->tex != 0) && td->image == img &&
++        s3d_tex_update(td->tex, texels) == 0)
++        ;
++    else {
++        s3d_tex_free(td->tex);
++        td->tex = s3d_tex_new(img->Width, img->Height, bpp, texels);
++    }
++    free(texels);
++    td->image = img;
++    td->dirty = 0;
++    return td->tex;
++}
++
++static void tex_image(GLcontext *ctx, GLenum target, struct gl_texture_object *t,
++                      GLint level, GLint internalFormat, const struct gl_texture_image *image)
++{
++    struct tdata *td = (struct tdata *) t->DriverData;
++    (void) ctx; (void) target; (void) internalFormat; (void) image;
++    if (td && level == t->BaseLevel)
++        td->dirty = 1;
++    tex_epoch++;
++}
++
++static void tex_subimage(GLcontext *ctx, GLenum target, struct gl_texture_object *t,
++                         GLint level, GLint x, GLint y, GLsizei w, GLsizei h,
++                         GLint internalFormat, const struct gl_texture_image *image)
++{
++    struct tdata *td = (struct tdata *) t->DriverData;
++    (void) ctx; (void) target; (void) x; (void) y; (void) w; (void) h;
++    (void) internalFormat; (void) image;
++    if (td && level == t->BaseLevel)
++        td->dirty = 1;
++    tex_epoch++;
++}
++
++static void delete_texture(GLcontext *ctx, struct gl_texture_object *t)
++{
++    struct tdata *td = (struct tdata *) t->DriverData;
++    (void) ctx;
++    if (td) {
++        s3d_tex_free(td->tex);
++        free(td);
++        t->DriverData = 0;
++    }
++    tex_epoch++;
++}
++
++/* --- state -------------------------------------------------------------------- */
++
++static void compute_state(GLcontext *ctx)
++{
++    int s, d;
++
++    base.tex = 0;
++    if (ctx->Depth.Test)
++        base.zmode = S3D_ZMODE(ctx->Depth.Mask ? 1 : 0, s3d_gl_depthfunc(ctx->Depth.Func));
++    else
++        base.zmode = S3D_ZMODE(0, S3D_Z_ALWAYS);
++    base.blend = S3D_REPLACE;
++    if (ctx->Color.BlendEnabled) {
++        s = s3d_gl_factor(ctx->Color.BlendSrcRGB);
++        d = s3d_gl_factor(ctx->Color.BlendDstRGB);
++        if (s && d)
++            base.blend = S3D_BLEND(s, d);
++    } else if (ctx->Color.AlphaEnabled && ctx->Color.AlphaFunc != GL_ALWAYS)
++        base.blend = S3D_BLEND(7, 8);           /* SRC_ALPHA, ONE_MINUS_SRC_ALPHA */
++    base.texenv = s3d_gl_texenv(ctx->Texture.Unit[0].EnvMode);
++    flat = ctx->Light.ShadeModel == GL_FLAT;
++}
++
++static void use_state(GLcontext *ctx, int textured)
++{
++    static unsigned seen;
++    static struct s3d_state with_tex, without_tex;
++    static const struct s3d_state *last;
++    const struct s3d_state *want;
++
++    if (seen != tex_epoch) {
++        with_tex = without_tex = base;
++        with_tex.tex = current_texture(ctx);
++        seen = tex_epoch;
++        last = 0;
++    }
++    want = textured ? &with_tex : &without_tex;
++    if (want != last) {
++        s3d_set_state(want);
++        last = want;
++    }
++}
++
++/* --- the vertex cache --------------------------------------------------------
++ * Mesa calls RasterSetup whenever it has put new window coordinates into a
++ * vertex buffer (after the transform, and for the vertices clipping makes);
++ * each vertex is converted for soft3D there, once, and the triangle, quad and
++ * line functions take the converted ones by index.  The cache belongs to one
++ * vertex buffer and its colour and texture coordinate arrays; anything else
++ * (two-sided lighting switching colours, another buffer) converts directly.
++ */
++static struct s3d_vertex *sv;
++static unsigned *sv_gen;        /* fill a vertex was converted in */
++static unsigned gen = 1;
++static GLuint sv_cap;
++static int nocache = -1;        /* the cache is off unless MESA_S3D_CACHE=1 */
++static struct vertex_buffer *sv_vb;
++static const void *sv_color, *sv_tex;
++
++static void convert_vertex(GLcontext *ctx, struct vertex_buffer *VB, struct s3d_vertex *o, GLuint i);
++
++static void raster_setup(struct vertex_buffer *VB, GLuint start, GLuint end)
++{
++    GLcontext *ctx = VB->ctx;
++    GLuint i;
++
++    if (nocache < 0) {
++        /* off unless MESA_S3D_CACHE=1: it draws Quake III's arrays wrong
++           and saved nothing there (2026-10-27) */
++        const char *e = getenv("MESA_S3D_CACHE");
++        nocache = !(e && atoi(e) > 0);
++    }
++    if (nocache)
++        return;
++    if (end > sv_cap) {
++        GLuint cap = end + 64;
++        struct s3d_vertex *n = (struct s3d_vertex *) realloc(sv, cap * sizeof *sv);
++        unsigned *g = (unsigned *) realloc(sv_gen, cap * sizeof *sv_gen);
++        if (!n || !g) {
++            if (n) sv = n;
++            if (g) sv_gen = g;
++            sv_vb = 0;
++            return;
++        }
++        sv = n;
++        sv_gen = g;
++        memset(sv_gen + sv_cap, 0, (cap - sv_cap) * sizeof *sv_gen);
++        sv_cap = cap;
++    }
++    /* the main call also covers the vertices Mesa copied down from the
++       previous buffer (below CopyStart) */
++    if (start == VB->CopyStart)
++        start = 0;
++    if (VB != sv_vb || (const void *) VB->ColorPtr != sv_color ||
++        (const void *) VB->TexCoordPtr[0] != sv_tex) {
++        sv_vb = VB;
++        sv_color = VB->ColorPtr;
++        sv_tex = VB->TexCoordPtr[0];
++        start = 0;
++    }
++    /* a new fill: what earlier fills (and their clipped vertices) left above
++       end is stale */
++    if (start == 0 && ++gen == 0) {
++        memset(sv_gen, 0, sv_cap * sizeof *sv_gen);
++        gen = 1;
++    }
++    for (i = start; i < end; i++) {
++        convert_vertex(ctx, VB, &sv[i], i);
++        sv_gen[i] = gen;
++    }
++}
++
++/* the converted vertex i of the current buffer, or 0 */
++static const struct s3d_vertex *cached(GLcontext *ctx, GLuint i)
++{
++    struct vertex_buffer *VB = ctx->VB;
++    if (VB == sv_vb && i < sv_cap && sv_gen[i] == gen && (const void *) VB->ColorPtr == sv_color &&
++        (const void *) VB->TexCoordPtr[0] == sv_tex)
++        return &sv[i];
++    return 0;
++}
++
++/* --- primitives ------------------------------------------------------------- */
++
++static void convert_vertex(GLcontext *ctx, struct vertex_buffer *VB, struct s3d_vertex *o, GLuint i)
++{
++    const GLfloat *w = VB->Win.data[i];
++    const GLubyte *c = VB->ColorPtr->data[i];
++    (void) ctx;
++
++    o->x = w[0];
++    o->y = (GLfloat) s3dbuf->height - w[1];
++    o->z = w[2] * (1.0F / DEPTH_SCALE);
++    o->w = w[3];
++    if (VB->TexCoordPtr[0]) {
++        const GLfloat *t = VB->TexCoordPtr[0]->data[i];
++        o->u = t[0];
++        o->v = VB->TexCoordPtr[0]->size > 1 ? t[1] : 0.0F;
++        if (VB->TexCoordPtr[0]->size == 4 && t[3] != 0.0F && t[3] != 1.0F) {
++            o->u /= t[3];
++            o->v /= t[3];
++        }
++    } else
++        o->u = o->v = 0.0F;
++    o->r = c[0]; o->g = c[1]; o->b = c[2]; o->a = c[3];
++}
++
++/* vertex i for a primitive: from the cache when it can, with the provoking
++   vertex's colour when flat, moved by zoff (depth units) */
++static void vertex(GLcontext *ctx, struct s3d_vertex *o, GLuint i, GLuint pv, GLfloat zoff)
++{
++    const struct s3d_vertex *c = cached(ctx, i);
++
++    if (c)
++        *o = *c;
++    else
++        convert_vertex(ctx, ctx->VB, o, i);
++    if (flat && pv != i) {
++        const GLubyte *col = ctx->VB->ColorPtr->data[pv];
++        o->r = col[0]; o->g = col[1]; o->b = col[2]; o->a = col[3];
++    }
++    if (zoff != 0.0F)
++        o->z += zoff * (1.0F / DEPTH_SCALE);
++}
++
++/* Back-face culling: with the software rasterizer Mesa leaves it to the
++   triangle functions (context.c drops DD_TRI_CULL; triangle.c, tritemp.h
++   test backface_sign), so ours must test too.  c is twice the signed area
++   in Mesa's window coordinates (y up), as Mesa computes it. */
++static int culled(GLcontext *ctx, GLfloat c)
++{
++    if (!ctx->Polygon.CullFlag)
++        return 0;
++    if (ctx->Polygon.CullFaceMode == GL_FRONT_AND_BACK)
++        return 1;
++    return c * ctx->backface_sign > 0;
++}
++
++static GLfloat tri_area(GLcontext *ctx, GLuint v0, GLuint v1, GLuint v2)
++{
++    GLfloat (*win)[4] = ctx->VB->Win.data;
++    return (win[v1][0] - win[v0][0]) * (win[v2][1] - win[v0][1]) -
++           (win[v1][1] - win[v0][1]) * (win[v2][0] - win[v0][0]);
++}
++
++static void s3_triangle(GLcontext *ctx, GLuint v0, GLuint v1, GLuint v2, GLuint pv)
++{
++    struct s3d_vertex a, b, c;
++    GLfloat zoff = ctx->Polygon.OffsetFill ? ctx->PolygonZoffset : 0.0F;
++    const struct s3d_vertex *p0, *p1, *p2;
++
++    if (culled(ctx, tri_area(ctx, v0, v1, v2)))
++        return;
++    use_state(ctx, 1);
++    /* the common case: smooth, no offset, all three cached -- no copies */
++    if (!flat && zoff == 0.0F && (p0 = cached(ctx, v0)) && (p1 = cached(ctx, v1)) &&
++        (p2 = cached(ctx, v2))) {
++        s3d_tri(p0, p1, p2);
++        return;
++    }
++    vertex(ctx, &a, v0, pv, zoff);
++    vertex(ctx, &b, v1, pv, zoff);
++    vertex(ctx, &c, v2, pv, zoff);
++    s3d_tri(&a, &b, &c);
++}
++
++static void s3_quad(GLcontext *ctx, GLuint v0, GLuint v1, GLuint v2, GLuint v3, GLuint pv)
++{
++    struct s3d_vertex a, b, c, d;
++    GLfloat zoff = ctx->Polygon.OffsetFill ? ctx->PolygonZoffset : 0.0F;
++    GLfloat (*win)[4] = ctx->VB->Win.data;
++
++    /* facing from the diagonals, as Mesa's quad function */
++    if (culled(ctx, (win[v2][0] - win[v0][0]) * (win[v3][1] - win[v1][1]) -
++                    (win[v2][1] - win[v0][1]) * (win[v3][0] - win[v1][0])))
++        return;
++    use_state(ctx, 1);
++    vertex(ctx, &a, v0, pv, zoff);
++    vertex(ctx, &b, v1, pv, zoff);
++    vertex(ctx, &c, v2, pv, zoff);
++    vertex(ctx, &d, v3, pv, zoff);
++    s3d_tri(&a, &b, &d);
++    s3d_tri(&b, &c, &d);
++}
++
++/* a line: a quad, ctx->Line.Width wide, untextured */
++static void s3_line(GLcontext *ctx, GLuint v0, GLuint v1, GLuint pv)
++{
++    struct s3d_vertex a, b, q[4];
++    GLfloat dx, dy, len, nx, ny, half = ctx->Line.Width * 0.5F;
++    int i;
++
++    if (half < 0.5F)
++        half = 0.5F;
++    use_state(ctx, 0);
++    vertex(ctx, &a, v0, pv, ctx->LineZoffset);
++    vertex(ctx, &b, v1, pv, ctx->LineZoffset);
++    dx = b.x - a.x;
++    dy = b.y - a.y;
++    len = dx * dx + dy * dy;
++    if (len < 0.0001F)
++        return;
++    len = half / (GLfloat) sqrt(len);
++    nx = -dy * len;
++    ny = dx * len;
++    for (i = 0; i < 4; i++)
++        q[i] = i < 2 ? a : b;
++    q[0].x -= nx; q[0].y -= ny;
++    q[1].x += nx; q[1].y += ny;
++    q[2].x += nx; q[2].y += ny;
++    q[3].x -= nx; q[3].y -= ny;
++    s3d_tri(&q[0], &q[1], &q[2]);
++    s3d_tri(&q[0], &q[2], &q[3]);
++}
++
++/* points: one triangle covering the ctx->Point.Size square */
++static void s3_points(GLcontext *ctx, GLuint first, GLuint last)
++{
++    struct vertex_buffer *VB = ctx->VB;
++    struct s3d_vertex p, q[4];
++    GLfloat h = ctx->Point.Size * 0.5F;
++    GLuint i;
++
++    if (h < 0.5F)
++        h = 0.5F;
++    use_state(ctx, 0);
++    /* a square the point's size around its centre, as two triangles (one
++       bigger triangle showed as a little triangle, not a dot) */
++    for (i = first; i <= last; i++)
++        if (VB->ClipMask[i] == 0) {
++            vertex(ctx, &p, i, i, ctx->PointZoffset);
++            q[0] = q[1] = q[2] = q[3] = p;
++            q[0].x -= h; q[0].y -= h;
++            q[1].x += h; q[1].y -= h;
++            q[2].x += h; q[2].y += h;
++            q[3].x -= h; q[3].y += h;
++            s3d_tri(&q[0], &q[1], &q[2]);
++            s3d_tri(&q[0], &q[2], &q[3]);
++        }
++}
++
++/* --- clear ------------------------------------------------------------------- */
++
++static GLbitfield s3_clear(GLcontext *ctx, GLbitfield mask, GLboolean all,
++                        GLint x, GLint y, GLint width, GLint height)
++{
++    if (mask & GL_COLOR_BUFFER_BIT) {
++        const XMesaContext xmesa = (XMesaContext) ctx->DriverCtx;
++        GLubyte r = (GLubyte) (ctx->Color.ClearColor[0] * 255.0F);
++        GLubyte g = (GLubyte) (ctx->Color.ClearColor[1] * 255.0F);
++        GLubyte b = (GLubyte) (ctx->Color.ClearColor[2] * 255.0F);
++        unsigned short rgb = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
++        (void) xmesa;
++        if (all)
++            s3d_clear_color(0, 0, s3dbuf->width, s3dbuf->height, rgb);
++        else
++            s3d_clear_color(x, (GLint) s3dbuf->height - y - height, width, height, rgb);
++        mask &= ~GL_COLOR_BUFFER_BIT;
++    }
++    if (mask & GL_DEPTH_BUFFER_BIT) {
++        /* soft3D's Z only: Mesa's own depth buffer is not used here, and
++           clearing it would cost the 68060 a w*h*2-byte fill a frame */
++        s3d_clear_depth((GLfloat) ctx->Depth.Clear);
++        mask &= ~GL_DEPTH_BUFFER_BIT;
++    }
++    return mask;
++}
++
++/* --- spans: the VRAM back buffer, RGB565, y up in Mesa's coordinates ------- */
++
++static unsigned short *s3_row(GLint y)
++{
++    int stride;
++    unsigned short *p;
++
++    s3d_finish();
++    p = s3d_backbuffer(&stride);
++    if (!p || y < 0 || y >= (GLint) s3dbuf->height)
++        return 0;
++    return p + (s3dbuf->height - 1 - y) * stride;
++}
++
++#define PACK(r, g, b) ((unsigned short) ((((r) >> 3) << 11) | (((g) >> 2) << 5) | ((b) >> 3)))
++
++static void write_rgba_span(const GLcontext *ctx, GLuint n, GLint x, GLint y,
++                            CONST GLubyte rgba[][4], const GLubyte mask[])
++{
++    unsigned short *p = s3_row(y);
++    GLuint i;
++    (void) ctx;
++    if (!p)
++        return;
++    for (i = 0; i < n; i++, x++)
++        if ((!mask || mask[i]) && x >= 0 && x < (GLint) s3dbuf->width)
++            p[x] = PACK(rgba[i][0], rgba[i][1], rgba[i][2]);
++}
++
++static void write_rgb_span(const GLcontext *ctx, GLuint n, GLint x, GLint y,
++                           CONST GLubyte rgb[][3], const GLubyte mask[])
++{
++    unsigned short *p = s3_row(y);
++    GLuint i;
++    (void) ctx;
++    if (!p)
++        return;
++    for (i = 0; i < n; i++, x++)
++        if ((!mask || mask[i]) && x >= 0 && x < (GLint) s3dbuf->width)
++            p[x] = PACK(rgb[i][0], rgb[i][1], rgb[i][2]);
++}
++
++static unsigned short mono;
++
++static void set_color(GLcontext *ctx, GLubyte r, GLubyte g, GLubyte b, GLubyte a)
++{
++    (void) ctx; (void) a;
++    mono = PACK(r, g, b);
++}
++
++static void write_mono_span(const GLcontext *ctx, GLuint n, GLint x, GLint y,
++                            const GLubyte mask[])
++{
++    unsigned short *p = s3_row(y);
++    GLuint i;
++    (void) ctx;
++    if (!p)
++        return;
++    for (i = 0; i < n; i++, x++)
++        if ((!mask || mask[i]) && x >= 0 && x < (GLint) s3dbuf->width)
++            p[x] = mono;
++}
++
++static void write_rgba_pixels(const GLcontext *ctx, GLuint n, const GLint x[], const GLint y[],
++                              CONST GLubyte rgba[][4], const GLubyte mask[])
++{
++    GLuint i;
++    unsigned short *p;
++    (void) ctx;
++    for (i = 0; i < n; i++)
++        if ((!mask || mask[i]) && (p = s3_row(y[i])) && x[i] >= 0 && x[i] < (GLint) s3dbuf->width)
++            p[x[i]] = PACK(rgba[i][0], rgba[i][1], rgba[i][2]);
++}
++
++static void write_mono_pixels(const GLcontext *ctx, GLuint n, const GLint x[], const GLint y[],
++                              const GLubyte mask[])
++{
++    GLuint i;
++    unsigned short *p;
++    (void) ctx;
++    for (i = 0; i < n; i++)
++        if ((!mask || mask[i]) && (p = s3_row(y[i])) && x[i] >= 0 && x[i] < (GLint) s3dbuf->width)
++            p[x[i]] = mono;
++}
++
++static void unpack(unsigned short c, GLubyte *o)
++{
++    o[0] = (GLubyte) (((c >> 11) & 31) * 255 / 31);
++    o[1] = (GLubyte) (((c >> 5) & 63) * 255 / 63);
++    o[2] = (GLubyte) ((c & 31) * 255 / 31);
++    o[3] = 255;
++}
++
++static void read_rgba_span(const GLcontext *ctx, GLuint n, GLint x, GLint y, GLubyte rgba[][4])
++{
++    unsigned short *p = s3_row(y);
++    GLuint i;
++    (void) ctx;
++    for (i = 0; i < n; i++, x++)
++        if (p && x >= 0 && x < (GLint) s3dbuf->width)
++            unpack(p[x], rgba[i]);
++        else
++            rgba[i][0] = rgba[i][1] = rgba[i][2] = rgba[i][3] = 0;
++}
++
++static void read_rgba_pixels(const GLcontext *ctx, GLuint n, const GLint x[], const GLint y[],
++                             GLubyte rgba[][4], const GLubyte mask[])
++{
++    GLuint i;
++    unsigned short *p;
++    (void) ctx;
++    for (i = 0; i < n; i++)
++        if ((!mask || mask[i]) && (p = s3_row(y[i])) && x[i] >= 0 && x[i] < (GLint) s3dbuf->width)
++            unpack(p[x[i]], rgba[i]);
++}
++
++static void s3_finish(GLcontext *ctx)
++{
++    (void) ctx;
++    s3d_finish();
++}
++
++/* --- the XMesa hooks --------------------------------------------------------- */
++
++/* from XMesaMakeCurrent: does this buffer draw with soft3D? */
++void xmesa_s3d_attach(XMesaBuffer b)
++{
++    const char *e = getenv("MESA_SOFT3D");
++
++    /* on by default since 2026-10-27; MESA_SOFT3D=0 keeps Mesa on the 68k,
++       MESA_SOFT3D=1 also says why soft3D could not be used */
++    if (s3dbuf || (e && atoi(e) <= 0) || !b->db_state || b->pixmap_flag)
++        return;
++    s3d_verbose(e && atoi(e) > 0);
++    if (!b->xm_visual->gl_visual->RGBAflag)
++        return;
++    if (s3d_init(b->display, "Mesa") < 0)
++        return;
++    if (s3d_resize(b->width ? b->width : 1, b->height ? b->height : 1) < 0)
++        return;
++    s3dbuf = b;
++}
++
++int xmesa_s3d_buffer(XMesaBuffer b)
++{
++    return b && b == s3dbuf && s3d_active();
++}
++
++/* from get_buffer_size, when the window's size changed */
++void xmesa_s3d_resize(XMesaBuffer b)
++{
++    if (xmesa_s3d_buffer(b)) {
++        s3d_resize(b->width, b->height);
++        tex_epoch++;                    /* soft3D's state is gone */
++        sv_vb = 0;                      /* the height went into y */
++    }
++}
++
++/* from XMesaSwapBuffers: 1 if done */
++int xmesa_s3d_swap(XMesaBuffer b)
++{
++    if (!xmesa_s3d_buffer(b))
++        return 0;
++    s3d_swap(b->display, b->frontbuffer);
++    return 1;
++}
++
++/* from xmesa_update_state, last: soft3D's functions while drawing to the
++   back buffer of the soft3D window */
++void xmesa_s3d_update_state(GLcontext *ctx)
++{
++    const XMesaContext xmesa = (XMesaContext) ctx->DriverCtx;
++    XMesaBuffer b = xmesa->xm_buffer;
++
++    if (!xmesa_s3d_buffer(b) || b->buffer == b->frontbuffer) {
++        if (ctx->Driver.RasterSetup == raster_setup)
++            ctx->Driver.RasterSetup = 0;
++        return;
++    }
++    compute_state(ctx);
++    tex_epoch++;
++    ctx->Driver.RasterSetup = raster_setup;
++    ctx->Driver.TriangleFunc = s3_triangle;
++    ctx->Driver.QuadFunc = s3_quad;
++    ctx->Driver.LineFunc = s3_line;
++    ctx->Driver.PointsFunc = s3_points;
++    ctx->Driver.Clear = s3_clear;
++    ctx->Driver.Finish = s3_finish;
++    ctx->Driver.Color = set_color;
++    ctx->Driver.WriteRGBASpan = write_rgba_span;
++    ctx->Driver.WriteRGBSpan = write_rgb_span;
++    ctx->Driver.WriteMonoRGBASpan = write_mono_span;
++    ctx->Driver.WriteRGBAPixels = write_rgba_pixels;
++    ctx->Driver.WriteMonoRGBAPixels = write_mono_pixels;
++    ctx->Driver.ReadRGBASpan = read_rgba_span;
++    ctx->Driver.ReadRGBAPixels = read_rgba_pixels;
++    ctx->Driver.TexImage = tex_image;
++    ctx->Driver.TexSubImage = tex_subimage;
++    ctx->Driver.DeleteTexture = delete_texture;
++}
++
++/* --- for renderers that feed soft3D themselves --------------------------------
++ * ioquake3's renderer (renderergl1/tr_amix_s3d.c) transforms and clips its
++ * own vertex arrays and hands the triangles to libs3d (s3d_tri), skipping
++ * Mesa's pipeline; the GL state (blending, depth, texture environment, the
++ * bound texture) still comes from Mesa.  glAmixS3DBegin brings soft3D's
++ * state up to date with it and says whether soft3D is drawing at all.
++ */
++#define LEAN_STATE (NEW_RASTER_OPS | NEW_TEXTURING | NEW_TEXTURE_ENABLE | NEW_TEXTURE_ENV | \
++                    NEW_CLIENT_STATE | NEW_POLYGON | NEW_MODELVIEW | NEW_PROJECTION | NEW_VIEWPORT)
++
++int glAmixS3DBegin(void)
++{
++    GLcontext *ctx = gl_get_current_context();
++    XMesaContext xmesa;
++
++    if (!ctx || !ctx->DriverCtx)
++        return 0;
++    xmesa = (XMesaContext) ctx->DriverCtx;
++    if (!xmesa_s3d_buffer(xmesa->xm_buffer) || xmesa->xm_buffer->buffer == xmesa->xm_buffer->frontbuffer)
++        return 0;
++    FLUSH_VB(ctx, "glAmixS3DBegin");
++    /* Quake III changes blending, depth and the texture between almost every
++       draw; soft3D needs only those, and gl_update_state (lighting, pipeline,
++       clipping...) costs far more than the draw.  It is left pending for
++       Mesa's own drawing. */
++    if (ctx->NewState) {
++        if (!(ctx->NewState & ~LEAN_STATE) && !ctx->Shared->DirtyTexObjList) {
++            compute_state(ctx);
++            tex_epoch++;
++        } else
++            gl_update_state(ctx);
++    }
++    use_state(ctx, tex2d(ctx));
++    return 1;
++}
++
++/* for programs: does a window draw with soft3D (attached at MakeCurrent)? */
++int glAmixSoft3D(void)
++{
++    return s3dbuf != 0;
++}
++
++int glAmixS3DHeight(void)
++{
++    return s3dbuf ? (int) s3dbuf->height : 0;
++}
+diff -ruN a/Mesa-3.1/src-glut/glutint.h b/Mesa-3.1/src-glut/glutint.h
+--- a/Mesa-3.1/src-glut/glutint.h
++++ b/Mesa-3.1/src-glut/glutint.h
+@@ -103,7 +103,7 @@
+ #define IS_AT_OR_AFTER(t1, t2) ((t2).val >= (t1).val)
+ 
+ #else
+-#if defined(SVR4) && !defined(sun)  /* Sun claims SVR4, but
++#if defined(SVR4) && !defined(sun) && !defined(__amix__)  /* Sun claims SVR4, but
+                                        wants 2 args. */
+ #define GETTIMEOFDAY(_x) gettimeofday(_x)
+ #else
