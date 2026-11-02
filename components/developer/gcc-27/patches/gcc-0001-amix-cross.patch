@@ -1,0 +1,186 @@
+gcc 2.7.2.3 as a cross compiler for AMIX, built by a modern host gcc:
+- cccp.c, gcc.c: strerror instead of sys_errlist/sys_nerr
+- gcc2_compiled% becomes gcc2_compiled and .lcomm loses its alignment
+  operand, for GNU as / binutils 2.8.1
+- config/m68k/m68k.md ashrdi_const: a signed 64-bit >> 16 sign-extended the
+  wrong half of the high word (no swap before ext.l), so the high long was 0
+  or -1; the unsigned twin has the swap (kdedon/ashnazag#282, broke dropbear
+  signatures)
+
+diff -ruN a/gcc-2.7.2.3/cccp.c b/gcc-2.7.2.3/cccp.c
+--- a/gcc-2.7.2.3/cccp.c
++++ b/gcc-2.7.2.3/cccp.c
+@@ -38,6 +38,8 @@
+    for the sake of machines with limited C compilers.  */
+ #ifndef EMACS
+ #include "config.h"
++/* amix-cross: modern libc strerror fallback. */
++#include <string.h>
+ #endif /* not EMACS */
+ 
+ #ifndef STANDARD_INCLUDE_DIR
+diff -ruN a/gcc-2.7.2.3/config/clipper/clipper.h b/gcc-2.7.2.3/config/clipper/clipper.h
+--- a/gcc-2.7.2.3/config/clipper/clipper.h
++++ b/gcc-2.7.2.3/config/clipper/clipper.h
+@@ -1060,7 +1060,7 @@
+ ( data_section (),					\
+   fputs ("\t.bss\t", (FILE)),				\
+   assemble_name ((FILE), (NAME)),			\
+-  fprintf ((FILE), ",%u,%u\n", (SIZE), (ALIGN)/BITS_PER_UNIT))
++  fprintf ((FILE), ",%u\n", (SIZE)))
+ 
+ /* Store in OUTPUT a string (made with alloca) containing
+    an assembler-name for a local static variable named NAME.
+diff -ruN a/gcc-2.7.2.3/config/elxsi/elxsi.h b/gcc-2.7.2.3/config/elxsi/elxsi.h
+--- a/gcc-2.7.2.3/config/elxsi/elxsi.h
++++ b/gcc-2.7.2.3/config/elxsi/elxsi.h
+@@ -926,7 +926,7 @@
+ #define ASM_OUTPUT_LOCAL(FILE, NAME, SIZE, ROUNDED)  \
+ ( fputs (".bss ", (FILE)),			\
+   assemble_name ((FILE), (NAME)),		\
+-  fprintf ((FILE), ",%d,%d\n", (SIZE),(ROUNDED)))
++  fprintf ((FILE), ",%d\n", (SIZE)))
+ 
+ /* Store in OUTPUT a string (made with alloca) containing
+    an assembler-name for a local static variable named NAME.
+diff -ruN a/gcc-2.7.2.3/config/m68k/m68k.md b/gcc-2.7.2.3/config/m68k/m68k.md
+--- a/gcc-2.7.2.3/config/m68k/m68k.md
++++ b/gcc-2.7.2.3/config/m68k/m68k.md
+@@ -4325,7 +4325,7 @@
+   else if (INTVAL (operands[2]) == 8)
+     return \"move%.b %0,%1\;asr%.l %#8,%0\;ror%.l %#8,%1\";
+   else if (INTVAL (operands[2]) == 16)
+-    return \"move%.w %0,%1\;clr%.w %0\;swap %1\;ext%.l %0\";
++    return \"move%.w %0,%1\;clr%.w %0\;swap %1\;swap %0\;ext%.l %0\";
+   else if (INTVAL (operands[2]) == 2)
+     return \"asr%.l %#1,%0\;roxr%.l %#1,%1\;asr%.l %#1,%0\;roxr%.l %#1,%1\";
+   else/* if (INTVAL (operands[2]) == 3)*/
+diff -ruN a/gcc-2.7.2.3/config/m68k/m68kv4.h b/gcc-2.7.2.3/config/m68k/m68kv4.h
+--- a/gcc-2.7.2.3/config/m68k/m68kv4.h
++++ b/gcc-2.7.2.3/config/m68k/m68kv4.h
+@@ -48,7 +48,7 @@
+ do									\
+   {									\
+     if (write_symbols != DBX_DEBUG)					\
+-      fputs ("gcc2_compiled%:\n", FILE);				\
++      fputs ("gcc2_compiled:\n", FILE);				\
+   }									\
+ while (0)
+ 
+diff -ruN a/gcc-2.7.2.3/config/m68k/mot3300.h b/gcc-2.7.2.3/config/m68k/mot3300.h
+--- a/gcc-2.7.2.3/config/m68k/mot3300.h
++++ b/gcc-2.7.2.3/config/m68k/mot3300.h
+@@ -156,7 +156,7 @@
+ /* The sysV68 assembler does not accept dots in labels.
+    Let's use percent instead  */
+ 
+-#define ASM_IDENTIFY_GCC(FILE)        fputs("gcc2_compiled%:\n", FILE)
++#define ASM_IDENTIFY_GCC(FILE)        fputs("gcc2_compiled:\n", FILE)
+ 
+ /* Names to predefine in the preprocessor for this target machine.  */
+ /* ihnp4!lmayk!lgm@eddie.mit.edu says mc68000 and m68k should not be here,
+diff -ruN a/gcc-2.7.2.3/config/m68k/sgs.h b/gcc-2.7.2.3/config/m68k/sgs.h
+--- a/gcc-2.7.2.3/config/m68k/sgs.h
++++ b/gcc-2.7.2.3/config/m68k/sgs.h
+@@ -107,7 +107,7 @@
+    emits such a label in the assembly output, to use '%' rather than '.' */
+ 
+ #define ASM_IDENTIFY_GCC(FILE)				\
+- { fprintf ((FILE), "%s:\n", "gcc2_compiled%"); }
++ { fprintf ((FILE), "%s:\n", "gcc2_compiled"); }
+ 
+ /* This is how to output an assembler line defining an `int' constant.  */
+ /* The SGS assembler doesn't understand ".word". */
+diff -ruN a/gcc-2.7.2.3/config/m68k/tower-as.h b/gcc-2.7.2.3/config/m68k/tower-as.h
+--- a/gcc-2.7.2.3/config/m68k/tower-as.h
++++ b/gcc-2.7.2.3/config/m68k/tower-as.h
+@@ -63,7 +63,7 @@
+ /* This is only useful if gdb is changed, but doesn't harm anyway.  */
+ 
+ #define ASM_IDENTIFY_GCC(FILE) \
+-  fprintf (FILE, "gcc2_compiled%%:\n")
++  fprintf (FILE, "gcc2_compiled%:\n")
+ 
+ /* All the ASM_OUTPUT macros need to conform to the Tower as syntax.  */
+ 
+diff -ruN a/gcc-2.7.2.3/config/ns32k/encore.h b/gcc-2.7.2.3/config/ns32k/encore.h
+--- a/gcc-2.7.2.3/config/ns32k/encore.h
++++ b/gcc-2.7.2.3/config/ns32k/encore.h
+@@ -117,7 +117,7 @@
+ #define ASM_OUTPUT_LOCAL(FILE, NAME, SIZE, ROUNDED)		\
+ ( fputs ("\t.bss ", (FILE)),					\
+   assemble_name ((FILE), (NAME)),				\
+-  fprintf ((FILE), ",%u,%u\n", (SIZE), (ROUNDED)))
++  fprintf ((FILE), ",%u\n", (SIZE)))
+ 
+  /*
+   *  Encore assembler can't handle huge string constants like the one in
+@@ -188,7 +188,7 @@
+ #define ASM_OUTPUT_SHARED_LOCAL(FILE, NAME, SIZE, ROUNDED) \
+ ( fputs ("\t.shrbss ", (FILE)),				\
+   assemble_name ((FILE), (NAME)),			\
+-  fprintf ((FILE), ",%d,%d\n", (SIZE), (ROUNDED)))
++  fprintf ((FILE), ",%d\n", (SIZE)))
+ 
+ #define FUNCTION_PROFILER(FILE, LABELNO)  \
+    fprintf (FILE, "\taddr .LP%d,r0\n\tjsr mcount\n", (LABELNO))
+diff -ruN a/gcc-2.7.2.3/config/svr4.h b/gcc-2.7.2.3/config/svr4.h
+--- a/gcc-2.7.2.3/config/svr4.h
++++ b/gcc-2.7.2.3/config/svr4.h
+@@ -444,7 +444,7 @@
+ do {									\
+   fprintf ((FILE), "\t%s\t", COMMON_ASM_OP);				\
+   assemble_name ((FILE), (NAME));					\
+-  fprintf ((FILE), ",%u,%u\n", (SIZE), (ALIGN) / BITS_PER_UNIT);	\
++  fprintf ((FILE), ",%u\n", (SIZE));	\
+ } while (0)
+ 
+ /* This says how to output assembler code to declare an
+diff -ruN a/gcc-2.7.2.3/gcc.c b/gcc-2.7.2.3/gcc.c
+--- a/gcc-2.7.2.3/gcc.c
++++ b/gcc-2.7.2.3/gcc.c
+@@ -46,6 +46,8 @@
+ #endif
+ 
+ #include "config.h"
++/* amix-cross: modern libc strerror fallback. */
++#include <string.h>
+ #include "obstack.h"
+ #ifdef __STDC__
+ #include <stdarg.h>
+@@ -1026,7 +1028,7 @@
+     return "";
+ 
+   if (e > 0 && e < sys_nerr)
+-    return sys_errlist[e];
++    return strerror (e);
+ 
+   sprintf (buffer, "Unknown error %d", e);
+   return buffer;
+@@ -4734,7 +4736,7 @@
+ {
+   char *s;
+ 
+-  if (errno < sys_nerr)
++  if (1)
+     s = concat ("%s: ", my_strerror( errno ));
+   else
+     s = "cannot open `%s'";
+@@ -4747,7 +4749,7 @@
+ {
+   char *s;
+ 
+-  if (errno < sys_nerr)
++  if (1)
+     s = concat ("%s: ", my_strerror( errno ));
+   else
+     s = "cannot open `%s'";
+@@ -4760,7 +4762,7 @@
+ {
+   char *s;
+ 
+-  if (errno < sys_nerr)
++  if (1)
+     s = concat ("installation problem, cannot exec `%s': ",
+ 		my_strerror (errno));
+   else

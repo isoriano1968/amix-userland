@@ -17,6 +17,8 @@ GCC_VERSION ?= 2.7.2.3
 GNU_BASE ?= https://ftp.gnu.org/gnu
 BINUTILS_TARBALL := binutils-$(BINUTILS_VERSION).tar.gz
 GCC_TARBALL := gcc-$(GCC_VERSION).tar.gz
+BINUTILS_SHA256 := c7ad94c18f098f0580d0a7cd68638e98aa98571078536934fdc85f5e9047bf5a
+GCC_SHA256 := 16166e0f0f2064bb3114716650569065ef3855ae2331d7a29b85d4b9aa73773c
 BINUTILS_URL ?= $(GNU_BASE)/binutils/$(BINUTILS_TARBALL)
 GCC_URL ?= $(GNU_BASE)/gcc/$(GCC_TARBALL)
 BINUTILS_CONFIGURE_EXTRA ?=
@@ -156,10 +158,12 @@ $(DISTDIR):
 	mkdir -p $@
 
 $(DISTDIR)/$(BINUTILS_TARBALL): | $(DISTDIR)
-	curl -L -o $@ $(BINUTILS_URL) || wget -O $@ $(BINUTILS_URL)
+	curl -L -o $@.tmp $(BINUTILS_URL) || wget -O $@.tmp $(BINUTILS_URL)
+	echo "$(BINUTILS_SHA256)  $@.tmp" | sha256sum -c - && mv $@.tmp $@
 
 $(DISTDIR)/$(GCC_TARBALL): | $(DISTDIR)
-	curl -L -o $@ $(GCC_URL) || wget -O $@ $(GCC_URL)
+	curl -L -o $@.tmp $(GCC_URL) || wget -O $@.tmp $(GCC_URL)
+	echo "$(GCC_SHA256)  $@.tmp" | sha256sum -c - && mv $@.tmp $@
 
 extract: $(BINUTILS_SRC)/.amix-cross-extracted $(GCC_SRC)/.amix-cross-extracted
 
@@ -187,6 +191,8 @@ refresh-config:
 	@test -n "$(TREE)" || { echo "TREE is required"; exit 1; }
 	@test -f "$(CONFIG_GUESS)" || { echo "Missing $(CONFIG_GUESS). Install autotools-dev or set CONFIG_GUESS=/path/to/config.guess"; exit 1; }
 	@test -f "$(CONFIG_SUB)" || { echo "Missing $(CONFIG_SUB). Install autotools-dev or set CONFIG_SUB=/path/to/config.sub"; exit 1; }
+	@# gcc's tarball ships them read-only
+	@find "$(TREE)" \( -name config.guess -o -name config.sub \) -exec chmod u+w {} \;
 	@find "$(TREE)" -name config.guess -exec cp "$(CONFIG_GUESS)" {} \;
 	@find "$(TREE)" -name config.sub -exec cp "$(CONFIG_SUB)" {} \;
 	@echo "Refreshed config.guess/config.sub under $(TREE)"
@@ -200,62 +206,16 @@ disable-binutils-dirs:
 		fi; \
 	done
 
+# our changes to the pristine trees: patches/binutils-*.patch and gcc-*.patch,
+# rooted at the source directory's parent ($(SRCDIR))
 patch-binutils:
 	@test -n "$(TREE)" || { echo "TREE is required"; exit 1; }
-	@if test -f "$(TREE)/ld/configure.tgt" && ! grep -q 'm68k-\*-\*sysv4\*' "$(TREE)/ld/configure.tgt"; then \
-		sed -i '/m68\*-\*-elf)/i m68k-*-*sysv4*)	targ_emul=m68kelf ;;' "$(TREE)/ld/configure.tgt"; \
-		echo "Patched ld/configure.tgt for m68k-*-sysv4"; \
-	fi
-	@if test -f "$(TREE)/bfd/config.bfd" && ! grep -q 'm68k-\*-\*sysv4\*' "$(TREE)/bfd/config.bfd"; then \
-		sed -i '/m68\*-\*-elf)/i m68k-*-*sysv4*)	targ_defvec=bfd_elf32_m68k_vec ;;' "$(TREE)/bfd/config.bfd"; \
-		echo "Patched bfd/config.bfd for m68k-*-sysv4"; \
-	fi
-	@if grep -q 'amix-cross: include write.h before targ-cpu.h' "$(TREE)/gas/config/obj-elf.h"; then \
-		sed -i '/amix-cross: include write.h before targ-cpu.h/d; /#include "write.h"/d' "$(TREE)/gas/config/obj-elf.h"; \
-	fi
-	@if grep -q '^extern struct relax_type md_relax_table\[\];' "$(TREE)/gas/config/tc-m68k.h"; then \
-		sed -i 's/^extern struct relax_type md_relax_table\[\];/\/\* amix-cross: declaration removed; struct relax_type is not visible yet. \*\//' "$(TREE)/gas/config/tc-m68k.h"; \
-		echo "Patched gas/config/tc-m68k.h for modern host GCC"; \
-	fi
-	@if ! grep -q 'amix-cross: declare m68k relax table after as.h' "$(TREE)/gas/write.c"; then \
-		sed -i '/#include "as.h"/a /* amix-cross: declare m68k relax table after as.h defines relax_typeS. */\
-extern relax_typeS md_relax_table[];' "$(TREE)/gas/write.c"; \
-		echo "Patched gas/write.c for m68k relax table declaration"; \
-	fi
+	for p in $(HERE)/patches/binutils-*.patch; do (cd $(TREE)/.. && patch -s -p1 < $$p) || exit 1; done
 
 patch-gcc:
 	@test -n "$(TREE)" || { echo "TREE is required"; exit 1; }
-	@if ! grep -q 'amix-cross: modern libc strerror' "$(TREE)/cccp.c"; then \
-		sed -i '/#include "config.h"/a /* amix-cross: modern libc strerror fallback. */\
-#include <string.h>' "$(TREE)/cccp.c"; \
-		sed -i 's/if (errno < sys_nerr)/if (1)/' "$(TREE)/cccp.c"; \
-		sed -i 's/return sys_errlist\[errno\];/return strerror (errno);/' "$(TREE)/cccp.c"; \
-		echo "Patched gcc cccp.c for modern libc strerror"; \
-	fi
-	@if ! grep -q 'amix-cross: modern libc strerror' "$(TREE)/gcc.c"; then \
-		sed -i '/#include "config.h"/a /* amix-cross: modern libc strerror fallback. */\
-#include <string.h>' "$(TREE)/gcc.c"; \
-		sed -i 's/if (e < sys_nerr)/if (1)/g; s/if (errno < sys_nerr)/if (1)/g' "$(TREE)/gcc.c"; \
-		sed -i 's/sys_errlist\[e\]/strerror (e)/g; s/sys_errlist\[errno\]/strerror (errno)/g' "$(TREE)/gcc.c"; \
-		echo "Patched gcc gcc.c for modern libc strerror"; \
-	fi
-	@if grep -R -q 'gcc2_compiled%' "$(TREE)"; then \
-		find "$(TREE)" -type f -exec sed -i 's/gcc2_compiled%/gcc2_compiled/g' {} \; ; \
-		echo "Patched GCC sources for GNU as gcc2_compiled symbol syntax"; \
-	fi
-	@if grep -R -q 'lcomm.*,%u,%u' "$(TREE)"; then \
-		find "$(TREE)" -type f -exec perl -0pi -e 's/((?:\\\\t|\t)?\\.lcomm[^"\\n]*,%[du]),%[du](\\\\n")/$$1$$2/g' {} \; ; \
-		echo "Patched GCC .lcomm output for binutils 2.8.1"; \
-	fi
-	@find "$(TREE)/config" -type f -exec perl -0pi -e 's/fprintf\s*\(\s*\(FILE\)\s*,\s*",%([ud]),%[ud]\\n"\s*,\s*\(?SIZE\)?\s*,\s*\(?ROUNDED\)?\s*\)/fprintf ((FILE), ",%\1\\n", (SIZE))/g; s/fprintf\s*\(\s*\(FILE\)\s*,\s*",%([ud]),%[ud]\\n"\s*,\s*\(?SIZE\)?\s*,\s*\(?ALIGNMENT\)?\s*\/\s*BITS_PER_UNIT\s*\)/fprintf ((FILE), ",%\1\\n", (SIZE))/g; s/fprintf\s*\(\s*\(FILE\)\s*,\s*",%([ud]),%[ud]\\n"\s*,\s*\(?SIZE\)?\s*,\s*\(?ALIGN\)?\s*\/\s*BITS_PER_UNIT\s*\)/fprintf ((FILE), ",%\1\\n", (SIZE))/g; s/fprintf\s*\(\s*\(FILE\)\s*,\s*",%([ud]),%[ud]\\n"\s*,\s*\(?SIZE\)?\s*,\s*\(?ALIGNMENT\)?\s*\)/fprintf ((FILE), ",%\1\\n", (SIZE))/g; s/fprintf\s*\(\s*\(FILE\)\s*,\s*",%([ud]),%[ud]\\n"\s*,\s*\(?SIZE\)?\s*,\s*\(?ALIGN\)?\s*\)/fprintf ((FILE), ",%\1\\n", (SIZE))/g' {} \;
-	@# m68k.md ashrdi_const: a signed 64-bit >> 16 sign-extended the wrong half
-	@# of the high word (no swap before ext.l), so the result's high long was 0
-	@# or -1.  Every other count is right; the unsigned twin has the swap.
-	@# Reported in kdedon/ashnazag#282 (broke dropbear signatures).
-	@if grep -q 'clr%.w %0\\;swap %1\\;ext%.l %0' "$(TREE)/config/m68k/m68k.md"; then \
-		sed -i 's/clr%\.w %0\\;swap %1\\;ext%\.l %0/clr%.w %0\\;swap %1\\;swap %0\\;ext%.l %0/' "$(TREE)/config/m68k/m68k.md"; \
-		echo "Patched m68k.md: signed 64-bit >> 16"; \
-	fi
+	for p in $(HERE)/patches/gcc-*.patch; do (cd $(TREE)/.. && patch -s -p1 < $$p 2>&1 | grep -v 'is read-only; trying to patch anyway') || true; done
+	@# the generated parser and gperf output stay newer than their sources
 	@if test -f "$(TREE)/c-parse.c"; then touch "$(TREE)/c-parse.c"; fi
 	@if test -f "$(TREE)/c-gperf.h"; then touch "$(TREE)/c-gperf.h"; fi
 

@@ -1,0 +1,40 @@
+binutils 2.8.1 for an m68k-*-sysv4 (AMIX) target, built by a modern host gcc:
+- ld/configure.tgt: m68k-*-*sysv4* uses the m68kelf emulation
+- gas: md_relax_table declared after as.h (struct relax_type is not visible
+  in tc-m68k.h yet)
+
+diff -ruN a/binutils-2.8.1/gas/config/tc-m68k.h b/binutils-2.8.1/gas/config/tc-m68k.h
+--- a/binutils-2.8.1/gas/config/tc-m68k.h
++++ b/binutils-2.8.1/gas/config/tc-m68k.h
+@@ -198,7 +198,7 @@
+ #define TARGET_WORD_SIZE 32
+ #define TARGET_ARCH bfd_arch_m68k
+ 
+-extern struct relax_type md_relax_table[];
++/* amix-cross: declaration removed; struct relax_type is not visible yet. */
+ #define TC_GENERIC_RELAX_TABLE md_relax_table
+ 
+ /* Copied from write.c */
+diff -ruN a/binutils-2.8.1/gas/write.c b/binutils-2.8.1/gas/write.c
+--- a/binutils-2.8.1/gas/write.c
++++ b/binutils-2.8.1/gas/write.c
+@@ -22,6 +22,8 @@
+ /* This thing should be set up to do byteordering correctly.  But... */
+ 
+ #include "as.h"
++/* amix-cross: declare m68k relax table after as.h defines relax_typeS. */
++extern relax_typeS md_relax_table[];
+ #include "subsegs.h"
+ #include "obstack.h"
+ #include "output-file.h"
+diff -ruN a/binutils-2.8.1/ld/configure.tgt b/binutils-2.8.1/ld/configure.tgt
+--- a/binutils-2.8.1/ld/configure.tgt
++++ b/binutils-2.8.1/ld/configure.tgt
+@@ -108,6 +108,7 @@
+ m68*-motorola-sysv*)	targ_emul=delta68 ;;
+ m68*-*-aout)		targ_emul=m68kaout ;;
+ m68*-*-coff)		targ_emul=m68kcoff ;;
++m68k-*-*sysv4*)	targ_emul=m68kelf ;;
+ m68*-*-elf)		targ_emul=m68kelf ;;
+ m68*-*-hpux*)		targ_emul=hp3hpux ;;
+ m68k-*-linux*aout*)	targ_emul=m68klinux
