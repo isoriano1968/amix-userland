@@ -1,0 +1,8 @@
+prefix=/usr/x11r6
+libdir=${prefix}/lib
+
+Name: Xp
+Description: X Print client library
+Version: @VERSION@
+Requires: xext x11
+Libs: -L${libdir} -lXp

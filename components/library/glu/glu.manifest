@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     library/glu
+version  9.0.3
+summary  The OpenGL Utility library, libGLU.so.1
+require  x11/mesa-183
+provide  glu

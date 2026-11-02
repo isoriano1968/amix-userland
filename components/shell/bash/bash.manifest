@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     shell/bash
+version  5.2.37
+summary  GNU Bourne-again shell, with readline
+require  library/ncurses

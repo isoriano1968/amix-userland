@@ -4,5 +4,7 @@ version  60ad664
 summary  Mesa demos on Mesa 18.3
 require  x11/x11r6.3
 require  x11/mesa-183
+require  library/glu
+require  library/freeglut
 require  library/libpng
 require  library/zlib

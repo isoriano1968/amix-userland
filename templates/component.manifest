@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     <category>/<name>
+version  <version>
+summary  <what it is, in a line>
+require  <category>/<component it needs>
+provide  <pkg-config name it installs>

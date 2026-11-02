@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     gnu/bison
+version  3.8.2
+summary  GNU parser generator
+require  gnu/m4

@@ -1,0 +1,4 @@
+# name, version and what building and running it needs
+name     gnu/diffutils
+version  3.10
+summary  diff, cmp, diff3 and sdiff

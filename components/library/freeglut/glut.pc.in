@@ -1,0 +1,10 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: glut
+Description: freeglut, the OpenGL Utility Toolkit
+Version: @VERSION@
+Requires: glu gl xext x11
+Libs: -L${libdir} -lglut
+Cflags: -I${includedir}

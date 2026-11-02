@@ -1,0 +1,8 @@
+# name, version and what building and running it needs
+name     library/freeglut
+version  3.4.0
+summary  freeglut, GLUT as libglut.so.3
+require  x11/mesa-183
+require  library/glu
+require  x11/x11r6.3
+provide  glut

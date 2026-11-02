@@ -45,8 +45,7 @@ the Z3660's RTG output and the `Xzz9000` X server
   - its `xc/exports` tree (`include/` and `lib/` with the static libraries and
     the `.sa` stubs), copied from your AMIX machine into the sysroot, by
     default `$SYSROOT/usr/x11r6/xc/exports`;
-  - its source tree (`xc/`): `libXp` is compiled from `xc/lib/Xp`, and
-    `XKeysymDB`/`XErrorDB` come from `xc/lib/X11`.
+  - its source tree (`xc/`): `XKeysymDB` and `XErrorDB` come from `xc/lib/X11`.
 - About 3 GB of disk space.
 
 ## Building
@@ -62,7 +61,6 @@ $EDITOR config.sh
 | Step | What it does |
 |---|---|
 | `fetch.sh` | Downloads `cde-src-2.2.4a.tar.gz` from SourceForge and checks its SHA-256. |
-| `scripts/build-libxp.sh` | A static `libXp` from the X11R6.3 tree. |
 | `scripts/build-cde.sh` | Unpacks and patches CDE, prepares the build (see below), and builds the libraries, the programs and the fonts. |
 | `scripts/package-cde.sh` | `work/cde-amix.tar`: the `/usr/dt` tree, laid out by CDE's own install databases. |
 

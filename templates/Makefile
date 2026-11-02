@@ -7,6 +7,10 @@ COMPONENT_SHA256  = <sha256 of the archive>
 
 include ../../../make-rules/shared.mk
 
-build:
+build: $(COMPONENT_ARCHIVE)
 
-.PHONY: build
+# what goes on AMIX, at its AMIX paths, in $(STAGE_DIR)
+stage:
+	rm -rf $(STAGE_DIR)
+
+.PHONY: build stage

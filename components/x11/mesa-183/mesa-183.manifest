@@ -3,8 +3,5 @@ name     x11/mesa-183
 version  18.3.6
 summary  Mesa 18.3: OpenGL, GLSL, zz3660, libzzgl
 require  x11/x11r6.3
-require  x11/mesa-31
 provide  gl
-provide  glu
-provide  glut
 provide  zzgl

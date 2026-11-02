@@ -1,0 +1,4 @@
+# name, version and what building and running it needs
+name     gnu/findutils
+version  4.10.0
+summary  find and xargs

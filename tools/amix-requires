@@ -70,8 +70,8 @@ def walk(comp, path, order, bad):
     if missing:
         print("amix-requires: %s needs %s: building %s" % (path[-1], " ".join(missing), comp), file=sys.stderr)
         d = os.path.join(COMPONENTS, comp)
-        if subprocess.call(["make", "-C", d, "-q", "-n", "build"], stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL) == 2:
+        if subprocess.call(["make", "-C", d, "-n", "stage"], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL) != 0:
             bad.append("%s: cannot be built here, see its README (needed by %s)" % (comp, path[-1]))
         elif subprocess.call(["make", "-C", d, "build", "sysroot-install"], stdout=sys.stderr) != 0:
             bad.append("%s: build failed (needed by %s)" % (comp, path[-1]))

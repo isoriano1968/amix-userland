@@ -1,8 +1,7 @@
 #!/bin/sh
-# build.sh -- everything, in order: fetch, libXp, CDE, the package.  desktop/motif first.
+# build.sh -- everything, in order: fetch, CDE, the package.  x11/libxp and desktop/motif first.
 set -e
 cd "$(dirname "$0")"
 ./fetch.sh
-scripts/build-libxp.sh
 scripts/build-cde.sh
 scripts/package-cde.sh

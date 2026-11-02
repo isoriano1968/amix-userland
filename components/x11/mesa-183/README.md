@@ -1,7 +1,8 @@
 # Mesa 18.3.6 for AMIX
 
-The system's OpenGL: `libGL.so.18`, `libGLU.so.18` and `libglut.so.18` in
-`/usr/local/lib`, with headers and `.pc` files. GL 3.1 compatibility, GLSL 1.40.
+The system's OpenGL: `libGL.so.18` in `/usr/local/lib`, with headers and
+`.pc` files. GLU and GLUT are [library/glu](../../library/glu) and
+[library/freeglut](../../library/freeglut). GL 3.1 compatibility, GLSL 1.40.
 
 Mesa runs on the 060 and draws through `zz3660`, a Gallium driver that sends
 its work over the Z3660's ring to softpipe on the board's second ARM core, which

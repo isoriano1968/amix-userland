@@ -90,15 +90,11 @@ The component `developer/gcc-14/README.md` has the full background.
 A component is one directory under `components/<category>/`. Most build with
 `make build`, and each `Makefile` starts with a line saying what it is.
 
-`amtop`, a small system monitor, is a good first one. It needs ncurses, so build
-that and put it in the sysroot first:
+`amtop`, a small system monitor, is a good first one. It needs ncurses. Its manifest
+says so, and `make build` builds and installs that first:
 
 ```sh
-cd ~/Sources/usr-amix/amix-userland/components/library/ncurses
-make build
-make -C build install DESTDIR=$HOME/opt/m68k-amix-sysroot
-
-cd ../../sysutils/amtop
+cd ~/Sources/usr-amix/amix-userland/components/sysutils/amtop
 make build
 ```
 
@@ -107,8 +103,8 @@ The result is `build/amtop`. Run `make clean` to remove what a build made.
 Things worth knowing:
 
 - Downloads are checked against the checksum in the `Makefile`.
-- Some components need another one first. The `Makefile` and `README.md` say so:
-  `multimedia/ffmpeg` needs `library/sdl2`, for example.
+- A component names what it needs in its `<name>.manifest`. `tools/amix-requires
+  components/<category>/<name>` prints the build order.
 - `SHM_LIBS=<dir>` is needed by programs using MIT-SHM. It names a directory with
   a static `libXext.a` that has XShm, and `libshmsys.a`.
 - A few components only prepare a tree to build on the Amiga, with `make prep`.
@@ -164,8 +160,8 @@ The same sysroot works for both compilers.
 
 ## Adding a component
 
-Start from `templates/Makefile`. To bring in an existing repository, see
-[moving-a-repo.md](moving-a-repo.md).
+See [creating-a-package.md](creating-a-package.md). To bring in an existing repository,
+see [moving-a-repo.md](moving-a-repo.md).
 
 ## Common problems
 

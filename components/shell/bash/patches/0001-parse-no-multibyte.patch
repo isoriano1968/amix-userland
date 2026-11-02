@@ -1,0 +1,11 @@
+--- a/parse.y
++++ b/parse.y
+@@ -2649,7 +2649,7 @@
+ 	     read_token_word() will perform, since we're extending the index */
+ 	  RESIZE_MALLOCED_BUFFER (shell_input_line, shell_input_line_index, 2, shell_input_line_size, 16);
+           shell_input_line[++shell_input_line_index] = '\0';	/* XXX */
+-#else
++#elif defined (HANDLE_MULTIBYTE)
+ 	  shell_input_line_property[shell_input_line_index - 1] = 1;
+ #endif
+ 	}

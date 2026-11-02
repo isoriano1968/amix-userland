@@ -10,7 +10,7 @@ One directory per application.
 | `panel/` | The AMIX control in CDE's front panel, with a subpanel holding both |
 
 The core 1 programs and `armbench` are in
-[core1-z3660-amix](https://github.com/isoriano1968/amix-gate/tree/main/usr/src/firmware/core1).
+[amix-gate firmware/core1](https://github.com/isoriano1968/amix-gate/tree/main/usr/src/firmware/core1).
 
 ## Building
 

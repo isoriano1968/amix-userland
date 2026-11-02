@@ -1,0 +1,22 @@
+#!/sbin/sh
+# /etc/init.d/sshd: OpenSSH at boot, after the network (rc2.d)
+PID=/var/run/sshd.pid
+
+case "$1" in
+start)
+	if [ ! -f /etc/ssh/ssh_host_ed25519_key ]; then
+		echo "sshd: no host key, run /usr/local/libexec/sshd-setup"
+		exit 1
+	fi
+	/usr/local/bin/sshd
+	;;
+stop)
+	[ -f $PID ] && kill `cat $PID`
+	rm -f $PID
+	;;
+*)
+	echo "usage: /etc/init.d/sshd start|stop"
+	exit 1
+	;;
+esac
+exit 0

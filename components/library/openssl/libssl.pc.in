@@ -1,0 +1,10 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: libssl
+Description: OpenSSL TLS
+Version: @VERSION@
+Libs: -L${libdir} -lssl
+Requires: libcrypto
+Cflags: -I${includedir}

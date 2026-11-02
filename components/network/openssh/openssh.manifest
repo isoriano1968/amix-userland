@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     network/openssh
+version  10.2p1
+summary  OpenSSH: ssh, scp, sftp and sshd
+require  library/openssl
+require  library/zlib

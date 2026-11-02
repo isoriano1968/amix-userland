@@ -23,7 +23,8 @@ stage:
 	rm -rf $(STAGE_DIR)
 	mkdir -p $(OPT)/bin $(OPT)/data $(OPT)/lib $(STAGE_DIR)/usr/local/bin
 	for s in $(SETS); do \
-		for f in build/$$s/*; do case $$f in *.err) ;; *) cp $$f $(OPT)/bin/;; esac; done; \
+		for f in build/$$s/*; do case $$f in *.err) ;; *) b=$${f##*/}; \
+			if [ -e $(OPT)/bin/$$b ]; then cp $$f $(OPT)/bin/$$s-$$b; else cp $$f $(OPT)/bin/; fi;; esac; done; \
 	done
 	cp build/lib/libmesademo.so.1 $(OPT)/lib/
 	cp $(SRC)/src/data/* $(SRC)/src/glsl/*.vert $(SRC)/src/glsl/*.frag $(SRC)/src/glsl/*.glsl \

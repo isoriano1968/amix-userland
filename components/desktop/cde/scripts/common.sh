@@ -16,6 +16,6 @@ MOTIF_WORK=$TOP/../motif/work
 MOTIF_SRC=$MOTIF_WORK/motif-$MOTIF_VER
 MOTIF_ROOT=$MOTIF_WORK/motif-root
 CDE_VER=2.2.4a
-LIBXP=$WORK/libxp
+LIBXP=$TOP/../../x11/libxp/build         # x11/libxp, built first
 CDE=$WORK/cde-$CDE_VER                    # unpacked, patched, built in place
 need() { for t in "$@"; do command -v "$t" >/dev/null 2>&1 || { echo "missing on the build host: $t" >&2; exit 1; }; done; }

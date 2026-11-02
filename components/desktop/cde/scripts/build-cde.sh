@@ -16,7 +16,7 @@ set -e
 . "$(dirname "$0")/common.sh"
 need gcc g++ make patch python3 bash cpp bdftopcf mkfontdir
 [ -f "$MOTIF_ROOT/usr/motif/lib/libXm.a" ] || { echo "build Motif first (desktop/motif: make build)"; exit 1; }
-[ -f "$LIBXP/libXp.a" ] || { echo "build libXp first (build-libxp.sh)"; exit 1; }
+[ -f "$LIBXP/libXp.a" ] || { echo "build libXp first (x11/libxp: make build)"; exit 1; }
 FIXED=$(ls -d "$TOOLCHAIN"/lib/gcc/m68k-elf/*/include-fixed | head -1)
 [ -d "$FIXED" ] || { echo "no include-fixed under $TOOLCHAIN/lib/gcc/m68k-elf"; exit 1; }
 export CDE

@@ -7,7 +7,4 @@ set -e
 TOP=$(cd "$(dirname "$0")/.." && pwd)
 export SHARED_WORK=$TOP/work-shared CDE_SHARED=$1
 mkdir -p "$SHARED_WORK"
-for d in libxp; do
-	ln -sfn "$TOP/work/$d" "$SHARED_WORK/$d"
-done
 sh "$TOP/scripts/build-cde.sh" "$@"

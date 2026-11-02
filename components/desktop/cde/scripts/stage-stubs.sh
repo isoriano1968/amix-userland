@@ -5,7 +5,7 @@
 set -e
 ST=$1; SR=$2; OUT=$3
 T=$(cd "$(dirname "$0")/../../../../tools" && pwd)
-K=$(ls $ST/usr/x11r6/lib/lib*.so.7 $ST/usr/motif/lib/lib*.so.4 $ST/usr/dt/lib/lib*.so.2 $ST/usr/local/lib/lib*.so.18 $ST/usr/local/lib/libzzgl.so.1 \
+K=$(ls $ST/usr/x11r6/lib/lib*.so.7 $ST/usr/motif/lib/lib*.so.4 $ST/usr/dt/lib/lib*.so.2 $ST/usr/local/lib/libGL.so.18 $ST/usr/local/lib/libGLU.so.1 $ST/usr/local/lib/libglut.so.3 $ST/usr/local/lib/libzzgl.so.1 \
 	$SR/usr/local/lib/libz.so.1 $SR/usr/local/lib/libpng16.so.16 $SR/usr/local/lib/libmikmod.so.3 $SR/usr/local/lib/libncurses.so.6 $SR/usr/local/lib/libform.so.6 \
 	$SR/usr/local/lib/libmenu.so.6 $SR/usr/local/lib/libpanel.so.6)
 mkdir -p "$OUT"; : > "$OUT/LIST"

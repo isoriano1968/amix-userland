@@ -1,0 +1,10 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: glu
+Description: The OpenGL Utility library
+Version: @VERSION@
+Requires: gl
+Libs: -L${libdir} -lGLU
+Cflags: -I${includedir}

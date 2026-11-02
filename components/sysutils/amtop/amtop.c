@@ -57,6 +57,8 @@ char *s;
 	}
 }
 
+static int is_blank();
+
 static int read_command(cmd, out)
 char *cmd;
 struct text_block *out;
@@ -73,6 +75,8 @@ struct text_block *out;
 
 	while (out->count < MAX_LINES && fgets(buf, sizeof(buf), fp) != NULL) {
 		trim_newline(buf);
+		if (is_blank(buf))	/* swap -s starts with an empty line */
+			continue;
 		strncpy(out->line[out->count], buf, MAX_LINE - 1);
 		out->line[out->count][MAX_LINE - 1] = '\0';
 		out->count++;

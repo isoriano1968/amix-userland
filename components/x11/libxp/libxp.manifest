@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     x11/libxp
+version  6.3
+summary  X Print client library
+require  x11/x11r6.3
+provide  xp
