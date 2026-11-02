@@ -2,7 +2,7 @@
 # glquake.sh -- GLQuake with the GL on the Z3660's core 1, sound on the HDMI.
 # /opt/quake/glquake.sh; the game's data in /opt/quake/id1.
 C=/root/z3660ARMCores
-if /usr/amiga/bin/ztop | grep "ARM core 1" | grep -v " gpu," >/dev/null; then
+if /usr/amiga/bin/ztop | grep "ARM core 1" | grep -v " gpu," | grep -v " amix," >/dev/null; then
 	$C/armbench -reload $C/z3660ARM_Core_gpu.bin >/dev/null 2>&1 || exit 1
 fi
 ulimit -d 98304
