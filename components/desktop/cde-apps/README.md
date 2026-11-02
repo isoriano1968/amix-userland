@@ -14,7 +14,8 @@ The core 1 programs and `armbench` are in
 
 ## Building
 
-`build.sh` cross-builds both with gcc14-cross-amix; see its head for the variables.
+`build.sh` cross-builds both with gcc14-cross-amix against the shared Motif and
+X11R6.3 libraries, taking the flags from `tools/amix-pkg-config xm`.
 Each directory has an `install.sh` to run on the box.
 
 ## AmixCast
