@@ -77,3 +77,15 @@ m68k-elf-gcc -O2 -m68060 -I"$XC/exports/include" -D__amix__ -DSVR4 -w -c "$HERE/
 rm -f "$L/libXtInherit.a"
 m68k-elf-ar rcs "$L/libXtInherit.a" "$L/xtinherit.o"
 rm -f "$L/xtinherit.o"
+
+# xauth, from the unchanged R6.3 sources against these libraries: AMIX's own
+# (X11R5, /usr/X/bin) turns the hex letters of a cookie into digits, which
+# breaks ssh -X (network/openssh's sshrc and XAuthLocation use this one)
+mkdir -p "$STAGE/usr/x11r6/bin"
+m68k-elf-gcc -O2 -m68060 -w -Wno-error=implicit-function-declaration -Wno-error=int-conversion \
+	-Wno-error=incompatible-pointer-types -Wno-error=implicit-int -D__amix__ -DSVR4 \
+	-DTCPCONN -DUNIXCONN -DFUNCPROTO=15 -DNARROWPROTO -I"$XC" -I"$XC/exports/include" \
+	"$XC"/programs/xauth/xauth.c "$XC"/programs/xauth/gethost.c "$XC"/programs/xauth/process.c \
+	"$XC"/programs/xauth/parsedpy.c -L"$L" -Wl,-rpath-link,"$L" -Wl,-R,/usr/x11r6/lib \
+	-lXmu -lXt -lSM -lICE -lXext -lX11 -lXau -lsocket -lnsl -o "$STAGE/usr/x11r6/bin/xauth"
+m68k-elf-strip "$STAGE/usr/x11r6/bin/xauth"

@@ -19,8 +19,7 @@ FLAGS = -O2 -m68060 -fPIC -w -U__linux__ -Ulinux -D__amix__ -DSVR4 -DNDEBUG -DLI
 build: $(COMPONENT_ARCHIVE)
 	rm -rf $(S) build
 	tar xJf $(COMPONENT_ARCHIVE)
-	# AMIX's size_t is unsigned int, operator new wants the compiler's
-	sed -i 's/operator new( size_t/operator new( __SIZE_TYPE__/' $(S)/src/libnurbs/internals/bufpool.h
+	for p in patches/*.patch; do patch -p1 < $$p || exit 1; done
 	mkdir -p build
 	for f in `grep -oE "lib[a-z]+/[^']+[.]c'" $(S)/src/meson.build | tr -d "'"`; do \
 		m68k-elf-gcc $(FLAGS) -c $(S)/src/$$f -o build/`basename $$f .c`.o || exit 1; done

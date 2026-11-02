@@ -1,0 +1,49 @@
+--- a/openssh-10.2p1/sshd_config
++++ b/openssh-10.2p1/sshd_config
+@@ -15,9 +15,9 @@
+ #ListenAddress 0.0.0.0
+ #ListenAddress ::
+ 
+-#HostKey /etc/ssh/ssh_host_rsa_key
+-#HostKey /etc/ssh/ssh_host_ecdsa_key
+-#HostKey /etc/ssh/ssh_host_ed25519_key
++# AMIX: no RSA host key, it takes minutes to generate on a 68060
++HostKey /etc/ssh/ssh_host_ecdsa_key
++HostKey /etc/ssh/ssh_host_ed25519_key
+ 
+ # Ciphers and keying
+ #RekeyLimit default none
+@@ -29,7 +29,7 @@
+ # Authentication:
+ 
+ #LoginGraceTime 2m
+-#PermitRootLogin prohibit-password
++PermitRootLogin yes
+ #StrictModes yes
+ #MaxAuthTries 6
+ #MaxSessions 10
+@@ -86,11 +86,13 @@
+ #AllowAgentForwarding yes
+ #AllowTcpForwarding yes
+ #GatewayPorts no
+-#X11Forwarding no
++# AMIX: ssh -X; the X11R6.3 xauth (X11R5's turns hex letters into digits)
++X11Forwarding yes
++XAuthLocation /usr/x11r6/bin/xauth
+ #X11DisplayOffset 10
+ #X11UseLocalhost yes
+ #PermitTTY yes
+-#PrintMotd yes
++PrintMotd no
+ #PrintLastLog yes
+ #TCPKeepAlive yes
+ #PermitUserEnvironment no
+@@ -108,7 +110,7 @@
+ #Banner none
+ 
+ # override default of no subsystems
+-Subsystem	sftp	/usr/libexec/sftp-server
++Subsystem	sftp	/usr/local/libexec/sftp-server
+ 
+ # Example of overriding settings on a per-user basis
+ #Match User anoncvs

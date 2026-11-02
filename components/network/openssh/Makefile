@@ -39,10 +39,9 @@ stage:
 	for p in $(PROGS); do cp build/$$p $(STAGE_DIR)$(PREFIX)/bin/ && m68k-elf-strip $(STAGE_DIR)$(PREFIX)/bin/$$p; done
 	for p in $(LIBX); do [ ! -f build/$$p ] || { cp build/$$p $(STAGE_DIR)$(PREFIX)/libexec/ && m68k-elf-strip $(STAGE_DIR)$(PREFIX)/libexec/$$p; }; done
 	cp $(S)/ssh_config $(STAGE_DIR)/etc/ssh/
-	sed -e 's|^#HostKey /etc/ssh/ssh_host_rsa_key||' -e 's|^#HostKey|HostKey|' \
-	    -e 's|^#PermitRootLogin prohibit-password|PermitRootLogin yes|' \
-	    -e 's|^#PrintMotd yes|PrintMotd no|' \
-	    -e 's|/usr/libexec/sftp-server|$(PREFIX)/libexec/sftp-server|' $(S)/sshd_config > $(STAGE_DIR)/etc/ssh/sshd_config
+	cp $(S)/sshd_config $(STAGE_DIR)/etc/ssh/      # patches/0002-amix-sshd-config.patch
+	cp files/sshrc $(STAGE_DIR)/etc/ssh/sshrc      # the cookie of ssh -X for AMIX's Xlib
+	chmod 644 $(STAGE_DIR)/etc/ssh/sshrc
 	chmod 644 $(STAGE_DIR)/etc/ssh/sshd_config $(STAGE_DIR)/etc/ssh/ssh_config
 	mkdir -p $(STAGE_DIR)/etc/init.d
 	cp files/sshd.rc $(STAGE_DIR)/etc/init.d/sshd

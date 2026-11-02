@@ -27,6 +27,7 @@ SRCS = fg_callbacks fg_cursor fg_display fg_ext fg_font fg_font_data fg_gamemode
 build: $(COMPONENT_ARCHIVE)
 	rm -rf $(S) build
 	tar xzf $(COMPONENT_ARCHIVE)
+	for p in patches/*.patch; do patch -p1 < $$p || exit 1; done
 	mkdir -p build
 	for f in $(SRCS); do \
 		m68k-elf-gcc $(FLAGS) -c $(S)/src/$$f.c -o build/`basename $$f`.o || exit 1; done

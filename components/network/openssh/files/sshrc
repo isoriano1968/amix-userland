@@ -1,0 +1,11 @@
+#!/bin/sh
+# /etc/ssh/sshrc -- run by sshd for every login; with ssh -X it gets the
+# forwarded display's protocol and cookie on stdin and sshd leaves xauth to
+# it.  AMIX's Xlib (X11R5, R6.3) looks for the cookie of localhost:10 under
+# the TCP address, not under hostname/unix:10 as sshd would store it alone,
+# so both go in.  X11R5's xauth (/usr/X/bin) mangles hex letters: R6.3's.
+if [ -n "$DISPLAY" ] && read proto cookie; then
+	n=`echo "$DISPLAY" | sed 's/^[^:]*:\([0-9]*\).*/\1/'`
+	printf 'add unix:%s %s %s\nadd localhost:%s %s %s\n' \
+	    "$n" "$proto" "$cookie" "$n" "$proto" "$cookie" | /usr/x11r6/bin/xauth -q -
+fi

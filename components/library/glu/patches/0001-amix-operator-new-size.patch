@@ -1,0 +1,25 @@
+--- a/glu-9.0.3/src/libnurbs/internals/bufpool.h
++++ b/glu-9.0.3/src/libnurbs/internals/bufpool.h
+@@ -117,9 +117,10 @@
+ 	
+ class PooledObj {
+ public:
+-    inline void *	operator new( size_t, Pool & );
+-    inline void * 	operator new( size_t, void *);
+-    inline void * 	operator new( size_t s)
++    /* AMIX: size_t is unsigned int there; operator new takes the compiler's type */
++    inline void *	operator new( __SIZE_TYPE__, Pool & );
++    inline void * 	operator new( __SIZE_TYPE__, void *);
++    inline void * 	operator new( __SIZE_TYPE__ s)
+ 				{ return ::new char[s]; }
+     inline void 	operator delete( void * ) { assert( 0 ); }
+     inline void         operator delete( void *, Pool & ) { assert( 0 ); }
+@@ -127,7 +128,7 @@
+ };
+ 
+ inline void *
+-PooledObj::operator new( size_t, Pool& pool )
++PooledObj::operator new( __SIZE_TYPE__, Pool& pool )
+ {
+     return pool.new_buffer();
+ }

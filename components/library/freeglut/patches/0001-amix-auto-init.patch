@@ -1,0 +1,39 @@
+--- a/freeglut-3.4.0/src/fg_init.c
++++ b/freeglut-3.4.0/src/fg_init.c
+@@ -333,6 +333,18 @@
+  * Perform initialization. This usually happens on the program startup
+  * and restarting after glutMainLoop termination...
+  */
++/* AMIX: glutInit for a program that called a GLUT function without it, as
++   GLUT 3.7 did (FREEGLUT_EXIT_IF_NOT_INITIALISED) */
++void fghAutoInit( const char *func )
++{
++    static char name[] = "glut";
++    char *argv[] = { name, NULL };
++    int argc = 1;
++
++    (void)func;
++    glutInit( &argc, argv );
++}
++
+ void FGAPIENTRY glutInit( int* pargc, char** argv )
+ {
+     char* displayName = NULL;
+--- a/freeglut-3.4.0/src/fg_internal.h
++++ b/freeglut-3.4.0/src/fg_internal.h
+@@ -982,11 +982,13 @@
+  * A call to this function makes us sure that the Display and Structure
+  * subsystems have been properly initialized and are ready to be used
+  */
++/* AMIX: GLUT 3.7, which Mesa 3.1 programs were written for, initialised
++   itself when a program called no glutInit; do that instead of exiting */
++void fghAutoInit( const char *func );
+ #define  FREEGLUT_EXIT_IF_NOT_INITIALISED( string )               \
+   if ( ! fgState.Initialised )                                    \
+   {                                                               \
+-    fgError ( " ERROR:  Function <%s> called"                     \
+-              " without first calling 'glutInit'.", (string) ) ;  \
++    fghAutoInit ( (string) ) ;                                    \
+   }
+ 
+ #define  FREEGLUT_INTERNAL_ERROR_EXIT_IF_NOT_INITIALISED( string )  \
