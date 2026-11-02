@@ -1,0 +1,37 @@
+--- a/src/hsts.c
++++ b/src/hsts.c
+@@ -293,12 +293,34 @@
+       if (*p == '#')
+         continue;
+ 
++#ifdef __amix__
++      /* AMIX's sscanf has no %lld: the two 64-bit numbers through strtoll */
++      {
++        int used = 0;
++        char *end;
++
++        items_read = sscanf (p, "%255s %d %d%n", host, &port, &include_subdomains, &used);
++        if (items_read == 3)
++          {
++            created = strtoll (p + used, &end, 10);
++            if (end != p + used)
++              {
++                items_read++;
++                p = end;
++                max_age = strtoll (p, &end, 10);
++                if (end != p)
++                  items_read++;
++              }
++          }
++      }
++#else
+       items_read = sscanf (p, "%255s %d %d %" SCNd64 " %" SCNd64,
+                            host,
+                            &port,
+                            &include_subdomains,
+                            &created,
+                            &max_age);
++#endif
+ 
+       if (items_read == 5)
+         func (store, host, port, created, max_age, !!include_subdomains);

@@ -1,0 +1,8 @@
+# name, version and what building and running it needs
+name     network/curl
+version  8.23.0
+summary  curl and libcurl: HTTP, HTTPS, FTP and more
+provide  libcurl
+require  library/openssl
+require  library/zlib
+require  network/ca-certificates

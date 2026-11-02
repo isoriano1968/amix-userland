@@ -1,0 +1,4 @@
+# name, version and what building and running it needs
+name     network/ca-certificates
+version  2026-10-20
+summary  The Mozilla CA bundle for TLS: /etc/ssl/cert.pem

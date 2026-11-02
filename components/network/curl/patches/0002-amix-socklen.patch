@@ -1,0 +1,15 @@
+--- a/include/curl/system.h
++++ b/include/curl/system.h
+@@ -348,7 +348,11 @@
+ #      define CURL_CTZ64(x)            __builtin_ctzl(x)
+ #    endif
+ #  endif
+-#  define CURL_TYPEOF_CURL_SOCKLEN_T socklen_t
++#  ifdef __amix__
++#    define CURL_TYPEOF_CURL_SOCKLEN_T int  /* SVR4 on AMIX has no socklen_t */
++#  else
++#    define CURL_TYPEOF_CURL_SOCKLEN_T socklen_t
++#  endif
+ #  define CURL_PULL_SYS_TYPES_H      1
+ #  define CURL_PULL_SYS_SOCKET_H     1
+ 

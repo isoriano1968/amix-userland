@@ -1,0 +1,25 @@
+--- a/lib/cf-socket.c
++++ b/lib/cf-socket.c
+@@ -1454,8 +1454,22 @@
+ #endif
+   }
+   else {
++#ifdef __amix__
++    /* AMIX's sockets (STREAMS underneath) report a non-blocking connect
++       writable, with SO_ERROR 0, before it is up: the first send then
++       fails with ENOTCONN.  Connect blocking; the kernel's timeout applies */
++    int err;
++
++    (void)curlx_nonblock(ctx->sock, FALSE);
+     rc = connect(ctx->sock, &ctx->addr.curl_sa_addr,
+                  (curl_socklen_t)ctx->addr.addrlen);
++    err = SOCKERRNO;
++    (void)curlx_nonblock(ctx->sock, TRUE);
++    SET_SOCKERRNO(err);
++#else
++    rc = connect(ctx->sock, &ctx->addr.curl_sa_addr,
++                 (curl_socklen_t)ctx->addr.addrlen);
++#endif
+   }
+   return rc;
+ }

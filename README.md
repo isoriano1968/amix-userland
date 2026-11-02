@@ -76,7 +76,7 @@ version it names in its Makefile, and one version is linked into
 | `games`        | games and their engines              | moved: iortcw, ioquake3, quake                    |
 | `graphics`     | 3D and images                        | moved: blender; fsv                               |
 | `library`      | general libraries                    | moved: freeglut, glu, lib060, libpng, openssl, ncurses, pth, sdl2, soft3d, tinygl, zlib |
-| `network`      | network tools                        | openssh                                           |
+| `network`      | network tools                        | openssh, curl, wget, ca-certificates              |
 | `multimedia`   | video                                | moved: ffmpeg                                     |
 | `runtime`      | language runtimes                    | moved: python3                                    |
 | `shell`        | shells                               | bash, in `/usr/gnu/bin`                                            |
