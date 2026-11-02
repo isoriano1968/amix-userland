@@ -3,8 +3,9 @@
 An independent X11R6.3 port for Commodore Amiga UNIX (AMIX), targeting the
 MNT ZZ9000 graphics card through the AMIX `/dev/zz9000` framebuffer driver.
 
-The repository contains only the AMIX port overlay. The unmodified X11R6.3
-sources are downloaded from the official X.Org archive by `install.sh`.
+The repository contains only the AMIX port, as `patches/0001-amix-port.patch`
+against the unmodified X11R6.3 sources, which
+`install.sh` downloads from the official X.Org archive.
 
 ## Current status
 
@@ -41,7 +42,7 @@ The result is `/export/amix/x11r6.3/xc`. Copy or mount that tree as
 `/usr/x11r6/xc` on AMIX.
 
 The installer downloads all three official source archives, verifies their
-SHA-256 hashes, extracts them into one `xc` tree, and applies `overlay/xc`.
+SHA-256 hashes, extracts them into one `xc` tree, and applies the patch.
 
 ## AMIX prerequisites
 
@@ -136,7 +137,7 @@ network.
 ## The Z3660 and the A3000
 
 The ZZ9000 server also drives the Z3660 accelerator's RTG output, whose
-registers are ZZ9000-compatible. The server sources in this overlay include
+registers are ZZ9000-compatible. The server sources in this patch include
 two patch series:
 
 - **Jusii's** from [amix-z3660rtg](https://github.com/jusii/amix-z3660rtg):

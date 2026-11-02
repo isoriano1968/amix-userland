@@ -1,6 +1,7 @@
-# Port overlay
+# Port files
 
-`overlay/xc` is copied over a pristine X11R6.3 `xc` source tree.
+`patches/0001-amix-port.patch` changes and adds these files in the pristine
+X11R6.3 `xc` source tree (`install.sh` applies it).
 
 ## Build configuration
 

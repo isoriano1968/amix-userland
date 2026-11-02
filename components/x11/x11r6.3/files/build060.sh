@@ -13,10 +13,6 @@ export PATH=$HOME/opt/m68k-amix/bin:$PATH
 LIBS=${*:-X11 Xt Xext Xmu ICE SM Xau Xdmcp Xaw}
 mkdir -p "$H/lib060" "$H/log060"
 PR=$H/log060/print.mk
-# gcc14-cross-amix declares the two-argument gettimeofday (AMIX's ignores
-# the second); Xos.h would call it with one for any SVR4
-grep -q '(defined(SVR4) && !defined(__amix__))' "$H/xc060/include/Xos.h" ||
-	sed -i 's/^#if defined(SVR4) || defined(VMS) || defined(WIN32)$/#if (defined(SVR4) \&\& !defined(__amix__)) || defined(VMS) || defined(WIN32)/' "$H/xc060/include/Xos.h"
 # X11's ks_tables.h comes from makekeys, a host tool
 X=$H/xc060/lib/X11
 if [ ! -f "$X/ks_tables.h" ]; then

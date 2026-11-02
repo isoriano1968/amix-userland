@@ -87,12 +87,18 @@ done
 
 test -f "$DEST/xc/Imakefile" || fail "X11R6.3 extraction is incomplete"
 
-echo "Installing AMIX overlay"
-(cd "$REPO_DIR/overlay" && tar cf - xc) | (cd "$DEST" && tar xpf -)
+echo "Applying the AMIX patches"
+for p in "$REPO_DIR"/patches/*.patch
+do
+    (cd "$DEST" && patch -s -p1 < "$p" 2>&1 | grep -v 'is read-only; trying to patch anyway') || true
+done
+U=$DEST/xc/config/util
+chmod +x "$U/amix-build-programs.sh" "$U/amix-shared-rebuild.sh" "$U/startXzz9000" \
+    "$U/xinitrc.zz9000" "$U/gears.zz9000"
 
-test -f "$DEST/xc/config/cf/amix.cf" || fail "AMIX overlay was not installed"
+test -f "$DEST/xc/config/cf/amix.cf" || fail "AMIX patches were not applied"
 test -f "$DEST/xc/programs/Xserver/hw/amix/rtg/zz9000/zz9000hw.c" || \
-    fail "ZZ9000 DDX overlay was not installed"
+    fail "ZZ9000 DDX was not patched in"
 
 echo "X11R6.3 AMIX source tree prepared at $DEST/xc"
 echo "Copy that xc tree to /usr/x11r6/xc on AMIX before building."

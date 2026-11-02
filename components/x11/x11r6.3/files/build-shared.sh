@@ -16,8 +16,6 @@ L=$STAGE/usr/x11r6/lib
 mkdir -p "$L/pkgconfig" "$XC/log"
 PR=$XC/log/print.mk
 printf 'print-objs:\n\t@echo $(OBJS)\n' > "$PR"
-grep -q '(defined(SVR4) && !defined(__amix__))' "$XC/include/Xos.h" ||
-	sed -i 's/^#if defined(SVR4) || defined(VMS) || defined(WIN32)$/#if (defined(SVR4) \&\& !defined(__amix__)) || defined(VMS) || defined(WIN32)/' "$XC/include/Xos.h"
 X=$XC/lib/X11
 if [ ! -f "$X/ks_tables.h" ]; then
 	gcc -std=gnu89 -w -I"$XC" -I"$XC/exports/include" -o "$X/util/makekeys-host" "$X/util/makekeys.c"
