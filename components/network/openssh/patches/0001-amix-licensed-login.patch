@@ -1,0 +1,33 @@
+--- a/openssh-10.2p1/sshd-session.c
++++ b/openssh-10.2p1/sshd-session.c
+@@ -28,6 +28,12 @@
+  */
+ 
+ #include "includes.h"
++#ifdef __amix__
++/* from <sys/sysm68k.h>, which hides them unless m68k is defined (gcc 14 has __m68k__) */
++#define _m68k_LIMUSER	95
++#define EUA_ADD_USER	4
++int sysm68k(int, ...);
++#endif
+ 
+ #include <sys/types.h>
+ #include <sys/ioctl.h>
+@@ -417,6 +423,17 @@
+ 	/* New socket pair */
+ 	monitor_reinit(pmonitor);
+ 
++#ifdef __amix__
++	/*
++	 * AMIX's user licensing: a non-root process with a controlling
++	 * terminal is killed at its first fork unless it descends from a
++	 * registered login, as login(1) registers itself.  Only root may
++	 * register, so the monitor does it here, before the user's
++	 * process is forked off and inherits it.
++	 */
++	if (sysm68k(_m68k_LIMUSER, EUA_ADD_USER) == -1)
++		error("sysm68k EUA_ADD_USER: %s", strerror(errno));
++#endif
+ 	pmonitor->m_pid = fork();
+ 	if (pmonitor->m_pid == -1)
+ 		fatal("fork of unprivileged child failed");

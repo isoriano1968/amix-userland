@@ -18,6 +18,7 @@ CC_AMIX = m68k-elf-gcc -m68060 -fcommon -std=gnu99 -U__linux__ -Ulinux -D__amix_
 build: $(COMPONENT_ARCHIVE)
 	rm -rf $(S) build
 	tar xzf $(COMPONENT_ARCHIVE)
+	for p in patches/*.patch; do patch -p1 < $$p || exit 1; done
 	mkdir -p build
 	$(CC_AMIX) -O2 -c files/amix-net.c -o build/amix-net.o
 	cd build && CC="$(CC_AMIX)" CFLAGS="-O2 -fno-split-wide-types" CPPFLAGS="-I$(R)/usr/local/include" \
