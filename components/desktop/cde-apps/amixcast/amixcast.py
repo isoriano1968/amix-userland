@@ -13,9 +13,14 @@ to this program:
   GET /info?id=..                the file's length in seconds (0: unknown)
   GET /probe                     1 MB, to measure the line
 
-  amixcast.py [--dir ~/Videos | --server http://192.168.0.50:45227] [--port 8092] [--width 640]
+  amixcast.py [--dir ~/Videos | --server http://192.168.0.50:45227 | --dlna [NAME]]
+              [--port 8092] [--width 640]
+
+--dlna finds the DLNA servers on the network (SSDP): the only one, or the one
+whose name has NAME in it; with more than one and no NAME, it lists them.
 """
-import argparse, html, http.server, os, pathlib, re, shutil, socketserver, subprocess, sys, urllib.parse, urllib.request
+import argparse, html, http.server, os, pathlib, re, shutil, socket, socketserver, subprocess, sys, time, \
+    urllib.parse, urllib.request
 
 BROWSE = ('<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" '
           's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>'
@@ -24,16 +29,49 @@ BROWSE = ('<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/
           '<RequestedCount>200</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>')
 
 
+SEARCH = ('M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: "ssdp:discover"\r\nMX: 2\r\n'
+          'ST: urn:schemas-upnp-org:device:MediaServer:1\r\n\r\n')
+
+
+def discover(wait=3.0):
+    """The media servers that answer an SSDP search: [(name, description URL)]."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+    found, end = [], time.time() + wait
+    for _ in range(2):              # UDP: ask twice
+        s.sendto(SEARCH.encode(), ('239.255.255.250', 1900))
+    while time.time() < end:
+        s.settimeout(max(end - time.time(), 0.01))
+        try:
+            data = s.recv(4096).decode(errors='replace')
+        except socket.timeout:
+            break
+        m = re.search(r'^location:\s*(\S+)', data, re.I | re.M)
+        if m and m.group(1) not in [u for _, u in found]:
+            try:
+                d = urllib.request.urlopen(m.group(1), timeout=5).read().decode(errors='replace')
+            except OSError:
+                continue
+            if 'ContentDirectory' in d:
+                n = re.search(r'<friendlyName>([^<]*)', d)
+                found.append((html.unescape(n.group(1)) if n else m.group(1), m.group(1)))
+    s.close()
+    return found
+
+
 class Dlna:
     """A DLNA server's folders; remembers each file's URL by its id."""
 
-    def __init__(self, base):
-        self.base = base.rstrip('/')
+    def __init__(self, location):
+        """location: the server's description URL, or its base URL"""
+        if urllib.parse.urlsplit(location).path in ('', '/'):
+            location = location.rstrip('/') + '/description.xml'
         self.urls = {}
         self.lengths = {}
-        d = urllib.request.urlopen(self.base + '/description.xml', timeout=8).read().decode(errors='replace')
+        d = urllib.request.urlopen(location, timeout=8).read().decode(errors='replace')
         m = re.search(r'ContentDirectory.*?<controlURL>([^<]+)', d, re.S)
-        self.control = self.base + m.group(1)
+        b = re.search(r'<URLBase>([^<]+)', d)
+        self.control = urllib.parse.urljoin(b.group(1) if b else location, m.group(1).strip())
 
     def _page(self, oid, start):
         body = BROWSE % (html.escape(oid), start)
@@ -206,9 +244,21 @@ def main():
     a = argparse.ArgumentParser()
     a.add_argument('--dir', default='~/Videos')
     a.add_argument('--server')
+    a.add_argument('--dlna', nargs='?', const='', metavar='NAME')
     a.add_argument('--port', type=int, default=8092)
     a.add_argument('--width', type=int, default=640)
     o = a.parse_args()
+    if o.dlna is not None:
+        found = discover()
+        pick = [f for f in found if o.dlna.lower() in f[0].lower()]
+        if len(pick) != 1:
+            print('amixcast: %s; --dlna NAME picks one:' % ('no DLNA server found' if not found else
+                  'no server named "%s"' % o.dlna if not pick else 'more than one DLNA server'), file=sys.stderr)
+            for n, u in found:
+                print('  %s  %s' % (n, u), file=sys.stderr)
+            sys.exit(2)
+        o.server = pick[0][1]
+        print('amixcast: DLNA server %s' % pick[0][0], flush=True)
     s = Server(('', o.port), Handler)
     s.dlna = Dlna(o.server) if o.server else Folder(o.dir)
     s.width = o.width

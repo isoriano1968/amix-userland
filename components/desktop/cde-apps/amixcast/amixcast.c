@@ -324,7 +324,7 @@ int main(int argc, char **argv)
         { "Auto", 0 }, { "400", 400 }, { "600", 600 }, { "800", 800 }, { "1000", 1000 }, { "1500", 1500 }
     };
     Widget top, form, rc, row1, b;
-    Arg a[8];
+    Arg a[10];
     int n, i;
 
     signal(SIGCHLD, SIG_IGN);           /* no zombies from ffplay */
@@ -359,7 +359,9 @@ int main(int argc, char **argv)
     }
     n = 0;
     XtSetArg(a[n], XmNselectionPolicy, XmBROWSE_SELECT); n++;
+    /* scroll bars both ways: long file names scroll, the window stays */
     XtSetArg(a[n], XmNscrollBarDisplayPolicy, XmSTATIC); n++;
+    XtSetArg(a[n], XmNlistSizePolicy, XmCONSTANT); n++;
     XtSetArg(a[n], XmNtopAttachment, XmATTACH_FORM); n++;
     XtSetArg(a[n], XmNleftAttachment, XmATTACH_FORM); n++;
     XtSetArg(a[n], XmNrightAttachment, XmATTACH_FORM); n++;
