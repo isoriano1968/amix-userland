@@ -1,0 +1,173 @@
+AMIX: X25519 and Ed25519 through libcrypto, for the Z3660's ARM core 1
+
+OpenSSH's own curve25519 (also the X25519 half of mlkem768x25519) and Ed25519
+take 0.2 to 0.6 s each on the 060.  AMIX's libcrypto hands X25519 and Ed25519
+to core 1 (library/openssl patches/0001-amix-zz3660-offload.patch), so these
+call libcrypto's EVP X25519 and Ed25519 first and keep the reference code
+for when libcrypto fails.  Results are identical (RFC 7748 / RFC 8032).
+
+diff -ruN a/openssh-10.2p1/ed25519.c openssh-10.2p1/ed25519.c
+--- a/openssh-10.2p1/ed25519.c	2025-10-10 04:38:31.000000000 +0200
++++ b/openssh-10.2p1/ed25519.c	2026-11-03 08:00:26.104778829 +0100
+@@ -15,6 +15,54 @@
+ 
+ #include "crypto_api.h"
+ 
++#if defined(__amix__) && defined(WITH_OPENSSL)
++/*
++ * AMIX: signing and verifying through libcrypto's Ed25519, which the
++ * Z3660's ARM core 1 computes (milliseconds against 0.2 and 0.6 s here on
++ * the 060); the code below if libcrypto fails.  sk is seed || public key.
++ */
++#include <openssl/evp.h>
++
++static int amix_ed25519_sign(unsigned char *sig, const unsigned char *m, size_t mlen,
++                             const unsigned char *sk)
++{
++  EVP_PKEY *k = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, NULL, sk, 32);
++  EVP_MD_CTX *c = EVP_MD_CTX_new();
++  size_t len = 64;
++  int ok = k != NULL && c != NULL && EVP_DigestSignInit(c, NULL, NULL, NULL, k) == 1 &&
++           EVP_DigestSign(c, sig, &len, m, mlen) == 1 && len == 64;
++
++  EVP_MD_CTX_free(c);
++  EVP_PKEY_free(k);
++  return ok;
++}
++
++/* 1 valid, 0 not, -1 libcrypto could not tell */
++static int amix_ed25519_verify(const unsigned char *sig, const unsigned char *m, size_t mlen,
++                               const unsigned char *pk)
++{
++  EVP_PKEY *k = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, NULL, pk, 32);
++  EVP_MD_CTX *c = EVP_MD_CTX_new();
++  int r = -1;
++
++  if (k != NULL && c != NULL && EVP_DigestVerifyInit(c, NULL, NULL, NULL, k) == 1)
++    r = EVP_DigestVerify(c, sig, 64, m, mlen) == 1;
++  EVP_MD_CTX_free(c);
++  EVP_PKEY_free(k);
++  return r;
++}
++
++static int amix_ed25519_pk(unsigned char *pk, const unsigned char *sk)
++{
++  EVP_PKEY *k = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, NULL, sk, 32);
++  size_t len = 32;
++  int ok = k != NULL && EVP_PKEY_get_raw_public_key(k, pk, &len) == 1 && len == 32;
++
++  EVP_PKEY_free(k);
++  return ok;
++}
++#endif
++
+ #define int8 crypto_int8
+ #define uint8 crypto_uint8
+ #define int16 crypto_int16
+@@ -1917,6 +1965,12 @@
+   ge25519 gepk;
+ 
+   randombytes(sk,32);
++#if defined(__amix__) && defined(WITH_OPENSSL)
++  if (amix_ed25519_pk(pk, sk)) {
++    memmove(sk + 32,pk,32);
++    return 0;
++  }
++#endif
+   crypto_hash_sha512(az,sk,32);
+   az[0] &= 248;
+   az[31] &= 127;
+@@ -1944,6 +1998,13 @@
+   sc25519 sck, scs, scsk;
+   ge25519 ger;
+ 
++#if defined(__amix__) && defined(WITH_OPENSSL)
++  memmove(sm + 64,m,mlen);
++  if (amix_ed25519_sign(sm, sm + 64, mlen, sk)) {
++    *smlen = mlen + 64;
++    return 0;
++  }
++#endif
+   memmove(pk,sk + 32,32);
+   /* pk: 32-byte public key A */
+ 
+@@ -2000,6 +2061,17 @@
+ 
+   if (smlen < 64) goto badsig;
+   if (sm[63] & 224) goto badsig;
++#if defined(__amix__) && defined(WITH_OPENSSL)
++  switch (amix_ed25519_verify(sm, sm + 64, smlen - 64, pk)) {
++  case 1:
++    memmove(m,sm + 64,smlen - 64);
++    memset(m + smlen - 64,0,64);
++    *mlen = smlen - 64;
++    return 0;
++  case 0:
++    goto badsig;
++  }
++#endif
+   if (ge25519_unpackneg_vartime(&get1,pk)) goto badsig;
+ 
+   memmove(pkcopy,pk,32);
+diff -ruN a/openssh-10.2p1/smult_curve25519_ref.c openssh-10.2p1/smult_curve25519_ref.c
+--- a/openssh-10.2p1/smult_curve25519_ref.c	2025-10-10 04:38:31.000000000 +0200
++++ b/openssh-10.2p1/smult_curve25519_ref.c	2026-11-03 08:00:26.104778829 +0100
+@@ -8,6 +8,47 @@
+ 
+ int crypto_scalarmult_curve25519(unsigned char *, const unsigned char *, const unsigned char *);
+ 
++#ifdef __amix__
++/*
++ * AMIX: through libcrypto's X25519, which the Z3660's ARM core 1 computes
++ * (0.01 s against 0.5 s here on the 060); this code if libcrypto fails.
++ * The result is the same: both clamp the scalar.
++ */
++#include "includes.h"
++#include <string.h>
++#ifdef WITH_OPENSSL
++#include <openssl/evp.h>
++
++static int amix_x25519(unsigned char *q, const unsigned char *n, const unsigned char *p)
++{
++  static const unsigned char base[32] = {9};
++  EVP_PKEY *k, *peer = NULL;
++  EVP_PKEY_CTX *c = NULL;
++  size_t len = 32;
++  int ok = 0;
++
++  if ((k = EVP_PKEY_new_raw_private_key(EVP_PKEY_X25519, NULL, n, 32)) == NULL)
++    return 0;
++  if (memcmp(p, base, 32) == 0)
++    ok = EVP_PKEY_get_raw_public_key(k, q, &len) == 1 && len == 32;
++  else if ((peer = EVP_PKEY_new_raw_public_key(EVP_PKEY_X25519, NULL, p, 32)) != NULL &&
++           (c = EVP_PKEY_CTX_new(k, NULL)) != NULL && EVP_PKEY_derive_init(c) == 1 &&
++           EVP_PKEY_derive_set_peer(c, peer) == 1) {
++    if (EVP_PKEY_derive(c, q, &len) == 1 && len == 32)
++      ok = 1;
++    else {
++      memset(q, 0, 32);   /* a low-order point: libcrypto refuses, this code gives 0 */
++      ok = 1;
++    }
++  }
++  EVP_PKEY_CTX_free(c);
++  EVP_PKEY_free(peer);
++  EVP_PKEY_free(k);
++  return ok;
++}
++#endif
++#endif
++
+ static void add(unsigned int out[32],const unsigned int a[32],const unsigned int b[32])
+ {
+   unsigned int j;
+@@ -251,6 +292,10 @@
+   unsigned int work[96];
+   unsigned char e[32];
+   unsigned int i;
++#if defined(__amix__) && defined(WITH_OPENSSL)
++  if (amix_x25519(q, n, p))
++    return 0;
++#endif
+   for (i = 0;i < 32;++i) e[i] = n[i];
+   e[0] &= 248;
+   e[31] &= 127;

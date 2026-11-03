@@ -15,6 +15,7 @@ S = openssl-$(COMPONENT_VERSION)
 build: $(COMPONENT_ARCHIVE)
 	rm -rf $(S) build
 	tar xzf $(COMPONENT_ARCHIVE)
+	for p in patches/*.patch; do patch -d $(S) -p1 < $$p || exit 1; done
 	mkdir -p build
 	sh files/configure-amix.sh $(CURDIR)/$(S) > build/configure.log 2>&1
 	$(MAKE) -C $(S) -j8 build_libs > build/make.log 2>&1

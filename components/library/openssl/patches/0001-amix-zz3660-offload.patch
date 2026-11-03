@@ -1,0 +1,675 @@
+AMIX: public-key arithmetic on the Z3660's ARM core 1 (zzcrypto)
+
+X25519, Ed25519, prime-curve point multiplication and modular exponentiation
+go to core 1 when it runs a program with zzcrypto (z3660ARM_Core_amix); the
+060's code runs otherwise.  crypto/zzc.c is the 060's side, the protocol is
+include/crypto/zzcrypto.h (amix-gate firmware/core1/zzcrypto).  Built with
+-DOPENSSL_ZZ3660 only.
+
+diff -ruN a/crypto/bn/bn_exp.c openssl-3.5.4/crypto/bn/bn_exp.c
+--- a/crypto/bn/bn_exp.c	2025-09-30 14:37:40.000000000 +0200
++++ openssl-3.5.4/crypto/bn/bn_exp.c	2026-11-03 07:12:27.612261004 +0100
+@@ -9,6 +9,9 @@
+ 
+ #include "internal/cryptlib.h"
+ #include "internal/constant_time.h"
++#ifdef OPENSSL_ZZ3660
++# include "crypto/zzc.h"
++#endif
+ #include "bn_local.h"
+ 
+ #include <stdlib.h>
+@@ -314,6 +317,13 @@
+ {
+     int i, j, bits, ret = 0, wstart, wend, window;
+     int start = 1;
++#ifdef OPENSSL_ZZ3660
++    int zr = ossl_zzc_mod_exp(rr, a, p, m, BN_get_flags(p, BN_FLG_CONSTTIME)
++                              || BN_get_flags(a, BN_FLG_CONSTTIME) || BN_get_flags(m, BN_FLG_CONSTTIME));
++
++    if (zr >= 0)
++        return zr;
++#endif
+     BIGNUM *d, *r;
+     const BIGNUM *aa;
+     /* Table of variables obtained from 'ctx' */
+@@ -1160,6 +1170,12 @@
+                               const BIGNUM *m, BN_CTX *ctx,
+                               BN_MONT_CTX *in_mont)
+ {
++#ifdef OPENSSL_ZZ3660
++    int zr = ossl_zzc_mod_exp(rr, a, p, m, 1);
++
++    if (zr >= 0)
++        return zr;
++#endif
+     bn_check_top(a);
+     bn_check_top(p);
+     bn_check_top(m);
+diff -ruN a/crypto/build.info openssl-3.5.4/crypto/build.info
+--- a/crypto/build.info	2025-09-30 14:37:40.000000000 +0200
++++ openssl-3.5.4/crypto/build.info	2026-11-03 07:12:03.180238808 +0100
+@@ -107,7 +107,7 @@
+         comp_methods.c cversion.c info.c cpt_err.c ebcdic.c uid.c o_time.c \
+         o_dir.c o_fopen.c getenv.c o_init.c init.c trace.c provider.c \
+         provider_child.c punycode.c passphrase.c sleep.c deterministic_nonce.c \
+-        quic_vlint.c time.c defaults.c ssl_err.c
++        quic_vlint.c time.c defaults.c ssl_err.c zzc.c
+ SOURCE[../providers/libfips.a]=$UTIL_COMMON
+ 
+ SOURCE[../libcrypto]=$UPLINKSRC
+diff -ruN a/crypto/ec/curve25519.c openssl-3.5.4/crypto/ec/curve25519.c
+--- a/crypto/ec/curve25519.c	2025-09-30 14:37:40.000000000 +0200
++++ openssl-3.5.4/crypto/ec/curve25519.c	2026-11-03 07:12:03.184238811 +0100
+@@ -20,6 +20,9 @@
+ #include <openssl/sha.h>
+ 
+ #include "internal/numbers.h"
++#ifdef OPENSSL_ZZ3660
++# include "crypto/zzc.h"
++#endif
+ 
+ #if defined(X25519_ASM) && (defined(__x86_64) || defined(__x86_64__) || \
+                             defined(_M_AMD64) || defined(_M_X64))
+@@ -5477,6 +5480,16 @@
+                   const uint8_t *context, size_t context_len,
+                   OSSL_LIB_CTX *libctx, const char *propq)
+ {
++#ifdef OPENSSL_ZZ3660
++    {
++        int zr = ossl_zzc_ed25519_sign(out_sig, tbs, tbs_len, public_key, private_key,
++                                       dom2flag | phflag << 1 | csflag << 2,
++                                       context, context == NULL ? 0 : context_len);
++
++        if (zr >= 0)
++            return zr;
++    }
++#endif
+     uint8_t az[SHA512_DIGEST_LENGTH];
+     uint8_t nonce[SHA512_DIGEST_LENGTH];
+     ge_p3 R;
+@@ -5562,6 +5575,16 @@
+                     const uint8_t *context, size_t context_len,
+                     OSSL_LIB_CTX *libctx, const char *propq)
+ {
++#ifdef OPENSSL_ZZ3660
++    {
++        int zr = ossl_zzc_ed25519_verify(tbs, tbs_len, signature, public_key,
++                                         dom2flag | phflag << 1 | csflag << 2,
++                                         context, context == NULL ? 0 : context_len);
++
++        if (zr >= 0)
++            return zr;
++    }
++#endif
+     int i;
+     ge_p3 A;
+     const uint8_t *r, *s;
+@@ -5671,6 +5694,10 @@
+     int r;
+     EVP_MD *sha512 = NULL;
+ 
++#ifdef OPENSSL_ZZ3660
++    if ((r = ossl_zzc_ed25519_pub(out_public_key, private_key)) >= 0)
++        return r;
++#endif
+     sha512 = EVP_MD_fetch(ctx, SN_sha512, propq);
+     if (sha512 == NULL)
+         return 0;
+@@ -5697,6 +5724,12 @@
+             const uint8_t peer_public_value[32])
+ {
+     static const uint8_t kZeros[32] = {0};
++#ifdef OPENSSL_ZZ3660
++    int zr = ossl_zzc_x25519(out_shared_key, private_key, peer_public_value);
++
++    if (zr >= 0)
++        return zr;
++#endif
+     x25519_scalar_mult(out_shared_key, private_key, peer_public_value);
+     /* The all-zero output results when the input is a point of small order. */
+     return CRYPTO_memcmp(kZeros, out_shared_key, 32) != 0;
+@@ -5710,6 +5743,10 @@
+     ge_p3 A;
+     fe zplusy, zminusy, zminusy_inv;
+ 
++#ifdef OPENSSL_ZZ3660
++    if (ossl_zzc_x25519_pub(out_public_value, private_key) == 1)
++        return;
++#endif
+     memcpy(e, private_key, 32);
+     e[0] &= 248;
+     e[31] &= 127;
+diff -ruN a/crypto/ec/ec_lib.c openssl-3.5.4/crypto/ec/ec_lib.c
+--- a/crypto/ec/ec_lib.c	2025-09-30 14:37:40.000000000 +0200
++++ openssl-3.5.4/crypto/ec/ec_lib.c	2026-11-03 07:12:03.184238811 +0100
+@@ -23,6 +23,9 @@
+ #include "crypto/ec.h"
+ #include "crypto/bn.h"
+ #include "internal/nelem.h"
++#ifdef OPENSSL_ZZ3660
++# include "crypto/zzc.h"
++#endif
+ #include "ec_local.h"
+ 
+ /* functions for EC_GROUP objects */
+@@ -1102,6 +1105,11 @@
+         return 0;
+     }
+ 
++#ifdef OPENSSL_ZZ3660
++    if ((ret = ossl_zzc_ec_mul(group, r, scalar, num, points, scalars, ctx)) >= 0)
++        ;
++    else
++#endif
+     if (group->meth->mul != NULL)
+         ret = group->meth->mul(group, r, scalar, num, points, scalars, ctx);
+     else
+@@ -1143,6 +1151,11 @@
+     }
+ 
+     num = (point != NULL && p_scalar != NULL) ? 1 : 0;
++#ifdef OPENSSL_ZZ3660
++    if ((ret = ossl_zzc_ec_mul(group, r, g_scalar, num, &point, &p_scalar, ctx)) >= 0)
++        ;
++    else
++#endif
+     if (group->meth->mul != NULL)
+         ret = group->meth->mul(group, r, g_scalar, num, &point, &p_scalar, ctx);
+     else
+diff -ruN a/crypto/zzc.c openssl-3.5.4/crypto/zzc.c
+--- a/crypto/zzc.c	1970-01-01 01:00:00.000000000 +0100
++++ openssl-3.5.4/crypto/zzc.c	2026-11-03 07:12:03.168238797 +0100
+@@ -0,0 +1,385 @@
++/*
++ * zzc.c -- AMIX: public-key arithmetic on the Z3660's ARM core 1.
++ *
++ * X25519, Ed25519, prime-curve point multiplication (ECDH, ECDSA) and
++ * modular exponentiation (RSA, DH) cost the 68060 from 0.1 to 7 seconds
++ * each; the Cortex-A9 on the Z3660 does them in milliseconds when it runs
++ * a core 1 program with zzcrypto (z3660ARM_Core_amix).  The job goes
++ * through board memory (/dev/zz9000, see include/crypto/zzcrypto.h); the
++ * 060's own code runs whenever core 1 cannot: no device, no zzcrypto on
++ * core 1, no answer in time, ZZC_OFF set in the environment.
++ *
++ * Each ossl_zzc_* returns -1 when it did nothing (the caller computes as
++ * before), otherwise what the replaced function returns.
++ */
++#include <stdlib.h>
++#include <string.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <poll.h>
++#include <sys/types.h>
++#include <sys/times.h>
++#include <sys/mman.h>
++#include <sys/ipc.h>
++#include <sys/sem.h>
++#include <openssl/bn.h>
++#include <openssl/ec.h>
++#include <openssl/obj_mac.h>
++#include "crypto/zzc.h"
++#include "crypto/zzcrypto.h"
++
++#define FB_PHYS     0x00200000UL    /* the zz9000 driver's mmap offset 0 */
++#define ZC_SEMKEY   0x5A5A4352L     /* "ZZCR" */
++#define MAP_START   ZC_DATA_OFF
++#define MAP_LEN     (ZC_BLK_OFF + 4096 - ZC_DATA_OFF)
++#define TIMEOUT     3               /* seconds without an answer: core 1 is gone */
++
++static int state;                   /* 0 not tried, 1 usable, -1 not */
++static int semid = -1;
++static volatile unsigned long *blk;
++static unsigned char *base;
++static unsigned long seq;
++
++static int zzc_open(void)
++{
++    int fd;
++    char *m;
++
++    if (state)
++        return state > 0;
++    state = -1;
++    if (getenv("ZZC_OFF") != NULL)
++        return 0;
++    if ((fd = open("/dev/zz9000", O_RDWR)) < 0)
++        return 0;
++    m = (char *)mmap(0, (size_t)MAP_LEN, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
++                     (off_t)(MAP_START - FB_PHYS));
++    close(fd);                      /* the mapping stays */
++    if (m == (char *)-1)
++        return 0;
++    base = (unsigned char *)m;
++    blk = (volatile unsigned long *)(m + (ZC_BLK_OFF - MAP_START));
++    if (blk[ZC_W_MAGIC] != ZC_MAGIC || blk[ZC_W_VERSION] != ZC_VERSION)
++        return 0;                   /* tried again by the next process, not by this one */
++    if ((semid = semget((key_t)ZC_SEMKEY, ZC_SLOTS, IPC_CREAT | 0666)) < 0)
++        return 0;
++    seq = (unsigned long)getpid() << 16;
++    state = 1;
++    return 1;
++}
++
++static long now(void)
++{
++    struct tms t;
++
++    return (long)times(&t);
++}
++
++/* a slot: the first free one from ours (pid), else wait for ours */
++static int slot_take(void)
++{
++    struct sembuf op[2];
++    int i, k = (int)(getpid() % ZC_SLOTS);
++
++    for (i = 0; i <= ZC_SLOTS; i++) {
++        int s = i < ZC_SLOTS ? (k + i) % ZC_SLOTS : k;
++
++        op[0].sem_num = op[1].sem_num = (unsigned short)s;
++        op[0].sem_op = 0;           /* free (0) ... */
++        op[1].sem_op = 1;           /* ... and ours */
++        op[0].sem_flg = i < ZC_SLOTS ? IPC_NOWAIT : 0;
++        op[1].sem_flg = SEM_UNDO | (i < ZC_SLOTS ? IPC_NOWAIT : 0);
++        if (semop(semid, op, 2) == 0)
++            return s;
++    }
++    return -1;
++}
++
++static void slot_give(int s)
++{
++    struct sembuf op;
++
++    op.sem_num = (unsigned short)s;
++    op.sem_op = -1;
++    op.sem_flg = SEM_UNDO;
++    semop(semid, &op, 1);
++}
++
++static unsigned char *slot_data(int s)
++{
++    return base + (ZC_DATA_OFF - MAP_START) + (unsigned long)s * ZC_SLOT_SIZE;
++}
++
++/* wait until the slot is no longer core 1's; 0 if it stays so */
++static int slot_wait(volatile unsigned long *sl, unsigned long sq, long hz)
++{
++    long t0 = now();
++    int spin = 0;
++
++    for (;;) {
++        unsigned long st = sl[ZC_S_STATE];
++
++        if ((st == ZC_DONE || st == ZC_REFUSED) && sl[ZC_S_SEQ] == sq)
++            return 1;
++        if (st == ZC_FREE || ((st == ZC_DONE || st == ZC_REFUSED) && sl[ZC_S_SEQ] != sq))
++            return 1;
++        if (now() - t0 > TIMEOUT * hz)
++            return 0;
++        if (++spin > 200)           /* a few ms: then let the others run */
++            poll((struct pollfd *)0, 0, 10);
++    }
++}
++
++/*
++ * One job: the input in in[0..len) goes to core 1, the output comes back
++ * into out[0..outmax).  Returns the job's result, or -1 (not done).
++ */
++static int job(unsigned long opn, const unsigned char *in, size_t len,
++               unsigned char *out, size_t outmax, size_t *outlen)
++{
++    volatile unsigned long *sl;
++    unsigned char *d;
++    long hz = sysconf(_SC_CLK_TCK);
++    unsigned long sq;
++    int s, ret = -1;
++
++    if (len > ZC_SLOT_SIZE || !zzc_open())
++        return -1;
++    if (blk[ZC_W_MAGIC] != ZC_MAGIC || !(blk[ZC_W_OPS] & (1UL << opn)))
++        return -1;
++    if ((s = slot_take()) < 0)
++        return -1;
++    sl = blk + ZC_W_SLOT + s * ZC_S_WORDS;
++    d = slot_data(s);
++    /* a job of a process that gave up may still run there */
++    if ((sl[ZC_S_STATE] == ZC_POSTED || sl[ZC_S_STATE] == ZC_BUSY) && !slot_wait(sl, ~0UL, hz))
++        goto dead;
++    sq = ++seq;
++    memcpy(d, in, len);
++    sl[ZC_S_SEQ] = sq;
++    sl[ZC_S_OP] = opn;
++    sl[ZC_S_LEN] = (unsigned long)len;
++    sl[ZC_S_PID] = (unsigned long)getpid();
++    sl[ZC_S_STATE] = ZC_POSTED;
++    if (!slot_wait(sl, sq, hz)) {
++        sl[ZC_S_SEQ] = 0;           /* core 1 drops the answer, if it ever comes */
++        goto dead;
++    }
++    if (sl[ZC_S_STATE] == ZC_DONE && sl[ZC_S_SEQ] == sq && sl[ZC_S_LEN] <= outmax) {
++        *outlen = (size_t)sl[ZC_S_LEN];
++        memcpy(out, d, *outlen);
++        ret = (int)sl[ZC_S_RESULT];
++    }
++    memset(d, 0, len > *outlen ? len : *outlen);    /* keys */
++    sl[ZC_S_STATE] = ZC_FREE;
++    slot_give(s);
++    return ret;
++dead:
++    blk[ZC_W_MAGIC] = 0;            /* the next ones don't wait: core 1 writes it again when alive */
++    state = -1;
++    slot_give(s);
++    return -1;
++}
++
++static void put32(unsigned char *p, unsigned long v)
++{
++    p[0] = (unsigned char)(v >> 24);
++    p[1] = (unsigned char)(v >> 16);
++    p[2] = (unsigned char)(v >> 8);
++    p[3] = (unsigned char)v;
++}
++
++int ossl_zzc_x25519(uint8_t out[32], const uint8_t priv[32], const uint8_t peer[32])
++{
++    unsigned char in[64], o[32];
++    size_t n = 0;
++    int r;
++
++    memcpy(in, priv, 32);
++    memcpy(in + 32, peer, 32);
++    r = job(ZC_OP_X25519, in, 64, o, 32, &n);
++    OPENSSL_cleanse(in, sizeof(in));
++    if (r < 0 || n != 32)
++        return -1;
++    memcpy(out, o, 32);
++    return r;
++}
++
++int ossl_zzc_x25519_pub(uint8_t out[32], const uint8_t priv[32])
++{
++    size_t n = 0;
++    unsigned char o[32];
++
++    if (job(ZC_OP_X25519_PUB, priv, 32, o, 32, &n) != 1 || n != 32)
++        return -1;
++    memcpy(out, o, 32);
++    return 1;
++}
++
++int ossl_zzc_ed25519_pub(uint8_t out[32], const uint8_t priv[32])
++{
++    size_t n = 0;
++    unsigned char o[32];
++    int r = job(ZC_OP_ED25519_PUB, priv, 32, o, 32, &n);
++
++    if (r < 0 || n != 32)
++        return -1;
++    memcpy(out, o, 32);
++    return r;
++}
++
++int ossl_zzc_ed25519_sign(uint8_t *sig, const uint8_t *tbs, size_t tbslen, const uint8_t pub[32],
++                          const uint8_t priv[32], int flags, const uint8_t *ctx, size_t ctxlen)
++{
++    unsigned char *in, o[64];
++    size_t len = 76 + ctxlen + tbslen, n = 0;
++    int r;
++
++    if (ctxlen > 255 || len > ZC_SLOT_SIZE || !(in = OPENSSL_malloc(len)))
++        return -1;
++    put32(in, (unsigned long)flags);
++    put32(in + 4, (unsigned long)ctxlen);
++    put32(in + 8, (unsigned long)tbslen);
++    memcpy(in + 12, pub, 32);
++    memcpy(in + 44, priv, 32);
++    if (ctxlen)
++        memcpy(in + 76, ctx, ctxlen);
++    memcpy(in + 76 + ctxlen, tbs, tbslen);
++    r = job(ZC_OP_ED25519_SIGN, in, len, o, 64, &n);
++    OPENSSL_clear_free(in, len);
++    if (r < 0 || n != 64)
++        return -1;
++    memcpy(sig, o, 64);
++    return r;
++}
++
++int ossl_zzc_ed25519_verify(const uint8_t *tbs, size_t tbslen, const uint8_t sig[64],
++                            const uint8_t pub[32], int flags, const uint8_t *ctx, size_t ctxlen)
++{
++    unsigned char *in, o[4];
++    size_t len = 108 + ctxlen + tbslen, n = 0;
++    int r;
++
++    if (ctxlen > 255 || len > ZC_SLOT_SIZE || !(in = OPENSSL_malloc(len)))
++        return -1;
++    put32(in, (unsigned long)flags);
++    put32(in + 4, (unsigned long)ctxlen);
++    put32(in + 8, (unsigned long)tbslen);
++    memcpy(in + 12, sig, 64);
++    memcpy(in + 76, pub, 32);
++    if (ctxlen)
++        memcpy(in + 108, ctx, ctxlen);
++    memcpy(in + 108 + ctxlen, tbs, tbslen);
++    r = job(ZC_OP_ED25519_VERIFY, in, len, o, sizeof(o), &n);
++    OPENSSL_free(in);
++    return r;
++}
++
++/*
++ * r = g_scalar * G + sum scalars[i] * points[i] on a named prime curve,
++ * points as affine coordinates both ways
++ */
++int ossl_zzc_ec_mul(const EC_GROUP *group, EC_POINT *r, const BIGNUM *g_scalar, size_t num,
++                    const EC_POINT *points[], const BIGNUM *scalars[], BN_CTX *ctx)
++{
++    int nid = EC_GROUP_get_curve_name(group), ret = -1;
++    size_t flen, slen, len, i, n = 0;
++    unsigned char *in = NULL, *p, *o = NULL;
++    BIGNUM *x, *y;
++    FILE *rnd;
++
++    if (nid == NID_undef || num > 4 || (g_scalar == NULL && num == 0) ||
++        EC_GROUP_get_field_type(group) != NID_X9_62_prime_field || !zzc_open())
++        return -1;
++    flen = (size_t)(EC_GROUP_get_degree(group) + 7) / 8;
++    slen = flen + 8;
++    if (g_scalar && (BN_is_negative(g_scalar) || (size_t)BN_num_bytes(g_scalar) > slen))
++        return -1;
++    for (i = 0; i < num; i++)
++        if (scalars[i] == NULL || points[i] == NULL || BN_is_negative(scalars[i]) ||
++            (size_t)BN_num_bytes(scalars[i]) > slen || EC_POINT_is_at_infinity(group, points[i]))
++            return -1;
++    len = 52 + (g_scalar ? slen : 0) + num * (2 * flen + slen);
++    if (len > ZC_SLOT_SIZE || !(in = OPENSSL_malloc(len)) || !(o = OPENSSL_malloc(4 + 2 * flen)))
++        goto done;
++    BN_CTX_start(ctx);
++    x = BN_CTX_get(ctx);
++    y = BN_CTX_get(ctx);
++    if (y == NULL)
++        goto end;
++    put32(in, (unsigned long)nid);
++    put32(in + 4, (unsigned long)flen);
++    put32(in + 8, (unsigned long)slen);
++    put32(in + 12, (unsigned long)num);
++    put32(in + 16, g_scalar != NULL);
++    /* core 1 has no entropy of its own: for its coordinate blinding */
++    if ((rnd = fopen("/dev/urandom", "r")) == NULL)
++        goto end;
++    i = fread(in + 20, 1, 32, rnd);
++    fclose(rnd);
++    if (i != 32)
++        goto end;
++    p = in + 52;
++    if (g_scalar) {
++        if (BN_bn2binpad(g_scalar, p, (int)slen) < 0)
++            goto end;
++        p += slen;
++    }
++    for (i = 0; i < num; i++) {
++        if (!EC_POINT_get_affine_coordinates(group, points[i], x, y, ctx) ||
++            BN_bn2binpad(x, p, (int)flen) < 0 || BN_bn2binpad(y, p + flen, (int)flen) < 0 ||
++            BN_bn2binpad(scalars[i], p + 2 * flen, (int)slen) < 0)
++            goto end;
++        p += 2 * flen + slen;
++    }
++    ret = job(ZC_OP_EC_MUL, in, len, o, 4 + 2 * flen, &n);
++    if (ret == 1) {
++        ret = -1;
++        if (n == 4 + 2 * flen) {
++            if (o[3])
++                ret = EC_POINT_set_to_infinity(group, r);
++            else if (BN_bin2bn(o + 4, (int)flen, x) && BN_bin2bn(o + 4 + flen, (int)flen, y))
++                ret = EC_POINT_set_affine_coordinates(group, r, x, y, ctx);
++        }
++    } else if (ret == 0) {
++        ret = -1;                   /* core 1 failed it: the 060 says why */
++    }
++end:
++    BN_CTX_end(ctx);
++done:
++    OPENSSL_clear_free(in, len);
++    OPENSSL_free(o);
++    return ret;
++}
++
++/* rr = a^p mod m, m odd and at least 512 bits; a < m */
++int ossl_zzc_mod_exp(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p, const BIGNUM *m, int consttime)
++{
++    size_t len, n = 0;
++    unsigned char *in, *o;
++    int ret;
++
++    if (BN_num_bits(m) < 512 || !BN_is_odd(m) || BN_is_negative(a) || BN_is_negative(p) ||
++        BN_is_negative(m) || BN_ucmp(a, m) >= 0 || BN_num_bytes(p) > BN_num_bytes(m) || !zzc_open())
++        return -1;
++    len = (size_t)BN_num_bytes(m);
++    if (8 + 3 * len > ZC_SLOT_SIZE || !(in = OPENSSL_malloc(8 + 3 * len)))
++        return -1;
++    if (!(o = OPENSSL_malloc(len))) {
++        OPENSSL_free(in);
++        return -1;
++    }
++    put32(in, consttime != 0);
++    put32(in + 4, (unsigned long)len);
++    BN_bn2binpad(a, in + 8, (int)len);
++    BN_bn2binpad(p, in + 8 + len, (int)len);
++    BN_bn2binpad(m, in + 8 + 2 * len, (int)len);
++    ret = job(ZC_OP_MOD_EXP, in, 8 + 3 * len, o, len, &n);
++    if (ret == 1 && n == len)
++        ret = BN_bin2bn(o, (int)len, rr) != NULL;
++    else
++        ret = -1;
++    OPENSSL_clear_free(in, 8 + 3 * len);
++    OPENSSL_clear_free(o, len);
++    return ret;
++}
+diff -ruN a/include/crypto/zzc.h openssl-3.5.4/include/crypto/zzc.h
+--- a/include/crypto/zzc.h	1970-01-01 01:00:00.000000000 +0100
++++ openssl-3.5.4/include/crypto/zzc.h	2026-11-03 07:12:03.168238797 +0100
+@@ -0,0 +1,25 @@
++/*
++ * zzc.h -- AMIX: public-key arithmetic on the Z3660's core 1 (crypto/zzc.c).
++ * Each returns -1 when it did nothing, else what the function it stands in
++ * for returns.  Built with OPENSSL_ZZ3660 only.
++ */
++#ifndef OSSL_CRYPTO_ZZC_H
++# define OSSL_CRYPTO_ZZC_H
++
++# include <stddef.h>
++# include <stdint.h>
++# include <openssl/bn.h>
++# include <openssl/ec.h>
++
++int ossl_zzc_x25519(uint8_t out[32], const uint8_t priv[32], const uint8_t peer[32]);
++int ossl_zzc_x25519_pub(uint8_t out[32], const uint8_t priv[32]);
++int ossl_zzc_ed25519_pub(uint8_t out[32], const uint8_t priv[32]);
++int ossl_zzc_ed25519_sign(uint8_t *sig, const uint8_t *tbs, size_t tbslen, const uint8_t pub[32],
++                          const uint8_t priv[32], int flags, const uint8_t *ctx, size_t ctxlen);
++int ossl_zzc_ed25519_verify(const uint8_t *tbs, size_t tbslen, const uint8_t sig[64],
++                            const uint8_t pub[32], int flags, const uint8_t *ctx, size_t ctxlen);
++int ossl_zzc_ec_mul(const EC_GROUP *group, EC_POINT *r, const BIGNUM *g_scalar, size_t num,
++                    const EC_POINT *points[], const BIGNUM *scalars[], BN_CTX *ctx);
++int ossl_zzc_mod_exp(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p, const BIGNUM *m, int consttime);
++
++#endif
+diff -ruN a/include/crypto/zzcrypto.h openssl-3.5.4/include/crypto/zzcrypto.h
+--- a/include/crypto/zzcrypto.h	1970-01-01 01:00:00.000000000 +0100
++++ openssl-3.5.4/include/crypto/zzcrypto.h	2026-11-03 07:12:03.168238797 +0100
+@@ -0,0 +1,74 @@
++/*
++ * zzcrypto.h -- public-key crypto for the 060 (AMIX's libcrypto) on the
++ * Z3660's core 1 (zzc_arm.c, OpenSSL 3.5's libcrypto for the A9).
++ *
++ * A process takes one of ZC_SLOTS slots (a SysV semaphore each, on the 060),
++ * writes a job into the slot's data, and sets the slot's state to
++ * ZC_POSTED; core 1 copies the job out, computes, writes the answer over it
++ * and sets ZC_DONE.  The jobs are what costs seconds on the 060 and
++ * milliseconds on the A9: X25519, Ed25519, prime-curve point multiplication
++ * (ECDH, ECDSA), modular exponentiation (RSA, DH).  Bulk ciphers stay on
++ * the 060.
++ *
++ * The block and the data lie in the MPEG FIFO's megabyte (0x07A00000,
++ * uncached on core 0 and on core 1, see bench.h), above the FIFO's 64 KB.
++ * Everything is big-endian: 32-bit words, numbers as big-endian bytes.
++ */
++#ifndef ZZCRYPTO_H
++#define ZZCRYPTO_H
++
++#define ZC_BLK_OFF          0x07AFB000UL    /* the block: one page */
++#define ZC_DATA_OFF         0x07A80000UL    /* the slots' data */
++#define ZC_SLOTS            8
++#define ZC_SLOT_SIZE        0x8000UL        /* 32 KB each, to 0x07AC0000 */
++
++#define ZC_MAGIC            0x5A5A4352UL    /* "ZZCR": core 1 takes jobs */
++#define ZC_VERSION          1
++
++/* words of the block */
++enum {
++    ZC_W_MAGIC,         /* core 1: ZC_MAGIC, written on every pass; the 060 clears
++                           it when a job got no answer (core 1 hung or replaced) */
++    ZC_W_VERSION,       /* core 1 */
++    ZC_W_OPS,           /* core 1: 1 << op for each op it does */
++    ZC_W_JOBS,          /* core 1: jobs done */
++    ZC_W_BEAT,          /* core 1: passes over the slots */
++    ZC_W_ERRORS,        /* core 1: jobs refused (bad input) */
++    ZC_W_SLOT = 16      /* ZC_SLOTS slots of ZC_S_WORDS words */
++};
++
++/* words of a slot */
++enum {
++    ZC_S_STATE,         /* ZC_FREE ... */
++    ZC_S_SEQ,           /* 060: the job's number; core 1 answers only the same number */
++    ZC_S_OP,            /* 060: ZC_OP_* */
++    ZC_S_LEN,           /* 060: input bytes; core 1: output bytes */
++    ZC_S_RESULT,        /* core 1: the job's return value (as the 060's function) */
++    ZC_S_PID,           /* 060: who posted it (for zzglstat/ztop) */
++    ZC_S_US,            /* core 1: microseconds it took */
++    ZC_S_WORDS = 8
++};
++enum { ZC_FREE, ZC_POSTED, ZC_BUSY, ZC_DONE, ZC_REFUSED };
++
++/*
++ * The jobs.  In: what the slot's data holds when posted; out: when done.
++ * "n" below is a 32-bit word, "b[k]" k bytes.
++ */
++enum {
++    ZC_OP_X25519 = 1,       /* in: priv b[32], peer b[32]  out: shared b[32]; result 0 for a
++                               low-order peer (ossl_x25519) */
++    ZC_OP_X25519_PUB,       /* in: priv b[32]  out: pub b[32] */
++    ZC_OP_ED25519_PUB,      /* in: priv b[32]  out: pub b[32] */
++    ZC_OP_ED25519_SIGN,     /* in: n flags (dom2 | ph << 1 | cs << 2), n ctxlen, n tbslen, pub b[32],
++                               priv b[32], ctx b[ctxlen], tbs b[tbslen]  out: sig b[64] */
++    ZC_OP_ED25519_VERIFY,   /* in: n flags, n ctxlen, n tbslen, sig b[64], pub b[32], ctx, tbs
++                               out: nothing; result 1 = valid */
++    ZC_OP_EC_MUL,           /* in: n nid, n flen, n slen, n num, n has_g, b[32] random (core 1's
++                               coordinate blinding), [g scalar b[slen]], num x (x b[flen], y b[flen],
++                               scalar b[slen])  out: n infinity, x b[flen], y b[flen] (affine) */
++    ZC_OP_MOD_EXP,          /* in: n consttime, n len (bytes of m), a b[len], p b[len], m b[len]
++                               out: r b[len] */
++    ZC_OPS
++};
++
++#endif
