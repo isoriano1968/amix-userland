@@ -27,7 +27,7 @@ build: $(COMPONENT_ARCHIVE)
 		LIBS="-lamixc99 -lsocket -lnsl -lgen" \
 		../$(S)/configure --host=m68k-elf --build=x86_64-linux-gnu --prefix=$(PREFIX) \
 		--with-openssl=$(R)/usr/local --with-zlib=$(R)/usr/local \
-		--with-ca-bundle=/etc/ssl/cert.pem --without-ca-path \
+		--without-ca-bundle --with-ca-path=/etc/ssl/certs \
 		--disable-ldap --disable-ldaps --without-libpsl --without-brotli --without-zstd \
 		--without-nghttp2 --without-libidn2 --without-libssh2 --disable-threaded-resolver \
 		--disable-shared --enable-static --disable-symbol-hiding > configure.log 2>&1

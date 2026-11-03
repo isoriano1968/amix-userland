@@ -1,5 +1,7 @@
 # The Mozilla CA bundle, as curl.se extracts it, for TLS on AMIX: in
-# /etc/ssl/cert.pem (curl's and wget's), linked from OpenSSL's own place.
+# /etc/ssl/cert.pem, and as a hashed directory /etc/ssl/certs (curl's, and
+# OpenSSL's default through /usr/local/ssl/certs: only the certificates a
+# connection needs are read).
 COMPONENT_NAME    = ca-certificates
 COMPONENT_VERSION = 2026-10-20
 COMPONENT_ARCHIVE = cacert-$(COMPONENT_VERSION).pem
@@ -17,7 +19,8 @@ stage:
 	mkdir -p $(STAGE_DIR)/etc/ssl $(STAGE_DIR)$(PREFIX)/ssl
 	cp $(COMPONENT_ARCHIVE) $(STAGE_DIR)/etc/ssl/cert.pem
 	chmod 644 $(STAGE_DIR)/etc/ssl/cert.pem
-	ln -sf /etc/ssl/cert.pem $(STAGE_DIR)$(PREFIX)/ssl/cert.pem
+	sh files/hash-certs.sh $(COMPONENT_ARCHIVE) $(STAGE_DIR)/etc/ssl/certs
+	ln -sf /etc/ssl/certs $(STAGE_DIR)$(PREFIX)/ssl/certs
 	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) -cf build/ca-certificates-amix.tar etc usr
 
 .PHONY: build stage
