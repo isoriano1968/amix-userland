@@ -1,7 +1,8 @@
 /*
  * zzav.c -- H.264 (+ AAC) played by the Z3660's second ARM core: vplay
  * demuxes on the 68060 and puts the packets into a ring in board memory;
- * core 1 (arm/h264bench/player.c, loaded by `armbench -load z3660ARM_Core_h264bench.bin`)
+ * core 1 (arm/h264bench/player.c, in the amix core: `armbench -reload z3660ARM_Core_amix.bin`;
+ * z3660ARM_Core_h264bench.bin has the player alone)
  * decodes them, writes the pictures into the RTG's overlay and the sound
  * into the board's HDMI ring.  The interface is arm/h264bench/zzav.h.
  *
@@ -135,7 +136,7 @@ int zzav_open(AVFormatContext *fmt, int v, int a, int x, int y, int maxw, int ma
     if (blk[ZZAV_W_MAGIC] != ZZAV_MAGIC || blk[ZZAV_W_STATE] != ZZAV_IDLE || blk[ZZAV_W_CMD]) {
         if (verbose || zzav_reopen)
             fprintf(stderr, "%s: no H.264 player on the Z3660's core 1 (magic %lx state %lu cmd %lu; "
-                    "run armbench -load z3660ARM_Core_h264bench.bin)\n", zzav_prog,
+                    "run armbench -reload z3660ARM_Core_amix.bin)\n", zzav_prog,
                     blk[ZZAV_W_MAGIC], blk[ZZAV_W_STATE], blk[ZZAV_W_CMD]);
         goto fail;
     }

@@ -3,7 +3,7 @@
 # /opt/quake/glquake.sh; the game's data in /opt/quake/id1.
 C=/root/z3660ARMCores
 if /usr/amiga/bin/ztop | grep "ARM core 1" | grep -v " gpu," | grep -v " amix," >/dev/null; then
-	$C/armbench -reload $C/z3660ARM_Core_gpu.bin >/dev/null 2>&1 || exit 1
+	$C/armbench -reload $C/z3660ARM_Core_amix.bin >/dev/null 2>&1 || exit 1
 fi
 ulimit -d 98304
 ulimit -v 131072

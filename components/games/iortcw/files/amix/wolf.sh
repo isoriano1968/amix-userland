@@ -6,7 +6,7 @@ ulimit -d 262144
 ulimit -v 393216
 C=/root/z3660ARMCores
 if /usr/amiga/bin/ztop | grep "ARM core 1" | grep -v " gpu," | grep -v " amix," >/dev/null; then
-	$C/armbench -reload $C/z3660ARM_Core_gpu.bin || exit 1
+	$C/armbench -reload $C/z3660ARM_Core_amix.bin || exit 1
 fi
 [ $# -gt 0 ] || set -- +spmap escape1	# spmap: single player, devmap is multiplayer: no AI, no scripts
 cd /opt/rtcw
