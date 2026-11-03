@@ -1,0 +1,97 @@
+AMIX (SVR4.0) has no IP multicast: no IP_ADD_MEMBERSHIP or IP_MULTICAST_*,
+and an M-SEARCH sent to 239.255.255.250 reaches no server.  Sent as a
+broadcast to port 1900 it does (tested against uShare and Windows Media
+Player on the LAN), so the control point broadcasts its searches with
+SO_BROADCAST, and the SSDP socket joins no group.  Announcements (NOTIFY),
+which are multicast, are not heard; searches find the servers.
+
+--- a/upnp/src/ssdp/ssdp_server.c
++++ b/upnp/src/ssdp/ssdp_server.c
+@@ -926,7 +926,9 @@
+ 	char errorBuffer[ERROR_BUFFER_LEN];
+ 	int onOff;
+ 	u_char ttl = (u_char)4;
++	#ifndef __amix__
+ 	struct ip_mreq ssdpMcastAddr;
++	#endif
+ 	struct sockaddr_storage __ss;
+ 	struct sockaddr_in *ssdpAddr4 = (struct sockaddr_in *)&__ss;
+ 	int ret = 0;
+@@ -998,6 +1000,7 @@
+ 		ret = UPNP_E_SOCKET_BIND;
+ 		goto error_handler;
+ 	}
++	#ifndef __amix__
+ 	/*
+ 	 * See: https://man7.org/linux/man-pages/man7/ip.7.html
+ 	 * Socket options, IP_ADD_MEMBERSHIP
+@@ -1054,6 +1057,12 @@
+ 		IP_MULTICAST_TTL,
+ 		(OPTION_VALUE_CAST)&ttl,
+ 		sizeof(ttl));
++	#else
++	/* AMIX (SVR4.0) has no multicast: the socket takes what comes as a
++	 * broadcast, and the searches go out as broadcasts (ssdp_ctrlpt.c) */
++	(void)addr;
++	(void)ttl;
++	#endif
+ 	onOff = 1;
+ 	ret = setsockopt(*ssdpSock,
+ 		SOL_SOCKET,
+@@ -1106,11 +1115,25 @@
+ 			errorBuffer);
+ 		return UPNP_E_OUTOF_SOCKET;
+ 	}
++	#ifndef __amix__
+ 	setsockopt(*ssdpReqSock,
+ 		IPPROTO_IP,
+ 		IP_MULTICAST_TTL,
+ 		(OPTION_VALUE_CAST)&ttl,
+ 		sizeof(ttl));
++	#else
++	{
++		/* AMIX: the searches are broadcasts (ssdp_ctrlpt.c) */
++		int onOff = 1;
++
++		(void)ttl;
++		setsockopt(*ssdpReqSock,
++			SOL_SOCKET,
++			SO_BROADCAST,
++			(OPTION_VALUE_CAST)&onOff,
++			sizeof(onOff));
++	}
++	#endif
+ 	/* just do it, regardless if fails or not. */
+ 	sock_make_no_blocking(*ssdpReqSock);
+ 
+--- a/upnp/src/ssdp/ssdp_ctrlpt.c
++++ b/upnp/src/ssdp/ssdp_ctrlpt.c
+@@ -644,7 +644,14 @@
+ 
+ 	memset(&__ss_v4, 0, sizeof(__ss_v4));
+ 	destAddr4->sin_family = (sa_family_t)AF_INET;
++	#ifndef __amix__
+ 	inet_pton(AF_INET, SSDP_IP, &destAddr4->sin_addr);
++	#else
++	/* AMIX (SVR4.0) sends nothing to a multicast group that a server
++	 * hears; media servers answer an M-SEARCH sent as a broadcast to port
++	 * 1900, the HOST header still naming the SSDP group */
++	destAddr4->sin_addr.s_addr = htonl(INADDR_BROADCAST);
++	#endif
+ 	destAddr4->sin_port = htons(SSDP_PORT);
+ 
+ 		#ifdef UPNP_ENABLE_IPV6
+@@ -783,11 +790,13 @@
+ 		nfds_t nfds = 0;
+ 
+ 		if (gSsdpReqSocket4 != INVALID_SOCKET) {
++			#ifndef __amix__
+ 			setsockopt(gSsdpReqSocket4,
+ 				IPPROTO_IP,
+ 				IP_MULTICAST_IF,
+ 				(char *)&addrv4,
+ 				sizeof(addrv4));
++			#endif
+ 			fds[nfds].fd = gSsdpReqSocket4;
+ 			fds[nfds].events = POLLOUT;
+ 			nfds++;

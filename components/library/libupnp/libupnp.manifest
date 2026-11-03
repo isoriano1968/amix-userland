@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     library/libupnp
+version  22.1.10
+summary  libupnp (pupnp): UPnP control point
+provide  libupnp
+require  library/pth
