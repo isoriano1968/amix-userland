@@ -23,7 +23,9 @@ def fix(path):
     sh = sections(d)
     dynsym = next(s for s in sh if s[1] == 11)
     dyn = next(s for s in sh if s[1] == 6)
-    rela = next(s for s in sh if s[1] == 4 and s[7] == 0)      # .rela.dyn, not .rela.plt
+    rela = next((s for s in sh if s[1] == 4 and s[7] == 0), None)  # .rela.dyn, not .rela.plt
+    if rela is None:
+        return 0        # no data relocations at all (libnsbmp)
     syms = {}
     for i in range(dynsym[5] // 16):
         name, value, size, info, other, shndx = struct.unpack(">IIIBBH", d[dynsym[4] + i * 16:dynsym[4] + i * 16 + 16])
