@@ -1,7 +1,9 @@
 /*
- * amixcast.c -- streaming on AMIX in a CDE window: the tree of a DLNA server's
- * folders, as tools/amixcast.py on the PC sees them, and ffplay on what is
- * picked (H.264 + AAC transcoded by the PC, shown by the Z3660's core 1).
+ * amixcast.c -- streaming on AMIX in a CDE window: the folders of
+ * amixcast.py on the PC (H.264 + AAC transcoded there) and of the DLNA
+ * servers on the network (found and browsed with libupnp, dlna.c), and
+ * ffplay on what is picked, the Z3660's core 1 showing H.264.  A DLNA
+ * server's file plays as it is, from the server.
  * The tree is a list: "+" and "-" in front of the folders, opened on demand.
  *   amixcast [host [port]]     default: $HOME/.amixcast, else 192.168.0.171 8092
  */
@@ -22,6 +24,7 @@
 #include <Xm/PushB.h>
 #include <Xm/RowColumn.h>
 #include <Xm/ToggleB.h>
+#include "dlna.h"
 
 #define FFPLAY      "/opt/amix/bin/ffplay"
 #define MAXNODE     8000
@@ -31,8 +34,10 @@ extern int socket(), connect();
 
 struct node {
     char *id, *title;
+    char *url;                  /* a DLNA server's file: where it is */
     char kind;                  /* d folder, v a i ? file */
     int secs, depth, open;
+    int src;                    /* -1 the PC's amixcast.py, else a DLNA server */
 };
 
 static XtAppContext app;
@@ -112,15 +117,59 @@ static void node_insert(int at, const struct node *n)
     nnode++;
 }
 
-/* the children of node i (-1: the root) below it */
+static void node_free(int k)
+{
+    free(node[k].id);
+    free(node[k].title);
+    free(node[k].url);
+}
+
+/* a DLNA server's folder entry, inserted below its folder */
+struct addctx {
+    int at, depth, src, n;
+};
+
+static void dlna_add(void *ctx, char kind, const char *id, const char *title, int secs, const char *url)
+{
+    struct addctx *a = ctx;
+    struct node c;
+    XmString x;
+
+    if (nnode >= MAXNODE - 1)
+        return;
+    memset(&c, 0, sizeof c);
+    c.kind = kind;
+    c.id = strdup(id);
+    c.title = strdup(title);
+    c.url = url ? strdup(url) : NULL;
+    c.secs = secs;
+    c.depth = a->depth;
+    c.src = a->src;
+    node_insert(a->at + a->n, &c);
+    x = row(a->at + a->n);
+    XmListAddItemUnselected(list, x, a->at + a->n + 1);
+    XmStringFree(x);
+    a->n++;
+}
+
+/* the children of node i below it: the PC's list or a DLNA server's folder */
 static int fill(int i)
 {
     char path[128], *p, *e;
-    const int depth = i < 0 ? 0 : node[i].depth + 1;
+    const int depth = node[i].depth + 1;
     int at = i + 1, first = at, n = 0;
     XmString x;
 
-    sprintf(path, "/list?id=%.100s", i < 0 ? "0" : node[i].id);
+    if (node[i].src >= 0) {
+        struct addctx a;
+
+        a.at = at;
+        a.depth = depth;
+        a.src = node[i].src;
+        a.n = 0;
+        return dlna_browse(node[i].src, node[i].id, dlna_add, &a) < 0 ? -1 : a.n;
+    }
+    sprintf(path, "/list?id=%.100s", node[i].id);
     if (!(p = get(path, NULL)))
         return -1;
     for (; *p && nnode < MAXNODE - 1; p = e + 1) {
@@ -138,6 +187,7 @@ static int fill(int i)
         }
         memset(&c, 0, sizeof c);
         c.depth = depth;
+        c.src = -1;
         if (f[0][0] == 'd' && k == 2) {
             c.kind = 'd';
             c.id = strdup(f[1]);
@@ -167,10 +217,8 @@ static void toggle(int i)
     if (node[i].open) {
         for (e = i + 1; e < nnode && node[e].depth > node[i].depth; e++)
             ;
-        for (k = i + 1; k < e; k++) {
-            free(node[k].id);
-            free(node[k].title);
-        }
+        for (k = i + 1; k < e; k++)
+            node_free(k);
         if (e > i + 1) {
             XmListDeleteItemsPos(list, e - i - 1, i + 2);
             memmove(&node[i + 1], &node[e], (size_t)(nnode - e) * sizeof node[0]);
@@ -181,7 +229,8 @@ static void toggle(int i)
         say("Reading the folder ...");
         k = fill(i);
         if (k < 0) {
-            say("The PC does not answer: is amixcast.py running?");
+            say(node[i].src < 0 ? "The PC does not answer: is amixcast.py running?"
+                                : "The DLNA server does not answer");
             return;
         }
         node[i].open = 1;
@@ -217,6 +266,25 @@ static void play(int i)
 
     if (node[i].kind == 'd') {
         toggle(i);
+        return;
+    }
+    if (node[i].src >= 0) {
+        /* from the DLNA server as it is: H.264 goes to core 1, the rest
+           ffplay decodes on the 060 */
+        if (node[i].kind != 'v' && node[i].kind != 'a') {
+            say("Only videos and music so far");
+            return;
+        }
+        sprintf(msg, "Playing from %.60s: %.300s", dlna_name(node[i].src), node[i].title);
+        say(msg);
+        pid = fork();
+        if (pid == 0) {
+            execl(FFPLAY, "ffplay", "-nostats", "-autoexit", "-window_title", node[i].title, node[i].url,
+                  (char *)NULL);
+            _exit(1);
+        }
+        if (pid < 0)
+            say("Cannot start ffplay");
         return;
     }
     if (node[i].kind != 'v') {
@@ -281,21 +349,55 @@ static void rate_cb(Widget w, XtPointer c, XtPointer d)
         kbit = (int)(long)c;
 }
 
+/* a folder at the top: the PC's amixcast.py (src -1) or a DLNA server */
+static void top_add(int src, const char *title)
+{
+    struct node c;
+    XmString x;
+
+    memset(&c, 0, sizeof c);
+    c.kind = 'd';
+    c.id = strdup("0");
+    c.title = strdup(title);
+    c.src = src;
+    node_insert(nnode, &c);
+    x = row(nnode - 1);
+    XmListAddItemUnselected(list, x, nnode);
+    XmStringFree(x);
+}
+
 static void refresh_cb(Widget w, XtPointer c, XtPointer d)
 {
-    int k;
+    char t[200];
+    int k, n;
 
-    for (k = 0; k < nnode; k++) {
-        free(node[k].id);
-        free(node[k].title);
-    }
+    for (k = 0; k < nnode; k++)
+        node_free(k);
     nnode = 0;
     XmListDeleteAllItems(list);
-    say("Reading the server's list ...");
-    if (fill(-1) < 0)
-        say("The PC does not answer: is amixcast.py running?");
-    else
-        say("Double-click a folder to open it, a video to play it");
+    sprintf(t, "PC: amixcast.py at %.60s:%d (transcoded)", host, port);
+    top_add(-1, t);
+    say("Looking for DLNA servers ...");
+    n = dlna_search(3);
+    for (k = 0; k < n; k++) {
+        sprintf(t, "DLNA: %.150s", dlna_name(k));
+        top_add(k, t);
+    }
+    /* the PC's folders open, as before the DLNA servers came */
+    say("Reading the PC's list ...");
+    k = fill(0);
+    if (k >= 0) {
+        XmString x;
+
+        node[0].open = 1;
+        x = row(0);
+        XmListReplaceItemsPos(list, &x, 1, 1);
+        XmStringFree(x);
+    }
+    sprintf(t, "%s%s%d DLNA server%s.  Double-click a folder to open it, a file to play it",
+            k < 0 ? "The PC does not answer.  " : "", n < 0 ? "No libupnp: " : "",
+            n < 0 ? 0 : n, n == 1 ? "" : "s");
+    say(t);
 }
 
 static void quit_cb(Widget w, XtPointer c, XtPointer d)
