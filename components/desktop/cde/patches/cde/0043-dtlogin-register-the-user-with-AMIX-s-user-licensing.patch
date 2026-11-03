@@ -1,0 +1,44 @@
+From: isoriano1968 <isoriano1968@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 12:50:00 +0100
+Subject: [PATCH 43/43] dtlogin: register the user with AMIX's user licensing
+
+AMIX's kernel kills a non-root process with a controlling terminal at its
+first fork unless it descends from a registered login; login(1) and our
+sshd register with sysm68k(_m68k_LIMUSER, EUA_ADD_USER).  dtlogin did not,
+so in a CDE session the shell in every dtterm died at its first command.
+Register in the session child while still root, before setuid().
+---
+--- a/programs/dtlogin/session.c	2026-11-03 13:23:02.766932130 +0100
++++ b/programs/dtlogin/session.c	2026-11-03 13:23:02.778932165 +0100
+@@ -73,6 +73,12 @@
+ #endif
+ #include <unistd.h>
+ #include <pwd.h>
++#ifdef __amix__
++/* from <sys/sysm68k.h>, which hides them unless m68k is defined (gcc 14 has __m68k__) */
++#define _m68k_LIMUSER	95
++#define EUA_ADD_USER	4
++int sysm68k(int, ...);
++#endif
+ #include <dirent.h>
+ #include <limits.h>
+ 
+@@ -1514,6 +1520,18 @@
+ 	setaudproc(verify->audflg);
+ #  endif
+ 
++#ifdef __amix__
++	/*
++	 * AMIX's user licensing: a non-root process with a controlling
++	 * terminal (the shell in a dtterm) is killed at its first fork
++	 * unless it descends from a registered login, as login(1)
++	 * registers itself.  Only root may register: do it here, before
++	 * setuid(), so the session and everything it starts inherit it.
++	 */
++	if (sysm68k(_m68k_LIMUSER, EUA_ADD_USER) == -1)
++	    Debug("sysm68k EUA_ADD_USER failed, errno = %d\n", errno);
++#endif
++
+ /* setpenv() will set uid for AIX */
+ #if !defined(_AIX)
+ 	if (setuid(verify->uid) != 0) {
