@@ -22,7 +22,8 @@ if [ "$1" = ffplay ]; then
 	mkdir -p "$V/$BD/bin"
 	ln -sf "$S2/build/sdl2-config-cross" "$V/$BD/bin/sdl2-config"
 	PATH=$V/$BD/bin:$PATH
-	EXTRA_CF="-I$SR/usr/local/gnu/include -include $SR/usr/local/gnu/include/pthread.h"
+	# X11R6.3's headers: ffplay's window through SDL_syswm.h (patches/0002)
+	EXTRA_CF="-I$SR/usr/local/gnu/include -include $SR/usr/local/gnu/include/pthread.h -I$SR/usr/x11r6/include"
 	# linked too, or configure finds no usleep (pthread.h renames it) and
 	# av_usleep never sleeps: ffplay's loop would starve its other threads
 	# PTH_LIB: another gnu-pth build, e.g. one with the sjlj thread switch

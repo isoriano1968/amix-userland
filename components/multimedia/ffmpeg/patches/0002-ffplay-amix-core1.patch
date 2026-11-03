@@ -1,6 +1,6 @@
 --- a/fftools/ffplay.c
 +++ b/fftools/ffplay.c
-@@ -1299,8 +1299,97 @@
+@@ -1299,8 +1299,141 @@
      av_free(is);
  }
  
@@ -15,6 +15,7 @@
 +#define FFPLAY_ZZAV 1
 +#ifdef FFPLAY_ZZAV
 +#include "../../src/zzav.c"
++#include <SDL_syswm.h>        /* the X window, for its frame (zz_size) */
 +static int zzav_on;
 +
 +#define ZZ_LEAD 3.0             /* seconds of a stream's sound before it starts */
@@ -53,10 +54,34 @@
 +    zzav_place(x + (w - ow) / 2, y + (h - oh * vsc) / 2);
 +}
 +
-+/* keys 1, 2 and h: the picture's size, the window with it */
++/* the window manager's frame around ours: the child of the root above it */
++static int zz_frame(Display *d, Window w, Window *frame)
++{
++    Window root, parent, *kids;
++    unsigned int n;
++
++    for (;;) {
++        if (!XQueryTree(d, w, &root, &parent, &kids, &n))
++            return 0;
++        if (kids)
++            XFree(kids);
++        if (parent == root) {
++            *frame = w;
++            return 1;
++        }
++        w = parent;
++    }
++}
++
++/* keys 1, 2 and h: the picture's size, the window with it.  dtwm leaves
++   off the frame of a window that would reach past the screen's edge, and
++   SDL knows neither the frame nor where it is: the frame, as X has it,
++   goes where the new size fits, in the same request (positionIsFrame,
++   dtwm's default, takes the position as the frame's). */
 +static void zz_size(int half, int k)
 +{
 +    int ow, oh, vsc;
++    SDL_SysWMinfo wm;
 +
 +    zz_scale = k;
 +    zzav_half(half);
@@ -64,6 +89,25 @@
 +    zzav_size(&ow, &oh, &vsc);
 +    SDL_SetWindowFullscreen(window, 0);
 +    is_full_screen = 0;
++    SDL_VERSION(&wm.version);
++    if (SDL_GetWindowWMInfo(window, &wm) && wm.subsystem == SDL_SYSWM_X11) {
++        Display *d = wm.info.x11.display;
++        Window w = wm.info.x11.window, f, root;
++        int fx, fy, cx, cy, nw, nh;
++        unsigned int fw, fh, cw, ch, bw, depth;
++
++        if (zz_frame(d, w, &f) &&
++            XGetGeometry(d, f, &root, &fx, &fy, &fw, &fh, &bw, &depth) &&
++            XGetGeometry(d, w, &root, &cx, &cy, &cw, &ch, &bw, &depth)) {
++            nw = (int)(fw - cw) + ow;           /* the frame at the new size */
++            nh = (int)(fh - ch) + oh * vsc;
++            fx = FFMAX(FFMIN(fx, DisplayWidth(d, DefaultScreen(d)) - nw), 0);
++            fy = FFMAX(FFMIN(fy, DisplayHeight(d, DefaultScreen(d)) - nh), 0);
++            XMoveResizeWindow(d, w, fx, fy, ow, oh * vsc);
++            XFlush(d);
++            return;
++        }
++    }
 +    SDL_SetWindowSize(window, ow, oh * vsc);
 +}
 +
@@ -98,7 +142,7 @@
      if (is) {
          stream_close(is);
      }
-@@ -1322,6 +1411,9 @@
+@@ -1322,6 +1455,9 @@
  
  static void sigterm_handler(int sig)
  {
@@ -108,7 +152,7 @@
      exit(123);
  }
  
-@@ -2817,6 +2909,12 @@
+@@ -2817,6 +2953,12 @@
  
      av_format_inject_global_side_data(ic);
  
@@ -121,7 +165,7 @@
      if (find_stream_info) {
          AVDictionary **opts = setup_find_stream_info_opts(ic, codec_opts);
          int orig_nb_streams = ic->nb_streams;
-@@ -2838,6 +2936,15 @@
+@@ -2838,6 +2980,15 @@
      if (ic->pb)
          ic->pb->eof_reached = 0; // FIXME hack, ffplay maybe should not use avio_feof() to test for the end
  
@@ -137,7 +181,7 @@
      if (seek_by_bytes < 0)
          seek_by_bytes = !!(ic->iformat->flags & AVFMT_TS_DISCONT) && strcmp("ogg", ic->iformat->name);
  
-@@ -2909,6 +3016,158 @@
+@@ -2909,6 +3060,158 @@
              set_default_window_size(codecpar->width, codecpar->height, sar);
      }
  
@@ -296,7 +340,7 @@
      /* open the streams */
      if (st_index[AVMEDIA_TYPE_AUDIO] >= 0) {
          stream_component_open(is, st_index[AVMEDIA_TYPE_AUDIO]);
-@@ -3218,6 +3477,10 @@
+@@ -3218,6 +3521,10 @@
  static void toggle_full_screen(VideoState *is)
  {
      is_full_screen = !is_full_screen;
@@ -307,7 +351,7 @@
      SDL_SetWindowFullscreen(window, is_full_screen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
  }
  
-@@ -3244,6 +3507,34 @@
+@@ -3244,6 +3551,34 @@
          if (remaining_time > 0.0)
              av_usleep((int64_t)(remaining_time * 1000000.0));
          remaining_time = REFRESH_RATE;
@@ -342,7 +386,7 @@
          if (is->show_mode != SHOW_MODE_NONE && (!is->paused || is->force_refresh))
              video_refresh(is, &remaining_time);
          SDL_PumpEvents();
-@@ -3296,6 +3587,20 @@
+@@ -3296,6 +3631,20 @@
              if (!cur_stream->width)
                  continue;
              switch (event.key.keysym.sym) {
@@ -363,7 +407,7 @@
              case SDLK_f:
                  toggle_full_screen(cur_stream);
                  cur_stream->force_refresh = 1;
-@@ -3371,6 +3676,13 @@
+@@ -3371,6 +3720,13 @@
              case SDLK_DOWN:
                  incr = -60.0;
              do_seek:
@@ -377,7 +421,7 @@
                      if (seek_by_bytes) {
                          pos = -1;
                          if (pos < 0 && cur_stream->video_stream >= 0)
-@@ -3429,6 +3741,10 @@
+@@ -3429,6 +3785,10 @@
                      break;
                  x = event.motion.x;
              }
@@ -388,7 +432,7 @@
                  if (seek_by_bytes || cur_stream->ic->duration <= 0) {
                      uint64_t size =  avio_size(cur_stream->ic->pb);
                      stream_seek(cur_stream, size*x/cur_stream->width, 0, 1);
-@@ -3465,6 +3781,12 @@
+@@ -3465,6 +3825,12 @@
                      }
                  case SDL_WINDOWEVENT_EXPOSED:
                      cur_stream->force_refresh = 1;
