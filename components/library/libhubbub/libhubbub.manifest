@@ -1,0 +1,7 @@
+# name, version and what building and running it needs
+name     library/libhubbub
+version  0.3.8
+summary  HTML5 parser
+provide  libhubbub
+require  developer/netsurf-buildsystem
+require  library/libparserutils

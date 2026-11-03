@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     library/libnsgif
+version  1.0.0
+summary  GIF decoder
+provide  libnsgif
+require  developer/netsurf-buildsystem

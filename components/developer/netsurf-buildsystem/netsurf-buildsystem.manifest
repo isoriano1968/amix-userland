@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     developer/netsurf-buildsystem
+version  1.10
+summary  NetSurf's shared makefiles, for building NetSurf and its libraries
+provide  netsurf-buildsystem

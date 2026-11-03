@@ -1,0 +1,40 @@
+AMIX (SVR4.0, 1991): its headers hide strdup and the rest under
+_XOPEN_SOURCE, so the framebuffer frontend leaves the feature macros out
+there, as it does on FreeBSD; and libnsfb is not linked whole: it is a
+shared library, which runs its constructors itself, and whole the static
+archives its pkg-config line names (libamixc99, libm) would come in twice.
+
+--- a/frontends/framebuffer/Makefile
++++ b/frontends/framebuffer/Makefile
+@@ -51,9 +51,14 @@
+ endif
+ 
+ # non optional pkg-configed libs
++ifeq ($(HOST),AMIX)
++  # shared libnsfb registers its surfaces itself; the archives must not go whole
++  $(eval $(call pkg_config_find_and_add,libnsfb,libnsfb))
++else
+ LDFLAGS += -Wl,--whole-archive
+ $(eval $(call pkg_config_find_and_add,libnsfb,libnsfb))
+ LDFLAGS += -Wl,--no-whole-archive
++endif
+ 
+ # ---------------------------------------------------------------------------
+ # Target setup
+@@ -70,6 +75,8 @@
+ # enable POSIX and XSI feature flasg except:
+ #   - the default set on freebsd already has them enabled
+ #   - openbsd does not require the default source flags
++#   - on AMIX (SVR4.0, 1991) they would hide what its headers have
++ifneq ($(HOST),AMIX)
+ ifneq ($(HOST),FreeBSD)
+   ifneq ($(HOST),OpenBSD)
+     CFLAGS += -D_POSIX_C_SOURCE=200809L \
+@@ -81,6 +88,7 @@
+     CFLAGS += -D_POSIX_C_SOURCE=200809L
+   endif
+ endif
++endif
+ 
+ # ----------------------------------------------------------------------------
+ # built-in resource setup

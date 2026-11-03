@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     library/libnsfb
+version  0.2.2
+summary  NetSurf's frame buffer library, with an Xlib surface for AMIX
+provide  libnsfb
+require  developer/netsurf-buildsystem

@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     library/libnspsl
+version  0.1.7
+summary  public suffix list
+provide  libnspsl
+require  developer/netsurf-buildsystem

@@ -1,0 +1,7 @@
+# name, version and what building and running it needs
+name     library/libparserutils
+version  0.2.5
+summary  parser building blocks (input streams, character sets)
+provide  libparserutils
+require  developer/netsurf-buildsystem
+require  library/libiconv

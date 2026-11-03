@@ -1,0 +1,118 @@
+framebuffer: keys from the system's keyboard map.  A keycode with
+NSFB_KEY_UCS4 (library/libnsfb's Xlib surface) is a character as the X
+server's keymap makes it, German or any other, and is taken as it is, not
+through fbtk's own US map.  The text widget (the URL bar) keeps its text in
+UTF-8: a character goes in as UTF-8, and Backspace, Left and Right go by
+characters; a key that is no character inserts nothing (it inserted 0xff).
+
+--- a/frontends/framebuffer/fbtk/event.c	2023-12-28 01:26:04.000000000 +0100
++++ b/frontends/framebuffer/fbtk/event.c	2026-11-03 18:20:14.860574660 +0100
+@@ -302,6 +302,15 @@
+ {
+ 	int ucs4 = -1;
+ 
++#ifdef NSFB_KEY_UCS4
++	/* a character the surface made with the system's keyboard map */
++	if (code & NSFB_KEY_UCS4) {
++		if (mods & FBTK_MOD_LCTRL || mods & FBTK_MOD_RCTRL)
++			return -1;
++		return code & ~NSFB_KEY_UCS4;
++	}
++#endif
++
+ 	if (mods & FBTK_MOD_LSHIFT || mods & FBTK_MOD_RSHIFT) {
+ 		if ((code >= 0) && (code < (int) NOF_ELEMENTS(sh_keymap)))
+ 			ucs4 = sh_keymap[code];
+--- a/frontends/framebuffer/fbtk/text.c	2023-12-28 01:26:04.000000000 +0100
++++ b/frontends/framebuffer/fbtk/text.c	2026-11-03 18:20:14.860574660 +0100
+@@ -28,6 +28,7 @@
+ #include <libnsfb_event.h>
+ 
+ #include "utils/log.h"
++#include "utils/utf8.h"
+ #include "netsurf/browser_window.h"
+ #include "netsurf/plotters.h"
+ 
+@@ -304,6 +305,9 @@
+ 	int value;
+ 	static fbtk_modifier_type modifier = FBTK_MOD_CLEAR;
+ 	char *temp;
++	char utf8[6];
++	size_t n;
++	int ucs4;
+ 	plot_font_style_t font_style;
+ 	int fh;
+ 	int border;
+@@ -349,11 +353,14 @@
+ 	case NSFB_KEY_BACKSPACE:
+ 		if (widget->u.text.idx <= 0)
+ 			break;
+-		memmove(widget->u.text.text + widget->u.text.idx - 1,
++		/* the whole UTF-8 character before the caret */
++		n = widget->u.text.idx -
++			utf8_prev(widget->u.text.text, widget->u.text.idx);
++		memmove(widget->u.text.text + widget->u.text.idx - n,
+ 				widget->u.text.text + widget->u.text.idx,
+ 				widget->u.text.len - widget->u.text.idx);
+-		widget->u.text.idx--;
+-		widget->u.text.len--;
++		widget->u.text.idx -= n;
++		widget->u.text.len -= n;
+ 		widget->u.text.text[widget->u.text.len] = 0;
+ 
+ 		fb_font_width(&font_style, widget->u.text.text,
+@@ -369,7 +376,10 @@
+ 	case NSFB_KEY_RIGHT:
+ 		if (widget->u.text.idx < widget->u.text.len) {
+ 			if (modifier == FBTK_MOD_CLEAR)
+-				widget->u.text.idx++;
++				widget->u.text.idx = utf8_next(
++						widget->u.text.text,
++						widget->u.text.len,
++						widget->u.text.idx);
+ 			else
+ 				widget->u.text.idx = widget->u.text.len;
+ 
+@@ -380,7 +390,9 @@
+ 	case NSFB_KEY_LEFT:
+ 		if (widget->u.text.idx > 0) {
+ 			if (modifier == FBTK_MOD_CLEAR)
+-				widget->u.text.idx--;
++				widget->u.text.idx = utf8_prev(
++						widget->u.text.text,
++						widget->u.text.idx);
+ 			else
+ 				widget->u.text.idx = 0;
+ 
+@@ -442,20 +454,25 @@
+ 			break;
+ 		}
+ 
++		/* the character in UTF-8, as the rest of NetSurf has text */
++		ucs4 = fbtk_keycode_to_ucs4(value, modifier);
++		if (ucs4 <= 0)
++			break;
++		n = utf8_from_ucs4(ucs4, utf8);
++
+ 		/* allow for new character and null */
+-		temp = realloc(widget->u.text.text, widget->u.text.len + 2);
++		temp = realloc(widget->u.text.text, widget->u.text.len + n + 1);
+ 		if (temp == NULL) {
+ 			break;
+ 		}
+ 
+ 		widget->u.text.text = temp;
+-		memmove(widget->u.text.text + widget->u.text.idx + 1,
++		memmove(widget->u.text.text + widget->u.text.idx + n,
+ 				widget->u.text.text + widget->u.text.idx,
+ 				widget->u.text.len - widget->u.text.idx);
+-		widget->u.text.text[widget->u.text.idx] =
+-				fbtk_keycode_to_ucs4(value, modifier);
+-		widget->u.text.idx++;
+-		widget->u.text.len++;
++		memcpy(widget->u.text.text + widget->u.text.idx, utf8, n);
++		widget->u.text.idx += n;
++		widget->u.text.len += n;
+ 		widget->u.text.text[widget->u.text.len] = '\0';
+ 
+ 		fb_font_width(&font_style, widget->u.text.text,

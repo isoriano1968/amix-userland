@@ -1,0 +1,10 @@
+# name, version and what building and running it needs
+name     library/libdom
+version  0.4.2
+summary  W3C DOM
+provide  libdom
+require  developer/netsurf-buildsystem
+require  library/libhubbub
+require  library/libwapcaplet
+require  library/libparserutils
+require  library/expat

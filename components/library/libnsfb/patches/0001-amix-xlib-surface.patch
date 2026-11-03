@@ -1,0 +1,1074 @@
+An X surface on plain Xlib (src/surface/xlib.c), for X servers and systems
+without xcb: X11R6.3 on AMIX.  It follows x.c (frame buffer in an XImage,
+MIT-SHM for a local server, cursor plotted into the frame buffer) and takes
+the server's visual: RGB565 on the Amiga, XRGB8888 on a 24-bit display.
+The window can be resized: a new image of its size, and NSFB_EVENT_RESIZE.
+Keys go through the system's keyboard map (XLookupString): a character comes
+as NSFB_KEY_UCS4 | code point, a new flag in include/libnsfb_event.h.
+Built when pkg-config finds x11 and xext but not xcb.  src/plot.h: AMIX is
+big endian and has no endian.h.
+
+--- a/Makefile
++++ b/Makefile
+@@ -47,6 +47,8 @@
+ $(eval $(call pkg_config_package_available,NSFB_SDL_AVAILABLE,sdl))
+ $(eval $(call pkg_config_package_available,NSFB_XCB_AVAILABLE,$(NSFB_XCB_PKG_NAMES)))
+ $(eval $(call pkg_config_package_available,NSFB_WLD_AVAILABLE,wayland-client))
++# plain Xlib (src/surface/xlib.c) where there is X but no xcb (X11R6.3 on AMIX)
++$(eval $(call pkg_config_package_available,NSFB_XLIB_AVAILABLE,x11 xext))
+ 
+ # Flags and setup for each support library
+ ifeq ($(NSFB_SDL_AVAILABLE),yes)
+@@ -56,6 +58,15 @@
+   REQUIRED_PKGS := $(REQUIRED_PKGS) sdl
+ endif 
+ 
++ifneq ($(NSFB_XCB_AVAILABLE),yes)
++  ifeq ($(NSFB_XLIB_AVAILABLE),yes)
++    $(eval $(call pkg_config_package_add_flags,x11 xext,CFLAGS))
++    $(eval $(call pkg_config_package_add_flags,x11 xext,TESTCFLAGS,TESTLDFLAGS))
++
++    REQUIRED_PKGS := $(REQUIRED_PKGS) x11 xext
++  endif
++endif
++
+ ifeq ($(NSFB_XCB_AVAILABLE),yes)
+   # Size hint allocators were removed in xcb-icccm 0.3.0
+   $(eval $(call pkg_config_package_min_version,NSFB_XCB_ICCCM_SIZE_HINTS,xcb-icccm,0.3.0))
+--- a/include/libnsfb_event.h
++++ b/include/libnsfb_event.h
+@@ -22,6 +22,11 @@
+ };
+ 
+ 
++/** A key event's keycode with this bit is a character, NSFB_KEY_UCS4 | the
++ * Unicode code point, from a surface that translates keys with the system's
++ * keyboard map (the Xlib surface); a frontend's own map is then not used. */
++#define NSFB_KEY_UCS4 0x40000000
++
+ /** keycodes which mostly map to ascii chars */
+ enum nsfb_key_code_e {
+     NSFB_KEY_UNKNOWN		= 0,
+--- a/src/plot.h
++++ b/src/plot.h
+@@ -35,6 +35,9 @@
+     #if __DARWIN_BYTE_ORDER == __DARWIN_BIG_ENDIAN
+         #define NSFB_BE_BYTE_ORDER
+     #endif
++#elif defined(__amix__)
++    /* AMIX: 68k, big endian, and no endian.h */
++    #define NSFB_BE_BYTE_ORDER
+ #elif defined(__FreeBSD__)
+     /* freebsd has the include somewhere different */
+     #include <machine/endian.h>
+--- a/src/surface/Makefile
++++ b/src/surface/Makefile
+@@ -6,6 +6,9 @@
+ # optional surface handlers
+ SURFACE_HANDLER_$(NSFB_SDL_AVAILABLE) += sdl.c
+ SURFACE_HANDLER_$(NSFB_XCB_AVAILABLE) += x.c
++ifneq ($(NSFB_XCB_AVAILABLE),yes)
++  SURFACE_HANDLER_$(NSFB_XLIB_AVAILABLE) += xlib.c
++endif
+ SURFACE_HANDLER_$(NSFB_VNC_AVAILABLE) += vnc.c
+ SURFACE_HANDLER_$(NSFB_WLD_AVAILABLE) += wld.c
+ 
+--- a/src/surface/xlib.c
++++ b/src/surface/xlib.c
+@@ -0,0 +1,996 @@
++/*
++ * Copyright 2009 Vincent Sanders <vince@simtec.co.uk>
++ *
++ * This file is part of libnsfb, http://www.netsurf-browser.org/
++ * Licenced under the MIT License,
++ *                http://www.opensource.org/licenses/mit-license.php
++ */
++
++/*
++ * The X surface on plain Xlib, for X servers and systems without xcb
++ * (X11R6.3 on AMIX).  It follows x.c: the frame buffer is an XImage in
++ * the server's visual, in shared memory (MIT-SHM) when the server is on
++ * this machine, and the window is updated from it; the cursor is plotted
++ * into the frame buffer.
++ */
++
++#include <stdbool.h>
++#include <stdlib.h>
++#include <stdio.h>
++#include <string.h>
++#include <sys/types.h>
++#include <poll.h>
++#include <sys/ipc.h>
++#include <sys/shm.h>
++
++#include <X11/Xlib.h>
++#include <X11/Xutil.h>
++#include <X11/keysym.h>
++#include <X11/extensions/XShm.h>
++
++#include "libnsfb.h"
++#include "libnsfb_event.h"
++#include "libnsfb_plot.h"
++#include "libnsfb_plot_util.h"
++
++#include "nsfb.h"
++#include "surface.h"
++#include "plot.h"
++#include "cursor.h"
++
++#define X_BUTTON_LEFT 1
++#define X_BUTTON_MIDDLE 2
++#define X_BUTTON_RIGHT 3
++#define X_BUTTON_WHEELUP 4
++#define X_BUTTON_WHEELDOWN 5
++
++typedef struct xstate_s {
++    Display *display;
++    int screen;
++    Visual *visual;
++    int depth;
++    Window window;
++    GC gc;
++    XImage *image;
++    XShmSegmentInfo shminfo;
++    bool shm; /* image in shared memory */
++    Atom wm_delete;
++} xstate_t;
++
++/* X keyboard codepage to nsfb mapping */
++static enum nsfb_key_code_e XCSKeyboardMap[256] = {
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_BACKSPACE, /* XK_BackSpace */
++    NSFB_KEY_TAB, /* XK_Tab */
++    NSFB_KEY_UNKNOWN, /* XK_Linefeed */
++    NSFB_KEY_CLEAR, /* XK_Clear */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_RETURN, /* XK_Return */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    /* 0x10 */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_PAUSE, /* XK_Pause */
++    NSFB_KEY_UNKNOWN, /* XK_Scroll_Lock */
++    NSFB_KEY_UNKNOWN, /* XK_Sys_Req */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_ESCAPE, /* XK_Escape */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    /* 0x20 */
++    NSFB_KEY_UNKNOWN, /* XK_Multi_key */
++    NSFB_KEY_UNKNOWN, /* XK_Kanji */
++    NSFB_KEY_UNKNOWN, /* XK_Muhenkan */
++    NSFB_KEY_UNKNOWN, /* XK_Henkan_Mode */
++    NSFB_KEY_UNKNOWN, /* XK_Henkan */
++    NSFB_KEY_UNKNOWN, /* XK_Romaji */
++    NSFB_KEY_UNKNOWN, /* XK_Hiragana*/
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    /* 0x30 */
++    NSFB_KEY_UNKNOWN, /* XK_Eisu_toggle */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* XK_Codeinput */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* XK_SingleCandidate */
++    NSFB_KEY_UNKNOWN, /* XK_MultipleCandidate */
++    NSFB_KEY_UNKNOWN, /* XK_PreviousCandidate */
++    NSFB_KEY_UNKNOWN, /* */
++    /* 0x40 */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    /* 0x50 */
++    NSFB_KEY_HOME, /* XK_Home */
++    NSFB_KEY_LEFT, /* XK_Left */
++    NSFB_KEY_UP, /* XK_Up */
++    NSFB_KEY_RIGHT, /* XK_Right */
++    NSFB_KEY_DOWN, /* XK_Down */
++    NSFB_KEY_PAGEUP, /* XK_Page_Up */
++    NSFB_KEY_PAGEDOWN, /* XK_Page_Down */
++    NSFB_KEY_END, /* XK_End */
++    NSFB_KEY_UNKNOWN, /* XK_Begin */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    /* 0x60 */
++    NSFB_KEY_UNKNOWN, /* XK_Select */
++    NSFB_KEY_UNKNOWN, /* XK_Print*/
++    NSFB_KEY_UNKNOWN, /* XK_Execute*/
++    NSFB_KEY_UNKNOWN, /* XK_Insert*/
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* XK_Undo*/
++    NSFB_KEY_UNKNOWN, /* XK_Redo */
++    NSFB_KEY_UNKNOWN, /* XK_Menu */
++    NSFB_KEY_UNKNOWN, /* XK_Find */
++    NSFB_KEY_UNKNOWN, /* XK_Cancel */
++    NSFB_KEY_UNKNOWN, /* XK_Help */
++    NSFB_KEY_UNKNOWN, /* XK_Break*/
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    /* 0x70 */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* XK_Mode_switch */
++    NSFB_KEY_UNKNOWN, /* XK_Num_Lock */
++    /* 0x80 */
++    NSFB_KEY_UNKNOWN, /* XK_KP_Space */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* XK_KP_Tab */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* XK_KP_Enter */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    /* 0x90 */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* XK_KP_F1*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_F2*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_F3*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_F4*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Home*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Left*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Up*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Right*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Down*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Page_Up*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Page_Down*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_End*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Begin*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Insert*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Delete*/
++    /* 0xa0 */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* XK_KP_Multiply*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Add*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Separator*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Subtract*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Decimal*/
++    NSFB_KEY_UNKNOWN, /* XK_KP_Divide*/
++    /* 0xb0 */
++    NSFB_KEY_UNKNOWN, /* XK_KP_0 */
++    NSFB_KEY_UNKNOWN, /* XK_KP_1 */
++    NSFB_KEY_UNKNOWN, /* XK_KP_2 */
++    NSFB_KEY_UNKNOWN, /* XK_KP_3 */
++    NSFB_KEY_UNKNOWN, /* XK_KP_4 */
++    NSFB_KEY_UNKNOWN, /* XK_KP_5 */
++    NSFB_KEY_UNKNOWN, /* XK_KP_6 */
++    NSFB_KEY_UNKNOWN, /* XK_KP_7 */
++    NSFB_KEY_UNKNOWN, /* XK_KP_8 */
++    NSFB_KEY_UNKNOWN, /* XK_KP_9 */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_F1, /* XK_F1 */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* XK_KP_Equal */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_F2, /* XK_F2 */
++    /* 0xc0 */
++    NSFB_KEY_F3, /* XK_F3*/
++    NSFB_KEY_F4, /* XK_F4*/
++    NSFB_KEY_F5, /* XK_F5*/
++    NSFB_KEY_F6, /* XK_F6*/
++    NSFB_KEY_F7, /* XK_F7*/
++    NSFB_KEY_F8, /* XK_F8*/
++    NSFB_KEY_F9, /* XK_F9*/
++    NSFB_KEY_F10, /* XK_F10*/
++    NSFB_KEY_F11, /* XK_F11*/
++    NSFB_KEY_F12, /* XK_F12*/
++    NSFB_KEY_F13, /* XK_F13 */
++    NSFB_KEY_F14, /* XK_F14 */
++    NSFB_KEY_F15, /* XK_F15 */
++    NSFB_KEY_UNKNOWN, /* XK_F16 */
++    NSFB_KEY_UNKNOWN, /* XK_F17 */
++    NSFB_KEY_UNKNOWN, /* XK_F18*/
++    /* 0xd0 */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    /* 0xe0 */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_LSHIFT, /* XK_Shift_L*/
++    NSFB_KEY_RSHIFT, /* XK_Shift_R*/
++    NSFB_KEY_UNKNOWN, /* XK_Control_L*/
++    NSFB_KEY_UNKNOWN, /* XK_Control_R*/
++    NSFB_KEY_UNKNOWN, /* XK_Caps_Lock*/
++    NSFB_KEY_UNKNOWN, /* XK_Shift_Lock*/
++    NSFB_KEY_UNKNOWN, /* XK_Meta_L*/
++    NSFB_KEY_UNKNOWN, /* XK_Meta_R*/
++    NSFB_KEY_UNKNOWN, /* XK_Alt_L */
++    NSFB_KEY_UNKNOWN, /* XK_Alt_R*/
++    NSFB_KEY_UNKNOWN, /* XK_Super_L*/
++    NSFB_KEY_UNKNOWN, /* XK_Super_R*/
++    NSFB_KEY_UNKNOWN, /* XK_Hyper_L*/
++    NSFB_KEY_UNKNOWN, /* XK_Hyper_R*/
++    NSFB_KEY_UNKNOWN, /* */
++    /* 0xf0 */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++    NSFB_KEY_UNKNOWN, /* */
++};
++
++/* Convert an X keysym into a nsfb key code.
++ *
++ * Our approach is primarily to assume both codings are roughly ascii like.
++ *
++ * The Keysyms are defined in X11/keysymdef.h and our mapping for the
++ * "keyboard" keys i.e. those from code set 255 is from there
++ */
++static enum nsfb_key_code_e
++xkeysym_to_nsfbkeycode(KeySym ks)
++{
++    enum nsfb_key_code_e nsfb_key = NSFB_KEY_UNKNOWN;
++    uint8_t codeset = (ks & 0xFF00) >> 8;
++    uint8_t chrcode = ks & 0xFF;
++
++    if (ks != NoSymbol) {
++        
++        switch (codeset) {
++        case 0x00: /* Latin 1 */
++        case 0x01: /* Latin 2 */
++        case 0x02: /* Latin 3 */
++        case 0x03: /* Latin 4 */
++        case 0x04: /* Katakana */
++        case 0x05: /* Arabic */
++        case 0x06: /* Cyrillic */
++        case 0x07: /* Greek */
++        case 0x08: /* Technical */
++        case 0x0A: /* Publishing */
++        case 0x0C: /* Hebrew */
++        case 0x0D: /* Thai */
++            /* this is somewhat incomplete, but the nsfb codes are lined up on
++             * the ascii codes and x seems to have done similar 
++             */
++            nsfb_key = (enum nsfb_key_code_e)chrcode;
++            break;
++
++        case 0xFF: /* Keyboard */
++            nsfb_key = XCSKeyboardMap[chrcode];
++            break;
++        }
++    }
++
++    return nsfb_key;
++}
++
++/*
++ * A key as the system's keyboard map makes it (XLookupString: the server's
++ * keymap, Shift, AltGr, Caps Lock): a printable character comes as
++ * NSFB_KEY_UCS4 | its code point.  Anything else, and every key with Ctrl
++ * (NetSurf's shortcuts), as the key itself.
++ */
++static int
++key_code(XKeyEvent *key)
++{
++    unsigned char buf[8];
++    KeySym ks = NoSymbol;
++    long ucs = -1;
++    int n;
++
++    if (!(key->state & ControlMask)) {
++        n = XLookupString(key, (char *)buf, sizeof(buf), &ks, NULL);
++        if (n == 1)
++            ucs = buf[0];               /* Latin-1, the C locale's */
++        else if ((ks >= 0x20 && ks <= 0x7e) || (ks >= 0xa0 && ks <= 0xff))
++            ucs = ks;                   /* Latin-1 keysyms are the code points */
++        else if ((ks & 0xff000000) == 0x01000000)
++            ucs = ks & 0x00ffffff;      /* Unicode keysyms */
++        else if (ks == 0x20ac)
++            ucs = 0x20ac;               /* EuroSign */
++        if (ucs >= 0x20 && ucs != 0x7f && !(ucs >= 0x80 && ucs < 0xa0))
++            return NSFB_KEY_UCS4 | (int)ucs;
++    }
++    return xkeysym_to_nsfbkeycode(XLookupKeysym(key, 0));
++}
++
++static int
++update_window(xstate_t *xstate, int x, int y, int width, int height)
++{
++    if ((width <= 0) || (height <= 0))
++        return 0;
++
++    if (xstate->shm) {
++        XShmPutImage(xstate->display, xstate->window, xstate->gc,
++                     xstate->image, x, y, x, y, width, height, False);
++    } else {
++        XPutImage(xstate->display, xstate->window, xstate->gc,
++                  xstate->image, x, y, x, y, width, height);
++    }
++    XFlush(xstate->display);
++
++    return 0;
++}
++
++/* the software copy, then the window: NetSurf scrolls with it */
++static nsfb_plotfn_copy_t *sw_copy;
++
++static bool
++xcopy(nsfb_t *nsfb, nsfb_bbox_t *srcbox, nsfb_bbox_t *dstbox)
++{
++    xstate_t *xstate = nsfb->surface_priv;
++    struct nsfb_cursor_s *cursor = nsfb->cursor;
++    nsfb_bbox_t allbox;
++    bool ret;
++
++    nsfb_plot_add_rect(srcbox, dstbox, &allbox);
++
++    /* clear the cursor if its within the region to be altered */
++    if ((cursor != NULL) &&
++        (cursor->plotted == true) &&
++        (nsfb_plot_bbox_intersect(&allbox, &cursor->loc))) {
++        nsfb_cursor_clear(nsfb, cursor);
++    }
++
++    ret = sw_copy(nsfb, srcbox, dstbox);
++
++    if ((cursor != NULL) &&
++        (cursor->plotted == false)) {
++        nsfb_cursor_plot(nsfb, cursor);
++    }
++
++    if (xstate != NULL)
++        update_window(xstate, allbox.x0, allbox.y0,
++                      allbox.x1 - allbox.x0, allbox.y1 - allbox.y0);
++
++    return ret;
++}
++
++/* the format's software plotters, with xcopy over their copy */
++static void
++x_select_plotters(nsfb_t *nsfb)
++{
++    select_plotters(nsfb);
++    sw_copy = nsfb->plotter_fns->copy;
++    nsfb->plotter_fns->copy = xcopy;
++}
++
++static XImage *create_frame(xstate_t *xstate, int width, int height);
++static void free_frame(Display *display, XImage *image, bool shm,
++                       XShmSegmentInfo *shminfo);
++
++static int
++x_set_geometry(nsfb_t *nsfb, int width, int height, enum nsfb_format_e format)
++{
++    xstate_t *xstate = nsfb->surface_priv;
++
++    if (xstate != NULL) {
++        /* the window was resized: a new image of its size, in the
++         * server's format whatever was asked */
++        XImage *old = xstate->image;
++        bool old_shm = xstate->shm;
++        XShmSegmentInfo old_shminfo = xstate->shminfo;
++
++        if ((width == nsfb->width) && (height == nsfb->height))
++            return 0;
++        if (create_frame(xstate, width, height) == NULL) {
++            /* no memory for it: keep the old size */
++            xstate->image = old;
++            xstate->shm = old_shm;
++            xstate->shminfo = old_shminfo;
++            return -1;
++        }
++        free_frame(xstate->display, old, old_shm, &old_shminfo);
++        nsfb->width = width;
++        nsfb->height = height;
++        nsfb->ptr = (uint8_t *)xstate->image->data;
++        nsfb->linelen = xstate->image->bytes_per_line;
++        /* the cursor's saved pixels were in the old image */
++        if (nsfb->cursor != NULL)
++            nsfb->cursor->plotted = false;
++        return 0;
++    }
++
++    nsfb->width = width;
++    nsfb->height = height;
++    nsfb->format = format;
++
++    /* select default sw plotters for format */
++    x_select_plotters(nsfb);
++
++    return 0;
++}
++
++/* the frame buffer format that is the server's visual, or NSFB_FMT_ANY */
++static enum nsfb_format_e
++visual_format(Visual *visual, int bpp)
++{
++    if (visual->class != TrueColor)
++        return NSFB_FMT_ANY;
++    if ((bpp == 16) && (visual->red_mask == 0xf800) &&
++        (visual->green_mask == 0x7e0) && (visual->blue_mask == 0x1f))
++        return NSFB_FMT_RGB565;
++    if ((bpp == 32) && (visual->red_mask == 0xff0000) &&
++        (visual->green_mask == 0xff00) && (visual->blue_mask == 0xff))
++        return NSFB_FMT_XRGB8888;
++    if ((bpp == 32) && (visual->red_mask == 0xff) &&
++        (visual->green_mask == 0xff00) && (visual->blue_mask == 0xff0000))
++        return NSFB_FMT_XBGR8888;
++    return NSFB_FMT_ANY;
++}
++
++/* bits per pixel of the server's images at this depth */
++static int
++server_bpp(Display *display, int depth)
++{
++    XPixmapFormatValues *fmts;
++    int n, i, bpp = 0;
++
++    fmts = XListPixmapFormats(display, &n);
++    if (fmts == NULL)
++        return 0;
++    for (i = 0; i < n; i++) {
++        if (fmts[i].depth == depth)
++            bpp = fmts[i].bits_per_pixel;
++    }
++    XFree(fmts);
++    return bpp;
++}
++
++static int shm_error;
++
++static int
++shm_error_handler(Display *display, XErrorEvent *error)
++{
++    (void)display;
++    (void)error;
++    shm_error = 1;
++    return 0;
++}
++
++/* an image in shared memory, when the server is on this machine */
++static XImage *
++create_shm_image(xstate_t *xstate, int width, int height)
++{
++    XImage *image;
++    int (*old_handler)(Display *, XErrorEvent *);
++    const char *dpy = DisplayString(xstate->display);
++
++    /* a remote server (ssh -X: localhost:10) cannot see our memory */
++    if ((dpy[0] != ':') && (strncmp(dpy, "unix:", 5) != 0))
++        return NULL;
++    if (getenv("NSFB_X_NOSHM") != NULL)
++        return NULL;
++    if (!XShmQueryExtension(xstate->display))
++        return NULL;
++
++    image = XShmCreateImage(xstate->display, xstate->visual, xstate->depth,
++                            ZPixmap, NULL, &xstate->shminfo, width, height);
++    if (image == NULL)
++        return NULL;
++
++    xstate->shminfo.shmid = shmget(IPC_PRIVATE,
++                                   image->bytes_per_line * image->height,
++                                   IPC_CREAT | 0600);
++    if (xstate->shminfo.shmid == -1) {
++        XDestroyImage(image);
++        return NULL;
++    }
++    xstate->shminfo.shmaddr = image->data = shmat(xstate->shminfo.shmid, 0, 0);
++    if (xstate->shminfo.shmaddr == (char *)-1) {
++        shmctl(xstate->shminfo.shmid, IPC_RMID, 0);
++        XDestroyImage(image);
++        return NULL;
++    }
++    xstate->shminfo.readOnly = False;
++
++    shm_error = 0;
++    old_handler = XSetErrorHandler(shm_error_handler);
++    XShmAttach(xstate->display, &xstate->shminfo);
++    XSync(xstate->display, False);
++    XSetErrorHandler(old_handler);
++
++    /* the server has it now, or never will: our reference can go */
++    shmctl(xstate->shminfo.shmid, IPC_RMID, 0);
++
++    if (shm_error) {
++        shmdt(xstate->shminfo.shmaddr);
++        image->data = NULL;
++        XDestroyImage(image);
++        return NULL;
++    }
++
++    return image;
++}
++
++static XImage *
++create_image(xstate_t *xstate, int width, int height, int bpp)
++{
++    XImage *image;
++    char *data;
++
++    data = calloc(1, (size_t)((width * bpp + 31) / 32) * 4 * height);
++    if (data == NULL)
++        return NULL;
++
++    image = XCreateImage(xstate->display, xstate->visual, xstate->depth,
++                         ZPixmap, 0, data, width, height, 32, 0);
++    if (image == NULL) {
++        free(data);
++        return NULL;
++    }
++
++    return image;
++}
++
++/* this machine's byte order, which the plotters write in */
++static int
++native_byte_order(void)
++{
++    const uint16_t one = 1;
++
++    return (*(const uint8_t *)&one == 1) ? LSBFirst : MSBFirst;
++}
++
++/* the frame buffer image: shared memory first, the plotters write native order */
++static XImage *
++create_frame(xstate_t *xstate, int width, int height)
++{
++    int bpp = server_bpp(xstate->display, xstate->depth);
++
++    xstate->shm = false;
++    xstate->image = create_shm_image(xstate, width, height);
++    if (xstate->image != NULL) {
++        xstate->shm = true;
++        if (xstate->image->byte_order != native_byte_order()) {
++            /* the server would read it in its own order */
++            XShmDetach(xstate->display, &xstate->shminfo);
++            shmdt(xstate->shminfo.shmaddr);
++            xstate->image->data = NULL;
++            XDestroyImage(xstate->image);
++            xstate->image = NULL;
++            xstate->shm = false;
++        }
++    }
++    if (xstate->image == NULL) {
++        xstate->image = create_image(xstate, width, height, bpp);
++        if (xstate->image != NULL) {
++            /* Xlib converts for the server in XPutImage */
++            xstate->image->byte_order = native_byte_order();
++            xstate->image->bitmap_bit_order = MSBFirst;
++        }
++    }
++    return xstate->image;
++}
++
++static void
++free_frame(Display *display, XImage *image, bool shm, XShmSegmentInfo *shminfo)
++{
++    if (shm) {
++        XShmDetach(display, shminfo);
++        XSync(display, False);
++        shmdt(shminfo->shmaddr);
++        image->data = NULL;
++    }
++    XDestroyImage(image);
++}
++
++static Cursor
++create_blank_cursor(Display *display, Window window)
++{
++    static char empty[1] = { 0 };
++    Pixmap pix;
++    XColor black;
++    Cursor cursor;
++
++    pix = XCreateBitmapFromData(display, window, empty, 1, 1);
++    memset(&black, 0, sizeof(black));
++    cursor = XCreatePixmapCursor(display, pix, pix, &black, &black, 0, 0);
++    XFreePixmap(display, pix);
++
++    return cursor;
++}
++
++static int x_initialise(nsfb_t *nsfb)
++{
++    XSetWindowAttributes attrs;
++    XSizeHints *hints;
++    xstate_t *xstate = nsfb->surface_priv;
++    enum nsfb_format_e format;
++    int bpp;
++
++    if (xstate != NULL)
++        return -1; /* already initialised */
++
++    xstate = calloc(1, sizeof(xstate_t));
++    if (xstate == NULL)
++        return -1; /* no memory */
++
++    xstate->display = XOpenDisplay(NULL);
++    if (xstate->display == NULL) {
++        fprintf(stderr, "Error opening display\n");
++        free(xstate);
++        return -1;
++    }
++    xstate->screen = DefaultScreen(xstate->display);
++    xstate->visual = DefaultVisual(xstate->display, xstate->screen);
++    xstate->depth = DefaultDepth(xstate->display, xstate->screen);
++
++    /* the frame buffer takes the server's format, whatever was asked */
++    bpp = server_bpp(xstate->display, xstate->depth);
++    format = visual_format(xstate->visual, bpp);
++    if (format == NSFB_FMT_ANY) {
++        fprintf(stderr, "Unsupported visual (depth %d, %d bpp)\n",
++                xstate->depth, bpp);
++        XCloseDisplay(xstate->display);
++        free(xstate);
++        return -1;
++    }
++    if (format != nsfb->format) {
++        nsfb->format = format;
++        x_select_plotters(nsfb);
++    }
++
++    if (create_frame(xstate, nsfb->width, nsfb->height) == NULL) {
++        fprintf(stderr, "Unable to create image\n");
++        XCloseDisplay(xstate->display);
++        free(xstate);
++        return -1;
++    }
++
++    /* ensure plotting information is stored */
++    nsfb->surface_priv = xstate;
++    nsfb->ptr = (uint8_t *)xstate->image->data;
++    nsfb->linelen = xstate->image->bytes_per_line;
++
++    /* create window */
++    attrs.background_pixel = WhitePixel(xstate->display, xstate->screen);
++    attrs.event_mask = ExposureMask | KeyPressMask | KeyReleaseMask |
++                       ButtonPressMask | ButtonReleaseMask | PointerMotionMask |
++                       StructureNotifyMask;
++    xstate->window = XCreateWindow(xstate->display,
++                                   RootWindow(xstate->display, xstate->screen),
++                                   0, 0, nsfb->width, nsfb->height, 0,
++                                   xstate->depth, InputOutput, xstate->visual,
++                                   CWBackPixel | CWEventMask, &attrs);
++    XDefineCursor(xstate->display, xstate->window,
++                  create_blank_cursor(xstate->display, xstate->window));
++
++    /* resizable, down to NetSurf's minimum */
++    hints = XAllocSizeHints();
++    if (hints != NULL) {
++        hints->flags = PMinSize;
++        hints->min_width = 300;
++        hints->min_height = 200;
++        XSetWMNormalHints(xstate->display, xstate->window, hints);
++        XFree(hints);
++    }
++    XStoreName(xstate->display, xstate->window, "NetSurf");
++    xstate->wm_delete = XInternAtom(xstate->display, "WM_DELETE_WINDOW", False);
++    XSetWMProtocols(xstate->display, xstate->window, &xstate->wm_delete, 1);
++
++    xstate->gc = XCreateGC(xstate->display, xstate->window, 0, NULL);
++
++    /* show the window */
++    XMapWindow(xstate->display, xstate->window);
++    XFlush(xstate->display);
++
++    return 0;
++}
++
++static int x_finalise(nsfb_t *nsfb)
++{
++    xstate_t *xstate = nsfb->surface_priv;
++    if (xstate == NULL)
++        return 0;
++
++    free_frame(xstate->display, xstate->image, xstate->shm, &xstate->shminfo);
++    XFreeGC(xstate->display, xstate->gc);
++    XDestroyWindow(xstate->display, xstate->window);
++
++    /* close connection to server */
++    XCloseDisplay(xstate->display);
++
++    nsfb->surface_priv = NULL;
++    nsfb->ptr = NULL;
++    free(xstate);
++
++    return 0;
++}
++
++static enum nsfb_key_code_e
++button_keycode(unsigned int button)
++{
++    switch (button) {
++    case X_BUTTON_LEFT:
++        return NSFB_KEY_MOUSE_1;
++    case X_BUTTON_MIDDLE:
++        return NSFB_KEY_MOUSE_2;
++    case X_BUTTON_RIGHT:
++        return NSFB_KEY_MOUSE_3;
++    case X_BUTTON_WHEELUP:
++        return NSFB_KEY_MOUSE_4;
++    case X_BUTTON_WHEELDOWN:
++        return NSFB_KEY_MOUSE_5;
++    }
++    return NSFB_KEY_UNKNOWN;
++}
++
++static bool x_input(nsfb_t *nsfb, nsfb_event_t *event, int timeout)
++{
++    XEvent e;
++    xstate_t *xstate = nsfb->surface_priv;
++
++    if (xstate == NULL)
++        return false;
++
++    XFlush(xstate->display);
++
++    if (XPending(xstate->display) == 0) {
++        if (timeout == 0)
++            return false; /* no event */
++        if (timeout > 0) {
++            struct pollfd pfd;
++
++            pfd.fd = ConnectionNumber(xstate->display);
++            pfd.events = POLLIN;
++            pfd.revents = 0;
++
++            if (poll(&pfd, 1, timeout) == 0) {
++                /* timeout, nothing happened */
++                event->type = NSFB_EVENT_CONTROL;
++                event->value.controlcode = NSFB_CONTROL_TIMEOUT;
++                return true;
++            }
++        }
++    }
++
++    /* blocks until an event comes; Xlib exits if the server goes */
++    XNextEvent(xstate->display, &e);
++
++    event->type = NSFB_EVENT_NONE;
++
++    switch (e.type) {
++    case Expose:
++        update_window(xstate, e.xexpose.x, e.xexpose.y,
++                      e.xexpose.width, e.xexpose.height);
++        break;
++
++    case MotionNotify:
++        event->type = NSFB_EVENT_MOVE_ABSOLUTE;
++        event->value.vector.x = e.xmotion.x;
++        event->value.vector.y = e.xmotion.y;
++        event->value.vector.z = 0;
++        break;
++
++    case ButtonPress:
++        event->type = NSFB_EVENT_KEY_DOWN;
++        event->value.keycode = button_keycode(e.xbutton.button);
++        break;
++
++    case ButtonRelease:
++        event->type = NSFB_EVENT_KEY_UP;
++        event->value.keycode = button_keycode(e.xbutton.button);
++        break;
++
++    case KeyPress:
++        event->type = NSFB_EVENT_KEY_DOWN;
++        event->value.keycode = key_code(&e.xkey);
++        break;
++
++    case KeyRelease:
++        event->type = NSFB_EVENT_KEY_UP;
++        event->value.keycode = key_code(&e.xkey);
++        break;
++
++    case ConfigureNotify:
++        /* the last of a run of them: a window manager sends many */
++        while (XCheckTypedWindowEvent(xstate->display, xstate->window,
++                                      ConfigureNotify, &e))
++            ;
++        if ((e.xconfigure.width != nsfb->width) ||
++            (e.xconfigure.height != nsfb->height)) {
++            event->type = NSFB_EVENT_RESIZE;
++            event->value.resize.w = e.xconfigure.width;
++            event->value.resize.h = e.xconfigure.height;
++        }
++        break;
++
++    case ClientMessage:
++        if ((Atom)e.xclient.data.l[0] == xstate->wm_delete) {
++            event->type = NSFB_EVENT_CONTROL;
++            event->value.controlcode = NSFB_CONTROL_QUIT;
++        }
++        break;
++    }
++
++    return true;
++}
++
++static int x_claim(nsfb_t *nsfb, nsfb_bbox_t *box)
++{
++    struct nsfb_cursor_s *cursor = nsfb->cursor;
++
++    if ((cursor != NULL) &&
++        (cursor->plotted == true) &&
++        (nsfb_plot_bbox_intersect(box, &cursor->loc))) {
++        nsfb_cursor_clear(nsfb, cursor);
++    }
++    return 0;
++}
++
++static int
++x_cursor(nsfb_t *nsfb, struct nsfb_cursor_s *cursor)
++{
++    xstate_t *xstate = nsfb->surface_priv;
++    nsfb_bbox_t redraw;
++    nsfb_bbox_t fbarea;
++
++    if ((cursor != NULL) && (cursor->plotted == true)) {
++
++        nsfb_plot_add_rect(&cursor->savloc, &cursor->loc, &redraw);
++
++        /* screen area */
++        fbarea.x0 = 0;
++        fbarea.y0 = 0;
++        fbarea.x1 = nsfb->width;
++        fbarea.y1 = nsfb->height;
++
++        nsfb_plot_clip(&fbarea, &redraw);
++
++        nsfb_cursor_clear(nsfb, cursor);
++
++        nsfb_cursor_plot(nsfb, cursor);
++
++        update_window(xstate, redraw.x0, redraw.y0,
++                      redraw.x1 - redraw.x0, redraw.y1 - redraw.y0);
++    }
++    return true;
++}
++
++static int x_update(nsfb_t *nsfb, nsfb_bbox_t *box)
++{
++    xstate_t *xstate = nsfb->surface_priv;
++    struct nsfb_cursor_s *cursor = nsfb->cursor;
++
++    if ((cursor != NULL) &&
++        (cursor->plotted == false)) {
++        nsfb_cursor_plot(nsfb, cursor);
++    }
++
++    update_window(xstate, box->x0, box->y0,
++                  box->x1 - box->x0, box->y1 - box->y0);
++
++    return 0;
++}
++
++const nsfb_surface_rtns_t x_rtns = {
++    .initialise = x_initialise,
++    .finalise = x_finalise,
++    .input = x_input,
++    .claim = x_claim,
++    .update = x_update,
++    .cursor = x_cursor,
++    .geometry = x_set_geometry,
++};
++
++NSFB_SURFACE_DEF(x, NSFB_SURFACE_X, &x_rtns)
++
++/*
++ * Local variables:
++ *  c-basic-offset: 4
++ *  tab-width: 8
++ * End:
++ */

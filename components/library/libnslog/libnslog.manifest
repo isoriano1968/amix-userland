@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     library/libnslog
+version  0.1.3
+summary  NetSurf's logging library
+provide  libnslog
+require  developer/netsurf-buildsystem

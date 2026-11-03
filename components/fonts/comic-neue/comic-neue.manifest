@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     fonts/comic-neue
+version  2.51
+summary  Comic Neue TrueType fonts (Comic Sans style)
+# fonts only: no pkg-config name

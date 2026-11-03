@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     fonts/anton
+version  2.116
+summary  Anton TrueType font (Impact style)
+# fonts only: no pkg-config name

@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     fonts/dejavu
+version  2.37
+summary  DejaVu TrueType fonts
+# fonts only: no pkg-config name

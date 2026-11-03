@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     library/libwapcaplet
+version  0.4.3
+summary  interned strings
+provide  libwapcaplet
+require  developer/netsurf-buildsystem

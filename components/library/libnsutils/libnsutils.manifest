@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     library/libnsutils
+version  0.1.1
+summary  NetSurf's utility functions
+provide  libnsutils
+require  developer/netsurf-buildsystem

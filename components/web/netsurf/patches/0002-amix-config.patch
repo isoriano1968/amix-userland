@@ -1,0 +1,28 @@
+AMIX (SVR4.0, 1991) has no POSIX regex, mmap for files, scandir, the
+*at() calls, inet_pton, inet_aton or strptime: take NetSurf's own
+fallbacks there.
+
+--- a/utils/config.h
++++ b/utils/config.h
+@@ -160,6 +160,21 @@
+ #undef HAVE_REGEX
+ #endif
+ 
++/* AMIX (SVR4.0, 1991): no POSIX regex, mmap for files, scandir, *at()
++ * calls, inet_pton, inet_aton (and no IPv6) or strptime: NetSurf's own
++ * fallbacks (strtoull and strtoll: amix-netsurf.c) */
++#if defined(__amix__)
++#undef HAVE_REGEX
++#undef HAVE_MMAP
++#undef HAVE_SCANDIR
++#undef HAVE_DIRFD
++#undef HAVE_UNLINKAT
++#undef HAVE_FSTATAT
++#undef HAVE_INETPTON
++#undef HAVE_INETATON
++#undef HAVE_STRPTIME
++#endif
++
+ /* execinfo available for backtrace */
+ #if ((defined(__linux__) && defined(__GLIBC__) && !defined(__UCLIBC__)) || \
+      defined(__APPLE__))

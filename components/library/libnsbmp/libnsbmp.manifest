@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     library/libnsbmp
+version  0.1.7
+summary  BMP and ICO decoder
+provide  libnsbmp
+require  developer/netsurf-buildsystem

@@ -1,0 +1,6 @@
+prefix=@PREFIX@
+nsshared=${prefix}/share/netsurf-buildsystem
+
+Name: netsurf-buildsystem
+Description: NetSurf's shared makefiles (NSSHARED)
+Version: @VERSION@

@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     library/libutf8proc
+version  1.3.1
+summary  Unicode normalisation (NetSurf's utf8proc)
+provide  libutf8proc
+require  developer/netsurf-buildsystem

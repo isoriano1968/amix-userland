@@ -1,0 +1,29 @@
+# name, version and what building and running it needs
+name     web/netsurf
+version  3.11
+summary  NetSurf web browser (framebuffer frontend on libnsfb's Xlib surface)
+require  developer/netsurf-buildsystem
+require  library/libwapcaplet
+require  library/libparserutils
+require  library/libhubbub
+require  library/libdom
+require  library/libcss
+require  library/libnsbmp
+require  library/libnsgif
+require  library/libnsutils
+require  library/libnslog
+require  library/libnspsl
+require  library/libutf8proc
+require  library/libnsfb
+require  library/libsvgtiny
+require  library/expat
+require  library/freetype
+require  fonts/dejavu
+require  fonts/comic-neue
+require  fonts/anton
+require  library/libiconv
+require  library/libjpeg
+require  library/libpng
+require  library/zlib
+require  library/openssl
+require  network/curl
