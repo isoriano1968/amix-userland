@@ -6,7 +6,7 @@
 # box takes LD_RUN_PATH; here each -L also gives -Wl,-R with the path on AMIX.
 # AMIX_SYSROOT says where the sysroot is.
 S=${AMIX_SYSROOT:-$HOME/opt/m68k-amix-sysroot}
-PKG_CONFIG_LIBDIR=$S/usr/local/lib/pkgconfig:$S/usr/gnu/lib/pkgconfig:$S/usr/dt/lib/pkgconfig:$S/usr/motif/lib/pkgconfig:$S/usr/x11r6/lib/pkgconfig:$S/usr/X/lib/pkgconfig:$S/usr/lib/pkgconfig
+PKG_CONFIG_LIBDIR=$S/usr/local/lib/pkgconfig:$S/usr/local/gnu/lib/pkgconfig:$S/usr/gnu/lib/pkgconfig:$S/usr/dt/lib/pkgconfig:$S/usr/motif/lib/pkgconfig:$S/usr/x11r6/lib/pkgconfig:$S/usr/X/lib/pkgconfig:$S/usr/lib/pkgconfig
 PKG_CONFIG_SYSROOT_DIR=$S
 PKG_CONFIG_SYSTEM_INCLUDE_PATH=/usr/include
 PKG_CONFIG_SYSTEM_LIBRARY_PATH=/usr/lib

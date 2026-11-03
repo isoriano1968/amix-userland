@@ -1,0 +1,102 @@
+AMIX: thread switches with the sjlj machine context (--with-mctx-mth=sjlj
+--with-mctx-dsp=usjlj): AMIX libc has no _setjmp/_longjmp, and its setjmp
+saves neither fp2-fp7 nor the FPCR, which gcc keeps call-saved; so
+pth_amix_setjmp/longjmp (no system call), and pth_mctx_set writes the start
+address and stack into the jmpbuf (the sigaltstack start dies in AMIX's
+sigsuspend).  Apply after configure: pth_acmac.h is generated.
+
+--- a/pth_acmac.h
++++ b/pth_acmac.h
+@@ -27,9 +27,19 @@
+ #define _PTH_ACMAC_H_
+ 
+ /* sig{set,long}jmp macros */
++#if defined(__amix__)
++/* AMIX: see pth_mctx.c (d2-d7, a1-a7, fp2-fp7, fpcr) */
++typedef long pth_amix_jmpbuf[33];
++extern int pth_amix_setjmp(long *) __attribute__((returns_twice));
++extern void pth_amix_longjmp(long *, int) __attribute__((noreturn));
++#define pth_sigjmpbuf pth_amix_jmpbuf
++#define pth_sigsetjmp(buf) pth_amix_setjmp(buf)
++#define pth_siglongjmp(buf,val) pth_amix_longjmp(buf,val)
++#else
+ #define pth_sigjmpbuf jmp_buf
+ #define pth_sigsetjmp(buf) _setjmp(buf)
+ #define pth_siglongjmp(buf,val) _longjmp(buf,val)
++#endif
+ 
+ /* stack setup macros */
+ #define pth_skaddr(func,skaddr,sksize) pth_skaddr_##func(skaddr,sksize)
+--- a/pth_mctx.c
++++ b/pth_mctx.c
+@@ -27,6 +27,37 @@
+                                                 -- Unknown        */
+ #include "pth_p.h"
+ 
++#if defined(__amix__) && PTH_MCTX_MTH(sjlj)
++/*
++ * AMIX: setjmp/longjmp for thread switches.  Like libc's setjmp (return
++ * address popped, then d2-d7, a1 = return address, a2-a7 at 0..55) plus the
++ * call-saved FPU registers fp2-fp7 (56..127) and the FPCR (128): 132 bytes,
++ * pth_amix_jmpbuf.  No system call: the signal mask is Pth's business.
++ */
++__asm__(
++"	.text\n"
++"	.globl	pth_amix_setjmp\n"
++"pth_amix_setjmp:\n"
++"	movel	%sp@+,%a1\n"
++"	movel	%sp@,%a0\n"
++"	moveml	%d2-%d7/%a1-%sp,%a0@\n"
++"	fmovemx	%fp2-%fp7,%a0@(56)\n"
++"	fmovel	%fpcr,%a0@(128)\n"
++"	clrl	%d0\n"
++"	jmp	%a1@\n"
++"	.globl	pth_amix_longjmp\n"
++"pth_amix_longjmp:\n"
++"	addql	#4,%sp\n"
++"	movel	%sp@+,%a0\n"
++"	movel	%sp@,%d0\n"
++"	bnes	1f\n"
++"	moveq	#1,%d0\n"
++"1:	fmovemx	%a0@(56),%fp2-%fp7\n"
++"	fmovel	%a0@(128),%fpcr\n"
++"	moveml	%a0@,%d2-%d7/%a1-%sp\n"
++"	jmp	%a1@\n");
++#endif
++
+ #if cpp
+ 
+ /*
+@@ -193,7 +224,31 @@
+     return TRUE;
+ }
+ 
+-#elif PTH_MCTX_MTH(sjlj)     &&\
++#elif PTH_MCTX_MTH(sjlj) && defined(__amix__)
++
++/*
++ * AMIX: the start address and stack written into the pth_amix_jmpbuf
++ * (pth_amix_mctx_set).  The function never returns (pth_spawn_trampoline
++ * ends in pth_exit); it gets a zero return address on a 16-byte aligned
++ * stack top.  The FPU state saved here is the creator's, as getcontext's was.
++ */
++intern int pth_mctx_set(
++    pth_mctx_t *mctx, void (*func)(void), char *sk_addr_lo, char *sk_addr_hi)
++{
++    unsigned long sp = ((unsigned long)sk_addr_hi & ~15UL) - 16;
++
++    (void)sk_addr_lo;
++    if (pth_mctx_save(mctx) != 0)
++        abort();                        /* only ever entered at func */
++    *(unsigned long *)sp = 0;           /* func's return address */
++    mctx->jb[6] = (long)func;
++    mctx->jb[12] = (long)sp;
++    sigemptyset(&mctx->sigs);
++    mctx->error = 0;
++    return TRUE;
++}
++
++#elif PTH_MCTX_MTH(sjlj)     && !defined(__amix__) &&\
+       !PTH_MCTX_DSP(sjljlx)  &&\
+       !PTH_MCTX_DSP(sjljisc) &&\
+       !PTH_MCTX_DSP(sjljw32)

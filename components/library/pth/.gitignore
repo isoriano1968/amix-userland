@@ -12,3 +12,5 @@
 __pycache__/
 .env
 secrets.env
+/pth-*.tar.gz
+/pth-2.0.7/

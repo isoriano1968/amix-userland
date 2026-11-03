@@ -1,0 +1,12 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+# every file of a Pth program: Pth's pthread.h first, so that blocking
+# calls become Pth's yielding ones
+pth_cflags=-I${includedir} -include ${includedir}/pthread.h
+
+Name: pth
+Description: GNU Pth cooperative threads and its pthread library
+Version: @VERSION@
+Libs: -L${libdir} -lpthread -lpth
+Cflags: -I${includedir}

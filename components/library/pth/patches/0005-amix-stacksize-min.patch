@@ -1,0 +1,20 @@
+pthread_attr_setstacksize: a size below PTHREAD_STACK_MIN is EINVAL and
+leaves the attribute alone, as POSIX has it.  Pth took it as given, and to
+Pth a stack size of 0 is the main thread's, no stack of its own: a thread
+started with it jumped to address 0 (libupnp asks for 0, "the system's
+default").  Applies after 0003.
+
+--- a/pthread.c
++++ b/pthread.c
+@@ -167,6 +167,11 @@
+ {
+     if (attr == NULL)
+         return pth_error(EINVAL, EINVAL);
++    /* POSIX: less than PTHREAD_STACK_MIN is EINVAL and leaves the attribute
++       as it was.  To Pth a stack size of 0 means the main thread, which has
++       no stack of its own: a thread started with it jumps to 0. */
++    if (stacksize < PTHREAD_STACK_MIN)
++        return pth_error(EINVAL, EINVAL);
+     if (!pth_attr_set((pth_attr_t)(*attr), PTH_ATTR_STACK_SIZE, (unsigned int)stacksize))
+         return errno;
+     return OK;
