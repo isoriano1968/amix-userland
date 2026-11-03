@@ -4,8 +4,17 @@
 # it.  AMIX's Xlib (X11R5, R6.3) looks for the cookie of localhost:10 under
 # the TCP address, not under hostname/unix:10 as sshd would store it alone,
 # so both go in.  X11R5's xauth (/usr/X/bin) mangles hex letters: R6.3's.
+# X11R5's Xlib (/usr/X/bin clients) asks under an address that differs
+# from program to program, so a wildcard entry for the display number
+# (family ffff, any address) goes in as well.
 if [ -n "$DISPLAY" ] && read proto cookie; then
 	n=`echo "$DISPLAY" | sed 's/^[^:]*:\([0-9]*\).*/\1/'`
 	printf 'add unix:%s %s %s\nadd localhost:%s %s %s\n' \
 	    "$n" "$proto" "$cookie" "$n" "$proto" "$cookie" | /usr/x11r6/bin/xauth -q -
+	if [ "$proto" = MIT-MAGIC-COOKIE-1 ]; then
+		len=`expr "$cookie" : '.*'`
+		printf 'ffff 0000  %04x %s 0012 4d49542d4d414749432d434f4f4b49452d31 %04x %s\n' \
+		    `expr "$n" : '.*'` `echo "$n" | sed 's/\(.\)/3\1/g'` \
+		    `expr $len / 2` "$cookie" | /usr/x11r6/bin/xauth -q nmerge -
+	fi
 fi
