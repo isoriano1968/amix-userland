@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     library/libiconv
+version  1.18
+summary  GNU libiconv: character set conversion (AMIX's libc has no iconv)
+provide  libiconv

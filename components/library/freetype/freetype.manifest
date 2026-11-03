@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     library/freetype
+version  2.14.1
+summary  FreeType font rendering
+provide  freetype2
+require  library/zlib

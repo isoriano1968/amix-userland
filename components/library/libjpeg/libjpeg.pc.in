@@ -1,0 +1,9 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: libjpeg
+Description: JPEG images (IJG)
+Version: @VERSION@
+Libs: -L${libdir} -ljpeg
+Cflags: -I${includedir}

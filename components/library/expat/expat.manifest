@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     library/expat
+version  2.7.3
+summary  Expat XML parser
+provide  expat

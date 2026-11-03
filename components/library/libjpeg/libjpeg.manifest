@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     library/libjpeg
+version  9f
+summary  IJG libjpeg: JPEG images
+provide  libjpeg

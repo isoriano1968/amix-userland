@@ -1,0 +1,9 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: libiconv
+Description: character set conversion
+Version: @VERSION@
+Libs: -L${libdir} -liconv
+Cflags: -I${includedir}
