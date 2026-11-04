@@ -132,7 +132,15 @@ word: a program can start and die at the first call. Read `readelf -d`, and read
 
 ### 5. Libraries
 
-A shared library needs these, after linking:
+Build the objects `-fPIC` into a static archive and let `tools/amix-mkshlib` make
+the shared library; it runs every step below in order:
+
+```make
+../../../tools/amix-mkshlib build/libfoo.a libfoo.so.1 build -lbar
+```
+
+Use `-init` for a library with constructors: AMIX's `ld.so.1` calls `_init` but never
+runs `.init_array`. What it does, if you need the steps by hand:
 
 ```make
 ../../../tools/amix-got-check build/*.o
@@ -140,36 +148,46 @@ m68k-elf-gcc -shared -Wl,-h,libfoo.so.1 build/*.o -o build/libfoo.so.1
 ../../../tools/amix-fix-data-relocs build/libfoo.so.1
 ```
 
-Run `amix-got-check` on the objects: it finds a GCC 14 `-fPIC` fault that gives wrong
-data with no error. Run `amix-fix-data-relocs` on any library that exports data.
+`amix-got-check` finds a GCC 14 `-fPIC` fault that gives wrong data with no error;
+`amix-fix-data-relocs` is needed on any library that exports data. The
+[porting how-to](porting-howto.md) has the traps around exported symbols and
+`_sys_siglist`.
 
 `stage` installs `libfoo.so.1`, the link `libfoo.so`, the headers and `foo.pc`. The
 `.pc` file carries no runpath: `tools/amix-pkg-config` adds one for cross builds, and
 `LD_RUN_PATH` does it on the Amiga.
 
 AMIX's own `ld` crashes on a library made by current binutils, so `libfoo.so` on the
-Amiga must be a link stub. `desktop/cde/scripts/stage-stubs.sh` writes the assembler
-for one with `tools/amix-link-stub`, and the Amiga's own `as` and `ld` build it.
+Amiga must be a link stub: the exported symbols only, with the soname of the real
+library, so the program runs with `libfoo.so.1`. With `make-rules/shlib.mk` this
+comes by itself: `$(mkshlibs)` writes the stub's assembler (`tools/amix-link-stub`,
+from the library and its `SHLIB_ARGS`), the stage puts it and a `LIST` into
+`/usr/local/share/amix-stubs/<name>`, and `amix-install` builds the stub on the
+Amiga with its own `as` and `ld`. A library whose export list is too long for
+AMIX's `as` keeps only its API: `SHLIB_STUB_ONLY_libfoo.so.1 = ^foo_`.
 
 ### 6. Test it
 
 Install into the sysroot and on the Amiga, then run it there:
 
 ```sh
-make build sysroot-install
-tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -cf foo.tar -C build/stage usr
-python3 ../../../tools/net/netsend.py foo.tar 5555
+make build stage sysroot-install
+python3 ../../../tools/net/netsend.py build/foo-amix.tar 5555
 ```
 
 On the Amiga, as root:
 
 ```sh
 cd /tmp
-netget <your PC> 5555 foo.tar
-cd /
-/usr/gnu/bin/tar --no-overwrite-dir -xf /tmp/foo.tar
-rm /tmp/foo.tar
+netget <your PC> 5555 foo-amix.tar
+amix-install /tmp/foo-amix.tar
+rm /tmp/foo-amix.tar
 ```
+
+`amix-install` comes from `sysutils/amix-pkgtools`; install that one first by
+hand, `cd / && /usr/gnu/bin/tar --no-overwrite-dir -xf amix-pkgtools-amix.tar`.
+`amix-stubs` (in the same package) builds the stubs again, for one package by name
+or for all; run it when a library's `.so` link was replaced by hand.
 
 Two rules keep a package from changing the system around it. The tar is made
 with `--mode=go-w`, so nothing in it is group- or world-writable. It is

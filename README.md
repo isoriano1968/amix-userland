@@ -40,7 +40,9 @@ A component holds what it takes to build it, not the built result:
 `make build` runs `tools/amix-requires` first: each `require` must be another
 component, and what that component `provide`s must be in the sysroot. What is
 missing is built from its component and installed there. How to make one:
-**[doc/creating-a-package.md](doc/creating-a-package.md)**.
+**[doc/creating-a-package.md](doc/creating-a-package.md)**; how a port goes from
+download to the Amiga, with a worked example:
+**[doc/porting-howto.md](doc/porting-howto.md)**.
 
 No binaries, and no game data or other third-party content that may not be
 redistributed.
@@ -72,15 +74,15 @@ version it names in its Makefile, and one version is linked into
 | `developer`    | compilers and development tools      | moved: gcc-27, gcc-14, vscode, nedit, pkgconf |
 | `demos`        | demos and intros                     | moved: amixintro, halloween, lamerintro                                  |
 | `editor`       | editors                              | moved: vim                                        |
-| `gnu`          | GNU tools, in `/usr/gnu`             | bison, diffutils, findutils, gawk, grep, m4, make, sed, tar, and the metapackage gnu-tools |
+| `gnu`          | GNU tools, in `/usr/gnu` (gzip in `/usr/local`) | bison, diffutils, findutils, gawk, grep, gzip, m4, make, sed, tar, and the metapackage gnu-tools |
 | `games`        | games and their engines              | moved: iortcw, ioquake3, quake                    |
 | `graphics`     | 3D and images                        | moved: blender; fsv                               |
-| `library`      | general libraries                    | moved: freeglut, glu, lib060, libpng, openssl, ncurses, pth, sdl2, soft3d, tinygl, zlib |
+| `library`      | general libraries                    | moved: freeglut, glu, lib060, libpng, openssl, ncurses, pth, sdl2, soft3d, tinygl, zlib; bzip2, zstd |
 | `network`      | network tools                        | openssh, curl, wget, ca-certificates              |
 | `multimedia`   | video                                | moved: ffmpeg                                     |
 | `runtime`      | language runtimes                    | moved: python3                                    |
 | `shell`        | shells                               | bash, in `/usr/gnu/bin`                                            |
-| `sysutils`     | system tools                         | moved: amtop, fileutils, terminfo                           |
+| `sysutils`     | system tools                         | moved: amtop, fileutils, terminfo; amix-pkgtools (amix-install, amix-stubs) |
 | `x11`          | X server, libraries, GL              | moved: libxp, x11r6.3, mesa-31, mesa-183, mesa-demos, xzz9000                 |
 
 Kernel drivers, the 68040/68060 port and the Z3660 core 1 programs are in
