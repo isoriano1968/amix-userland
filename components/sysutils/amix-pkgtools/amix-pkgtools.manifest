@@ -1,0 +1,6 @@
+# name, version and what building and running it needs
+name     sysutils/amix-pkgtools
+version  1.0
+summary  amix-install and amix-stubs: packages onto AMIX, with link stubs
+require  gnu/tar
+require  gnu/sed

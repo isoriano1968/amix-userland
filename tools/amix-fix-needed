@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""amix-fix-needed LIB...: put a shared library's NEEDED names first in .dynstr.
+
+AMIX's ld.so.1 (dl_makelist, on every dlopen, which libnsl makes for its
+name-to-address lookups) walks the NEEDED entries of each loaded object but
+reads the names from the program's string table.  The 1991 ld puts them at the
+start of .dynstr, so the offsets are small and land in the program's table;
+GNU ld puts them at the end, and in a small program the offset is past
+everything mapped: a fault in _so_loaded.  This moves the strings that NEEDED,
+SONAME and RPATH name to the start of .dynstr, whole strings only, so the size
+stays the same, and renumbers .dynsym and .dynamic to match.
+"""
+import struct, sys
+
+NEEDED, SONAME, RPATH, RUNPATH = 1, 14, 15, 29
+VERSION_SECTIONS = (0x6ffffffd, 0x6ffffffe)	# verdef, verneed: not made for AMIX
+
+def sections(d):
+    shoff, = struct.unpack(">I", d[32:36])
+    shentsize, shnum = struct.unpack(">HH", d[46:50])
+    return [struct.unpack(">10I", d[shoff + i * shentsize:shoff + i * shentsize + 40]) for i in range(shnum)]
+
+def fix(path):
+    d = bytearray(open(path, "rb").read())
+    sh = sections(d)
+    if any(s[1] in VERSION_SECTIONS for s in sh):
+        sys.exit("amix-fix-needed: %s has symbol versions" % path)
+    dynsym = next(s for s in sh if s[1] == 11)
+    dynstr = sh[dynsym[6]]
+    dyn = next(s for s in sh if s[1] == 6)
+    s0, size = dynstr[4], dynstr[5]
+    table = bytes(d[s0:s0 + size])
+    # the strings, each with its NUL; offset 0 is the empty string and stays
+    units, p = [], 0
+    while p < size:
+        e = table.index(b"\0", p) + 1
+        units.append((p, e))
+        p = e
+    unit_of = {}
+    for u, (a, e) in enumerate(units):
+        for o in range(a, e):
+            unit_of[o] = u
+    ents = [list(struct.unpack(">iI", d[dyn[4] + i * 8:dyn[4] + i * 8 + 8])) for i in range(dyn[5] // 8)]
+    first = []
+    for tag, val in ents:
+        if tag in (NEEDED, SONAME, RPATH, RUNPATH) and unit_of[val] not in first and unit_of[val]:
+            first.append(unit_of[val])
+    order = [0] + first + [u for u in range(1, len(units)) if u not in first]
+    new, start = bytearray(), {}
+    for u in order:
+        start[u] = len(new)
+        new += table[units[u][0]:units[u][1]]
+    assert len(new) == size
+    moved = lambda o: start[unit_of[o]] + o - units[unit_of[o]][0]
+    if new == table:
+        return None
+    d[s0:s0 + size] = new
+    for i in range(dynsym[5] // 16):
+        q = dynsym[4] + i * 16
+        name, = struct.unpack(">I", d[q:q + 4])
+        d[q:q + 4] = struct.pack(">I", moved(name))
+    for i, (tag, val) in enumerate(ents):
+        if tag in (NEEDED, SONAME, RPATH, RUNPATH):
+            d[dyn[4] + i * 8 + 4:dyn[4] + i * 8 + 8] = struct.pack(">I", moved(val))
+    open(path, "wb").write(d)
+    return max(start[u] + units[u][1] - units[u][0] for u in first) if first else 0
+
+for path in sys.argv[1:]:
+    n = fix(path)
+    print("%s: %s" % (path, "already in order" if n is None else "NEEDED names end at %d" % n))

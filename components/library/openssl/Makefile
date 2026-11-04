@@ -29,7 +29,9 @@ build: $(COMPONENT_ARCHIVE)
 		build/libcrypto.so.3 -o build/libssl.so.3
 	m68k-elf-strip build/libcrypto.so.3 build/libssl.so.3
 	../../../tools/amix-fix-data-relocs build/libcrypto.so.3
+	../../../tools/amix-fix-needed build/libcrypto.so.3
 	../../../tools/amix-fix-data-relocs build/libssl.so.3
+	../../../tools/amix-fix-needed build/libssl.so.3
 
 stage:
 	rm -rf $(STAGE_DIR)

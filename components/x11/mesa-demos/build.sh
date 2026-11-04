@@ -25,6 +25,7 @@ m68k-elf-gcc -shared -Wl,-h,libmesademo.so.1 "$O"/*.o -o "$L/libmesademo.so.1" -
 	-L"$ST/usr/x11r6/lib" -lX11 -lm -Wl,-rpath-link,"$ST/usr/local/lib" -Wl,-rpath-link,"$ST/usr/x11r6/lib" || exit 1
 m68k-elf-strip "$L/libmesademo.so.1"
 "$H/../../../tools/amix-fix-data-relocs" "$L/libmesademo.so.1"
+"$H/../../../tools/amix-fix-needed" "$L/libmesademo.so.1"
 ln -sf libmesademo.so.1 "$L/libmesademo.so"
 ok=0; bad=0
 for s in "$@"; do

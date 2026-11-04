@@ -43,6 +43,7 @@ lib() {
 	for d in "$@"; do deps="$deps -l$d"; done
 	m68k-elf-gcc -shared -Wl,-h,lib$l.so.7 $objs -L"$L" $deps -o "$L/lib$l.so.7"
 	"$TOOLS/amix-fix-data-relocs" "$L/lib$l.so.7"
+	"$TOOLS/amix-fix-needed" "$L/lib$l.so.7"
 	ln -sf "lib$l.so.7" "$L/lib$l.so"
 	echo "$l: $(echo $objs | wc -w) objects, $(wc -c < "$L/lib$l.so.7") bytes"
 	pc=$(echo "$l" | tr 'A-Z' 'a-z')

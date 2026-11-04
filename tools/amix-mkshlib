@@ -5,9 +5,10 @@
 # whose own build cannot make one for this target: OUTDIR/SONAME with all of
 # ARCHIVE, naming the libraries in LINK-ARGS (-L, -l, -Wl,-R) as NEEDED, and
 # the lib<name>.so link beside it.  The GOT check (gcc 14's -fPIC bug) runs on
-# the archive first; afterwards it is stripped and exported data is named
-# again (amix-fix-data-relocs).  -init: the library has constructors, which
-# ld.so.1 runs only through its _init (so-init/).
+# the archive first; afterwards it is stripped, exported data is named again
+# (amix-fix-data-relocs) and the NEEDED names go first in .dynstr
+# (amix-fix-needed).  -init: the library has constructors, which ld.so.1 runs
+# only through its _init (so-init/).
 T=`dirname "$0"`
 CC=${CC:-m68k-elf-gcc}
 init=
@@ -31,4 +32,5 @@ $CC -shared -Wl,-h,"$so" $begin -Wl,--whole-archive "$a" -Wl,--no-whole-archive 
 [ -f "$out/$so" ] || exit 1
 ${STRIP:-m68k-elf-strip} "$out/$so" || exit 1
 "$T/amix-fix-data-relocs" "$out/$so" || exit 1
+"$T/amix-fix-needed" "$out/$so" > /dev/null || exit 1
 ln -sf "$so" "$out/`echo $so | sed 's/\.so\..*/.so/'`"

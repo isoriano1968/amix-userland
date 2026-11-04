@@ -36,6 +36,7 @@ build: $(COMPONENT_ARCHIVE)
 		-Wl,-rpath-link,$(L) -Wl,-rpath-link,$(XL) -Wl,-R,/usr/local/lib:/usr/x11r6/lib -o build/libglut.so.3
 	m68k-elf-strip build/libglut.so.3
 	../../../tools/amix-fix-data-relocs build/libglut.so.3
+	../../../tools/amix-fix-needed build/libglut.so.3
 
 stage:
 	rm -rf $(STAGE_DIR)

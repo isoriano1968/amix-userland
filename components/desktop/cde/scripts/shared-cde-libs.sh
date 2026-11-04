@@ -31,6 +31,7 @@ for a in tt/lib/libtt.a DtSvc/libDtSvc.a DtHelp/libDtHelp.a DtWidget/libDtWidget
 	m68k-elf-gcc -shared -Wl,-h,$n.so.2 -Wl,--whole-archive "$d/$n.a" -Wl,--no-whole-archive \
 		-L"$L" $X $deps -Wl,-R,/usr/dt/lib:/usr/motif/lib:/usr/x11r6/lib -o "$L/$n.so.2"
 	"$TOOLS/amix-fix-data-relocs" "$L/$n.so.2"
+	"$TOOLS/amix-fix-needed" "$L/$n.so.2"
 	ln -sf "$L/$n.so.2" "$d/$n.so.2"
 	ln -sf "$n.so.2" "$d/$n.so"
 	ln -sf "$n.so.2" "$L/$n.so"

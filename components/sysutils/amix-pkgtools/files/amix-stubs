@@ -1,0 +1,27 @@
+#!/bin/sh
+# amix-stubs [component...] -- build the link stubs of the shared libraries a
+# package brought, with AMIX's own as and ld.  AMIX's ld cannot read a library
+# from current binutils; it links against the stub libfoo.so, and the program
+# runs with the real libfoo.so.N.  The sources are in
+# /usr/local/share/amix-stubs/<component>: one <lib>.s each and LIST (lib dir).
+# With no component, every one there.
+D=/usr/local/share/amix-stubs
+cd $D || exit 1
+[ $# -gt 0 ] || set -- `ls`
+T=/var/tmp/amix-stubs.$$
+rc=0
+for c in "$@"; do
+	if [ ! -f $D/$c/LIST ]; then echo "amix-stubs: no $D/$c/LIST"; rc=1; continue; fi
+	rm -rf $T; mkdir $T || exit 1
+	while read b d; do
+		n=`echo $b | sed 's/\.so\..*/.so/'`
+		if /usr/ccs/bin/as -o $T/$b.o $D/$c/$b.s && /usr/ccs/bin/ld -G -h $b -o $T/$n $T/$b.o && [ -s $T/$n ]; then
+			rm -f $d/$n; cp $T/$n $d/$n; chmod 755 $d/$n; echo "$c: $d/$n"
+		else
+			echo "$c: $b FAILED"; : > $T/failed
+		fi
+	done < $D/$c/LIST
+	[ -f $T/failed ] && rc=1
+	rm -rf $T
+done
+exit $rc

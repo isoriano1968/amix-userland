@@ -28,6 +28,7 @@ build: $(COMPONENT_ARCHIVE)
 		-Wl,-R,$(PREFIX)/lib -o build/libpng16.so.16
 	m68k-elf-strip build/libpng16.so.16
 	../../../tools/amix-fix-data-relocs build/libpng16.so.16
+	../../../tools/amix-fix-needed build/libpng16.so.16
 
 stage:
 	rm -rf $(STAGE_DIR)

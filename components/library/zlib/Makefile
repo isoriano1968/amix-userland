@@ -23,6 +23,7 @@ build: $(COMPONENT_ARCHIVE)
 	m68k-elf-gcc -shared -Wl,-h,libz.so.1 build/*.o -o build/libz.so.1
 	m68k-elf-strip build/libz.so.1
 	../../../tools/amix-fix-data-relocs build/libz.so.1
+	../../../tools/amix-fix-needed build/libz.so.1
 
 stage:
 	rm -rf $(STAGE_DIR)

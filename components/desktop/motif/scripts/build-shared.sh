@@ -36,9 +36,11 @@ make -j"$JOBS" -C lib CFLAGS="$CF" > make-lib.log 2>&1 || { echo "failed: $PIC/m
 m68k-elf-gcc -shared -Wl,-h,libXm.so.4 -Wl,--whole-archive lib/Xm/.libs/libXm.a -Wl,--no-whole-archive \
 	-L"$XL" -lXmu -lXt -lSM -lICE -lXext -lX11 $RPATH -o "$ROOT/lib/libXm.so.4"
 "$TOP/../../../tools/amix-fix-data-relocs" "$ROOT/lib/libXm.so.4"
+"$TOP/../../../tools/amix-fix-needed" "$ROOT/lib/libXm.so.4"
 ln -sf libXm.so.4 "$ROOT/lib/libXm.so"
 m68k-elf-gcc -shared -Wl,-h,libMrm.so.4 -Wl,--whole-archive lib/Mrm/.libs/libMrm.a -Wl,--no-whole-archive \
 	-L"$ROOT/lib" -lXm -L"$XL" -lXt -lX11 $RPATH -o "$ROOT/lib/libMrm.so.4"
+"$TOP/../../../tools/amix-fix-needed" "$ROOT/lib/libMrm.so.4"
 ln -sf libMrm.so.4 "$ROOT/lib/libMrm.so"
 for l in Xm Mrm; do
 	cat > "$ROOT/lib/pkgconfig/$(echo $l | tr 'A-Z' 'a-z').pc" <<P

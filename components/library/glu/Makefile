@@ -30,6 +30,7 @@ build: $(COMPONENT_ARCHIVE)
 		-Wl,-rpath-link,$(L) -Wl,-rpath-link,$(AMIX_SYSROOT)/usr/x11r6/lib -o build/libGLU.so.1
 	m68k-elf-strip build/libGLU.so.1
 	../../../tools/amix-fix-data-relocs build/libGLU.so.1
+	../../../tools/amix-fix-needed build/libGLU.so.1
 
 stage:
 	rm -rf $(STAGE_DIR)
