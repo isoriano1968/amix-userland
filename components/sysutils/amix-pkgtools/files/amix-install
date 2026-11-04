@@ -2,12 +2,25 @@
 # amix-install TAR... -- install amix-userland packages (build/<name>-amix.tar)
 # as root: unpack each into / with GNU tar, keeping the owner and mode of the
 # directories already there, then build the link stubs it brought (amix-stubs).
+# Configuration in etc/ is not replaced: a file that is there stays, and the
+# package's own, if it differs, is put beside it as <file>.new.
 [ $# -gt 0 ] || { echo "usage: amix-install package-amix.tar..."; exit 2; }
+TAR=/usr/gnu/bin/tar
 for t in "$@"; do
 	case $t in /*) ;; *) t=`pwd`/$t;; esac
-	c=`/usr/gnu/bin/tar -tf $t | /usr/gnu/bin/sed -n -e 's|^usr/local/share/amix-stubs/\([^/]*\)/LIST$|\1|p' \
+	c=`$TAR -tf $t | /usr/gnu/bin/sed -n -e 's|^usr/local/share/amix-stubs/\([^/]*\)/LIST$|\1|p' \
 		-e 's|^usr/local/share/amix-stubs/\([^/]*\)/native.sh$|\1|p' | sort -u`
-	(cd / && /usr/gnu/bin/tar --no-overwrite-dir -xf $t) || { echo "amix-install: $t failed"; exit 1; }
+	(cd / && $TAR --no-overwrite-dir --anchored --exclude='etc/*' -xf $t) || { echo "amix-install: $t failed"; exit 1; }
+	if $TAR -tf $t | /usr/gnu/bin/grep -q '^etc/.'; then
+		for f in `$TAR -tf $t | /usr/gnu/bin/grep '^etc/.*[^/]$'`; do
+			[ -f /$f ] || continue
+			$TAR -xOf $t $f | /usr/gnu/bin/cmp -s - /$f ||
+				{ $TAR -xOf $t $f > /$f.new && echo "kept /$f; the package's is /$f.new"; }
+		done
+		# --skip-old-files leaves what is there, directories too
+		(cd / && $TAR --skip-old-files --wildcards -xf $t 'etc/*') ||
+			{ echo "amix-install: $t etc failed"; exit 1; }
+	fi
 	echo "installed $t"
 	[ -z "$c" ] || /usr/local/bin/amix-stubs $c || exit 1
 done

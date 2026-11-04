@@ -1,0 +1,10 @@
+# name, version and what building and running it needs
+name     meta/amix-net
+version  1
+summary  The network: OpenSSH, curl, wget, the CA bundle and the libraries under them
+require  library/zlib
+require  library/openssl
+require  network/ca-certificates
+require  network/openssh
+require  network/curl
+require  network/wget

@@ -40,6 +40,8 @@ for st in stages:
                 shutil.copy2(src, out)
     for top, dirs, files in os.walk(st):
         for n in dirs:
+            if os.path.islink(os.path.join(top, n)):
+                continue
             m = stat.S_IMODE(os.stat(os.path.join(top, n)).st_mode)
             os.chmod(os.path.join(dest, os.path.relpath(os.path.join(top, n), st)), m | 0o700)
 if clash:
