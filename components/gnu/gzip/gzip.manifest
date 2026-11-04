@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     gnu/gzip
+version  1.14
+summary  GNU gzip
+require  shell/bash

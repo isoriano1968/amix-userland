@@ -1,0 +1,15 @@
+bzip2.c: declare fchmod on AMIX, whose sys/stat.h lacks it (libc has it).
+
+--- a/bzip2.c	2019-07-13 19:50:05.000000000 +0200
++++ b/bzip2.c	2026-11-04 14:11:43.287283763 +0100
+@@ -72,6 +72,10 @@
+ #   include <utime.h>
+ #   include <unistd.h>
+ #   include <sys/stat.h>
++#   ifdef __amix__
++       /* AMIX's sys/stat.h does not declare it; libc has it */
++       extern int fchmod ( int, mode_t );
++#   endif
+ #   include <sys/times.h>
+ 
+ #   define PATH_SEP    '/'

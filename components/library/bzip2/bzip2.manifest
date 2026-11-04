@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     library/bzip2
+version  1.0.8
+summary  bzip2 compressor and libbz2
+provide  bzip2

@@ -23,12 +23,17 @@ for h in gl.h gl_mangle.h glu.h glu_mangle.h glut.h glx.h glx_mangle.h; do cp "$
 for d in Dt Tt csa; do cp -RL "$CI/$d" "$STAGE/usr/dt/include/"; done
 chmod -R u+w,go+rX "$STAGE/usr/x11r6/include" "$STAGE/usr/motif/include" "$STAGE/usr/local/include/GL" "$STAGE/usr/dt/include"
 
+# the glue a new CDE program links (tt.pc): shared, like every installed
+# library, made by amix-mkshlib from -fPIC archives
 DL=$STAGE/usr/dt/lib
-m68k-elf-gcc -O2 -m68060 -c "$TOP/files/amixcxx.c" -o "$DL/amixcxx.o"
-rm -f "$DL/libamixcxx.a"
-m68k-elf-ar rcs "$DL/libamixcxx.a" "$DL/amixcxx.o"
-rm -f "$DL/amixcxx.o"
-cp "$TOP/work-shared/cde-2.2.4a/lib/amixcde/libamixcde.a" "$DL/"
+GW=$TOP/build/glue; rm -rf "$GW"; mkdir -p "$GW"
+for g in amixcxx:$TOP/files/amixcxx.c amixcde:$TOP/work-shared/cde-2.2.4a/lib/amixcde/amixcde.c; do
+	n=${g%%:*}
+	m68k-elf-gcc -O2 -m68060 -fPIC -c "${g#*:}" -o "$GW/$n.o"
+	m68k-elf-ar rcs "$GW/lib$n.a" "$GW/$n.o"
+	"$ROOT/tools/amix-mkshlib" "$GW/lib$n.a" lib$n.so.1 "$DL" -L"${AMIX_SYSROOT:-$HOME/opt/m68k-amix-sysroot}/usr/local/lib" -lamixc99
+done
+rm -f "$DL/libamixcxx.a" "$DL/libamixcde.a"
 
 # dependencies; Requires are read by both pkg-configs
 need() {	# file requires
@@ -38,7 +43,7 @@ need() {	# file requires
 P=$XL/pkgconfig
 need "$P/x11.pc" amixc99
 sed -i 's/ -lX11$/ -lX11 -lsocket -lnsl/' "$P/x11.pc"
-sed -i 's/ -lXt$/ -lXtInherit -lXt/' "$P/xt.pc"
+sed -i '/-lXtInherit/!s/ -lXt$/ -lXtInherit -lXt/' "$P/xt.pc"
 need "$P/xt.pc" sm ice x11; need "$P/sm.pc" ice x11; need "$P/ice.pc" x11
 need "$P/xext.pc" x11; need "$P/xi.pc" xext x11; need "$P/xmu.pc" xt xext x11
 need "$P/xaw.pc" xmu xt xext x11

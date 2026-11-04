@@ -6,7 +6,10 @@ GNU := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 include ../../../make-rules/shared.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
-PREFIX = /usr/gnu
+# /usr/gnu, where GNU tools do not shadow AMIX's own; a tool AMIX does not
+# have sets GNU_PREFIX = /usr/local before the include (gnu/gzip)
+GNU_PREFIX ?= /usr/gnu
+PREFIX = $(GNU_PREFIX)
 S = $(COMPONENT_NAME)-$(COMPONENT_VERSION)
 W = -Wno-error=implicit-function-declaration -Wno-error=int-conversion \
 	-Wno-error=incompatible-pointer-types -Wno-error=implicit-int
