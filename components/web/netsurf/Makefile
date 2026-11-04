@@ -25,7 +25,10 @@ FONTS = $(PREFIX)/share/fonts
 NS_ENV = CFLAGS="-O2 -m68060 -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4 -U__STRICT_ANSI__ \
 	-fno-split-wide-types -Wno-error -include $(CURDIR)/files/amix-netsurf.h -I$(NS_INCLUDE) -I$(GNU_COMPAT)/getopt \
 	-I$(R)$(PREFIX)/include" \
-	LDFLAGS="$(CURDIR)/build/libamixns.a -L$(R)$(PREFIX)/lib -Wl,-R,$(PREFIX)/lib:/usr/x11r6/lib -liconv -lamixc99 -lsocket -lnsl -lgen"
+	LDFLAGS="$(CURDIR)/build/libamixns.a -L$(R)$(PREFIX)/lib -Wl,-R,$(PREFIX)/lib:/usr/x11r6/lib -Wl,-u,_sys_siglist -liconv -lamixc99 -lsocket -lnsl -lgen"
+# -u _sys_siglist: libamixc99's amix_str.o in libcss/libhubbub refers to it, and
+# AMIX's runtime libc.so.1 has no _sys_siglist: the program must carry (and
+# export) the link-time libc's copy, which it only does when asked to
 NS_MAKE = $(NS_ENV) $(MAKE) -C $(S) TARGET=framebuffer HOST=AMIX PREFIX=$(PREFIX) \
 	CC=m68k-elf-gcc BUILD_CC=cc PKG_CONFIG=$(PKG_CONFIG) NSSHARED=$(R)$(PREFIX)/share/netsurf-buildsystem \
 	NETSURF_FB_FRONTEND=x NETSURF_FB_FONTLIB=freetype NETSURF_FB_RESPATH=$(RES)/ \
