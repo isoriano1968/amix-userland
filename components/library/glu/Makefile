@@ -7,6 +7,7 @@ COMPONENT_SHA256  = bd43fe12f374b1192eb15fe20e45ff456b9bc26ab57f0eee919f96ca0f8a
 CLEAN_FILES       = glu-$(COMPONENT_VERSION) $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 S = glu-$(COMPONENT_VERSION)
@@ -39,5 +40,6 @@ stage:
 	ln -sf libGLU.so.1 $(STAGE_DIR)$(PREFIX)/lib/libGLU.so
 	cp $(S)/include/GL/glu.h $(STAGE_DIR)$(PREFIX)/include/GL/
 	sed -e 's|@PREFIX@|$(PREFIX)|' -e 's|@VERSION@|$(COMPONENT_VERSION)|' glu.pc.in > $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/glu.pc
+	$(stage_stubs)
 
 .PHONY: build stage

@@ -14,6 +14,11 @@ STAGE_DIR  = $(CURDIR)/build/stage
 # where a component belongs on AMIX: /usr/local, /usr/gnu, /usr/X, /usr
 PREFIX     ?= /usr/local
 
+# where the builds of the shared X, Motif, zzgl and CDE libraries put them
+# (x11/x11r6.3/files/build-shared.sh and the others); their components'
+# stages take their part from it
+SHARED_STAGE ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../../private/shared-build/stage)
+
 # a manifest's requirements are checked before anything is built
 ifneq ($(wildcard *.manifest),)
 build: requires

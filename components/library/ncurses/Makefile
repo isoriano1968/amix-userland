@@ -7,6 +7,7 @@ COMPONENT_SHA256  = 355b4cbbed880b0381a04c46617b7656e362585d52e9cf84a67e2009b749
 CLEAN_FILES       = ncurses-$(COMPONENT_VERSION) $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 
@@ -37,5 +38,6 @@ stage:
 		sed -e 's|@NAME@|'$$l'|' -e 's|@PREFIX@|$(PREFIX)|' -e 's|@VERSION@|$(COMPONENT_VERSION)|' ncurses.pc.in \
 			> $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/$$l.pc; \
 	done
+	$(stage_stubs)
 
 .PHONY: build stage

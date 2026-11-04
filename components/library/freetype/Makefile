@@ -9,6 +9,7 @@ COMPONENT_SHA256  = 32427e8c471ac095853212a37aef816c60b42052d4d9e48230bab3bdf293
 CLEAN_FILES       = freetype-$(COMPONENT_VERSION) $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 S  = freetype-$(COMPONENT_VERSION)
@@ -34,6 +35,7 @@ stage:
 	rm -rf $(STAGE_DIR)$(PREFIX)/lib/*.la $(STAGE_DIR)$(PREFIX)/lib/*.a $(STAGE_DIR)$(PREFIX)/share
 	cp -P build/libfreetype.so.6 build/libfreetype.so $(STAGE_DIR)$(PREFIX)/lib/
 	chmod -R go-w $(STAGE_DIR)
+	$(stage_stubs)
 	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) -cf build/freetype-amix.tar usr
 
 .PHONY: build stage

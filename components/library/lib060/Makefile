@@ -27,5 +27,16 @@ mem060.o: mem060.c
 test060: test060.c libm060.a libc060.a
 	$(CC) -O2 -m68060 -fno-builtin -o $@ test060.c -L. -lm060 -lc060 -lm
 
+# build and stage as in the other components: the archives into /usr/local/lib
+STAGE_DIR = $(CURDIR)/build/stage
+build: all
+stage: all
+	rm -rf $(STAGE_DIR)
+	mkdir -p $(STAGE_DIR)/usr/local/lib
+	cp libm060.a libc060.a $(STAGE_DIR)/usr/local/lib/
+	chmod -R u+w,go-w,go+rX $(STAGE_DIR)
+	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) \
+		-cf build/lib060-amix.tar usr
+
 clean:
-	rm -f *.o *.a test060
+	rm -rf *.o *.a test060 build

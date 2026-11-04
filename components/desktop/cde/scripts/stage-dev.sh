@@ -1,6 +1,7 @@
 #!/bin/sh
 # stage-dev.sh STAGE -- what development needs beside the shared libraries:
-# headers in each prefix, and .pc files that say all a program
+# headers in each prefix (GL's come from x11/mesa-183, library/glu and
+# library/freeglut), and .pc files that say all a program
 # must link, on the machine itself as on the PC.
 set -e
 STAGE=$1
@@ -12,16 +13,14 @@ XI=$PRIV/xc/exports/include
 XL=$STAGE/usr/x11r6/lib
 MR=$TOP/../motif/work/motif-root/usr/motif
 CI=$TOP/work-shared/cde-2.2.4a/exports/include
-GL=$ROOT/components/x11/mesa-31/work-pic/include/GL
 
 cp "$ROOT/components/developer/gcc-27/include/"std*.h "$STAGE/usr/local/include/"
-mkdir -p "$STAGE/usr/x11r6/include" "$STAGE/usr/motif/include" "$STAGE/usr/local/include/GL" \
+mkdir -p "$STAGE/usr/x11r6/include" "$STAGE/usr/motif/include" \
 	"$STAGE/usr/dt/include" "$STAGE/usr/dt/lib/pkgconfig"
 cp -RL "$XI/X11" "$STAGE/usr/x11r6/include/"
 cp -RL "$MR/include/." "$STAGE/usr/motif/include/"
-for h in gl.h gl_mangle.h glu.h glu_mangle.h glut.h glx.h glx_mangle.h; do cp "$GL/$h" "$STAGE/usr/local/include/GL/"; done
 for d in Dt Tt csa; do cp -RL "$CI/$d" "$STAGE/usr/dt/include/"; done
-chmod -R u+w,go+rX "$STAGE/usr/x11r6/include" "$STAGE/usr/motif/include" "$STAGE/usr/local/include/GL" "$STAGE/usr/dt/include"
+chmod -R u+w,go+rX "$STAGE/usr/x11r6/include" "$STAGE/usr/motif/include" "$STAGE/usr/dt/include"
 
 # the glue a new CDE program links (tt.pc): shared, like every installed
 # library, made by amix-mkshlib from -fPIC archives

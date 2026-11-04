@@ -1,0 +1,7 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+
+Name: amixc99
+Description: what current libraries want from libc beyond AMIX's, and libgen and libm
+Version: 1
+Libs: -L${libdir} -lamixc99 -lgen -lm

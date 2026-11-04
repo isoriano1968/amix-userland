@@ -8,6 +8,7 @@ COMPONENT_SHA256  = 60c4da1d5b7f0aa8d158da48e8f8afa9773c1c8baa5d21974df61f1886b8
 CLEAN_FILES       = libpng-$(COMPONENT_VERSION) $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 S = libpng-$(COMPONENT_VERSION)
@@ -41,5 +42,6 @@ stage:
 	for h in png.h pngconf.h pnglibconf.h; do ln -sf ../$$h $(STAGE_DIR)$(PREFIX)/include/libpng16/; done
 	sed -e 's|@PREFIX@|$(PREFIX)|' -e 's|@VERSION@|$(COMPONENT_VERSION)|' libpng.pc.in > $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/libpng.pc
 	ln -sf libpng.pc $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/libpng16.pc
+	$(stage_stubs)
 
 .PHONY: build stage

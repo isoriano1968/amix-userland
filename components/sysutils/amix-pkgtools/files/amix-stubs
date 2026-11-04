@@ -4,6 +4,9 @@
 # from current binutils; it links against the stub libfoo.so, and the program
 # runs with the real libfoo.so.N.  The sources are in
 # /usr/local/share/amix-stubs/<component>: one <lib>.s each and LIST (lib dir).
+# A native.sh there is what else must be built by AMIX's own compiler (an
+# archive gcc 14 cannot make for AMIX's ld); it runs after the stubs, in an
+# empty directory, with the component's directory as $1.
 # With no component, every one there.
 D=/usr/local/share/amix-stubs
 cd $D || exit 1
@@ -11,9 +14,9 @@ cd $D || exit 1
 T=/var/tmp/amix-stubs.$$
 rc=0
 for c in "$@"; do
-	if [ ! -f $D/$c/LIST ]; then echo "amix-stubs: no $D/$c/LIST"; rc=1; continue; fi
+	if [ ! -f $D/$c/LIST ] && [ ! -f $D/$c/native.sh ]; then echo "amix-stubs: nothing in $D/$c"; rc=1; continue; fi
 	rm -rf $T; mkdir $T || exit 1
-	while read b d; do
+	[ -f $D/$c/LIST ] && while read b d; do
 		n=`echo $b | sed 's/\.so\..*/.so/'`
 		if /usr/ccs/bin/as -o $T/$b.o $D/$c/$b.s && /usr/ccs/bin/ld -G -h $b -o $T/$n $T/$b.o && [ -s $T/$n ]; then
 			rm -f $d/$n; cp $T/$n $d/$n; chmod 755 $d/$n; echo "$c: $d/$n"
@@ -21,6 +24,10 @@ for c in "$@"; do
 			echo "$c: $b FAILED"; : > $T/failed
 		fi
 	done < $D/$c/LIST
+	if [ -f $D/$c/native.sh ]; then
+		mkdir $T/native && (cd $T/native && PATH=/usr/local/bin:/usr/ccs/bin:$PATH sh $D/$c/native.sh $D/$c) &&
+			echo "$c: native.sh" || { echo "$c: native.sh FAILED"; : > $T/failed; }
+	fi
 	[ -f $T/failed ] && rc=1
 	rm -rf $T
 done

@@ -8,6 +8,7 @@ COMPONENT_SHA256  = 967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef35
 CLEAN_FILES       = openssl-$(COMPONENT_VERSION) $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 S = openssl-$(COMPONENT_VERSION)
@@ -42,5 +43,6 @@ stage:
 	cp -R $(S)/include/openssl $(STAGE_DIR)$(PREFIX)/include/
 	rm -f $(STAGE_DIR)$(PREFIX)/include/openssl/*.in
 	for p in libcrypto libssl openssl; do sed -e 's|@PREFIX@|$(PREFIX)|' -e 's|@VERSION@|$(COMPONENT_VERSION)|' $$p.pc.in > $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/$$p.pc; done
+	$(stage_stubs)
 
 .PHONY: build stage

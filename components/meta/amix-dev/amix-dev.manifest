@@ -1,0 +1,34 @@
+# name, version and what building and running it needs
+name     meta/amix-dev
+version  1
+summary  Development on the Amiga: tools, libraries with headers, .pc files and link stubs
+# tools
+require  gnu/gnu-tools
+require  gnu/gzip
+require  developer/pkgconf
+require  sysutils/amix-pkgtools
+require  sysutils/terminfo
+require  editor/vim
+require  developer/nedit
+# the C99 pieces AMIX lacks, and the 060's fast routines
+require  library/amixc99
+require  library/lib060
+# libraries
+require  library/zlib
+require  library/libpng
+require  library/bzip2
+require  library/zstd
+require  library/ncurses
+require  library/openssl
+require  library/expat
+require  library/libiconv
+require  library/libjpeg
+require  library/freetype
+require  library/pth
+# X, Motif and GL
+require  x11/x11r6.3
+require  x11/libxp
+require  desktop/motif
+require  x11/mesa-183
+require  library/glu
+require  library/freeglut

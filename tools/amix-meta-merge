@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""amix-meta-merge DEST STAGE...: a metapackage's stage from its members' stages.
+
+Copies every file, link and directory of each STAGE into DEST, keeping modes.
+A path that two members both bring must be the same file (or the same link);
+otherwise it names them all and exits 1, for two packages that would
+overwrite each other on the Amiga.  The link-stub directories
+(usr/local/share/amix-stubs/<component>) are per component and do not meet.
+"""
+import filecmp, os, shutil, stat, sys
+
+dest, stages = sys.argv[1], sys.argv[2:]
+owner, clash = {}, []
+for st in stages:
+    member = os.path.relpath(os.path.dirname(os.path.dirname(os.path.abspath(st))),
+                             os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "components"))
+    if not os.path.isdir(st):
+        sys.exit("amix-meta-merge: %s has no stage (%s)" % (member, st))
+    for top, dirs, files in os.walk(st):
+        rel = os.path.relpath(top, st)
+        os.makedirs(os.path.join(dest, rel), exist_ok=True)
+        for n in sorted(dirs + files):
+            src = os.path.join(top, n)
+            if os.path.isdir(src) and not os.path.islink(src):
+                continue
+            path = os.path.normpath(os.path.join(rel, n))
+            out = os.path.join(dest, path)
+            if os.path.lexists(out):
+                if os.path.islink(src) or os.path.islink(out):
+                    same = os.path.islink(src) and os.path.islink(out) and os.readlink(src) == os.readlink(out)
+                else:
+                    same = filecmp.cmp(src, out, shallow=False)
+                if not same:
+                    clash.append("%s: %s and %s" % (path, owner[path], member))
+                continue
+            owner[path] = member
+            if os.path.islink(src):
+                os.symlink(os.readlink(src), out)
+            else:
+                shutil.copy2(src, out)
+    for top, dirs, files in os.walk(st):
+        for n in dirs:
+            m = stat.S_IMODE(os.stat(os.path.join(top, n)).st_mode)
+            os.chmod(os.path.join(dest, os.path.relpath(os.path.join(top, n), st)), m | 0o700)
+if clash:
+    sys.exit("amix-meta-merge: different files at one path:\n  " + "\n  ".join(clash))
+print("%d files from %d members" % (len(owner), len(stages)))

@@ -77,7 +77,8 @@ version it names in its Makefile, and one version is linked into
 | `gnu`          | GNU tools, in `/usr/gnu` (gzip in `/usr/local`) | bison, diffutils, findutils, gawk, grep, gzip, m4, make, sed, tar, and the metapackage gnu-tools |
 | `games`        | games and their engines              | moved: iortcw, ioquake3, quake                    |
 | `graphics`     | 3D and images                        | moved: blender; fsv                               |
-| `library`      | general libraries                    | moved: freeglut, glu, lib060, libpng, openssl, ncurses, pth, sdl2, soft3d, tinygl, zlib; bzip2, zstd |
+| `meta`         | sets of packages, as OpenIndiana's meta-packages | amix-dev |
+| `library`      | general libraries                    | moved: freeglut, glu, lib060, libpng, openssl, ncurses, pth, sdl2, soft3d, tinygl, zlib; amixc99, bzip2, zstd |
 | `network`      | network tools                        | openssh, curl, wget, ca-certificates              |
 | `multimedia`   | video                                | moved: ffmpeg                                     |
 | `runtime`      | language runtimes                    | moved: python3                                    |

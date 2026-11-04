@@ -15,4 +15,14 @@ build: $(COMPONENT_ARCHIVE)
 	sh configure-amix.sh
 	$(MAKE) -C vim-$(COMPONENT_VERSION)/src
 
-.PHONY: build
+# vim's own install into the stage, without the man pages in other languages
+stage:
+	rm -rf $(STAGE_DIR)
+	$(MAKE) -C vim-$(COMPONENT_VERSION)/src install DESTDIR=$(STAGE_DIR) STRIP=m68k-elf-strip > $(BUILD_DIR)/install.log 2>&1 || \
+		{ tail -20 $(BUILD_DIR)/install.log; exit 1; }
+	find $(STAGE_DIR)/usr/local/share/man -mindepth 1 -maxdepth 1 ! -name "man*" -exec rm -rf {} +
+	chmod -R u+w,go-w,go+rX $(STAGE_DIR)
+	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) \
+		-cf $(BUILD_DIR)/$(COMPONENT_NAME)-amix.tar usr
+
+.PHONY: build stage

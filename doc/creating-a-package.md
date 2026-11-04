@@ -206,8 +206,20 @@ example. Log in again to see it.
 
 ### 8. A set of packages
 
-A metapackage has a manifest with only `require` lines and a Makefile that builds them,
-and no files of its own. `gnu/gnu-tools` is the example.
+A metapackage has a manifest with only `require` lines and no files of its own; its
+Makefile includes `make-rules/meta.mk`. `make stage` stages every member and puts
+the stages together in one `build/<name>-amix.tar`, with all their link stubs;
+`tools/amix-meta-merge` stops it when two members bring different files at one
+path. The sets are in `components/meta/`: `meta/amix-dev` is what development on
+the Amiga needs, the tools and every library with its headers, `.pc` file and
+stub. `gnu/gnu-tools` is a smaller one.
+
+So that a member can be in a set, every component has a `stage` target that
+fills `build/stage` from what it built. A library linked without `$(mkshlibs)`
+ends its stage with `$(stage_stubs)` from `make-rules/shlib.mk`; X, Motif and
+Mesa, built outside their components, take their part from `SHARED_STAGE` and
+use `$(call link_stubs,...)`. What only AMIX's own compiler can make goes in a
+`native.sh` beside the stubs (`x11/x11r6.3` builds `libXtInherit.a` so).
 
 ### 9. Finish
 

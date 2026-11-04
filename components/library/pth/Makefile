@@ -13,6 +13,7 @@ CLEAN_FILES       = pth-$(COMPONENT_VERSION) $(COMPONENT_ARCHIVE)
 PREFIX            = /usr/local/gnu
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 S = pth-$(COMPONENT_VERSION)
@@ -48,6 +49,7 @@ stage:
 	mkdir -p $(STAGE_DIR)$(PREFIX)/lib/pkgconfig
 	sed -e 's|@PREFIX@|$(PREFIX)|' -e 's|@VERSION@|$(COMPONENT_VERSION)|' files/pth.pc.in > $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/pth.pc
 	chmod -R go-w $(STAGE_DIR)
+	$(stage_stubs)
 	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) -cf build/pth-amix.tar usr
 
 .PHONY: build stage

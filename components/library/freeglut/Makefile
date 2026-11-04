@@ -7,6 +7,7 @@ COMPONENT_SHA256  = 3c0bcb915d9b180a97edaebd011b7a1de54583a838644dcd42bb0ea0c6f3
 CLEAN_FILES       = freeglut-$(COMPONENT_VERSION) $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 S = freeglut-$(COMPONENT_VERSION)
@@ -45,5 +46,6 @@ stage:
 	ln -sf libglut.so.3 $(STAGE_DIR)$(PREFIX)/lib/libglut.so
 	cp $(S)/include/GL/freeglut.h $(S)/include/GL/freeglut_ext.h $(S)/include/GL/freeglut_std.h $(S)/include/GL/freeglut_ucall.h $(S)/include/GL/glut.h $(STAGE_DIR)$(PREFIX)/include/GL/
 	sed -e 's|@PREFIX@|$(PREFIX)|' -e 's|@VERSION@|$(COMPONENT_VERSION)|' glut.pc.in > $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/glut.pc
+	$(stage_stubs)
 
 .PHONY: build stage

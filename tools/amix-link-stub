@@ -9,8 +9,9 @@ wants from archives, which no shared library has (pow, regcmp), is named in the
 stub so that a link pulls it into the program: -k OTHER.so... lists the shared
 libraries whose symbols do not count.  The arguments LIB was linked with can be
 given instead (-Ldir -lname, as in SHLIB_ARGS): each -lname found as a shared
-library in a -L directory counts, an archive does not.  AMIX's libc, libnsl and
-libsocket in $AMIX_SYSROOT always count.  STUB_ONLY=regex keeps the names
+library in a -L directory counts, an archive does not.  -n DIR instead: the
+libraries LIB names as NEEDED, found by soname in the DIRs, count.  AMIX's
+libc, libnsl and libsocket in $AMIX_SYSROOT always count.  STUB_ONLY=regex keeps the names
 matching it, for a library that exports far more than its API: as has little
 memory.
 """
@@ -22,8 +23,16 @@ lib, out = sys.argv[1:3]
 only = re.compile(os.environ["STUB_ONLY"]) if "STUB_ONLY" in os.environ else None
 sysroot = os.environ.get("AMIX_SYSROOT", os.path.expanduser("~/opt/m68k-amix-sysroot"))
 others = [os.path.join(sysroot, "usr/lib", n) for n in ("libc.so.1", "libnsl.so", "libsocket.so")]
-dirs = [a[2:] for a in sys.argv[3:] if a.startswith("-L")]
-for a in sys.argv[3:]:
+args = sys.argv[3:]
+dirs = [a[2:] for a in args if a.startswith("-L")]
+ndirs = [args[i + 1] for i, a in enumerate(args) if a == "-n"]
+args = [a for i, a in enumerate(args) if a != "-n" and (i == 0 or args[i - 1] != "-n")]
+if ndirs:
+	for l in subprocess.check_output(["readelf", "-d", lib], text=True).splitlines():
+		m = re.search(r"\(NEEDED\).*\[(.+)\]", l)
+		if m and not m.group(1).startswith("/"):
+			others += [p for p in (os.path.join(d, m.group(1)) for d in ndirs) if os.path.exists(p)][:1]
+for a in args:
 	if a.startswith("-l"):
 		others += [p for p in (os.path.join(d, "lib%s.so" % a[2:]) for d in dirs) if os.path.exists(p)][:1]
 	elif not a.startswith("-"):

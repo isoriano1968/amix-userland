@@ -18,7 +18,7 @@ for L in $K; do
 	b=${L##*/}; d=${L%/*}; d=${d#$ST}; d=${d#$SR}
 	case $d/$b in
 	/usr/x11r6/*) c=x11r6.3;; /usr/motif/*) c=motif;; /usr/dt/*) c=cde;;
-	*/libGL.so.*) c=mesa-183;; */libGLU.so.*) c=glu;; */libglut.so.*) c=freeglut;; */libzzgl.so.*) c=zzgl;;
+	*/libGL.so.*|*/libzzgl.so.*) c=mesa-183;; */libGLU.so.*) c=glu;; */libglut.so.*) c=freeglut;;
 	*/libz.so.*) c=zlib;; */libpng16.so.*) c=libpng;; */libmikmod.so.*) c=libmikmod;; *) c=ncurses;;
 	esac
 	mkdir -p "$S/$c"

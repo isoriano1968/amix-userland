@@ -7,6 +7,7 @@ COMPONENT_SHA256  = 9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72
 CLEAN_FILES       = zlib-$(COMPONENT_VERSION) $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 S = zlib-$(COMPONENT_VERSION)
@@ -32,5 +33,6 @@ stage:
 	ln -sf libz.so.1 $(STAGE_DIR)$(PREFIX)/lib/libz.so
 	cp $(S)/zlib.h $(S)/zconf.h $(STAGE_DIR)$(PREFIX)/include/
 	sed -e 's|@PREFIX@|$(PREFIX)|' -e 's|@VERSION@|$(COMPONENT_VERSION)|' zlib.pc.in > $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/zlib.pc
+	$(stage_stubs)
 
 .PHONY: build stage

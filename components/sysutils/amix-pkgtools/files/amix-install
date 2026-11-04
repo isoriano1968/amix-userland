@@ -5,7 +5,8 @@
 [ $# -gt 0 ] || { echo "usage: amix-install package-amix.tar..."; exit 2; }
 for t in "$@"; do
 	case $t in /*) ;; *) t=`pwd`/$t;; esac
-	c=`/usr/gnu/bin/tar -tf $t | /usr/gnu/bin/sed -n 's|^usr/local/share/amix-stubs/\([^/]*\)/LIST$|\1|p'`
+	c=`/usr/gnu/bin/tar -tf $t | /usr/gnu/bin/sed -n -e 's|^usr/local/share/amix-stubs/\([^/]*\)/LIST$|\1|p' \
+		-e 's|^usr/local/share/amix-stubs/\([^/]*\)/native.sh$|\1|p' | sort -u`
 	(cd / && /usr/gnu/bin/tar --no-overwrite-dir -xf $t) || { echo "amix-install: $t failed"; exit 1; }
 	echo "installed $t"
 	[ -z "$c" ] || /usr/local/bin/amix-stubs $c || exit 1

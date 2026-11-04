@@ -33,4 +33,4 @@ Cflags: -I\${includedir}
 P
 }
 pc gl GL "Mesa 18 libGL, GLX, Gallium on the Z3660" "xext x11"
-ls -l "$L"/libGL* "$L"/libglut*
+ls -l "$L"/libGL*

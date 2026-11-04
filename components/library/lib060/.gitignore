@@ -8,3 +8,4 @@ core
 test060
 *.amix
 sqrtt
+build/

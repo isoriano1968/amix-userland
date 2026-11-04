@@ -9,6 +9,7 @@ COMPONENT_SHA256  = 3b08f5f4f9b4eb82f151a7040bfd6fe6c6fb922efe4b1659c66ea9332769
 CLEAN_FILES       = libiconv-$(COMPONENT_VERSION) $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 S  = libiconv-$(COMPONENT_VERSION)
@@ -37,6 +38,7 @@ stage:
 	cp build/include/iconv.h build/lib/localcharset.h $(STAGE_DIR)$(PREFIX)/include/
 	sed -e 's|@PREFIX@|$(PREFIX)|' -e 's|@VERSION@|$(COMPONENT_VERSION)|' libiconv.pc.in > $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/libiconv.pc
 	chmod 755 $(STAGE_DIR)$(PREFIX)/lib/*.so.*; chmod 644 $(STAGE_DIR)$(PREFIX)/include/*.h $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/*.pc
+	$(stage_stubs)
 	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) -cf build/libiconv-amix.tar usr
 
 .PHONY: build stage

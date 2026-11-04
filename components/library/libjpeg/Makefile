@@ -7,6 +7,7 @@ COMPONENT_SHA256  = 04705c110cb2469caa79fb71fba3d7bf834914706e9641a4589485c1f832
 CLEAN_FILES       = jpeg-$(COMPONENT_VERSION) $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 S  = jpeg-$(COMPONENT_VERSION)
@@ -31,6 +32,7 @@ stage:
 	cp build/jconfig.h $(S)/jpeglib.h $(S)/jmorecfg.h $(S)/jerror.h $(STAGE_DIR)$(PREFIX)/include/
 	sed -e 's|@PREFIX@|$(PREFIX)|' -e 's|@VERSION@|$(COMPONENT_VERSION)|' libjpeg.pc.in > $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/libjpeg.pc
 	chmod 755 $(STAGE_DIR)$(PREFIX)/lib/*.so.*; chmod 644 $(STAGE_DIR)$(PREFIX)/include/*.h $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/*.pc
+	$(stage_stubs)
 	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) -cf build/libjpeg-amix.tar usr
 
 .PHONY: build stage
