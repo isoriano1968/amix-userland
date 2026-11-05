@@ -1,6 +1,24 @@
 #!/sbin/sh
 # /etc/init.d/sshd: OpenSSH at boot, after the network (rc2.d)
+#   start | stop | restart
+# stop ends the listening sshd; the sessions it started go on.  An sshd hung
+# in a STREAMS call (getmsg inside accept()) does not take SIGTERM: after 5 s
+# it gets SIGKILL.  The pid comes from the pid file, or, when that is gone,
+# from ps: /usr/local/bin/sshd with init as its parent.
 PID=/var/run/sshd.pid
+SSHD=/usr/local/bin/sshd
+
+# the listening sshd's pid(s)
+sshd_pids()
+{
+	if [ -f $PID ]; then
+		p=`cat $PID`
+		kill -0 $p 2>/dev/null && { echo $p; return; }
+	fi
+	ps -ef | grep "$SSHD" | grep -v grep | while read u p pp rest; do
+		[ "$pp" = 1 ] && echo $p
+	done
+}
 
 case "$1" in
 start)
@@ -8,18 +26,44 @@ start)
 		echo "sshd: no host key, run /usr/local/libexec/sshd-setup"
 		exit 1
 	fi
+	p=`sshd_pids`
+	if [ -n "$p" ]; then
+		echo "sshd: already running ($p)"
+		exit 0
+	fi
 	# the kernel's default soft limits (16 MB of data and memory) are
 	# what every ssh login would get: too small for libGL and friends
 	ulimit -d unlimited
 	ulimit -v unlimited
-	/usr/local/bin/sshd
+	$SSHD
 	;;
 stop)
-	[ -f $PID ] && kill `cat $PID`
+	p=`sshd_pids`
+	[ -z "$p" ] && { rm -f $PID; exit 0; }
+	kill $p 2>/dev/null
+	n=0
+	while [ $n -lt 5 ]; do
+		left=
+		for q in $p; do kill -0 $q 2>/dev/null && left="$left $q"; done
+		[ -z "$left" ] && break
+		sleep 1
+		n=`expr $n + 1`
+	done
+	if [ -n "$left" ]; then
+		echo "sshd: $left did not stop, killing"
+		kill -9 $left 2>/dev/null
+		sleep 1
+		for q in $left; do
+			kill -0 $q 2>/dev/null && { echo "sshd: $q is still there"; exit 1; }
+		done
+	fi
 	rm -f $PID
 	;;
+restart)
+	$0 stop && $0 start
+	;;
 *)
-	echo "usage: /etc/init.d/sshd start|stop"
+	echo "usage: /etc/init.d/sshd start|stop|restart"
 	exit 1
 	;;
 esac
