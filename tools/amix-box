@@ -5,6 +5,8 @@
 #
 #   amix-box [-w seconds] [-m "what"] command [args...]
 #   amix-box -s            who holds the box now (and is a player running?)
+#   amix-box -u [minutes]  the user reserves the box (default 30 minutes, or
+#                          until Ctrl-C): no session starts anything meanwhile
 #
 # - Takes an exclusive lock on the PC (/tmp/amix-box.lock).  Held by another
 #   session: says who and what since when, waits up to -w seconds (default 0),
@@ -12,7 +14,10 @@
 #   sessions never overlap, and no measurement runs beside someone's load.
 # - With the lock, asks the box whether a player runs (ffplay, vplay, mikmod,
 #   quake, pt2): if one does, exits 75 without running anything.
-# - Runs the command with the lock held; its exit status is ours.
+# - Runs the command with the lock held; its exit status is ours.  While it
+#   runs, the box is asked every 5 s for a player: if the user starts one,
+#   the command's processes are stopped (SIGSTOP, so an scp's transfer halts
+#   at once) until the player is gone, then continued.
 # Exit 75 (EX_TEMPFAIL): not now -- wait for the user or the other session,
 # never work around it.
 LOCK=/tmp/amix-box.lock
@@ -29,6 +34,16 @@ players() {
 }
 
 case "$1" in
+-u)
+	min=${2:-30}
+	exec 9>>"$LOCK"
+	echo "waiting for the box (held: $(cat "$INFO" 2>/dev/null))"
+	flock 9
+	echo "pid $$ (the user): reserved for $min minutes since $(date +%H:%M:%S)" > "$INFO"
+	trap ': > "$INFO"; exit 0' INT TERM EXIT
+	echo "the box is yours for $min minutes (Ctrl-C ends it)"
+	sleep $((min * 60))
+	exit 0 ;;
 -s)
 	if [ -s "$INFO" ] && ! flock -n "$LOCK" true 2>/dev/null; then
 		echo "held: $(cat "$INFO")"
@@ -68,4 +83,24 @@ case $? in
 *)	echo "amix-box: cannot ask the box whether a player runs (ssh failed) -- not now" >&2
 	exit 75 ;;
 esac
-"$@"
+# the command in its own process group, paused while the user plays
+setsid "$@" &
+child=$!
+stopped=0
+while kill -0 $child 2>/dev/null; do
+	sleep 5
+	kill -0 $child 2>/dev/null || break
+	players >/dev/null
+	r=$?
+	if [ $r = 0 ] && [ $stopped = 0 ]; then
+		kill -STOP -- -$child 2>/dev/null && stopped=1
+		echo "amix-box: a player started: ${what:-$*} paused" >&2
+		echo "pid $$: ${what:-$*} -- PAUSED while the user plays" > "$INFO"
+	elif [ $r = 1 ] && [ $stopped = 1 ]; then
+		kill -CONT -- -$child 2>/dev/null
+		stopped=0
+		echo "amix-box: the player is gone: ${what:-$*} goes on" >&2
+		echo "pid $$: ${what:-$*} since $(date +%H:%M:%S) (resumed)" > "$INFO"
+	fi
+done
+wait $child
