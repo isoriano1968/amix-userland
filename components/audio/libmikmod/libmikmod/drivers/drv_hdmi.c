@@ -28,7 +28,8 @@
   firmware/core1 zzgl.h and cores/h264bench/bench.h.  Build with those on the
   include path and -DDRV_HDMI (components/audio/libmikmod's Makefile does).
 
-  Present when core 1 runs z3660ARM_Core_gpu.  No GL and no window: without a
+  Present when core 1 runs z3660ARM_Core_gpu or z3660ARM_Core_amix (the
+  same GL server, beside the player).  No GL and no window: without a
   server the driver starts one and ends it again, with a program's server (GL
   on core 1) it plays alongside.
 
@@ -93,9 +94,13 @@ static void reg32(unsigned off, unsigned long v)
 	ioctl(fd, ZZ9KIOC_SETREG, &r);
 }
 
+/* core 1 runs the GL server with its HDMI feed: the gpu core, or the amix
+   core, which has the same server beside the player (and is the default) */
 static int runs_gpu(void)
 {
-	return ctl[W_MAGIC] == HB_MAGIC_READY && ctl[W_NAME] == ('g' << 24 | 'p' << 16 | 'u' << 8);
+	return ctl[W_MAGIC] == HB_MAGIC_READY &&
+	       (ctl[W_NAME] == ('g' << 24 | 'p' << 16 | 'u' << 8) ||
+		ctl[W_NAME] == ('a' << 24 | 'm' << 16 | 'i' << 8 | 'x'));
 }
 
 /* core 1's server: running already, or started here */
