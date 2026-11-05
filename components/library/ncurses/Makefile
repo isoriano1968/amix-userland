@@ -1,4 +1,5 @@
-# ncurses 6.6 for AMIX: shared libraries, narrow characters, AMIX's terminfo first.
+# ncurses 6.6 for AMIX: shared libraries, narrow characters, AMIX's terminfo first,
+# and ncurses' own terminfo database in /usr/share/terminfo.
 COMPONENT_NAME    = ncurses
 COMPONENT_VERSION = 6.6
 COMPONENT_ARCHIVE = ncurses-$(COMPONENT_VERSION).tar.gz
@@ -25,9 +26,24 @@ build: $(COMPONENT_ARCHIVE)
 	done
 	rm -f build/progs/clear build/progs/infocmp build/progs/tabs build/progs/tic build/progs/toe build/progs/tput build/progs/tset
 	$(MAKE) -C build/progs LDFLAGS=-Wl,-R,$(PREFIX)/lib
+	$(MAKE) $(HOST_TIC)
+
+# The terminfo database is compiled on the PC by a tic built from the same source
+# with the same narrow configuration: it writes the legacy format (magic 0432,
+# numbers up to 32767, entries up to 4096 bytes), which this ncurses, the static
+# ncurses 5.4 in old binaries (mikmod) and AMIX's own curses all read.
+HOST_TIC = build/host/progs/tic
+$(HOST_TIC):
+	mkdir -p build/host
+	cd build/host && CC=gcc ../../ncurses-$(COMPONENT_VERSION)/configure --prefix=/usr \
+		--without-shared --without-debug --without-ada --without-cxx-binding --without-tests \
+		--without-manpages --disable-widec --disable-db-install --with-fallbacks= > configure.log
+	$(MAKE) -C build/host/include
+	$(MAKE) -C build/host/ncurses
+	$(MAKE) -C build/host/progs tic
 
 # everything where it belongs on AMIX, shared libraries only
-stage:
+stage: $(HOST_TIC)
 	rm -rf $(STAGE_DIR)
 	$(MAKE) -C build install.progs install.includes DESTDIR=$(STAGE_DIR) INSTALL_PROG='install -c'
 	m68k-elf-strip $(STAGE_DIR)$(PREFIX)/bin/n*
@@ -39,5 +55,15 @@ stage:
 			> $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/$$l.pc; \
 	done
 	$(stage_stubs)
+	# the database: what ncurses 5 programs look for (/usr/share/terminfo is the
+	# only directory they know) and this ncurses' second directory after AMIX's
+	# /usr/share/lib/terminfo; aliases are hard links.  Entries too large for the
+	# legacy format (xterm-16color, xterm-direct256 ...) are left out, see tic.log.
+	mkdir -p $(STAGE_DIR)/usr/share/terminfo
+	$(HOST_TIC) -x -o $(STAGE_DIR)/usr/share/terminfo ncurses-$(COMPONENT_VERSION)/misc/terminfo.src 2> build/tic.log
+	$(manifest_files)
+	chmod -R go-w $(STAGE_DIR)
+	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) \
+		-cf build/$(COMPONENT_NAME)-amix.tar usr
 
 .PHONY: build stage

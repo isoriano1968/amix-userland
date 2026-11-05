@@ -6,3 +6,7 @@ provide  ncurses
 provide  form
 provide  menu
 provide  panel
+file     /usr/share/terminfo
+file     /usr/share/terminfo/d/dtterm
+file     /usr/share/terminfo/x/xterm
+file     /usr/share/terminfo/v/vt100

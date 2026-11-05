@@ -2,9 +2,11 @@
 # configure-amix.sh -- ncurses 6.6 for AMIX (SVR4.0, m68k) with gcc14-cross-amix.
 # Narrow characters (AMIX has no wchar support).  ncurses' own shared rules do
 # not know this target, so everything is compiled -fPIC and the Makefile makes
-# the shared libraries from the archives.  One terminfo
-# database: AMIX's own /usr/share/lib/terminfo first (where AMIX's tic writes),
-# then /usr/share/terminfo (the 2005 ncurses one vim 5.8 uses).  The programs
+# the shared libraries from the archives.  Two terminfo
+# directories: AMIX's own /usr/share/lib/terminfo first (where AMIX's tic writes),
+# then /usr/share/terminfo, ncurses' own database, which the Makefile compiles
+# into the stage (the old SVR4 ncurses 5.4 package's copy went with its pkgrm,
+# and static ncurses 5.4 binaries such as mikmod know only that directory).  The programs
 # get an "n" prefix so they do not shadow AMIX's tic/tput in PATH.
 H=$(cd "$(dirname "$0")" && pwd)
 export PATH=$HOME/opt/m68k-amix/bin:$PATH

@@ -35,6 +35,10 @@ sysroot-install: stage
 
 .PHONY: clean sysroot-install requires
 
+# $(manifest_files): every "file" path in the manifest must be in the stage
+manifest_files = awk '$$1 == "file" { print $$2 }' *.manifest | \
+	while read f; do [ -e "$(STAGE_DIR)$$f" ] || { echo "manifest: $$f not in the stage"; exit 1; }; done
+
 # the source: fetched into the component, checked against COMPONENT_SHA256
 $(COMPONENT_ARCHIVE):
 	curl -fL --retry 3 -o $@.part $(COMPONENT_URL)

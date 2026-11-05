@@ -7,6 +7,8 @@ A manifest is NAME.manifest in the component.  Lines:
   summary  one line
   require  area/component     another component, which must have a manifest
   provide  PKG                a pkg-config name it installs
+  file     /path              a path on AMIX it installs that others rely on
+                              (checked in its stage by $(manifest_files))
 
 Every require must be a component, all the way down, without a cycle, and what
 it provides must be in the sysroot.  What is missing is built from its component
@@ -20,14 +22,14 @@ COMPONENTS = os.path.join(ROOT, "components")
 
 
 def read(path):
-    m = {"require": [], "provide": []}
+    m = {"require": [], "provide": [], "file": []}
     for n, line in enumerate(open(path), 1):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         key, _, value = line.partition(" ")
         value = value.strip()
-        if key in ("require", "provide"):
+        if key in ("require", "provide", "file"):
             m[key].append(value)
         elif key in ("name", "version", "summary"):
             m[key] = value
