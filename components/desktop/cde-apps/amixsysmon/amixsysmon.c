@@ -1,7 +1,8 @@
 /*
  * amixsysmon.c -- a system monitor for AMIX in CDE, after GNOME's: the
- * processes, the CPU, memory, swap and network over the last minute, the
- * file systems, and the Z3660 (ztop).  Its numbers come from libamixstat
+ * processes, the CPU, memory, swap, network and the Z3660 core 1's own
+ * network (KB/s, its address) over the last minute, the file systems, and
+ * the Z3660 (ztop).  Its numbers come from libamixstat
  * (library/amixstat); it is installed setgid sys for /dev/kmem.
  *
  * CPU: AMIX books idle ticks as system time of the process that ran last, so
@@ -36,14 +37,17 @@ enum { TAB_PROCS = 1, TAB_RES, TAB_FS, TAB_Z3660 };
 enum { SORT_CPU, SORT_MEM, SORT_PID, SORT_NAME };
 
 static XtAppContext app;
-static Widget top, nb, plist, pstatus, gcpu, gmem, gnet, lcpu, lmem, lnet, fsarea, ztext, status;
+static Widget top, nb, plist, pstatus, gcpu, gmem, gnet, gc1, lcpu, lmem, lnet, lc1, fsarea, ztext, status;
 static Widget confirm;
 static GC gc;
 static Pixel c_bg, c_grid, c_user, c_kern, c_mem, c_swap, c_in, c_out, c_text, c_bar, c_barbg;
 static XFontStruct *font;
 
-/* the graphs' history, newest last; values in percent or packets a second */
+/* the graphs' history, newest last; values in percent, packets or KB a second */
 static double h_user[NHIST], h_kern[NHIST], h_mem[NHIST], h_swap[NHIST], h_in[NHIST], h_out[NHIST];
+static double h_c1in[NHIST], h_c1out[NHIST];     /* core 1's own network, KB/s */
+static unsigned long c1_rx0, c1_tx0;
+static int have_c10;
 static int nhist;
 
 static struct ast_cpu cpu0;
@@ -200,18 +204,24 @@ static void draw_graph(Widget w, const double *a, Pixel ca, const double *b, Pix
     }
 }
 
-static double net_top(void)
+/* the top of a graph of two rates: the highest seen, at least floor */
+static double rate_top(const double *a, const double *b, double floor)
 {
-    double m = 10;
+    double m = floor;
     int i;
 
     for (i = 0; i < nhist; i++) {
-        if (h_in[i] > m)
-            m = h_in[i];
-        if (h_out[i] > m)
-            m = h_out[i];
+        if (a[i] > m)
+            m = a[i];
+        if (b[i] > m)
+            m = b[i];
     }
     return m * 1.1;
+}
+
+static double net_top(void)
+{
+    return rate_top(h_in, h_out, 10);
 }
 
 static void draw_graphs(void)
@@ -219,6 +229,7 @@ static void draw_graphs(void)
     draw_graph(gcpu, h_kern, c_kern, h_user, c_user, 1, 100);
     draw_graph(gmem, h_mem, c_mem, h_swap, c_swap, 0, 100);
     draw_graph(gnet, h_in, c_in, h_out, c_out, 0, net_top());
+    draw_graph(gc1, h_c1in, c_in, h_c1out, c_out, 0, rate_top(h_c1in, h_c1out, 100));
 }
 
 static void expose_graph(Widget w, XtPointer cd, XtPointer cb)
@@ -511,6 +522,32 @@ static void sample(XtPointer data, XtIntervalId *id)
         push(h_out, 0);
     }
     free(ifs);
+    {
+        /* core 1's own network: what it fetched (video streams) beside zen0 */
+        struct ast_c1net n;
+
+        if (ast_c1net(&n) == 0 && n.up) {
+            push(h_c1in, have_c10 ? (double)(unsigned long)(n.rx_bytes - c1_rx0) / 1024 : 0);
+            push(h_c1out, have_c10 ? (double)(unsigned long)(n.tx_bytes - c1_tx0) / 1024 : 0);
+            c1_rx0 = n.rx_bytes;
+            c1_tx0 = n.tx_bytes;
+            have_c10 = 1;
+            if (n.ip)
+                sprintf(m, "Core 1 network %lu.%lu.%lu.%lu   received %.0f KB/s   sent %.0f KB/s",
+                        n.ip >> 24, n.ip >> 16 & 255, n.ip >> 8 & 255, n.ip & 255,
+                        h_c1in[nhist < NHIST ? nhist : NHIST - 1], h_c1out[nhist < NHIST ? nhist : NHIST - 1]);
+            else
+                sprintf(m, "Core 1 network   waiting for an address (DHCP)");
+        } else {
+            push(h_c1in, 0);
+            push(h_c1out, 0);
+            have_c10 = 0;
+            sprintf(m, "Core 1 network   %s", ast_c1net(&n) < 0 ? "unknown: board memory not readable" :
+                    !n.rings ? "none: the firmware has no rings for core 1" :
+                    "off: the core on ARM core 1 has no network");
+        }
+        set_label(lc1, m);
+    }
     if (nhist < NHIST)
         nhist++;
 
@@ -589,7 +626,7 @@ static Widget graph(Widget parent, Widget above, Widget *label, const char *lege
     fr = XtVaCreateManagedWidget("frame", xmFrameWidgetClass, parent, XmNshadowType, XmSHADOW_IN,
                                  XmNtopAttachment, XmATTACH_WIDGET, XmNtopWidget, l,
                                  XmNleftAttachment, XmATTACH_FORM, XmNrightAttachment, XmATTACH_FORM, NULL);
-    g = XtVaCreateManagedWidget("graph", xmDrawingAreaWidgetClass, fr, XmNheight, 110, XmNbackground, c_bg, NULL);
+    g = XtVaCreateManagedWidget("graph", xmDrawingAreaWidgetClass, fr, XmNheight, 95, XmNbackground, c_bg, NULL);
     XtAddCallback(g, XmNexposeCallback, expose_graph, NULL);
     XtAddCallback(g, XmNresizeCallback, expose_graph, NULL);
     *label = l;
@@ -667,6 +704,7 @@ static void build_res(Widget f)
     gcpu = graph(f, NULL, &lcpu, "CPU");
     gmem = graph(f, XtParent(gcpu), &lmem, "Memory and Swap");
     gnet = graph(f, XtParent(gmem), &lnet, "Network");
+    gc1 = graph(f, XtParent(gnet), &lc1, "Core 1 network");
 }
 
 int main(int argc, char **argv)
@@ -678,7 +716,7 @@ int main(int argc, char **argv)
     int fail;
 
     top = XtVaOpenApplication(&app, "Amixsysmon", NULL, 0, &argc, argv, NULL, sessionShellWidgetClass,
-                              XmNtitle, "System Monitor", XmNwidth, 760, XmNheight, 600, NULL);
+                              XmNtitle, "System Monitor", XmNwidth, 760, XmNheight, 680, NULL);
     fail = ast_open(err, sizeof err);
     font = XLoadQueryFont(XtDisplay(top), "-*-courier-medium-r-normal--12-*-*-*-*-*-*-*");
     if (!font)

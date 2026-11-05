@@ -1,13 +1,20 @@
 # amixstat
 
 `libamixstat` tells a program what the running AMIX system is doing: memory,
-swap, CPU, processes, file systems and network interfaces (`amixstat.h`,
-`pkg-config amixstat`). The `amixstat` command prints it all; `amixstat 5`
+swap, CPU, processes, file systems, network interfaces and the Z3660 ARM
+core 1's own network (`amixstat.h`, `pkg-config amixstat`). The `amixstat` command prints it all; `amixstat 5`
 adds the CPU's shares over five seconds and each process's. The System
 Monitor ([desktop/cde-apps/amixsysmon](../../desktop/cde-apps/amixsysmon)) is
 built on it.
 
 ## Where the numbers come from
+
+Core 1's network (`ast_c1net`, since 1.1): the amix core on the Z3660's
+second ARM core fetches video streams itself over lwIP, beside AMIX's `zen0`
+(amix-gate `usr/src/firmware/core1`, `cores/h264bench/core1_net.h`). Core 1
+writes its address and byte counters into board memory; the library reads
+them through `/dev/zz9000` (a `ZZ9K_MAP_BOARD` kernel). The counters wrap at
+4 GB: take differences as unsigned longs.
 
 AMIX has no kstat, and its `sar` and `netstat -i` look the kernel's variables
 up in `/unix`, which is not the kernel that runs on an A3000 with a Z3660.

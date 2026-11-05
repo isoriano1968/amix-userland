@@ -24,6 +24,7 @@
 #include <sys/statvfs.h>
 #include <sys/socket.h>
 #include <net/if.h>
+#include <sys/mman.h>
 #include "amixstat.h"
 
 #define KBASE       0x08000000UL
@@ -545,3 +546,53 @@ int ast_ifs(struct ast_if **list)
     *list = v;
     return n;
 }
+
+/* ---------------------------------------------------------------- core 1's network */
+
+/* amix-gate usr/src/firmware/core1/cores/h264bench/core1_net.h: one megabyte
+   of board memory, little-endian words (the ARM's), the addresses in network
+   order; /dev/zz9000's offset 0 is 2 MB into the board */
+#define C1NET_OFF       0x07900000UL
+#define C1NET_MAGIC     0x43314E54UL
+#define ZZ_FB_PHYS      0x00200000UL
+enum { W_MAGIC, W_ON, W_RXFRAMES = 8, W_RXDROPS, W_TXFRAMES, W_TXERRS,
+       W_UP = 32, W_IP, W_NETMASK, W_GW, W_RXBYTES, W_TXBYTES };
+
+static volatile unsigned long *c1n;
+
+static unsigned long le32(unsigned long v)
+{
+    return (v >> 24) | (v >> 8 & 0xff00UL) | (v << 8 & 0xff0000UL) | (v << 24);
+}
+
+int ast_c1net(struct ast_c1net *n)
+{
+    memset(n, 0, sizeof *n);
+    if (!c1n) {
+        int fd = open("/dev/zz9000", O_RDONLY);
+        caddr_t p;
+
+        if (fd < 0)
+            return -1;
+        p = mmap((caddr_t)0, 4096, PROT_READ, MAP_SHARED, fd, (off_t)(C1NET_OFF - ZZ_FB_PHYS));
+        close(fd);                      /* the mapping stays */
+        if (p == (caddr_t)-1)
+            return -1;
+        c1n = (volatile unsigned long *)p;
+    }
+    n->rings = le32(c1n[W_MAGIC]) == C1NET_MAGIC;
+    if (!n->rings)
+        return 0;
+    n->up = le32(c1n[W_UP]) == 1 && le32(c1n[W_ON]) == 1;
+    n->ip = c1n[W_IP];                  /* network order: a.b.c.d reads as 0xaabbccdd here */
+    n->netmask = c1n[W_NETMASK];
+    n->gw = c1n[W_GW];
+    n->rx_bytes = le32(c1n[W_RXBYTES]);
+    n->tx_bytes = le32(c1n[W_TXBYTES]);
+    n->rx_frames = le32(c1n[W_RXFRAMES]);
+    n->rx_drops = le32(c1n[W_RXDROPS]);
+    n->tx_frames = le32(c1n[W_TXFRAMES]);
+    n->tx_errs = le32(c1n[W_TXERRS]);
+    return 0;
+}
+

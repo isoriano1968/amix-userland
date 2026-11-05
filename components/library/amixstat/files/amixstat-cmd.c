@@ -52,6 +52,23 @@ int main(int argc, char **argv)
                ifs[i].up ? "up  " : "down", ifs[i].ipackets, ifs[i].opackets,
                ifs[i].ierrors, ifs[i].oerrors, ifs[i].collisions);
     free(ifs);
+    {
+        struct ast_c1net n;
+
+        if (ast_c1net(&n) < 0)
+            printf("core1 net: board memory not readable (/dev/zz9000)\n");
+        else if (!n.rings)
+            printf("core1 net: the firmware has no rings for core 1\n");
+        else if (!n.up)
+            printf("core1 net: off (the core on core 1 has no network)\n");
+        else
+            printf("core1 net: %lu.%lu.%lu.%lu/%lu.%lu.%lu.%lu gw %lu.%lu.%lu.%lu, in %lu bytes (%lu frames, %lu dropped), "
+                   "out %lu bytes (%lu frames, %lu errors)\n",
+                   n.ip >> 24, n.ip >> 16 & 255, n.ip >> 8 & 255, n.ip & 255,
+                   n.netmask >> 24, n.netmask >> 16 & 255, n.netmask >> 8 & 255, n.netmask & 255,
+                   n.gw >> 24, n.gw >> 16 & 255, n.gw >> 8 & 255, n.gw & 255,
+                   n.rx_bytes, n.rx_frames, n.rx_drops, n.tx_bytes, n.tx_frames, n.tx_errs);
+    }
     ast_cpu(&c0);
     n0 = ast_procs(&p0);
     if (secs <= 0) {

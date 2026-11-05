@@ -73,6 +73,18 @@ struct ast_if {
     unsigned long ipackets, opackets, ierrors, oerrors, collisions;
 };
 
+/* The Z3660's ARM core 1 and its own network (amix-gate core1: the amix
+   core fetches video streams itself over lwIP, beside AMIX's zen0).  Read
+   from board memory through /dev/zz9000, so it needs a ZZ9K_MAP_BOARD
+   kernel; core 1 writes the counters, they wrap. */
+struct ast_c1net {
+    int rings;                  /* the firmware gives core 1 its frames */
+    int up;                     /* a core 1 program with the network runs */
+    unsigned long ip, netmask, gw;      /* a.b.c.d as 0xaabbccdd, 0: none (yet) */
+    unsigned long rx_bytes, tx_bytes;   /* frames' bytes core 1 took / sent */
+    unsigned long rx_frames, rx_drops, tx_frames, tx_errs;     /* core 0's count */
+};
+
 /* find the running kernel and its counters; 0, or -1 with a reason in err */
 int ast_open(char *err, int errlen);
 const char *ast_kernel(void);       /* the kernel file in /stand */
@@ -84,6 +96,8 @@ int ast_cpu(struct ast_cpu *c);
 int ast_procs(struct ast_proc **list);
 int ast_filesystems(struct ast_fs **list);
 int ast_ifs(struct ast_if **list);
+/* core 1's network: 0, or -1 if the board's memory cannot be read */
+int ast_c1net(struct ast_c1net *n);
 
 #ifdef __cplusplus
 }

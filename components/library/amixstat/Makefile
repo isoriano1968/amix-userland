@@ -1,9 +1,9 @@
 # libamixstat: what the running AMIX system is doing (memory, swap, CPU,
-# processes, file systems, network interfaces), for amixsysmon and amixtop,
+# processes, file systems, network interfaces, the Z3660 core 1's network), for amixsysmon and amixtop,
 # and the amixstat command that prints it.  Ours: no download.  The command
 # is installed setgid sys, as the library reads /dev/kmem.
 COMPONENT_NAME    = amixstat
-COMPONENT_VERSION = 1.0
+COMPONENT_VERSION = 1.1
 
 include ../../../make-rules/shared.mk
 include ../../../make-rules/shlib.mk

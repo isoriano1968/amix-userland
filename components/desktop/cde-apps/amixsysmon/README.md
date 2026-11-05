@@ -6,8 +6,9 @@ A system monitor for AMIX in CDE, after GNOME's, in four tabs:
   CPU time and command; sorted by CPU, memory, PID or name; End (SIGTERM)
   and Kill (SIGKILL) after asking. Root sees every process, a user their own.
 - **Resources**: the last minute of the CPU (user and system), memory and
-  swap, and network packets in and out on the first interface that is not
-  the loopback.
+  swap, network packets in and out on the first interface that is not
+  the loopback, and the Z3660 core 1's own network in KB/s with its address
+  (the streams core 1 fetches itself; libamixstat's `ast_c1net`).
 - **File Systems**: device, mount point, type, size, free and available,
   with a bar.
 - **Z3660**: what `ztop` prints, every two seconds.
