@@ -27,7 +27,8 @@ if [ "$1" = ffplay ]; then
 	# linked too, or configure finds no usleep (pthread.h renames it) and
 	# av_usleep never sleeps: ffplay's loop would starve its other threads
 	# PTH_LIB: another gnu-pth build, e.g. one with the sjlj thread switch
-	EXTRA_LIBS="-L${PTH_LIB:-$SR/usr/local/gnu/lib} -lpthread -lpth -lsocket -lnsl"
+	# gnu-pth is shared now: the runpath finds it in /usr/local/gnu/lib
+	EXTRA_LIBS="-L${PTH_LIB:-$SR/usr/local/gnu/lib} -Wl,-rpath,/usr/local/gnu/lib -lpthread -lpth -lsocket -lnsl"
 	PLAY="--enable-ffplay --enable-sdl2 --pkg-config=$V/tools/pkg-config-sdl2"
 	# patches/: ffplay's own changes for AMIX (applied once)
 	for p in "$V"/patches/*.patch; do

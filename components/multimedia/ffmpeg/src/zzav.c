@@ -59,6 +59,7 @@ struct zz9k_reg { unsigned short offset, value; };
 #define PAGE                4096UL
 
 static int fd = -1, opened, vs = 1, ovl_w, ovl_h, outw, outh, shift, verbose, vid_w, vid_h, cur_x, cur_y;
+static int disp_w;                      /* vid_w times the sample aspect ratio: the width shown */
 static volatile unsigned long *blk, *c1ld;
 static unsigned char *ring, *shared;
 static unsigned long wr;
@@ -97,7 +98,7 @@ static int zzav_reopen;                 /* opened before: say why not */
 static int zscale = 1;                  /* the picture on screen: its pixels this many times */
 static void set_out(void)
 {
-    outw = ((vid_w >> shift) & ~1) * zscale;
+    outw = ((disp_w >> shift) & ~1) * zscale;
     outh = ((vid_h >> shift) & ~1) * zscale;
     if (outw > ovl_w)
         outw = ovl_w;
@@ -147,9 +148,20 @@ int zzav_open(AVFormatContext *fmt, int v, int a, int x, int y, int maxw, int ma
     vs = ovl_w >= 1600 && !(c1ld[C1LD_W_MAGIC] == C1LD_MAGIC && (c1ld[C1LD_W_FEAT] & C1LD_FEAT_OVL_FETCH)) ? 2 : 1;
     if (getenv("ZZM_VSCALE"))
         vs = atoi(getenv("ZZM_VSCALE")) == 2 ? 2 : 1;
+    /* the width shown: the coded one times the sample aspect ratio (a 16:9
+       DVD is 720 x 576 with pixels 64:45 wide), as ffplay and VLC show it */
+    {
+        AVRational sar = av_guess_sample_aspect_ratio(fmt, fmt->streams[v], NULL);
+
+        disp_w = vc->width;
+        if (sar.num > 0 && sar.den > 0 && sar.num != sar.den)
+            disp_w = (int)(((long long)vc->width * sar.num + sar.den / 2) / sar.den) & ~1;
+        if (disp_w < 2 || disp_w > 4 * vc->width)
+            disp_w = vc->width;
+    }
     /* 1:1 if it fits the screen (and the window, when one is given), else half size */
-    shift = vc->width > ovl_w || vc->height * vs > ovl_h ||
-            (maxw > 0 && vc->width > maxw) || (maxh > 0 && vc->height * vs > maxh);
+    shift = disp_w > ovl_w || vc->height * vs > ovl_h ||
+            (maxw > 0 && disp_w > maxw) || (maxh > 0 && vc->height * vs > maxh);
     if (getenv("ZZAV_SHIFT"))
         shift = atoi(getenv("ZZAV_SHIFT")) ? 1 : 0;
     vid_w = vc->width;
@@ -167,6 +179,7 @@ int zzav_open(AVFormatContext *fmt, int v, int a, int x, int y, int maxw, int ma
     blk[ZZAV_W_VTB_DEN] = (unsigned long)fmt->streams[v]->time_base.den;
     blk[ZZAV_W_VW] = (unsigned long)vc->width;
     blk[ZZAV_W_VH] = (unsigned long)vc->height;
+    blk[ZZAV_W_DISPW] = disp_w != vc->width ? (unsigned long)disp_w : 0;
     if (ac) {
         blk[ZZAV_W_ACODEC] = ZZAV_AAC;
         memcpy(ring + (ZZAV_AEXTRA_OFF - ZZAV_RING_OFF), ac->extradata, (size_t)ac->extradata_size);
@@ -317,7 +330,7 @@ int zzav_half(int half)
 {
     if (!opened)
         return 0;
-    if (!half && (vid_w > ovl_w || vid_h * vs > ovl_h))
+    if (!half && (disp_w > ovl_w || vid_h * vs > ovl_h))
         half = 1;                       /* full size does not fit the screen */
     shift = half ? 1 : 0;
     zscale = 1;
@@ -342,7 +355,7 @@ void zzav_scale(int s)
     /* a full 1920 pixel line is more than the overlay can fetch in one line
        of a 1080p screen (docs/z3660-overlay-1080p-issue.md) */
     lim = getenv("ZZAV_MAXW") ? atoi(getenv("ZZAV_MAXW")) : 1600;
-    while (s > 1 && (vid_w * s > ovl_w || vid_w * s > lim || vid_h * vs * s > ovl_h))
+    while (s > 1 && (disp_w * s > ovl_w || disp_w * s > lim || vid_h * vs * s > ovl_h))
         s--;
     zscale = s < 1 ? 1 : s;
     if (zscale > 1)

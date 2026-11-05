@@ -26,6 +26,7 @@ build: compat
 ffplay: compat
 	sh configure-amix.sh ffplay
 	$(MAKE) -C build-ffplay
+	../../../tools/amix-fix-needed build-ffplay/ffplay
 
 vplay: build
 	sh build.sh
