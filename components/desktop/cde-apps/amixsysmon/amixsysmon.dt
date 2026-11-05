@@ -1,0 +1,16 @@
+#
+# amixsysmon.dt -- the System Monitor (amixsysmon): processes, CPU, memory,
+# swap and network over the last minute, file systems, the Z3660.
+# Installed in /etc/dt/appconfig/types/C.
+#
+ACTION AmixSysMon
+{
+	LABEL		System Monitor
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/opt/amix/bin/amixsysmon
+	ICON		SysMon
+	DESCRIPTION	The processes (end or kill one), the CPU, memory, swap \
+			and network over the last minute, the file systems \
+			and the Z3660.
+}

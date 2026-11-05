@@ -1,0 +1,9 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: amixstat
+Description: what the running AMIX system is doing: memory, swap, CPU, processes, file systems, network
+Version: @VERSION@
+Libs: -L${libdir} -lamixstat
+Cflags: -I${includedir}

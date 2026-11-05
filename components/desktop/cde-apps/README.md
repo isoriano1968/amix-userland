@@ -7,6 +7,7 @@ One directory per application.
 |---|---|
 | `amixcast/` | Streaming: a window with the tree of a DLNA server's folders. `amixcast.py` runs on a PC, reads the server and has VLC transcode at the bitrate and from the time asked for; ffplay shows it through the Z3660's second ARM core |
 | `ztopcde/` | The Z3660 in a window: temperatures, clocks, and the programs of its second ARM core |
+| `amixsysmon/` | System Monitor, after GNOME's: processes (end, kill), the last minute of CPU, memory, swap and network, the file systems, the Z3660; on [library/amixstat](../../library/amixstat) |
 | `panel/` | The AMIX control in CDE's front panel, with a subpanel holding both |
 
 The core 1 programs and `armbench` are in
@@ -14,8 +15,9 @@ The core 1 programs and `armbench` are in
 
 ## Building
 
-`build.sh` cross-builds both with gcc14-cross-amix against the shared Motif and
-X11R6.3 libraries, taking the flags from `tools/amix-pkg-config xm`.
+`build.sh` cross-builds them with gcc14-cross-amix against the shared Motif and
+X11R6.3 libraries, taking the flags from `tools/amix-pkg-config xm` (and
+`amixstat` for amixsysmon: stage library/amixstat into the sysroot first).
 Each directory has an `install.sh` to run on the box.
 
 ## AmixCast

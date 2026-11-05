@@ -78,7 +78,7 @@ version it names in its Makefile, and one version is linked into
 | `games`        | games and their engines              | moved: iortcw, ioquake3, quake                    |
 | `graphics`     | 3D and images                        | moved: blender; fsv                               |
 | `meta`         | sets of packages, as OpenIndiana's meta-packages | amix-dev |
-| `library`      | general libraries                    | moved: freeglut, glu, lib060, libpng, openssl, ncurses, pth, sdl2, soft3d, tinygl, zlib; amixc99, bzip2, zstd |
+| `library`      | general libraries                    | moved: freeglut, glu, lib060, libpng, openssl, ncurses, pth, sdl2, soft3d, tinygl, zlib; amixc99, amixstat, bzip2, zstd |
 | `network`      | network tools                        | openssh, curl, wget, ca-certificates              |
 | `multimedia`   | video                                | moved: ffmpeg                                     |
 | `runtime`      | language runtimes                    | moved: python3                                    |
