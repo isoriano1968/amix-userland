@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""amix-wheel-install WHEEL STAGE [PYTHON] -- install a pure-Python wheel into a
+component's stage, as pip would install it into AMIX's system Python.
+
+Only py3-none-any wheels: their files are the same on every machine.  The
+files go to STAGE/usr/local/lib/python3.11/site-packages (purelib; a wheel's
+.data/scripts and .data/data are handled too), the console scripts of its
+entry_points.txt to STAGE/usr/local/bin with PYTHON (default
+/usr/local/bin/python3.11) as interpreter, and the .dist-info gets
+INSTALLER and a RECORD of what was installed, so that pip on AMIX knows the
+package and could remove it.  No byte code: Python writes it on the box.
+"""
+import base64, configparser, csv, hashlib, io, os, re, sys, zipfile
+
+PREFIX = "/usr/local"
+SITE = PREFIX + "/lib/python3.11/site-packages"
+
+SCRIPT = """#!{python}
+# -*- coding: utf-8 -*-
+import re
+import sys
+from {module} import {first}
+if __name__ == '__main__':
+    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])
+    sys.exit({call}())
+"""
+
+
+def digest(data):
+    h = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=")
+    return "sha256=" + h.decode()
+
+
+def main():
+    if len(sys.argv) not in (3, 4):
+        sys.exit(__doc__)
+    wheel, stage = sys.argv[1], os.path.abspath(sys.argv[2])
+    python = sys.argv[3] if len(sys.argv) == 4 else PREFIX + "/bin/python3.11"
+    name = os.path.basename(wheel)
+    if not name.endswith("-py3-none-any.whl"):
+        sys.exit("not a pure py3-none-any wheel: " + name)
+    z = zipfile.ZipFile(wheel)
+    distinfo = [n.split("/")[0] for n in z.namelist() if n.split("/")[0].endswith(".dist-info")][0]
+    data_dir = distinfo[:-len(".dist-info")] + ".data"
+    meta = z.read(distinfo + "/WHEEL").decode()
+    if "Root-Is-Purelib: true" not in meta:
+        sys.exit("not purelib: " + name)
+    record = []          # (path on AMIX relative to site-packages, hash, size)
+
+    def put(dest, data, mode=0o644):
+        path = stage + dest
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(data)
+        os.chmod(path, mode)
+        record.append((os.path.relpath(dest, SITE), digest(data), str(len(data))))
+
+    for info in z.infolist():
+        n = info.filename
+        if n.endswith("/") or n == distinfo + "/RECORD":
+            continue
+        data = z.read(n)
+        if n.startswith(data_dir + "/"):
+            kind, _, rest = n[len(data_dir) + 1:].partition("/")
+            if kind in ("purelib", "platlib"):
+                put(SITE + "/" + rest, data)
+            elif kind == "scripts":
+                if data.startswith(b"#!python"):
+                    data = b"#!" + python.encode() + data[len(b"#!python"):]
+                put(PREFIX + "/bin/" + rest, data, 0o755)
+            elif kind == "data":
+                put(PREFIX + "/" + rest, data)
+            else:
+                sys.exit("unsupported wheel data: " + n)
+        else:
+            put(SITE + "/" + n, data)
+
+    if distinfo + "/entry_points.txt" in z.namelist():
+        ep = configparser.ConfigParser(delimiters=("=",))
+        ep.optionxform = str
+        ep.read_string(z.read(distinfo + "/entry_points.txt").decode())
+        if ep.has_section("console_scripts"):
+            for script, target in ep.items("console_scripts"):
+                m = re.match(r"\s*([\w.]+)\s*:\s*([\w.]+)\s*$", target)
+                module, func = m.group(1), m.group(2)
+                first = func.split(".")[0]
+                text = SCRIPT.format(python=python, module=module, first=first, call=func)
+                put(PREFIX + "/bin/" + script, text.encode(), 0o755)
+
+    put(SITE + "/" + distinfo + "/INSTALLER", b"amix-userland\n")
+    out = io.StringIO()
+    w = csv.writer(out, lineterminator="\n")
+    for row in sorted(record):
+        w.writerow(row)
+    w.writerow((distinfo + "/RECORD", "", ""))
+    path = stage + SITE + "/" + distinfo + "/RECORD"
+    with open(path, "w") as f:
+        f.write(out.getvalue())
+    os.chmod(path, 0o644)
+    print("%s: %d files" % (name, len(record) + 1))
+
+
+main()

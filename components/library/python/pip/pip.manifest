@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     library/python/pip
+version  26.3
+summary  pip, the package installer for Python, for the system Python 3.11
+require  runtime/python3

@@ -1,0 +1,5 @@
+# name, version and what building and running it needs
+name     library/python/setuptools
+version  84.2.1
+summary  setuptools, the build backend and packaging library for Python 3.11
+require  runtime/python3
