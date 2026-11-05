@@ -9,7 +9,7 @@ to this program:
   GET /list?id=0                 a folder, one line each, tab separated:
                                    d <id> <title>
                                    f <id> <seconds, 0: unknown> <v|a|i> <title>
-  GET /stream?id=..&t=..&kbit=.. MPEG-TS, H.264 + AAC, from t seconds on
+  GET /stream?id=..&t=..&kbit=..&w=.. MPEG-TS, H.264 + AAC, from t seconds on, w wide
   GET /info?id=..                the file's length in seconds (0: unknown)
   GET /probe                     1 MB, to measure the line
 
@@ -222,7 +222,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         old = self.server.active.pop(self.client_address[0], None)
         if old:                 # a seek: the last stream of this client is over
             old.kill()
-        p = subprocess.Popen(vlc_args(url, int(float(q.get('t', 0))), int(q.get('kbit', 600)), self.server.width),
+        # the width the Amiga asks for (with its bitrate), else the server's
+        width = max(320, min(1920, int(q.get('w', self.server.width)))) & ~15
+        p = subprocess.Popen(vlc_args(url, int(float(q.get('t', 0))), int(q.get('kbit', 600)), width),
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         self.server.active[self.client_address[0]] = p
         self.send_response(200)

@@ -28,7 +28,11 @@
 #include <Xm/PushB.h>
 #include <Xm/RowColumn.h>
 #include <Xm/ToggleB.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 #include "dlna.h"
+#include "zzav.h"                       /* core 1's player and network (ffmpeg/arm/h264bench) */
+#include "core1_net.h"
 
 #define FFPLAY      "/opt/amix/bin/ffplay"
 #define MAXNODE     8000
@@ -250,6 +254,39 @@ static void toggle(int i)
     XmListSelectPos(list, i + 1, False);
 }
 
+/* 1 if core 1 fetches streams itself (the amix core with OPEN_URL and an
+   address of its own): ffplay hands it the URL, AMIX's TCP is not in the way */
+static int core1_fetches(void)
+{
+    static int known = -1;
+    volatile unsigned long *z, *n;
+    int fd;
+
+    if (known >= 0)
+        return known;
+    known = 0;
+    if ((fd = open("/dev/zz9000", O_RDONLY)) < 0)
+        return 0;
+    /* /dev/zz9000's offset 0 is 2 MB into the board (zzav.c) */
+    z = (volatile unsigned long *)mmap(0, 4096, PROT_READ, MAP_SHARED, fd, (off_t)(ZZAV_OFF - 0x200000UL));
+    n = (volatile unsigned long *)mmap(0, 4096, PROT_READ, MAP_SHARED, fd, (off_t)(C1NET_OFF - 0x200000UL));
+    if (z != (void *)-1 && n != (void *)-1)
+        known = z[ZZAV_W_MAGIC] == ZZAV_MAGIC && (z[ZZAV_W_FEAT] & ZZAV_FEAT_URL) && n[C1NET_W_IP] != 0;
+    if (z != (void *)-1)
+        munmap((caddr_t)z, 4096);
+    if (n != (void *)-1)
+        munmap((caddr_t)n, 4096);
+    close(fd);
+    return known;
+}
+
+/* the picture's width for a bitrate: more bits are worth more pixels (core 1
+   decodes up to 1280 wide at 25 fps) */
+static int width_for(int k)
+{
+    return k <= 1500 ? 640 : k <= 3000 ? 960 : 1280;
+}
+
 /* the line's speed, kbit/s of what can be played on it (with a margin) */
 static int measure(void)
 {
@@ -311,8 +348,8 @@ static void start(int i, int t)
     if (node[i].src < 0) {
         k = kbit;
         if (!k) {
-            if (!auto_kbit)
-                auto_kbit = measure();
+            if (!auto_kbit)             /* core 1's own network: no need to ask AMIX's */
+                auto_kbit = core1_fetches() ? 2500 : measure();
             k = auto_kbit;
         }
         if (!secs) {
@@ -322,9 +359,11 @@ static void start(int i, int t)
                 secs = node[i].secs = atoi(p);
         }
         /* the PC's stream from t on (ffplay's seeks ask for the same) */
-        sprintf(url, "http://%s:%d/stream?id=%.100s&kbit=%d&d=%d&t=%d", host, port, node[i].id, k, secs, t);
+        sprintf(url, "http://%s:%d/stream?id=%.100s&kbit=%d&w=%d&d=%d&t=%d", host, port, node[i].id, k,
+                width_for(k), secs, t);
         u = url;
-        sprintf(msg, "Playing at %d kbit/s: %.300s", k, node[i].title);
+        sprintf(msg, "Playing at %d kbit/s, %d wide%s: %.300s", k, width_for(k),
+                core1_fetches() ? " (core 1 fetches)" : "", node[i].title);
     } else
         sprintf(msg, "Playing from %.60s: %.300s", dlna_name(node[i].src), node[i].title);
     if (t) {
@@ -524,7 +563,8 @@ static void config(void)
 int main(int argc, char **argv)
 {
     static const struct { const char *name; int k; } rates[] = {
-        { "Auto", 0 }, { "400", 400 }, { "600", 600 }, { "800", 800 }, { "1000", 1000 }, { "1500", 1500 }
+        { "Auto", 0 }, { "600", 600 }, { "1000", 1000 }, { "1500", 1500 }, { "2500", 2500 },
+        { "4000", 4000 }, { "6000", 6000 }
     };
     Widget form, rc, row1, b;
     Arg a[10];
