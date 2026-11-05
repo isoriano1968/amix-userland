@@ -1,43 +1,56 @@
 /*
  * amtop - small curses process/system monitor for AMIX/SVR4.
  *
- * It gathers data from ps, swap and ztop, so it runs where a modern /proc
- * layout or libkvm is not available.  Colours when the terminal has them
- * (dtterm does; the entry for the amiga console has none): the header, the
- * sections, each process by its state, and the bar for core 1 of a Z3660.
+ * Its numbers come from libamixstat (library/amixstat): the CPU's user and
+ * system shares (from the kernel profiler: AMIX books idle ticks as system
+ * time of the last process), memory, swap, the network interface, and the
+ * processes from /proc, sorted by their CPU share.  Core 1 of a Z3660 comes
+ * from ztop.  amtop is installed setgid sys, as the library reads /dev/kmem.
+ * Colours when the terminal has them (dtterm does; the entry for the amiga
+ * console has none): the header, the sections, each process by its state,
+ * and the bars.
  */
 
 #include <curses.h>
-#include <ctype.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <pwd.h>
+#include <amixstat.h>
 
-#define MAX_LINES 256
 #define MAX_LINE 160
 #define REFRESH_SECS 2
 
-enum { C_HEADER = 1, C_TITLE, C_RUN, C_STOP, C_ZOMBIE, C_BAR, C_BARHIGH };
+enum { C_HEADER = 1, C_TITLE, C_RUN, C_STOP, C_ZOMBIE, C_BAR, C_BARHIGH, C_SYS };
 
-struct text_block {
-	char line[MAX_LINES][MAX_LINE];
-	int count;
-};
-
-struct load_info {
-	int total;
-	int runnable;
-	int sleeping;
-	int stopped;
-	int zombies;
+struct row {
+	struct ast_proc p;
+	int pcpu;		/* per mille of the last interval */
 };
 
 static int done;
 static char status_msg[MAX_LINE];
 static int colour;
+static int opened;
+
+static struct ast_cpu cpu0;
+static int have_cpu0;
+static int user_pm, sys_pm;	/* the CPU's shares of the last interval, per mille */
+static int prf_ok;
+
+static struct ast_proc *prev;
+static int nprev;
+static unsigned long prev_ticks;
+static struct row *rows;
+static int nrows;
+
+static unsigned long net_in0, net_out0;
+static int have_net0;
+static char netname[16];
+static long net_in, net_out;	/* packets a second */
 
 static void on_signal(sig)
 int sig;
@@ -57,132 +70,128 @@ char *s;
 	}
 }
 
-static int is_blank();
-
-static int read_command(cmd, out)
-char *cmd;
-struct text_block *out;
+static char *user_name(uid)
+uid_t uid;
 {
-	FILE *fp;
-	char buf[MAX_LINE];
+	static uid_t cu[64];
+	static char cn[64][9];
+	static int n;
+	struct passwd *pw;
+	int i;
 
-	out->count = 0;
-	fp = popen(cmd, "r");
-	if (fp == NULL) {
-		sprintf(status_msg, "cannot run: %.120s", cmd);
-		return -1;
+	for (i = 0; i < n; i++)
+		if (cu[i] == uid)
+			return cn[i];
+	if (n == 64)
+		n = 0;
+	cu[n] = uid;
+	if ((pw = getpwuid(uid)) != NULL)
+		sprintf(cn[n], "%.8s", pw->pw_name);
+	else
+		sprintf(cn[n], "%ld", (long)uid);
+	return cn[n++];
+}
+
+/* KB for people */
+static void human(buf, kb)
+char *buf;
+unsigned long kb;
+{
+	if (kb >= 1048576UL)
+		sprintf(buf, "%.1fG", kb / 1048576.0);
+	else if (kb >= 10240UL)
+		sprintf(buf, "%luM", (kb + 512) / 1024);
+	else
+		sprintf(buf, "%luK", kb);
+}
+
+static int cmp_rows(a, b)
+const void *a, *b;
+{
+	const struct row *x = a, *y = b;
+
+	if (x->pcpu != y->pcpu)
+		return y->pcpu - x->pcpu;
+	return x->p.rss < y->p.rss ? 1 : x->p.rss > y->p.rss ? -1 : 0;
+}
+
+/* the CPU, the network, and the processes' shares since the last time */
+static void gather()
+{
+	struct ast_cpu c;
+	struct ast_proc *cur;
+	struct ast_if *ifs;
+	int n, i, j, ni;
+	unsigned long ssum = 0, dt;
+	long k1000 = 1000;	/* system time kept, per mille */
+
+	if (ast_cpu(&c) == 0 && c.prf) {
+		if (have_cpu0) {
+			unsigned long u = c.s_user - cpu0.s_user, k = c.s_kernel - cpu0.s_kernel;
+			unsigned long all = u + k + (c.s_idle - cpu0.s_idle);
+
+			if (all > 0) {
+				user_pm = (int)(1000 * u / all);
+				sys_pm = (int)(1000 * k / all);
+			}
+		}
+		cpu0 = c;
+		have_cpu0 = 1;
+		prf_ok = 1;
+	} else
+		prf_ok = 0;
+
+	netname[0] = 0;
+	if ((ni = ast_ifs(&ifs)) > 0) {
+		for (i = 0; i < ni && strncmp(ifs[i].name, "lo", 2) == 0; i++)
+			;
+		if (i < ni) {
+			strcpy(netname, ifs[i].name);
+			net_in = have_net0 ? (long)(ifs[i].ipackets - net_in0) / REFRESH_SECS : 0;
+			net_out = have_net0 ? (long)(ifs[i].opackets - net_out0) / REFRESH_SECS : 0;
+			net_in0 = ifs[i].ipackets;
+			net_out0 = ifs[i].opackets;
+			have_net0 = 1;
+		}
 	}
+	free(ifs);
 
-	while (out->count < MAX_LINES && fgets(buf, sizeof(buf), fp) != NULL) {
-		trim_newline(buf);
-		if (is_blank(buf))	/* swap -s starts with an empty line */
-			continue;
-		strncpy(out->line[out->count], buf, MAX_LINE - 1);
-		out->line[out->count][MAX_LINE - 1] = '\0';
-		out->count++;
+	if ((n = ast_procs(&cur)) < 0) {
+		sprintf(status_msg, "cannot read /proc");
+		return;
 	}
-
-	if (pclose(fp) == -1) {
-		sprintf(status_msg, "error closing: %.118s", cmd);
-		return -1;
+	/* AMIX books idle ticks as system time: scale the processes' system
+	   time to the kernel's real share */
+	dt = c.hz ? (c.lbolt - prev_ticks) * 1000 / c.hz : 0;	/* ms */
+	for (i = 0; i < n; i++) {
+		for (j = 0; j < nprev && prev[j].pid != cur[i].pid; j++)
+			;
+		if (j < nprev && cur[i].stime > prev[j].stime)
+			ssum += cur[i].stime - prev[j].stime;
 	}
+	if (prf_ok && ssum > 0 && dt > 0 && (unsigned long)sys_pm * dt / 1000 < ssum)
+		k1000 = (long)((unsigned long)sys_pm * dt / ssum);
+	rows = realloc(rows, (n + 1) * sizeof *rows);
+	for (i = 0; i < n; i++) {
+		long d = 0;
 
-	return out->count;
-}
+		for (j = 0; j < nprev && prev[j].pid != cur[i].pid; j++)
+			;
+		if (j < nprev && dt > 0) {
+			long du = (long)(cur[i].utime - prev[j].utime);
+			long ds = (long)(cur[i].stime - prev[j].stime);
 
-static int is_blank(s)
-char *s;
-{
-	while (*s) {
-		if (!isspace((unsigned char)*s))
-			return 0;
-		s++;
+			d = ((du > 0 ? du : 0) + (ds > 0 ? ds * k1000 / 1000 : 0)) * 1000 / (long)dt;
+		}
+		rows[i].p = cur[i];
+		rows[i].pcpu = d > 1000 ? 1000 : (int)d;
 	}
-	return 1;
-}
-
-static int starts_with_digit(s)
-char *s;
-{
-	while (*s == ' ' || *s == '\t')
-		s++;
-	return isdigit((unsigned char)*s);
-}
-
-static int gather_processes(ps)
-struct text_block *ps;
-{
-	if (read_command("ps -el 2>/dev/null", ps) > 1)
-		return ps->count;
-	return read_command("ps -ef 2>/dev/null", ps);
-}
-
-static int gather_swap(summary, list)
-struct text_block *summary;
-struct text_block *list;
-{
-	int n;
-
-	n = read_command("swap -s 2>/dev/null", summary);
-	read_command("swap -l 2>/dev/null", list);
-	return n;
-}
-
-static int ps_state(line)
-char *line;
-{
-	char *p;
-
-	p = line;
-	while (*p == ' ' || *p == '\t')
-		p++;
-	while (*p && *p != ' ' && *p != '\t')
-		p++;
-	while (*p == ' ' || *p == '\t')
-		p++;
-	if (*p == '\0')
-		return 0;
-	return *p;
-}
-
-static void gather_load(ps, load)
-struct text_block *ps;
-struct load_info *load;
-{
-	int i, st;
-
-	memset((char *)load, 0, sizeof(*load));
-	for (i = 0; i < ps->count; i++) {
-		if (!starts_with_digit(ps->line[i]))
-			continue;
-		load->total++;
-		st = ps_state(ps->line[i]);
-		if (st == 'R' || st == 'O')
-			load->runnable++;
-		else if (st == 'S')
-			load->sleeping++;
-		else if (st == 'T')
-			load->stopped++;
-		else if (st == 'Z')
-			load->zombies++;
-	}
-	if (load->total == 0 && ps->count > 1)
-		load->total = ps->count - 1;
-}
-
-static int process_count(ps)
-struct text_block *ps;
-{
-	int i, n;
-
-	n = 0;
-	for (i = 0; i < ps->count; i++) {
-		if (starts_with_digit(ps->line[i]))
-			n++;
-	}
-	if (n == 0 && ps->count > 1)
-		n = ps->count - 1;
-	return n;
+	nrows = n;
+	free(prev);
+	prev = cur;
+	nprev = n;
+	prev_ticks = c.lbolt;
+	qsort(rows, nrows, sizeof *rows, cmp_rows);
 }
 
 static void paint(pair, bold)
@@ -194,23 +203,39 @@ int pair, bold;
 		attrset(bold ? A_BOLD : A_NORMAL);
 }
 
-/* a bar of width cells, per-mille full */
-static void draw_bar(row, col, width, permille)
-int row, col, width, permille;
+/* a bar of width cells: a per mille in the bar colour, b after it in the
+   system colour */
+static void draw_bar(row, col, width, a, b)
+int row, col, width, a, b;
 {
-	int i, n;
+	int i, na, nb;
 
-	n = permille * width / 1000;
+	na = a * width / 1000;
+	nb = (a + b) * width / 1000;
 	mvaddch(row, col, '[');
 	for (i = 0; i < width; i++) {
-		paint(permille > 850 ? C_BARHIGH : C_BAR, 1);
-		if (colour)
-			addch(i < n ? (' ' | A_REVERSE) : ' ');
+		if (i < na)
+			paint(a + b > 850 ? C_BARHIGH : C_BAR, 1);
+		else if (i < nb)
+			paint(C_SYS, 1);
 		else
-			addch(i < n ? '#' : ' ');
+			attrset(A_NORMAL);
+		if (colour)
+			addch(i < nb ? (' ' | A_REVERSE) : ' ');
+		else
+			addch(i < na ? '#' : i < nb ? '=' : ' ');
 	}
 	attrset(A_NORMAL);
 	addch(']');
+}
+
+static void label(row, s)
+int row;
+char *s;
+{
+	paint(C_TITLE, 1);
+	mvprintw(row, 0, "%s", s);
+	attrset(A_NORMAL);
 }
 
 static void draw_header(procs)
@@ -233,22 +258,46 @@ int procs;
 	attrset(A_NORMAL);
 }
 
-static int draw_processes(row, ps)
+/* Z3660: "ARM core 1      gpu, decoding, load 81.3 %, 866 MHz" */
+static int draw_core1(row)
 int row;
-struct text_block *ps;
+{
+	char line[MAX_LINE], *p;
+	int whole, tenth, ok = 0;
+	FILE *fp;
+
+	if ((fp = popen("/usr/amiga/bin/ztop 2>/dev/null | grep \"ARM core 1\"", "r")) == NULL)
+		return 0;
+	if (fgets(line, sizeof line, fp) != NULL) {
+		trim_newline(line);
+		if ((p = strstr(line, "load ")) != NULL && sscanf(p, "load %d.%d", &whole, &tenth) == 2 &&
+		    strlen(line) > 16) {
+			label(row, "Core 1");
+			draw_bar(row, 8, 30, whole * 10 + tenth, 0);
+			mvprintw(row, 41, "%.*s", COLS - 42, line + 16);
+			ok = 1;
+		}
+	}
+	pclose(fp);
+	return ok;
+}
+
+static void draw_processes(row)
+int row;
 {
 	int i, shown, max_rows;
+	char rss[16], vsz[16];
 
 	paint(C_TITLE, 1);
-	mvprintw(row, 0, "Processes");
+	mvprintw(row, 0, "%6s %-8s S  CPU%% %6s %6s %8s  %s", "PID", "USER", "RES", "VIRT", "TIME", "COMMAND");
 	attrset(A_NORMAL);
-
 	max_rows = LINES - row - 2;
 	shown = 0;
-	for (i = 0; i < ps->count && shown < max_rows; i++) {
-		if (is_blank(ps->line[i]))
-			continue;
-		switch (starts_with_digit(ps->line[i]) ? ps_state(ps->line[i]) : 0) {
+	for (i = 0; i < nrows && shown < max_rows; i++) {
+		struct ast_proc *p = &rows[i].p;
+		long t = (long)(p->cpu / 1000);
+
+		switch (p->state) {
 		case 'R': case 'O':
 			paint(C_RUN, 1);
 			break;
@@ -258,81 +307,80 @@ struct text_block *ps;
 		case 'Z':
 			paint(C_ZOMBIE, 1);
 			break;
-		case 0:
-			paint(C_TITLE, 0);
-			break;
 		default:
 			attrset(A_NORMAL);
 		}
-		mvprintw(row + 1 + shown, 0, "%.*s", COLS - 1, ps->line[i]);
+		human(rss, p->rss);
+		human(vsz, p->size);
+		mvprintw(row + 1 + shown, 0, "%6ld %-8s %c %5.1f %6s %6s %5ld:%02ld  %.*s", (long)p->pid,
+		    user_name(p->uid), p->state, rows[i].pcpu / 10.0, rss, vsz, t / 60, t % 60,
+		    COLS > 58 ? COLS - 58 : 1, p->args[0] ? p->args : p->fname);
 		attrset(A_NORMAL);
 		shown++;
 	}
-	return shown;
 }
 
-/* Z3660: "ARM core 1      gpu, decoding, load 81.3 %, 866 MHz" */
-static void draw_core1(row, core)
-int row;
-struct text_block *core;
+static void draw_screen()
 {
-	char *p;
-	int whole, tenth;
-
-	if (core->count < 1 || (p = strstr(core->line[0], "load ")) == NULL ||
-	    sscanf(p, "load %d.%d", &whole, &tenth) != 2)
-		return;
-	paint(C_TITLE, 1);
-	mvprintw(row, 0, "Core 1");
-	attrset(A_NORMAL);
-	draw_bar(row, 8, 30, whole * 10 + tenth);
-	mvprintw(row, 41, "%.*s", COLS - 42, core->line[0] + 16);
-}
-
-static void draw_screen(ps, swap_summary, swap_list, core)
-struct text_block *ps;
-struct text_block *swap_summary;
-struct text_block *swap_list;
-struct text_block *core;
-{
-	struct load_info load;
-	int row;
+	struct ast_mem m;
+	int row, i, run = 0, slp = 0, stp = 0, zom = 0;
+	char a[16], b[16];
 
 	erase();
-	gather_load(ps, &load);
-	draw_header(load.total ? load.total : process_count(ps));
+	for (i = 0; i < nrows; i++) {
+		switch (rows[i].p.state) {
+		case 'R': case 'O': run++; break;
+		case 'S': slp++; break;
+		case 'T': stp++; break;
+		case 'Z': zom++; break;
+		}
+	}
+	draw_header(nrows);
 
 	row = 2;
-	paint(C_TITLE, 1);
-	mvprintw(row, 0, "Load");
-	attrset(A_NORMAL);
-	paint(C_RUN, 1);
-	mvprintw(row + 1, 0, "running: %d", load.runnable);
-	attrset(A_NORMAL);
-	printw("  sleeping: %d  ", load.sleeping);
-	paint(C_STOP, 0);
-	printw("stopped: %d  ", load.stopped);
-	paint(C_ZOMBIE, load.zombies > 0);
-	printw("zombies: %d", load.zombies);
-	attrset(A_NORMAL);
+	label(row, "CPU");
+	if (prf_ok) {
+		draw_bar(row, 8, 30, user_pm, sys_pm);
+		printw(" user %4.1f %%  system %4.1f %%  idle %4.1f %%", user_pm / 10.0, sys_pm / 10.0,
+		    (1000 - user_pm - sys_pm) / 10.0);
+	} else
+		mvprintw(row, 8, "unknown: the kernel profiler (/dev/prf) is in use");
 
-	row += 3;
-	paint(C_TITLE, 1);
-	mvprintw(row, 0, "Memory / Swap");
+	if (opened && ast_mem(&m) == 0) {
+		label(row + 1, "Memory");
+		draw_bar(row + 1, 8, 30, m.total ? (int)(1000.0 * (m.total - m.free) / m.total) : 0, 0);
+		human(a, m.total - m.free);
+		human(b, m.total);
+		printw(" %s of %s", a, b);
+		label(row + 2, "Swap");
+		draw_bar(row + 2, 8, 30, m.swap_total ? (int)(1000.0 * (m.swap_total - m.swap_free) / m.swap_total) : 0, 0);
+		human(a, m.swap_total - m.swap_free);
+		human(b, m.swap_total);
+		printw(" %s of %s", a, b);
+		human(a, m.swap_resv);
+		printw(", %s reserved", a);
+	} else
+		mvprintw(row + 1, 0, "Memory and swap: unknown (amtop needs group sys for /dev/kmem)");
+
+	label(row + 3, "Net");
+	if (netname[0])
+		mvprintw(row + 3, 8, "%-6s in %ld packets/s  out %ld packets/s", netname, net_in, net_out);
+
+	label(row + 4, "Tasks");
+	paint(C_RUN, 1);
+	mvprintw(row + 4, 8, "running: %d", run);
 	attrset(A_NORMAL);
-	if (swap_summary->count > 0)
-		mvprintw(row + 1, 0, "%.*s", COLS - 1, swap_summary->line[0]);
-	else
-		mvprintw(row + 1, 0, "swap -s unavailable");
-	if (swap_list->count > 0)
-		mvprintw(row + 2, 0, "%.*s", COLS - 1, swap_list->line[0]);
-	if (swap_list->count > 1)
-		mvprintw(row + 3, 0, "%.*s", COLS - 1, swap_list->line[1]);
+	printw("  sleeping: %d  ", slp);
+	paint(C_STOP, 0);
+	printw("stopped: %d  ", stp);
+	paint(C_ZOMBIE, zom > 0);
+	printw("zombies: %d", zom);
+	attrset(A_NORMAL);
 
 	row += 5;
-	draw_core1(row, core);
-	row += 2;
-	draw_processes(row, ps);
+	if (draw_core1(row))
+		row++;
+	draw_processes(row + 1);
 
 	if (status_msg[0]) {
 		attron(A_REVERSE);
@@ -365,13 +413,15 @@ int main(argc, argv)
 int argc;
 char **argv;
 {
-	struct text_block ps, swap_summary, swap_list, core;
+	char err[MAX_LINE];
 
 	(void)argc;
 	(void)argv;
 
 	signal(SIGINT, on_signal);
 	signal(SIGTERM, on_signal);
+
+	opened = ast_open(err, sizeof err) == 0;
 
 	initscr();
 	if (has_colors()) {
@@ -386,6 +436,7 @@ char **argv;
 		init_pair(C_ZOMBIE, COLOR_RED, back);
 		init_pair(C_BAR, COLOR_GREEN, back);
 		init_pair(C_BARHIGH, COLOR_RED, back);
+		init_pair(C_SYS, COLOR_YELLOW, back);
 		colour = 1;
 	}
 	curs_set(0);
@@ -394,14 +445,16 @@ char **argv;
 	nodelay(stdscr, TRUE);
 	keypad(stdscr, TRUE);
 
+	gather();	/* the first interval starts here: no CPU shares yet */
+	draw_screen();
 	while (!done) {
 		status_msg[0] = '\0';
-		gather_processes(&ps);
-		gather_swap(&swap_summary, &swap_list);
-		read_command("/usr/amiga/bin/ztop 2>/dev/null | grep \"ARM core 1\"", &core);
-		draw_screen(&ps, &swap_summary, &swap_list, &core);
+		if (!opened)
+			sprintf(status_msg, "%.150s", err);
 		if (wait_key(REFRESH_SECS))
 			break;
+		gather();
+		draw_screen();
 	}
 
 	endwin();

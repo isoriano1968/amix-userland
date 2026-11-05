@@ -1,50 +1,43 @@
 # amtop
 
-`amtop` is a small curses system monitor for AMIX and other old SVR4 systems.
-It is intentionally conservative: instead of depending on modern `/proc`
-layouts, kernel memory offsets, or ncurses-only calls, it samples the tools
-that are normally available on System V systems when present:
+`amtop` is a small curses system monitor for AMIX, in the manner of `top`:
 
-- `ps -el`
-- `swap -s`
-- `swap -l`
+- the CPU's user and system shares, with a bar;
+- memory and swap in use, with bars;
+- packets a second on the network interface;
+- the processes by state, and the Z3660's core 1 from `ztop`;
+- the processes sorted by their CPU share: PID, user, state, CPU %,
+  resident and virtual size, CPU time and command.
 
-The display refreshes every two seconds, in colour where the terminal has it, and shows system load-style counters,
-memory and swap summaries when available, and the currently running process
-table.
+The display refreshes every two seconds, in colour where the terminal has it
+(dtterm does; the Amiga console's entry has none).
+
+Its numbers come from [library/amixstat](../../library/amixstat), which reads
+the running kernel through `/dev/kmem`, so amtop is installed setgid `sys`.
+Without that group it still lists the processes and says that memory and swap
+are unknown. AMIX books idle time as system time of the process that ran last;
+the CPU's shares come from the kernel profiler, and a process's system time
+is scaled to the kernel's real share, so that single figure is an estimate.
+
+The first version read `ps`, `swap -s` and `swap -l`; on AMIX `swap -s`
+prints a negative reserved figure and there is no command for real memory.
 
 ## Build
 
+Cross, with the sysroot holding library/amixstat and library/ncurses:
+
 ```sh
-cd amtop
-make
+make build stage
 ```
 
-If AMIX uses a different terminal library set, try one of these:
+`build/amtop-amix.tar` is installed with `amix-install`, which makes amtop
+setgid `sys`. On the Amiga itself, with both libraries installed:
 
 ```sh
-make LIBS=-lncurses
-make LIBS=-lcurses
-make LIBS="-lcurses -ltermlib"
-```
-
-## Install
-
-```sh
-cp amtop /usr/local/bin/amtop
+make -f Makefile.amix
 ```
 
 ## Keys
 
 - `q` quits
 - `Ctrl-L` redraws the screen
-
-## Notes
-
-This first version deliberately avoids reading `/dev/kmem`.  That keeps it
-usable on stock AMIX installations without matching the running kernel's symbol
-table and private structure layout.  A later AMIX-specific backend could add
-true load averages and per-process CPU deltas using procfs or kernel symbols
-once the exact installed headers are available.
-
-When `vmstat` is not installed, the load / CPU / paging line is left blank.

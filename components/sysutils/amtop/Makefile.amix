@@ -1,7 +1,7 @@
 CC = cc
-CFLAGS = -O
+CFLAGS = -O `pkg-config --cflags ncurses amixstat`
 LDFLAGS =
-LIBS = -lncurses
+LIBS = `pkg-config --libs ncurses amixstat`
 PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
 
