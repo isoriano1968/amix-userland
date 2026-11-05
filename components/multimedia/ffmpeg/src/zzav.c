@@ -237,6 +237,25 @@ static int start(int sound, int x, int y)
     return 0;
 }
 
+/* the player's code for a sound codec: AAC, and with ZZAV_FEAT_SOUND (the amix
+   core since 2026-11-05) AC3, E-AC3, DTS, MP3, MP2, Vorbis; ZZAV_NONE if not */
+static unsigned long acode(enum AVCodecID id, int more)
+{
+    if (id == AV_CODEC_ID_AAC)
+        return ZZAV_AAC;
+    if (!more)
+        return ZZAV_NONE;
+    switch (id) {
+    case AV_CODEC_ID_AC3: return ZZAV_AC3;
+    case AV_CODEC_ID_EAC3: return ZZAV_EAC3;
+    case AV_CODEC_ID_DTS: return ZZAV_DTS;
+    case AV_CODEC_ID_MP3: return ZZAV_MP3;
+    case AV_CODEC_ID_MP2: return ZZAV_MP2;
+    case AV_CODEC_ID_VORBIS: return ZZAV_VORBIS;
+    default: return ZZAV_NONE;
+    }
+}
+
 int zzav_open(AVFormatContext *fmt, int v, int a, int x, int y, int maxw, int maxh, int verb)
 {
     AVCodecParameters *vc = v >= 0 ? fmt->streams[v]->codecpar : NULL;
@@ -248,10 +267,13 @@ int zzav_open(AVFormatContext *fmt, int v, int a, int x, int y, int maxw, int ma
         (vc->format != AV_PIX_FMT_YUV420P && vc->format != AV_PIX_FMT_YUVJ420P && vc->format != -1) ||
         vc->extradata_size > (int)ZZAV_EXTRA_MAX)
         return -1;
-    if (ac && (ac->codec_id != AV_CODEC_ID_AAC || ac->extradata_size > (int)ZZAV_EXTRA_MAX))
-        ac = NULL, a = -1;              /* core 1 has the AAC decoder only */
+    if (ac && ac->extradata_size > (int)ZZAV_EXTRA_MAX)
+        ac = NULL, a = -1;
     if (attach() < 0)
         goto fail;
+    /* the sound core 1 decodes: AAC, or more with an amix core that says so */
+    if (ac && acode(ac->codec_id, (blk[ZZAV_W_FEAT] & ZZAV_FEAT_SOUND) != 0) == ZZAV_NONE)
+        ac = NULL, a = -1;
     geometry(vc->width, vc->height, av_guess_sample_aspect_ratio(fmt, fmt->streams[v], NULL), maxw, maxh);
 
     /* the stream words; not FEAT and what follows: core 1's (OPEN_URL) */
@@ -267,7 +289,7 @@ int zzav_open(AVFormatContext *fmt, int v, int a, int x, int y, int maxw, int ma
     blk[ZZAV_W_VW] = (unsigned long)vc->width;
     blk[ZZAV_W_VH] = (unsigned long)vc->height;
     if (ac) {
-        blk[ZZAV_W_ACODEC] = ZZAV_AAC;
+        blk[ZZAV_W_ACODEC] = acode(ac->codec_id, 1);
         memcpy(ring + (ZZAV_AEXTRA_OFF - ZZAV_RING_OFF), ac->extradata, (size_t)ac->extradata_size);
         blk[ZZAV_W_AEXTRA_LEN] = (unsigned long)ac->extradata_size;
         blk[ZZAV_W_ATB_NUM] = (unsigned long)fmt->streams[a]->time_base.num;
@@ -610,16 +632,16 @@ void zzav_stats(char *buf, int len)
         buf[0] = 0;
         return;
     }
-    sprintf(buf, "core 1: %.1f s (%s clock), %lu shown %lu dropped, decode %lu us, show %lu us, lag %ld ms, skip %lu; "
+    snprintf(buf, (size_t)len, "core 1: %.1f s (%s clock), %lu shown %lu dropped, decode %lu us, show %lu us, lag %ld ms, skip %lu; "
             "sound %lu ms ahead, %lu gaps, %lu pkts %lu frames %lu samples, err %ld, dma %lu (%lu back); "
-            "video pkts %lu%s %lx",
+            "video pkts %lu%s %lx; refresh %lu us, frames on screen for 1/2/3/4+ refreshes %lu/%lu/%lu/%lu",
             blk[ZZAV_W_CLOCK_MS] / 1000.0, blk[ZZAV_W_CLOCKSRC] == 2 ? "timer" : "sound",
             blk[ZZAV_W_SHOWN], blk[ZZAV_W_DROPPED], blk[ZZAV_W_VDEC_US], blk[ZZAV_W_SHOW_US],
             (long)blk[ZZAV_W_LAG_MS], blk[ZZAV_W_SKIP], blk[ZZAV_W_ALEAD_MS], blk[ZZAV_W_UNDERRUNS],
             blk[ZZAV_W_APKTS], blk[ZZAV_W_AFRAMES], blk[ZZAV_W_ASAMPLES], (long)blk[ZZAV_W_AERR],
             blk[ZZAV_W_DMA_RAW], blk[ZZAV_W_DMA_JUMPS], blk[ZZAV_W_VPKTS],
-            blk[ZZAV_W_STATE] == ZZAV_ERROR ? ", ERROR" : "", blk[ZZAV_W_ERR]);
-    (void)len;
+            blk[ZZAV_W_STATE] == ZZAV_ERROR ? ", ERROR" : "", blk[ZZAV_W_ERR], blk[ZZAV_W_REFRESH_US],
+            blk[ZZAV_W_CAD1], blk[ZZAV_W_CAD2], blk[ZZAV_W_CAD3], blk[ZZAV_W_CAD4]);
 }
 
 void zzav_close(void)
