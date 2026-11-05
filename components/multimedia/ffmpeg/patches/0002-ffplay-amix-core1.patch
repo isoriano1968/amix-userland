@@ -1,6 +1,6 @@
 --- a/fftools/ffplay.c
 +++ b/fftools/ffplay.c
-@@ -1299,8 +1299,146 @@
+@@ -1299,8 +1299,153 @@
      av_free(is);
  }
  
@@ -18,11 +18,14 @@
 +#include <SDL_syswm.h>        /* the X window, for its frame (zz_size) */
 +static int zzav_on;
 +
-+/* seconds of a stream before core 1 starts, at the start and after a seek:
-+   a lead the stream can lose in a slow stretch (AMIX takes ~280 KB/s, a
-+   480p stream 190-250); the ring (7.75 MB) holds ~30 s at 2 Mbit/s */
++/* seconds of a stream before core 1 starts: at the start a lead the stream
++   can lose in a slow stretch (AMIX takes ~280 KB/s, a 480p stream 190-250;
++   the ring, 7.75 MB, holds ~30 s at 2 Mbit/s), after a seek a short one, as
++   the user waits for it.  The window's title says how far the pre-loading is. */
 +#define ZZ_LEAD 15.0
++#define ZZ_LEAD_SEEK 3.0
 +#define ZZ_WAIT 40.0            /* ... or after this long, if the network is slower */
++static volatile double zz_buf_have = -1.0, zz_buf_want;   /* pre-loading: seconds in, wanted */
 +static int zz_scale = 1;        /* the window's size, not fullscreen */
 +static int zz_half = -1;        /* the size chosen with 1, 2 or h; -1 none yet */
 +static double zz_t0, zz_c0 = -1.0;      /* a stream: where it starts in the file, its first time stamp */
@@ -125,12 +128,16 @@
 +                       window_title && strrchr(window_title, '/') ? strrchr(window_title, '/') + 1 :
 +                       window_title ? window_title : "";
 +    const int t = (int)zz_pos(), d = is->ic && is->ic->duration > 0 ? (int)(is->ic->duration / AV_TIME_BASE) : 0;
++    const double have = zz_buf_have;
++    const int key = have >= 0.0 ? -2 - (int)have : t;
 +    char buf[256];
 +
-+    if (t == shown || !window)
++    if (key == shown || !window)
 +        return;
-+    shown = t;
-+    if (d)
++    shown = key;
++    if (have >= 0.0)            /* core 1 waits for the stream's lead */
++        snprintf(buf, sizeof buf, "Pre-loading buffer %d / %d s  %s", (int)have, (int)zz_buf_want, name);
++    else if (d)
 +        snprintf(buf, sizeof buf, "%d:%02d:%02d / %d:%02d:%02d  %s", t / 3600, t / 60 % 60, t % 60,
 +                 d / 3600, d / 60 % 60, d % 60, name);
 +    else
@@ -147,7 +154,7 @@
      if (is) {
          stream_close(is);
      }
-@@ -1322,6 +1460,9 @@
+@@ -1322,6 +1467,9 @@
  
  static void sigterm_handler(int sig)
  {
@@ -157,7 +164,7 @@
      exit(123);
  }
  
-@@ -2817,6 +2958,12 @@
+@@ -2817,6 +2965,12 @@
  
      av_format_inject_global_side_data(ic);
  
@@ -170,7 +177,7 @@
      if (find_stream_info) {
          AVDictionary **opts = setup_find_stream_info_opts(ic, codec_opts);
          int orig_nb_streams = ic->nb_streams;
-@@ -2838,6 +2985,15 @@
+@@ -2838,6 +2992,15 @@
      if (ic->pb)
          ic->pb->eof_reached = 0; // FIXME hack, ffplay maybe should not use avio_feof() to test for the end
  
@@ -186,7 +193,7 @@
      if (seek_by_bytes < 0)
          seek_by_bytes = !!(ic->iformat->flags & AVFMT_TS_DISCONT) && strcmp("ogg", ic->iformat->name);
  
-@@ -2909,6 +3065,166 @@
+@@ -2909,6 +3072,170 @@
              set_default_window_size(codecpar->width, codecpar->height, sar);
      }
  
@@ -200,7 +207,8 @@
 +        const int net = strstr(is->filename, "://") != NULL;
 +        const int cast = strstr(is->filename, "/stream?") != NULL;
 +        int tries = 0;
-+        int hold = net;         /* a stream: core 1 waits for ZZ_LEAD seconds of it */
++        int hold = net;         /* a stream: core 1 waits for `lead' seconds of it */
++        double lead = ZZ_LEAD;
 +        double t_hold = av_gettime_relative() / 1e6, first = -1.0, last = -1.0;
 +        const char *tp = strstr(is->filename, "&t=");
 +
@@ -294,13 +302,16 @@
 +                    zzav_window();
 +                    tries = 0;
 +                    hold = net;
++                    lead = ZZ_LEAD_SEEK;
 +                    t_hold = av_gettime_relative() / 1e6;
 +                    first = last = -1.0;
 +                }
 +            }
-+            if (hold && (eofd || (first >= 0.0 && last - first >= ZZ_LEAD) ||
++            if (hold && (eofd || (first >= 0.0 && last - first >= lead) ||
 +                         av_gettime_relative() / 1e6 - t_hold >= ZZ_WAIT))
 +                hold = 0;
++            zz_buf_want = lead;
++            zz_buf_have = hold ? (first >= 0.0 ? last - first : 0.0) : -1.0;
 +            if (!hold && zz_goal >= 0.0 && !is->seek_req)
 +                zz_goal = -1.0;
 +            zzav_pause(hold || is->paused);
@@ -353,7 +364,7 @@
      /* open the streams */
      if (st_index[AVMEDIA_TYPE_AUDIO] >= 0) {
          stream_component_open(is, st_index[AVMEDIA_TYPE_AUDIO]);
-@@ -3218,6 +3534,10 @@
+@@ -3218,6 +3545,10 @@
  static void toggle_full_screen(VideoState *is)
  {
      is_full_screen = !is_full_screen;
@@ -364,7 +375,7 @@
      SDL_SetWindowFullscreen(window, is_full_screen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
  }
  
-@@ -3244,6 +3564,34 @@
+@@ -3244,6 +3575,34 @@
          if (remaining_time > 0.0)
              av_usleep((int64_t)(remaining_time * 1000000.0));
          remaining_time = REFRESH_RATE;
@@ -399,7 +410,7 @@
          if (is->show_mode != SHOW_MODE_NONE && (!is->paused || is->force_refresh))
              video_refresh(is, &remaining_time);
          SDL_PumpEvents();
-@@ -3296,6 +3644,20 @@
+@@ -3296,6 +3655,20 @@
              if (!cur_stream->width)
                  continue;
              switch (event.key.keysym.sym) {
@@ -420,7 +431,7 @@
              case SDLK_f:
                  toggle_full_screen(cur_stream);
                  cur_stream->force_refresh = 1;
-@@ -3371,6 +3733,13 @@
+@@ -3371,6 +3744,13 @@
              case SDLK_DOWN:
                  incr = -60.0;
              do_seek:
@@ -434,7 +445,7 @@
                      if (seek_by_bytes) {
                          pos = -1;
                          if (pos < 0 && cur_stream->video_stream >= 0)
-@@ -3429,6 +3798,10 @@
+@@ -3429,6 +3809,10 @@
                      break;
                  x = event.motion.x;
              }
@@ -445,7 +456,7 @@
                  if (seek_by_bytes || cur_stream->ic->duration <= 0) {
                      uint64_t size =  avio_size(cur_stream->ic->pb);
                      stream_seek(cur_stream, size*x/cur_stream->width, 0, 1);
-@@ -3465,6 +3838,12 @@
+@@ -3465,6 +3849,12 @@
                      }
                  case SDL_WINDOWEVENT_EXPOSED:
                      cur_stream->force_refresh = 1;
