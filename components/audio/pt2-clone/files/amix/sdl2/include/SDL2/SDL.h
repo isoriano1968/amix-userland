@@ -131,6 +131,8 @@ int SDL_ShowCursor(int toggle);
 ** present; present compares only those (and everything every 16th frame) */
 void SDL_AMIX_SetDirtyRows(Uint8 *rows, int n);
 void SDL_AMIX_SetNullAudio(int on);
+/* 1: the audio device will play on the Z3660's HDMI (core 1), not Paula */
+int SDL_AMIX_HdmiAudio(void);
 
 #define SDL_MESSAGEBOX_ERROR 0x10
 int SDL_ShowSimpleMessageBox(Uint32 flags, const char *title, const char *message, SDL_Window *window);

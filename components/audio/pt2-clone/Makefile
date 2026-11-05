@@ -1,4 +1,4 @@
-# 8bitbubsy's ProTracker 2.3D clone for AMIX, on SDL 2 and Paula.  Upstream's
+# 8bitbubsy's ProTracker 2.3D clone for AMIX, on SDL 2, the Z3660's HDMI and Paula.  Upstream's
 # tree carries Windows and macOS binaries, so it is fetched, not kept here.
 COMPONENT_NAME    = pt2-clone
 COMPONENT_VERSION = 18954f2
@@ -12,6 +12,8 @@ include ../../../make-rules/shared.mk
 export PATH := $(AMIX_TOOLS):$(PATH)
 
 SRC = $(BUILD_DIR)/pt2-clone-18954f23c3d0ebd8583e61b65fe4507ae8aff4bd
+# the HDMI sound helper is library/sdl2's (its zzhdmi audio driver's)
+ZZHDMI = ../../library/sdl2/amix/src/audio/zzhdmi
 
 $(SRC)/amix/build.sh: $(COMPONENT_ARCHIVE)
 	mkdir -p $(BUILD_DIR)
@@ -20,6 +22,8 @@ $(SRC)/amix/build.sh: $(COMPONENT_ARCHIVE)
 	cp -R files/amix $(SRC)/amix
 
 build: $(SRC)/amix/build.sh
-	cd $(SRC)/amix && sh build.sh
+	mkdir -p $(SRC)/amix/zzhdmi
+	cp $(ZZHDMI)/zzhdmi_board.c $(ZZHDMI)/zzhdmi_board.h $(SRC)/amix/zzhdmi/
+	cd $(SRC)/amix && AMIX_GATE=$(abspath ../../../../amix-gate) sh build.sh
 
 .PHONY: build

@@ -6,6 +6,8 @@
 #                 gnu-pth in usr/local/gnu)
 #   SHM_LIBS      directory with a static libXext.a that has XShm (and libshmsys.a)
 #   PTH_LIB       gnu-pth's libraries for sdl2-config-cross (default $G/lib)
+#   AMIX_GATE     amix-gate (default beside amix-userland): core 1's zzgl.h and
+#                 bench.h for the zzhdmi audio driver
 # The source: SDL2-2.30.12/ (fetch.sh), copied to build/, patches/ applied and
 # amix/ laid over it.
 set -e
@@ -17,8 +19,10 @@ G=$SR/usr/local/gnu
 B=$H/build/SDL2-$V
 O=$H/build/obj
 P=$H/build/install/usr/local
+C1=${AMIX_GATE:-$H/../../../../amix-gate}/usr/src/firmware/core1
 [ -d "$H/SDL2-$V" ] || { echo "no SDL2-$V/: run fetch.sh"; exit 1; }
 [ -f "$G/include/pthread.h" ] || { echo "no gnu-pth in $G"; exit 1; }
+[ -f "$C1/zzgl/zzgl.h" ] || { echo "no amix-gate's core 1 headers in $C1"; exit 1; }
 
 rm -rf "$B" "$O"
 mkdir -p "$H/build" "$O" "$P/lib" "$P/include/SDL2" "$P/bin"
@@ -37,7 +41,7 @@ CF="-O2 -m68060 -fno-strict-aliasing -D_REENTRANT -DUSING_GENERATED_CONFIG_H
 	-I$X/include
 	-Wno-implicit-int -Wno-error=incompatible-pointer-types -Wno-deprecated-declarations"
 cd "$B/src"
-SRCS=$(ls *.c atomic/*.c audio/*.c audio/dummy/*.c audio/amix/*.c cpuinfo/*.c \
+SRCS=$(ls *.c atomic/*.c audio/*.c audio/dummy/*.c audio/amix/*.c audio/zzhdmi/*.c cpuinfo/*.c \
 	events/*.c file/*.c filesystem/unix/*.c haptic/*.c joystick/*.c libm/*.c \
 	locale/*.c locale/dummy/*.c misc/*.c misc/dummy/*.c power/*.c render/*.c \
 	render/software/*.c render/zz9k/*.c sensor/*.c stdlib/*.c thread/*.c \
@@ -48,7 +52,8 @@ SRCS=$(ls *.c atomic/*.c audio/*.c audio/dummy/*.c audio/amix/*.c cpuinfo/*.c \
 fail=0
 for f in $SRCS; do
 	o=$O/$(echo "$f" | tr / _ | sed 's/\.c$/.o/')
-	m68k-elf-gcc $CF -c "$f" -o "$o" 2> "$o.log" || { echo "FAIL $f"; sed -n 1,12p "$o.log"; fail=1; }
+	case $f in audio/zzhdmi/*) XF="-I$C1/zzgl -I$C1/cores/h264bench" ;; *) XF= ;; esac
+	m68k-elf-gcc $CF $XF -c "$f" -o "$o" 2> "$o.log" || { echo "FAIL $f"; sed -n 1,12p "$o.log"; fail=1; }
 done
 [ $fail = 0 ] || exit 1
 rm -f "$P/lib/libSDL2.a"

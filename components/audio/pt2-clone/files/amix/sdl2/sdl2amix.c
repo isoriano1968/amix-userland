@@ -12,7 +12,11 @@
  * Input: X key/button/motion/focus events become SDL events.  Keys are
  *   mapped by position: the AMIX X server's keymap is US-labelled per Amiga
  *   raw key, so the unshifted keysym of a keycode names the physical key.
- * Audio: /dev/audio with AUDIO_STEREO (a sample-locked Paula pair), signed
+ * Audio: the Z3660's HDMI when core 1 runs the GL server's program
+ *   (zzhdmi_board.c, from library/sdl2: 16-bit stereo at 24 kHz, or 48 with
+ *   PT2_HDMI_RATE=48000, written into core 1's stream at the offset of its
+ *   time, PT2_HDMI_LEAD_MS ahead, default 400); PT2_HDMI=0 skips it.  Else
+ *   /dev/audio with AUDIO_STEREO (a sample-locked Paula pair), signed
  *   8-bit, at the Paula clock / period.  No threads on AMIX: the callback is
  *   run from the program's own calls (polling events, presenting, delays)
  *   whenever the stream head accepts more (non-blocking writes).
@@ -34,6 +38,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdarg.h>
+#include "zzhdmi_board.h"
 
 /* ---- errors, hints, misc ----------------------------------------------- */
 
@@ -1060,19 +1065,101 @@ static Uint64 a_t0, a_frames;	/* frames produced since a_t0 */
 #define AUDIO_LEAD_US 200000	/* produce at most this far ahead of real time */
 #define AUDIO_BUDGET_US 12000	/* and spend at most this long per pump */
 
+/* HDMI: core 1 plays the stream; times are stream bytes (frames * 4) */
+static int ahdmi;			/* open on the HDMI */
+static int hdmi_probed = -1;		/* zzhdmi_present(), asked once */
+static unsigned long long h_mixed;	/* written up to */
+static unsigned long h_lead, h_safe;	/* kept ahead; behind this core 1 has read past */
+static unsigned h_under;		/* times it fell behind */
+
+static int hdmi_wanted(void)
+{
+	const char *e = getenv("PT2_HDMI");
+
+	if (anull_forced || getenv("PT2_NULLAUDIO") || (e && atoi(e) == 0))
+		return 0;
+	if (hdmi_probed < 0)
+		hdmi_probed = zzhdmi_present();
+	return hdmi_probed;
+}
+
+/* sdl2-amix extension: the sound will go to the HDMI (so not to /dev/paula) */
+int SDL_AMIX_HdmiAudio(void) { return hdmi_wanted(); }
+
+static int hdmi_open(const SDL_AudioSpec *want)
+{
+	const char *r = getenv("PT2_HDMI_RATE"), *l = getenv("PT2_HDMI_LEAD_MS");
+	const int div = r && atoi(r) >= 36000 ? 1 : 2;
+	const unsigned long bpms = 48000UL / div * 4 / 1000;
+	unsigned long lead_ms = l ? (unsigned long)atol(l) : 400;
+
+	aspec = *want;
+	aspec.freq = 48000 / div;
+	aspec.silence = 0;
+	aspec.size = (Uint32)aspec.samples * 4;
+	if (lead_ms < ZZHDMI_CORE1_LEAD_MS + 80)
+		lead_ms = ZZHDMI_CORE1_LEAD_MS + 80;
+	h_lead = bpms * lead_ms;
+	if (h_lead + aspec.size > ZZHDMI_RING_BYTES - bpms * 50)
+		h_lead = ZZHDMI_RING_BYTES - bpms * 50 - aspec.size;
+	h_safe = bpms * (ZZHDMI_CORE1_LEAD_MS + 30);
+	if (zzhdmi_open(div, h_lead + aspec.size) < 0)
+		return -1;
+	h_mixed = h_safe;
+	h_under = 0;
+	abuf16 = malloc(aspec.size);
+	ahdmi = 1;
+	apaused = 1;
+	fprintf(stderr, "sdl2-amix: sound on the HDMI through core 1, %d Hz (PT2_HDMI=0: Paula)\n", aspec.freq);
+	return 0;
+}
+
+/* the HDMI's share of audio_pump: mix while less than h_lead is written ahead */
+static void hdmi_pump(Uint64 pstart)
+{
+	unsigned long long now = zzhdmi_pos();
+
+	if (h_mixed < now + h_safe) {
+		/* behind core 1 (a long frame, a module loading): on from the
+		** present, over silence -- the whole ring, it is a lap or more old */
+		zzhdmi_silence(0, ZZHDMI_RING_BYTES);
+		h_mixed = (now + h_lead) & ~3ULL;
+		h_under++;
+		if (getenv("PT2_FPS"))
+			fprintf(stderr, "sdl2-amix: HDMI sound fell behind (%u)\n", h_under);
+		return;
+	}
+	while (h_mixed - now < h_lead && now_us() - pstart <= AUDIO_BUDGET_US) {
+		Uint64 m0 = now_us();
+
+		aspec.callback(aspec.userdata, (Uint8 *)abuf16, (int)aspec.size);
+		prof_mix += now_us() - m0;
+		prof_mixed += aspec.samples;
+		prof_freq = aspec.freq;
+		zzhdmi_write(h_mixed, abuf16, aspec.size);
+		h_mixed += aspec.size;
+		now = zzhdmi_pos();
+	}
+}
+
 SDL_AudioDeviceID SDL_OpenAudioDevice(const char *dev, int cap, const SDL_AudioSpec *want, SDL_AudioSpec *have, int allowed)
 {
 	int period, vol = 63, one = 1;
 	const char *e = getenv("PT2_PAULA_PERIOD");
 
 	(void)dev; (void)cap; (void)allowed;
-	if (afd >= 0) {
+	if (afd >= 0 || ahdmi) {
 		seterr("audio already open");
 		return 0;
 	}
 	if (want->format != AUDIO_S16 || want->channels != 2) {
 		seterr("only signed 16-bit stereo");
 		return 0;
+	}
+	if (hdmi_wanted() && hdmi_open(want) == 0) {
+		if (have)
+			*have = aspec;
+		return 1;
 	}
 	afd = (anull_forced || getenv("PT2_NULLAUDIO")) ? -1 : open("/dev/audio", O_WRONLY | O_NDELAY);
 	if (afd < 0 && (anull_forced || getenv("PT2_NULLAUDIO"))) {
@@ -1109,6 +1196,10 @@ SDL_AudioDeviceID SDL_OpenAudioDevice(const char *dev, int cap, const SDL_AudioS
 
 static void audio_close(void)
 {
+	if (ahdmi) {
+		zzhdmi_close();
+		ahdmi = 0;
+	}
 	if (afd >= 0) {
 		close(afd);
 		afd = -1;
@@ -1120,13 +1211,21 @@ static void audio_close(void)
 }
 
 void SDL_CloseAudioDevice(SDL_AudioDeviceID d) { (void)d; audio_close(); }
-void SDL_PauseAudioDevice(SDL_AudioDeviceID d, int p) { (void)d; apaused = p; if (!p) audio_pump(); }
+void SDL_PauseAudioDevice(SDL_AudioDeviceID d, int p)
+{
+	(void)d;
+	if (ahdmi && apaused && !p)
+		h_mixed = (zzhdmi_pos() + h_safe) & ~3ULL;	/* on from now, just ahead of core 1 */
+	apaused = p;
+	if (!p)
+		audio_pump();
+}
 void SDL_LockAudioDevice(SDL_AudioDeviceID d) { (void)d; alocked++; }
 void SDL_UnlockAudioDevice(SDL_AudioDeviceID d) { (void)d; if (alocked) alocked--; }
 int SDL_GetNumAudioDrivers(void) { return 1; }
 const char *SDL_GetAudioDriver(int i) { (void)i; return "amix"; }
 int SDL_GetNumAudioDevices(int c) { (void)c; return 1; }
-const char *SDL_GetAudioDeviceName(int i, int c) { (void)i; (void)c; return "Paula (/dev/audio)"; }
+const char *SDL_GetAudioDeviceName(int i, int c) { (void)i; (void)c; return ahdmi ? "Z3660 HDMI (core 1)" : "Paula (/dev/audio)"; }
 
 /* run the callback whenever the stream head takes more; never blocks */
 static void audio_pump(void)
@@ -1136,10 +1235,16 @@ static void audio_pump(void)
 
 	Uint64 pstart;
 
-	if (afd < 0 || apaused || alocked || inpump)
+	if ((afd < 0 && !ahdmi) || apaused || alocked || inpump)
 		return;
 	inpump = 1;
 	pstart = now_us();
+	if (ahdmi) {
+		hdmi_pump(pstart);
+		prof_audio += now_us() - pstart;
+		inpump = 0;
+		return;
+	}
 	if (anull) {
 		struct timeval tv;
 		Uint64 now, due;

@@ -8,8 +8,9 @@ set -e
 H=$(cd "$(dirname "$0")" && pwd)
 PT2=${PT2_SRC:-$H/..}
 O=$H/obj-host; mkdir -p "$O"
-for f in "$PT2"/src/*.c "$PT2"/src/gfx/*.c "$PT2"/src/modloaders/*.c "$PT2"/src/smploaders/*.c "$H"/sdl2/sdl2amix.c; do
-	gcc -O1 -g -D__amix__ -DNDEBUG -I"$H/sdl2/include" -w -c "$f" -o "$O/$(basename "$f" .c).o"
+# zzhdmi/zzhdmi_board.c: its stubs (no board on a PC)
+for f in "$PT2"/src/*.c "$PT2"/src/gfx/*.c "$PT2"/src/modloaders/*.c "$PT2"/src/smploaders/*.c "$H"/sdl2/sdl2amix.c "$H"/zzhdmi/zzhdmi_board.c; do
+	gcc -O1 -g -D__amix__ -DNDEBUG -I"$H/sdl2/include" -I"$H/zzhdmi" -w -c "$f" -o "$O/$(basename "$f" .c).o"
 done
 gcc -o "$H/pt2-clone-host" "$O"/*.o -lXext -lX11 -lm
 ls -l "$H/pt2-clone-host"

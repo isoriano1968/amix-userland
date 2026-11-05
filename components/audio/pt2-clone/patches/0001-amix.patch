@@ -583,7 +583,7 @@ new file mode 100644
 index 0000000..fd1227a
 --- /dev/null
 +++ b/src/pt2_paula_native.c
-@@ -0,0 +1,257 @@
+@@ -0,0 +1,260 @@
 +/* AMIX: play through Paula itself (/dev/paula, the AMIX 040/060 port's
 +** native Paula driver) instead of mixing.
 +**
@@ -599,7 +599,8 @@ index 0000000..fd1227a
 +** layout (pt2 keeps them maxSampleLength apart) and copied again when the
 +** layout changes, for another module, and when playback starts (edits).
 +**
-+** PT2_PAULA=0 mixes as before.  Without /dev/paula the mixer is used too.
++** PT2_PAULA=0 mixes as before.  Without /dev/paula the mixer is used too,
++** and when the sound goes to the Z3660's HDMI (core 1: sdl2-amix).
 +*/
 +
 +#ifdef __amix__
@@ -648,6 +649,8 @@ index 0000000..fd1227a
 +	const char *e = getenv("PT2_PAULA");
 +
 +	if (e != NULL && atoi(e) == 0)
++		return false;
++	if (SDL_AMIX_HdmiAudio()) // the HDMI plays what is mixed
 +		return false;
 +
 +	pfd = open("/dev/paula", O_RDWR);
