@@ -16,6 +16,10 @@
 #include <UpnpDiscovery.h>
 #include "dlna.h"
 
+/* entries asked for at a time: small XML pieces for the 68060, well within BROWSE_MAX */
+#define BROWSE_PAGE	"50"
+#define BROWSE_MAX	(4 * 1024 * 1024)
+
 #define MAXSERVER 16
 #define CDS "urn:schemas-upnp-org:service:ContentDirectory:1"
 
@@ -117,6 +121,11 @@ int dlna_search(int secs)
 		if (UpnpInit2(NULL, 0) != UPNP_E_SUCCESS ||
 		    UpnpRegisterClient(found, NULL, &handle) != UPNP_E_SUCCESS)
 			return -1;
+		/* libupnp drops answers over 64000 bytes (chunked ones too): a
+		   page of Windows Media sharing's Browse, every entry with its
+		   resources, thumbnails and metadata in escaped XML, is far more.
+		   The servers here are our own LAN's. */
+		UpnpSetMaxContentLength(BROWSE_MAX);
 		started = 1;
 	}
 	nserver = 0;
@@ -214,7 +223,7 @@ int dlna_browse(int s, const char *id, dlna_entry_fn fn, void *ctx)
 
 		snprintf(from, sizeof from, "%d", start);
 		act = UpnpMakeAction("Browse", CDS, 6, "ObjectID", id, "BrowseFlag", "BrowseDirectChildren",
-				     "Filter", "*", "StartingIndex", from, "RequestedCount", "200", "SortCriteria", "");
+				     "Filter", "*", "StartingIndex", from, "RequestedCount", BROWSE_PAGE, "SortCriteria", "");
 		if (!act)
 			return -1;
 		if (UpnpSendAction(handle, server[s].control, CDS, NULL, act, &resp) != UPNP_E_SUCCESS) {
