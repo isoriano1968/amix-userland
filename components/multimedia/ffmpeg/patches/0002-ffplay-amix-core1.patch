@@ -1,6 +1,6 @@
 --- a/fftools/ffplay.c
 +++ b/fftools/ffplay.c
-@@ -1299,8 +1299,153 @@
+@@ -1299,8 +1299,184 @@
      av_free(is);
  }
  
@@ -144,27 +144,59 @@
 +        snprintf(buf, sizeof buf, "%d:%02d:%02d  %s", t / 3600, t / 60 % 60, t % 60, name);
 +    SDL_SetWindowTitle(window, buf);
 +}
++
++/* amixcast's resume: FFPLAY_POSFILE names the file the position goes to,
++   "seconds length title", every 10 s and at the end; a video played to its
++   end leaves none.  FFPLAY_START: from there (a server's or a local file; the
++   PC's stream says it in its URL, t=) */
++static double zz_last = -1.0;   /* the position last known good */
++static int zz_dur, zz_ended;
++
++static void zz_save(void)
++{
++    static int saved = -1;
++    const char *f = getenv("FFPLAY_POSFILE");
++    char tmp[1100];
++    FILE *o;
++
++    if (!f || !*f || strlen(f) > 1000)
++        return;
++    if (zz_ended) {
++        unlink(f);
++        return;
++    }
++    if (zz_last < 0.0 || (int)zz_last == saved)
++        return;
++    snprintf(tmp, sizeof tmp, "%s.new", f);
++    if (!(o = fopen(tmp, "w")))
++        return;
++    fprintf(o, "%d %d %s\n", (int)zz_last, zz_dur, window_title ? window_title : "");
++    if (fclose(o) == 0 && rename(tmp, f) == 0)
++        saved = (int)zz_last;
++}
 +#endif
 +
  static void do_exit(VideoState *is)
  {
 +#ifdef FFPLAY_ZZAV
++    zz_save();                  /* where it was left, for amixcast's resume */
 +    zzav_close();               /* the overlay off, core 1's player idle */
 +#endif
      if (is) {
          stream_close(is);
      }
-@@ -1322,6 +1467,9 @@
+@@ -1322,6 +1498,10 @@
  
  static void sigterm_handler(int sig)
  {
 +#ifdef FFPLAY_ZZAV
++    zz_save();
 +    zzav_close();               /* not left running with the overlay on */
 +#endif
      exit(123);
  }
  
-@@ -2817,6 +2965,12 @@
+@@ -2817,6 +2997,12 @@
  
      av_format_inject_global_side_data(ic);
  
@@ -177,7 +209,7 @@
      if (find_stream_info) {
          AVDictionary **opts = setup_find_stream_info_opts(ic, codec_opts);
          int orig_nb_streams = ic->nb_streams;
-@@ -2838,6 +2992,15 @@
+@@ -2838,6 +3024,15 @@
      if (ic->pb)
          ic->pb->eof_reached = 0; // FIXME hack, ffplay maybe should not use avio_feof() to test for the end
  
@@ -193,7 +225,7 @@
      if (seek_by_bytes < 0)
          seek_by_bytes = !!(ic->iformat->flags & AVFMT_TS_DISCONT) && strcmp("ogg", ic->iformat->name);
  
-@@ -2909,6 +3072,173 @@
+@@ -2909,6 +3104,193 @@
              set_default_window_size(codecpar->width, codecpar->height, sar);
      }
  
@@ -209,8 +241,8 @@
 +        int tries = 0;
 +        int hold = net;         /* a stream: core 1 waits for `lead' seconds of it */
 +        double lead = ZZ_LEAD;
-+        double t_hold = av_gettime_relative() / 1e6, first = -1.0, last = -1.0;
-+        const char *tp = strstr(is->filename, "&t=");
++        double t_hold = av_gettime_relative() / 1e6, first = -1.0, last = -1.0, t_save = t_hold;
++        const char *tp = strstr(is->filename, "&t="), *rs = getenv("FFPLAY_START");
 +
 +        atexit(zzav_close);
 +        /* ffplay discards every stream until stream_component_open() opens it:
@@ -226,6 +258,19 @@
 +        seek_by_bytes = 0;
 +        if (tp)
 +            zz_t0 = atof(tp + 3);
++        zz_dur = ic->duration > 0 ? (int)(ic->duration / AV_TIME_BASE) : 0;
++        zz_last = zz_t0;
++        if (zz_t0 > 0.0)        /* the PC's stream from a place: as a jump */
++            lead = ZZ_LEAD_SEEK;
++        if (rs && atof(rs) > 0.0 && !cast) {
++            /* from where it was left, as a jump; no packet is read before it:
++               the stream's first time stamp is the file's */
++            if (net && zz_c0 < 0.0)
++                zz_c0 = ic->start_time != AV_NOPTS_VALUE ? ic->start_time / (double)AV_TIME_BASE : 0.0;
++            is->seek_pos = (int64_t)(atof(rs) * AV_TIME_BASE);
++            is->seek_req = 1;
++            zz_last = atof(rs);
++        }
 +        if (hold)
 +            zzav_pause(1);
 +        for (;;) {
@@ -314,6 +359,12 @@
 +            zz_buf_have = hold ? (first >= 0.0 ? last - first : 0.0) : -1.0;
 +            if (!hold && zz_goal >= 0.0 && !is->seek_req)
 +                zz_goal = -1.0;
++            if (zz_goal >= 0.0 || (!hold && (!net || zz_c0 >= 0.0)))
++                zz_last = zz_pos();
++            if (av_gettime_relative() / 1e6 - t_save >= 10.0) {
++                t_save = av_gettime_relative() / 1e6;
++                zz_save();
++            }
 +            zzav_pause(hold || is->paused);
 +            zzav_volume(is->muted ? 0 : is->audio_volume * 256 / SDL_MIX_MAXVOLUME);
 +            if (!have && !eofd) {
@@ -349,6 +400,7 @@
 +                continue;
 +            }
 +            if (zzav_done() && autoexit) {
++                zz_ended = eofd;        /* played to its end: no resume */
 +                zzav_stats(why, sizeof why);
 +                av_log(NULL, AV_LOG_INFO, "\nffplay: core 1 is done (%s): %s\n", eofd ? "end of file" : "early", why);
 +                ret = AVERROR_EOF;
@@ -367,7 +419,7 @@
      /* open the streams */
      if (st_index[AVMEDIA_TYPE_AUDIO] >= 0) {
          stream_component_open(is, st_index[AVMEDIA_TYPE_AUDIO]);
-@@ -3218,6 +3548,10 @@
+@@ -3218,6 +3600,10 @@
  static void toggle_full_screen(VideoState *is)
  {
      is_full_screen = !is_full_screen;
@@ -378,7 +430,7 @@
      SDL_SetWindowFullscreen(window, is_full_screen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
  }
  
-@@ -3244,6 +3578,34 @@
+@@ -3244,6 +3630,34 @@
          if (remaining_time > 0.0)
              av_usleep((int64_t)(remaining_time * 1000000.0));
          remaining_time = REFRESH_RATE;
@@ -413,7 +465,7 @@
          if (is->show_mode != SHOW_MODE_NONE && (!is->paused || is->force_refresh))
              video_refresh(is, &remaining_time);
          SDL_PumpEvents();
-@@ -3296,6 +3658,20 @@
+@@ -3296,6 +3710,20 @@
              if (!cur_stream->width)
                  continue;
              switch (event.key.keysym.sym) {
@@ -434,7 +486,7 @@
              case SDLK_f:
                  toggle_full_screen(cur_stream);
                  cur_stream->force_refresh = 1;
-@@ -3371,6 +3747,13 @@
+@@ -3371,6 +3799,13 @@
              case SDLK_DOWN:
                  incr = -60.0;
              do_seek:
@@ -448,7 +500,7 @@
                      if (seek_by_bytes) {
                          pos = -1;
                          if (pos < 0 && cur_stream->video_stream >= 0)
-@@ -3429,6 +3812,10 @@
+@@ -3429,6 +3864,10 @@
                      break;
                  x = event.motion.x;
              }
@@ -459,7 +511,7 @@
                  if (seek_by_bytes || cur_stream->ic->duration <= 0) {
                      uint64_t size =  avio_size(cur_stream->ic->pb);
                      stream_seek(cur_stream, size*x/cur_stream->width, 0, 1);
-@@ -3465,6 +3852,12 @@
+@@ -3465,6 +3904,12 @@
                      }
                  case SDL_WINDOWEVENT_EXPOSED:
                      cur_stream->force_refresh = 1;

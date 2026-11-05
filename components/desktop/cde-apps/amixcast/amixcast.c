@@ -5,7 +5,9 @@
  * ffplay on what is picked, the Z3660's core 1 showing H.264.  A DLNA
  * server's file plays as it is, from the server.
  * The tree is a list: "+" and "-" in front of the folders, opened on demand.
- *   amixcast [host [port]]     default: $HOME/.amixcast, else 192.168.0.171 8092
+ * ffplay keeps where a video was left in $HOME/.amixcast/pos; played again,
+ * amixcast asks whether to go on from there.
+ *   amixcast [host [port]]     default: $HOME/.amixcast/config, else 192.168.0.171 8092
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +15,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <netinet/in.h>
@@ -21,6 +24,7 @@
 #include <Xm/Form.h>
 #include <Xm/Label.h>
 #include <Xm/List.h>
+#include <Xm/MessageB.h>
 #include <Xm/PushB.h>
 #include <Xm/RowColumn.h>
 #include <Xm/ToggleB.h>
@@ -29,6 +33,7 @@
 #define FFPLAY      "/opt/amix/bin/ffplay"
 #define MAXNODE     8000
 #define REPLY_MAX   (256 * 1024)
+#define RESUME_MIN  30          /* seconds: less in, or less to the end, starts anew */
 
 extern int socket(), connect();
 
@@ -48,6 +53,9 @@ static char host[64] = "192.168.0.171";
 static int port = 8092;
 static int kbit = 0;            /* 0: measured */
 static int auto_kbit;
+static char posdir[256];        /* $HOME/.amixcast/pos, "" without */
+static Widget top, ask;
+static int ask_node;
 
 static void say(const char *s)
 {
@@ -259,60 +267,135 @@ static int measure(void)
     return k < 300 ? 300 : k > 4000 ? 4000 : k;
 }
 
+/* the file ffplay keeps node i's position in: a hash of where it is from */
+static int posfile(int i, char *out)
+{
+    const char *k = node[i].src >= 0 ? node[i].url : node[i].id;
+    unsigned long h = 2166136261UL;
+
+    if (!posdir[0] || !k)
+        return 0;
+    if (node[i].src < 0)
+        h = (h ^ 'p') * 16777619UL;     /* the PC's ids apart from URLs */
+    for (; *k; k++)
+        h = ((h ^ (unsigned char)*k) * 16777619UL) & 0xffffffffUL;
+    sprintf(out, "%s/%08lx", posdir, h);
+    return 1;
+}
+
+/* where node i was left: seconds, 0 if from the start */
+static int left_at(int i)
+{
+    char path[300];
+    FILE *f;
+    int t = 0, d = 0;
+
+    if (!posfile(i, path) || !(f = fopen(path, "r")))
+        return 0;
+    if (fscanf(f, "%d %d", &t, &d) < 1)
+        t = 0;
+    fclose(f);
+    if (!d)
+        d = node[i].secs;
+    return t < RESUME_MIN || (d && t > d - RESUME_MIN) ? 0 : t;
+}
+
+/* ffplay on node i from t seconds on */
+static void start(int i, int t)
+{
+    static char posenv[320], startenv[40];
+    char url[256], path[128], msg[400], pf[300], *p;
+    const char *u = node[i].url;
+    int k, secs = node[i].secs, pid;
+
+    if (node[i].src < 0) {
+        k = kbit;
+        if (!k) {
+            if (!auto_kbit)
+                auto_kbit = measure();
+            k = auto_kbit;
+        }
+        if (!secs) {
+            say("Asking for its length ...");
+            sprintf(path, "/info?id=%.100s", node[i].id);
+            if ((p = get(path, NULL)) != NULL)
+                secs = node[i].secs = atoi(p);
+        }
+        /* the PC's stream from t on (ffplay's seeks ask for the same) */
+        sprintf(url, "http://%s:%d/stream?id=%.100s&kbit=%d&d=%d&t=%d", host, port, node[i].id, k, secs, t);
+        u = url;
+        sprintf(msg, "Playing at %d kbit/s: %.300s", k, node[i].title);
+    } else
+        sprintf(msg, "Playing from %.60s: %.300s", dlna_name(node[i].src), node[i].title);
+    if (t) {
+        k = (int)strlen(msg);
+        sprintf(msg + k, " (from %d:%02d:%02d)", t / 3600, t / 60 % 60, t % 60);
+    }
+    say(msg);
+    pid = fork();
+    if (pid == 0) {
+        if (posfile(i, pf)) {
+            sprintf(posenv, "FFPLAY_POSFILE=%s", pf);
+            putenv(posenv);
+        }
+        if (t && node[i].src >= 0) {
+            sprintf(startenv, "FFPLAY_START=%d", t);
+            putenv(startenv);
+        }
+        execl(FFPLAY, "ffplay", "-nostats", "-autoexit", "-window_title", node[i].title, u, (char *)NULL);
+        _exit(1);
+    }
+    if (pid < 0)
+        say("Cannot start ffplay");
+}
+
+static void resume_cb(Widget w, XtPointer c, XtPointer d)
+{
+    const int i = ask_node;
+
+    XtUnmanageChild(ask);
+    if (i >= 0 && i < nnode)
+        start(i, c ? left_at(i) : 0);
+}
+
 static void play(int i)
 {
-    char url[256], path[128], msg[400], *p;
-    int k, secs = node[i].secs, pid;
+    char msg[400];
+    XmString x, y, z;
+    int t;
 
     if (node[i].kind == 'd') {
         toggle(i);
         return;
     }
-    if (node[i].src >= 0) {
-        /* from the DLNA server as it is: H.264 goes to core 1, the rest
-           ffplay decodes on the 060 */
-        if (node[i].kind != 'v' && node[i].kind != 'a') {
-            say("Only videos and music so far");
-            return;
-        }
-        sprintf(msg, "Playing from %.60s: %.300s", dlna_name(node[i].src), node[i].title);
-        say(msg);
-        pid = fork();
-        if (pid == 0) {
-            execl(FFPLAY, "ffplay", "-nostats", "-autoexit", "-window_title", node[i].title, node[i].url,
-                  (char *)NULL);
-            _exit(1);
-        }
-        if (pid < 0)
-            say("Cannot start ffplay");
+    /* a DLNA server's file as it is: H.264 goes to core 1, the rest ffplay
+       decodes on the 060; from the PC videos */
+    if (node[i].src >= 0 ? node[i].kind != 'v' && node[i].kind != 'a' : node[i].kind != 'v') {
+        say(node[i].src >= 0 ? "Only videos and music so far" : "Only videos so far");
         return;
     }
-    if (node[i].kind != 'v') {
-        say("Only videos so far");
+    if (!(t = left_at(i))) {
+        start(i, 0);
         return;
     }
-    k = kbit;
-    if (!k) {
-        if (!auto_kbit)
-            auto_kbit = measure();
-        k = auto_kbit;
+    if (!ask) {
+        ask = XmCreateQuestionDialog(top, "resume", NULL, 0);
+        XtVaSetValues(XtParent(ask), XmNtitle, "AmixCast", NULL);
+        XtUnmanageChild(XmMessageBoxGetChild(ask, XmDIALOG_HELP_BUTTON));
+        XtAddCallback(ask, XmNokCallback, resume_cb, (XtPointer)1);
+        XtAddCallback(ask, XmNcancelCallback, resume_cb, NULL);
     }
-    if (!secs) {
-        say("Asking for its length ...");
-        sprintf(path, "/info?id=%.100s", node[i].id);
-        if ((p = get(path, NULL)) != NULL)
-            secs = node[i].secs = atoi(p);
-    }
-    sprintf(url, "http://%s:%d/stream?id=%.100s&kbit=%d&d=%d&t=0", host, port, node[i].id, k, secs);
-    sprintf(msg, "Playing at %d kbit/s: %.300s", k, node[i].title);
-    say(msg);
-    pid = fork();
-    if (pid == 0) {
-        execl(FFPLAY, "ffplay", "-nostats", "-autoexit", "-window_title", node[i].title, url, (char *)NULL);
-        _exit(1);
-    }
-    if (pid < 0)
-        say("Cannot start ffplay");
+    ask_node = i;
+    sprintf(msg, "%.200s\n\nwas left at %d:%02d:%02d.", node[i].title, t / 3600, t / 60 % 60, t % 60);
+    x = XmStringCreateLocalized(msg);
+    sprintf(msg, "Resume at %d:%02d:%02d", t / 3600, t / 60 % 60, t % 60);
+    y = XmStringCreateLocalized(msg);
+    z = XmStringCreateLocalized("Start from the beginning");
+    XtVaSetValues(ask, XmNmessageString, x, XmNokLabelString, y, XmNcancelLabelString, z, NULL);
+    XmStringFree(x);
+    XmStringFree(y);
+    XmStringFree(z);
+    XtManageChild(ask);
 }
 
 static int picked(void)
@@ -405,19 +488,37 @@ static void quit_cb(Widget w, XtPointer c, XtPointer d)
     exit(0);
 }
 
+/* $HOME/.amixcast: a folder, the PC's "host port" in config, the positions
+   in pos.  It was the "host port" file itself: that becomes config. */
 static void config(void)
 {
-    char path[256];
+    char dir[256], path[300], old[300];
     const char *home = getenv("HOME");
+    struct stat st;
     FILE *f;
 
     if (!home)
         return;
-    sprintf(path, "%.240s/.amixcast", home);
+    sprintf(dir, "%.230s/.amixcast", home);
+    if (stat(dir, &st) == 0 && !S_ISDIR(st.st_mode)) {
+        sprintf(old, "%.230s/.amixcast.old", home);
+        if (rename(dir, old) == 0) {
+            sprintf(path, "%s/config", dir);
+            if (mkdir(dir, 0755) == 0)
+                rename(old, path);
+            else
+                rename(old, dir);
+        }
+    } else if (stat(dir, &st) != 0)
+        mkdir(dir, 0755);
+    sprintf(path, "%s/config", dir);
     if ((f = fopen(path, "r")) != NULL) {
         fscanf(f, "%63s %d", host, &port);
         fclose(f);
     }
+    sprintf(posdir, "%s/pos", dir);
+    if (stat(posdir, &st) != 0 && mkdir(posdir, 0755) != 0)
+        posdir[0] = 0;
 }
 
 int main(int argc, char **argv)
@@ -425,7 +526,7 @@ int main(int argc, char **argv)
     static const struct { const char *name; int k; } rates[] = {
         { "Auto", 0 }, { "400", 400 }, { "600", 600 }, { "800", 800 }, { "1000", 1000 }, { "1500", 1500 }
     };
-    Widget top, form, rc, row1, b;
+    Widget form, rc, row1, b;
     Arg a[10];
     int n, i;
 

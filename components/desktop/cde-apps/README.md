@@ -31,9 +31,11 @@ On the PC, with VLC and GStreamer's `gst-discoverer-1.0`:
 
     python3 amixcast/amixcast.py --server http://<DLNA server>:<port>
 
-On the Amiga the PC's address goes in `$HOME/.amixcast` ("host port"), or as
-arguments. Double-click a folder to open it, a video to play it. In ffplay:
-Left/Right 10 s, Down/Up 60 s, 1, 2 and h the size, f fullscreen, q quit.
+On the Amiga the PC's address goes in `$HOME/.amixcast/config` ("host port"; an
+older `$HOME/.amixcast` file is moved there), or as arguments. Double-click a
+folder to open it, a video to play it. In ffplay: Left/Right 10 s, Down/Up 60 s,
+1, 2 and h the size, f fullscreen, q quit. ffplay keeps where a video was left
+in `$HOME/.amixcast/pos`; played again, amixcast offers to resume there.
 
 The network sets the limit: about 1 Mbit/s on the Z3660's Ethernet under AMIX.
 Auto measures it and leaves a margin.
