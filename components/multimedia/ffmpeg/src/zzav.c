@@ -61,6 +61,7 @@ struct zz9k_reg { unsigned short offset, value; };
 static int fd = -1, opened, vs = 1, ovl_w, ovl_h, outw, outh, shift, verbose, vid_w, vid_h, cur_x, cur_y;
 static int disp_w;                      /* vid_w times the sample aspect ratio: the width shown */
 static volatile unsigned long *blk, *c1ld;
+static unsigned long board_base;
 static unsigned char *ring, *shared;
 static unsigned long wr;
 static int vidx = -1, aidx = -1;
@@ -106,30 +107,27 @@ static void set_out(void)
         outh = ovl_h / vs;
 }
 
-int zzav_open(AVFormatContext *fmt, int v, int a, int x, int y, int maxw, int maxh, int verb)
+/* /dev/zz9000, the blocks mapped, core 1's player there and idle; ovl_w, ovl_h, vs */
+static int attach(void)
 {
     struct zz9k_info info;
-    AVCodecParameters *vc = v >= 0 ? fmt->streams[v]->codecpar : NULL;
-    AVCodecParameters *ac = a >= 0 ? fmt->streams[a]->codecpar : NULL;
     double t0;
-    int i;
 
-    verbose = verb;
-    if (getenv("VPLAY_NOARM") || !vc || vc->codec_id != AV_CODEC_ID_H264 ||
-        (vc->format != AV_PIX_FMT_YUV420P && vc->format != AV_PIX_FMT_YUVJ420P && vc->format != -1) ||
-        vc->extradata_size > (int)ZZAV_EXTRA_MAX)
-        return -1;
-    if (ac && (ac->codec_id != AV_CODEC_ID_AAC || ac->extradata_size > (int)ZZAV_EXTRA_MAX))
-        ac = NULL, a = -1;              /* core 1 has the AAC decoder only */
     fd = open("/dev/zz9000", O_RDWR);
     if (fd < 0 || ioctl(fd, ZZ9KIOC_GETINFO, &info) < 0)
-        goto fail;
+        return -1;
+    board_base = info.base;
     blk = (volatile unsigned long *)map(ZZAV_OFF, PAGE);
     ring = (unsigned char *)map(ZZAV_RING_OFF, ZZAV_AREA_SIZE);
     shared = (unsigned char *)map(SHARED_OFF, PAGE);
     c1ld = (volatile unsigned long *)map(C1LD_OFF, PAGE);
     if (!blk || !ring || !shared || !c1ld)
-        goto fail;
+        return -1;
+    /* a stream opened (READY) or failed (ERROR) by a process that is gone:
+       nobody will CLOSE it but us */
+    if (blk[ZZAV_W_MAGIC] == ZZAV_MAGIC && !blk[ZZAV_W_CMD] &&
+        (blk[ZZAV_W_STATE] == ZZAV_READY || blk[ZZAV_W_STATE] == ZZAV_ERROR))
+        blk[ZZAV_W_CMD] = ZZAV_CMD_CLOSE;
     /* a seek opens it again at once: core 1 may still be closing the last one */
     for (t0 = now(); blk[ZZAV_W_MAGIC] == ZZAV_MAGIC && (blk[ZZAV_W_STATE] != ZZAV_IDLE || blk[ZZAV_W_CMD]) &&
          now() - t0 < 3; )
@@ -139,7 +137,7 @@ int zzav_open(AVFormatContext *fmt, int v, int a, int x, int y, int maxw, int ma
             fprintf(stderr, "%s: no H.264 player on the Z3660's core 1 (magic %lx state %lu cmd %lu; "
                     "run armbench -reload z3660ARM_Core_amix.bin)\n", zzav_prog,
                     blk[ZZAV_W_MAGIC], blk[ZZAV_W_STATE], blk[ZZAV_W_CMD]);
-        goto fail;
+        return -1;
     }
     ovl_w = info.width;
     ovl_h = info.height;
@@ -148,63 +146,68 @@ int zzav_open(AVFormatContext *fmt, int v, int a, int x, int y, int maxw, int ma
     vs = ovl_w >= 1600 && !(c1ld[C1LD_W_MAGIC] == C1LD_MAGIC && (c1ld[C1LD_W_FEAT] & C1LD_FEAT_OVL_FETCH)) ? 2 : 1;
     if (getenv("ZZM_VSCALE"))
         vs = atoi(getenv("ZZM_VSCALE")) == 2 ? 2 : 1;
+    return 0;
+}
+
+static void detach(void)
+{
+    if (blk)
+        munmap((caddr_t)blk, (size_t)PAGE);
+    if (ring)
+        munmap((caddr_t)ring, (size_t)ZZAV_AREA_SIZE);
+    if (c1ld)
+        munmap((caddr_t)c1ld, (size_t)PAGE);
+    if (shared)
+        munmap((caddr_t)shared, (size_t)PAGE);
+    blk = c1ld = NULL;
+    ring = shared = NULL;
+    if (fd >= 0)
+        close(fd);
+    fd = -1;
+}
+
+/* the picture w x h with sample aspect ratio sar: the width shown, the shift, the size out */
+static void geometry(int w, int h, AVRational sar, int maxw, int maxh)
+{
     /* the width shown: the coded one times the sample aspect ratio (a 16:9
        DVD is 720 x 576 with pixels 64:45 wide), as ffplay and VLC show it */
-    {
-        AVRational sar = av_guess_sample_aspect_ratio(fmt, fmt->streams[v], NULL);
-
-        disp_w = vc->width;
-        if (sar.num > 0 && sar.den > 0 && sar.num != sar.den)
-            disp_w = (int)(((long long)vc->width * sar.num + sar.den / 2) / sar.den) & ~1;
-        if (disp_w < 2 || disp_w > 4 * vc->width)
-            disp_w = vc->width;
-    }
+    disp_w = w;
+    if (sar.num > 0 && sar.den > 0 && sar.num != sar.den)
+        disp_w = (int)(((long long)w * sar.num + sar.den / 2) / sar.den) & ~1;
+    if (disp_w < 2 || disp_w > 4 * w)
+        disp_w = w;
     /* 1:1 if it fits the screen (and the window, when one is given), else half size */
-    shift = disp_w > ovl_w || vc->height * vs > ovl_h ||
-            (maxw > 0 && disp_w > maxw) || (maxh > 0 && vc->height * vs > maxh);
+    shift = disp_w > ovl_w || h * vs > ovl_h ||
+            (maxw > 0 && disp_w > maxw) || (maxh > 0 && h * vs > maxh);
     if (getenv("ZZAV_SHIFT"))
         shift = atoi(getenv("ZZAV_SHIFT")) ? 1 : 0;
-    vid_w = vc->width;
-    vid_h = vc->height;
+    vid_w = w;
+    vid_h = h;
     set_out();
+}
 
-    for (i = ZZAV_W_VCODEC; i < ZZAV_W_NWORDS; i++)
-        blk[i] = 0;
-    blk[ZZAV_W_WR] = blk[ZZAV_W_RD] = 0;
-    wr = 0;
-    blk[ZZAV_W_VCODEC] = ZZAV_H264;
-    memcpy(ring + (ZZAV_VEXTRA_OFF - ZZAV_RING_OFF), vc->extradata, (size_t)vc->extradata_size);
-    blk[ZZAV_W_VEXTRA_LEN] = (unsigned long)vc->extradata_size;
-    blk[ZZAV_W_VTB_NUM] = (unsigned long)fmt->streams[v]->time_base.num;
-    blk[ZZAV_W_VTB_DEN] = (unsigned long)fmt->streams[v]->time_base.den;
-    blk[ZZAV_W_VW] = (unsigned long)vc->width;
-    blk[ZZAV_W_VH] = (unsigned long)vc->height;
-    blk[ZZAV_W_DISPW] = disp_w != vc->width ? (unsigned long)disp_w : 0;
-    if (ac) {
-        blk[ZZAV_W_ACODEC] = ZZAV_AAC;
-        memcpy(ring + (ZZAV_AEXTRA_OFF - ZZAV_RING_OFF), ac->extradata, (size_t)ac->extradata_size);
-        blk[ZZAV_W_AEXTRA_LEN] = (unsigned long)ac->extradata_size;
-        blk[ZZAV_W_ATB_NUM] = (unsigned long)fmt->streams[a]->time_base.num;
-        blk[ZZAV_W_ATB_DEN] = (unsigned long)fmt->streams[a]->time_base.den;
-        blk[ZZAV_W_ARATE] = (unsigned long)ac->sample_rate;
-        blk[ZZAV_W_ACH] = (unsigned long)ac->channels;
-    }
+/* the overlay words, the overlay on, the sound DMA, OPEN: core 1 plays */
+static int start(int sound, int x, int y)
+{
+    double t0;
+    int i;
+
+    blk[ZZAV_W_DISPW] = disp_w != vid_w ? (unsigned long)disp_w : 0;
     blk[ZZAV_W_OVL_PITCH] = (unsigned long)ovl_w * 4;
     blk[ZZAV_W_OVL_SHIFT] = (unsigned long)shift;
     blk[ZZAV_W_OVL_SCALE] = (unsigned long)zscale;
     blk[ZZAV_W_OVL_MAXW] = (unsigned long)outw;
     blk[ZZAV_W_OVL_MAXH] = (unsigned long)outh;
     blk[ZZAV_W_VOLUME] = 256;
+    blk[ZZAV_W_PAUSE] = 0;
     blk[ZZAV_W_OVL_DBUF] = c1ld[C1LD_W_MAGIC] == C1LD_MAGIC && (c1ld[C1LD_W_FEAT] & C1LD_FEAT_OVL_FLIP) &&
                            !getenv("ZZAV_NODBUF");
-    vidx = v;
-    aidx = a;
 
     /* the overlay on: the firmware's MPEG INIT (with nothing to decode), then place and size */
     for (i = 0; i < 96; i++)
         shared[i] = 0;
-    reg32(REG_MPEG_PARAM0 + 0, info.base + SHARED_OFF);
-    reg32(REG_MPEG_PARAM0 + 4, info.base);
+    reg32(REG_MPEG_PARAM0 + 0, board_base + SHARED_OFF);
+    reg32(REG_MPEG_PARAM0 + 4, board_base);
     reg32(REG_MPEG_PARAM0 + 8, FIFO_SIZE);
     reg32(REG_MPEG_PARAM0 + 12, FIFO_OFF);
     reg32(REG_MPEG_CMD, CMD_INIT);
@@ -213,7 +216,7 @@ int zzav_open(AVFormatContext *fmt, int v, int a, int x, int y, int maxw, int ma
 
     /* the board's sound DMA: off after boot (AMIX has no AHI driver to start it); the ring's
        address in REG_ZZ_AUDIO_PARAM 0 / VAL makes core 0 clear the ring and start it */
-    if (ac) {
+    if (sound) {
         reg32(REG_AUDIO_PARAM, 0);
         reg32(REG_AUDIO_VAL, ZZAV_AUDIO_OFF);
         usleep(100000);                 /* core 0's main loop takes it */
@@ -229,26 +232,215 @@ int zzav_open(AVFormatContext *fmt, int v, int a, int x, int y, int maxw, int ma
     }
     if (verbose)
         fprintf(stderr, "%s: H.264 %dx%d%s on the Z3660's core 1, shown %dx%d%s%s\n", zzav_prog,
-                vc->width, vc->height, ac ? " + AAC" : "", outw, outh * vs, shift ? " (half size)" : "",
+                vid_w, vid_h, sound ? " + AAC" : "", outw, outh * vs, shift ? " (half size)" : "",
                 blk[ZZAV_W_OVL_DBUF] ? ", double-buffered" : "");
     return 0;
+}
+
+int zzav_open(AVFormatContext *fmt, int v, int a, int x, int y, int maxw, int maxh, int verb)
+{
+    AVCodecParameters *vc = v >= 0 ? fmt->streams[v]->codecpar : NULL;
+    AVCodecParameters *ac = a >= 0 ? fmt->streams[a]->codecpar : NULL;
+    int i;
+
+    verbose = verb;
+    if (getenv("VPLAY_NOARM") || !vc || vc->codec_id != AV_CODEC_ID_H264 ||
+        (vc->format != AV_PIX_FMT_YUV420P && vc->format != AV_PIX_FMT_YUVJ420P && vc->format != -1) ||
+        vc->extradata_size > (int)ZZAV_EXTRA_MAX)
+        return -1;
+    if (ac && (ac->codec_id != AV_CODEC_ID_AAC || ac->extradata_size > (int)ZZAV_EXTRA_MAX))
+        ac = NULL, a = -1;              /* core 1 has the AAC decoder only */
+    if (attach() < 0)
+        goto fail;
+    geometry(vc->width, vc->height, av_guess_sample_aspect_ratio(fmt, fmt->streams[v], NULL), maxw, maxh);
+
+    /* the stream words; not FEAT and what follows: core 1's (OPEN_URL) */
+    for (i = ZZAV_W_VCODEC; i < ZZAV_W_FEAT; i++)
+        blk[i] = 0;
+    blk[ZZAV_W_WR] = blk[ZZAV_W_RD] = 0;
+    wr = 0;
+    blk[ZZAV_W_VCODEC] = ZZAV_H264;
+    memcpy(ring + (ZZAV_VEXTRA_OFF - ZZAV_RING_OFF), vc->extradata, (size_t)vc->extradata_size);
+    blk[ZZAV_W_VEXTRA_LEN] = (unsigned long)vc->extradata_size;
+    blk[ZZAV_W_VTB_NUM] = (unsigned long)fmt->streams[v]->time_base.num;
+    blk[ZZAV_W_VTB_DEN] = (unsigned long)fmt->streams[v]->time_base.den;
+    blk[ZZAV_W_VW] = (unsigned long)vc->width;
+    blk[ZZAV_W_VH] = (unsigned long)vc->height;
+    if (ac) {
+        blk[ZZAV_W_ACODEC] = ZZAV_AAC;
+        memcpy(ring + (ZZAV_AEXTRA_OFF - ZZAV_RING_OFF), ac->extradata, (size_t)ac->extradata_size);
+        blk[ZZAV_W_AEXTRA_LEN] = (unsigned long)ac->extradata_size;
+        blk[ZZAV_W_ATB_NUM] = (unsigned long)fmt->streams[a]->time_base.num;
+        blk[ZZAV_W_ATB_DEN] = (unsigned long)fmt->streams[a]->time_base.den;
+        blk[ZZAV_W_ARATE] = (unsigned long)ac->sample_rate;
+        blk[ZZAV_W_ACH] = (unsigned long)ac->channels;
+    }
+    vidx = v;
+    aidx = a;
+    return start(ac != NULL, x, y);
 fail:
     if (zzav_reopen)
         fprintf(stderr, "%s: core 1 not opened again: fd %d, errno %d\n", zzav_prog, fd, errno);
-    if (blk)
-        munmap((caddr_t)blk, (size_t)PAGE);
-    if (ring)
-        munmap((caddr_t)ring, (size_t)ZZAV_AREA_SIZE);
-    if (c1ld)
-        munmap((caddr_t)c1ld, (size_t)PAGE);
-    if (shared)
-        munmap((caddr_t)shared, (size_t)PAGE);
-    blk = c1ld = NULL;
-    ring = shared = NULL;
-    if (fd >= 0)
-        close(fd);
-    fd = -1;
+    detach();
     return -1;
+}
+
+/* ---- streams core 1 fetches itself (ZZAV_CMD_OPEN_URL) ---- */
+
+static char url_cur[ZZAV_URL_MAX];
+static int url_maxw, url_maxh;
+
+static const char *neterr(unsigned long e)
+{
+    switch (e) {
+    case ZZAV_NETERR_URL: return "not an http:// URL";
+    case ZZAV_NETERR_NONET: return "no network on core 1 (no DHCP address, or the firmware has no core 1 rings)";
+    case ZZAV_NETERR_DNS: return "the host's name did not resolve";
+    case ZZAV_NETERR_CONNECT: return "no connection";
+    case ZZAV_NETERR_HTTP: return "the server said no";
+    case ZZAV_NETERR_FORMAT: return "not a format core 1 knows (MPEG-TS, MP4, MKV, FLV, AVI)";
+    case ZZAV_NETERR_STREAMS: return "no H.264 picture and no AAC sound in it";
+    case ZZAV_NETERR_TIMEOUT: return "the server stopped answering";
+    case ZZAV_NETERR_MEM: return "core 1 is out of memory";
+    }
+    return "?";
+}
+
+/* OPEN_URL and its answer; 0 READY, -1 not taken (a core without it), -2 failed (said why) */
+static int url_ask(double start)
+{
+    double t0;
+
+    blk[ZZAV_W_START_MS] = start > 0 ? (unsigned long)(start * 1000) : 0;
+    blk[ZZAV_W_CMD] = ZZAV_CMD_OPEN_URL;
+    /* taken at once by a core that has it; an older one never takes it */
+    for (t0 = now(); blk[ZZAV_W_CMD] == ZZAV_CMD_OPEN_URL && now() - t0 < 2; )
+        usleep(10000);
+    if (blk[ZZAV_W_CMD] == ZZAV_CMD_OPEN_URL) {
+        blk[ZZAV_W_CMD] = 0;
+        return -1;
+    }
+    for (t0 = now(); now() - t0 < 60; ) {
+        unsigned long st = blk[ZZAV_W_STATE];
+
+        if (!blk[ZZAV_W_CMD] && (st == ZZAV_READY || st == ZZAV_ERROR || st == ZZAV_IDLE))
+            break;
+        usleep(20000);
+    }
+    if (blk[ZZAV_W_STATE] == ZZAV_READY)
+        return 0;
+    if (blk[ZZAV_W_STATE] == ZZAV_ERROR)
+        fprintf(stderr, "%s: core 1 cannot play it: %s (error %lx, HTTP %lu)\n", zzav_prog,
+                neterr(blk[ZZAV_W_ERR]), blk[ZZAV_W_ERR], blk[ZZAV_W_HTTP]);
+    else
+        fprintf(stderr, "%s: core 1 did not open it in 60 s (state %lu)\n", zzav_prog, blk[ZZAV_W_STATE]);
+    blk[ZZAV_W_CMD] = ZZAV_CMD_CLOSE;           /* back to IDLE */
+    return -2;
+}
+
+int zzav_url_open(const char *url, double start, int *w, int *h, int verb)
+{
+    volatile unsigned long *ctl;
+    int r;
+
+    verbose = verb;
+    if (getenv("VPLAY_NOARM") || strncmp(url, "http://", 7) || strlen(url) >= ZZAV_URL_MAX)
+        return -1;
+    if (attach() < 0) {
+        detach();
+        return -1;
+    }
+    /* the amix core with OPEN_URL (an older core leaves FEAT as it was: ask its name too) */
+    ctl = (volatile unsigned long *)map(HB_CTL_OFF, PAGE);
+    if (!ctl || !(blk[ZZAV_W_FEAT] & ZZAV_FEAT_URL) || memcmp((const char *)&ctl[W_NAME], "amix", 4)) {
+        if (ctl)
+            munmap((caddr_t)ctl, (size_t)PAGE);
+        detach();
+        return -1;
+    }
+    munmap((caddr_t)ctl, (size_t)PAGE);
+    strcpy(url_cur, url);
+    {
+        /* the URL's page is the player's block: ZZAV_URL_OFF is inside it */
+        volatile char *u = (volatile char *)blk + (ZZAV_URL_OFF - ZZAV_OFF);
+        size_t i;
+
+        for (i = 0; i <= strlen(url); i++)
+            u[i] = url[i];
+    }
+    if ((r = url_ask(start)) < 0) {
+        detach();
+        return r;
+    }
+    vidx = blk[ZZAV_W_VCODEC] == ZZAV_H264 ? 0 : -1;
+    aidx = blk[ZZAV_W_ACODEC] == ZZAV_AAC ? 1 : -1;
+    *w = vidx >= 0 ? (int)blk[ZZAV_W_VW] : 0;
+    *h = vidx >= 0 ? (int)blk[ZZAV_W_VH] : 0;
+    return 0;
+}
+
+int zzav_url_play(int x, int y, int maxw, int maxh)
+{
+    AVRational sar;
+
+    sar.num = (int)blk[ZZAV_W_SAR_NUM];
+    sar.den = (int)blk[ZZAV_W_SAR_DEN];
+    url_maxw = maxw;
+    url_maxh = maxh;
+    geometry(vidx >= 0 ? (int)blk[ZZAV_W_VW] : 2, vidx >= 0 ? (int)blk[ZZAV_W_VH] : 2, sar, maxw, maxh);
+    return start(aidx >= 0, x, y);
+}
+
+/* the same stream from t s after its start: core 1 seeks (or fetches anew), the player starts again */
+int zzav_url_seek(double t)
+{
+    double t0;
+
+    if (!opened)
+        return -1;
+    blk[ZZAV_W_CMD] = ZZAV_CMD_CLOSE;
+    for (t0 = now(); (blk[ZZAV_W_CMD] || blk[ZZAV_W_STATE] != ZZAV_IDLE) && now() - t0 < 3; )
+        usleep(10000);
+    if (url_ask(t < 0 ? 0 : t) < 0)
+        return -1;
+    blk[ZZAV_W_CMD] = ZZAV_CMD_OPEN;
+    for (t0 = now(); blk[ZZAV_W_CMD] == ZZAV_CMD_OPEN && now() - t0 < 2; )
+        usleep(10000);
+    return blk[ZZAV_W_STATE] == ZZAV_PLAYING ? 0 : -1;
+}
+
+/* opened but not played (it has no picture, say): core 1 back to idle */
+void zzav_url_cancel(void)
+{
+    double t0;
+
+    if (!blk || opened)
+        return;
+    blk[ZZAV_W_CMD] = ZZAV_CMD_CLOSE;
+    for (t0 = now(); blk[ZZAV_W_CMD] && now() - t0 < 2; )
+        usleep(10000);
+    detach();
+}
+
+/* 1 if core 1 played it to its end (not stopped by an error) */
+int zzav_ended(void)
+{
+    return opened && blk[ZZAV_W_STATE] == ZZAV_FINISHED;
+}
+
+void zzav_url_info(double *dur, double *t0, int *seekable)
+{
+    *dur = blk ? blk[ZZAV_W_DUR_MS] / 1000.0 : 0;
+    *t0 = blk ? blk[ZZAV_W_T0_MS] / 1000.0 : 0;
+    *seekable = blk ? (int)blk[ZZAV_W_SEEKABLE] : 0;
+}
+
+/* buffered seconds beyond the clock, the download's KB/s, KB in all */
+void zzav_url_net(double *buffered, long *kbs, long *kb)
+{
+    *buffered = blk ? blk[ZZAV_W_BUF_MS] / 1000.0 : 0;
+    *kbs = blk ? (long)blk[ZZAV_W_NET_KBS] : 0;
+    *kb = blk ? (long)blk[ZZAV_W_NET_KB] : 0;
 }
 
 int zzav_stream(int idx)
@@ -442,12 +634,5 @@ void zzav_close(void)
     for (t0 = now(); blk[ZZAV_W_CMD] == ZZAV_CMD_CLOSE && now() - t0 < 2; )
         usleep(10000);
     reg32(REG_MPEG_CMD, CMD_CLOSE);     /* the overlay off */
-    munmap((caddr_t)blk, (size_t)PAGE);
-    munmap((caddr_t)ring, (size_t)ZZAV_AREA_SIZE);
-    munmap((caddr_t)shared, (size_t)PAGE);
-    munmap((caddr_t)c1ld, (size_t)PAGE);
-    blk = c1ld = NULL;
-    ring = shared = NULL;
-    close(fd);
-    fd = -1;
+    detach();
 }

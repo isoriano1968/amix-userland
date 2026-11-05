@@ -1448,7 +1448,7 @@ static void events(void)
 				if (e.xbutton.time - last_click < 400)
 					set_fullscreen(!fullscreen);
 				last_click = e.xbutton.time;
-			} else if (e.xbutton.button == Button3 && fmt->duration > 0 && ww > 0)
+			} else if (e.xbutton.button == Button3 && fmt && fmt->duration > 0 && ww > 0)
 				seek_to(start_pts + fmt->duration / (double)AV_TIME_BASE * e.xbutton.x / ww);
 			continue;
 		case KeyPress:
@@ -1780,6 +1780,93 @@ static void av_play(void)
 	zzav_counts(&n_shown, &n_dropped);	/* the final line counts core 1's */
 	av_packet_free(&p);
 }
+
+/* a stream core 1 fetches and demuxes itself (ZZAV_CMD_OPEN_URL): no
+   avformat, no TCP and no packets on the 68060; -1 if core 1 cannot */
+static int url_play(const char *file, double opt_ss, int opt_fs)
+{
+	const char *title;
+	int w, h, x, y, ow, oh, vsc, seekable, hold, amixcast = strstr(file, "/stream?") != NULL;
+	double dur, t0, t_hold, t_stat, buffered;
+	long kbs, kb;
+	char buf[512], u[1024];
+	Window child;
+
+	if (zzav_url_open(file, amixcast ? 0.0 : opt_ss, &w, &h, opt_stats) < 0)
+		return -1;
+	zzav_url_info(&dur, &t0, &seekable);
+	net_url0 = file;
+	net_t0 = amixcast && strstr(file, NET_T) ? atof(strstr(file, NET_T) + 3) : 0.0;
+	net_c0 = t0;
+	use_av = 1;
+	opt_noaccel = opt_nos3d = 1;
+	title = strrchr(file, '/') ? strrchr(file, '/') + 1 : file;
+	vw = w > 0 ? w & ~1 : 320;	/* the window code scales by these */
+	vh = h > 0 ? h & ~1 : 48;
+	x_open(title, vw, vh);
+	if (opt_fs)
+		set_fullscreen(1);
+	XSync(dpy, False);
+	XTranslateCoordinates(dpy, win, RootWindow(dpy, scr), 0, 0, &x, &y, &child);
+	if (zzav_url_play(x, y, 0, 0) < 0)
+		return 1;
+	decoder_name = "the Z3660's ARM core 1, fetching the stream itself";
+	atexit(zzav_close);
+	signal(SIGINT, arm_signal);
+	signal(SIGTERM, arm_signal);
+	signal(SIGHUP, arm_signal);
+	zzav_size(&ow, &oh, &vsc);
+	if (!fullscreen && w > 0)
+		XResizeWindow(dpy, win, ow, oh * vsc);
+	XClearWindow(dpy, win);
+	if (opt_stats)
+		fprintf(stderr, "vplay: core 1 fetches %s: %dx%d, %.1f s%s\n", file, w, h, dur,
+			seekable ? ", the server seeks" : ", no seeking (live)");
+	hold = 1;			/* NET_LEAD seconds demuxed before the clock runs */
+	zzav_pause(1);
+	t_hold = t_stat = now_s();
+	while (!quit) {
+		events();
+		if (quit)
+			break;
+		if (av_seek_on) {
+			av_seek_on = 0;
+			if (amixcast) {		/* amixcast.py starts a new stream there */
+				net_url(u, sizeof u, av_seek_t);
+				zzav_close();
+				XTranslateCoordinates(dpy, win, RootWindow(dpy, scr), 0, 0, &x, &y, &child);
+				if (zzav_url_open(u, 0.0, &w, &h, opt_stats) < 0 || zzav_url_play(x, y, 0, 0) < 0)
+					break;
+				net_t0 = av_seek_t < 0 ? 0 : av_seek_t;
+				zzav_url_info(&dur, &t0, &seekable);
+				net_c0 = t0;
+			} else if (!seekable || zzav_url_seek(av_seek_t) < 0)
+				continue;
+			hold = 1;
+			zzav_pause(1);
+			t_hold = now_s();
+		}
+		zzav_url_net(&buffered, &kbs, &kb);
+		if (hold && (buffered >= NET_LEAD || now_s() - t_hold >= NET_WAIT || zzav_done())) {
+			hold = 0;
+			zzav_pause(paused);
+		}
+		if (zzav_done())
+			break;
+		if (opt_stats && now_s() - t_stat >= 2) {
+			zzav_stats(buf, sizeof buf);
+			fprintf(stderr, "vplay: %.1f s buffered, %ld KB/s (%ld KB), %s\n", buffered, kbs, kb, buf);
+			t_stat = now_s();
+		}
+		wait_until(now_s() + 0.02);
+	}
+	if (opt_stats) {
+		zzav_stats(buf, sizeof buf);
+		fprintf(stderr, "vplay: %s\n", buf);
+	}
+	zzav_close();
+	return 0;
+}
 #endif
 
 int main(int argc, char **argv)
@@ -1828,6 +1915,15 @@ int main(int argc, char **argv)
 	signal(SIGPIPE, SIG_IGN);
 	av_log_set_level(opt_stats ? AV_LOG_WARNING : AV_LOG_ERROR);
 
+#ifdef VPLAY_ZZMPEG
+	if (!opt_noarm && !opt_nosync && !strncmp(file, "http://", 7)) {
+		int r = url_play(file, opt_ss, opt_fs);
+
+		if (r >= 0)
+			return r;
+		quit = 0;		/* core 1 cannot: the 68060 fetches it, as before */
+	}
+#endif
 	net_url0 = file;
 	{
 		const char *p = strstr(file, NET_T);
