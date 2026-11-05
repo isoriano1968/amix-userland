@@ -1,11 +1,11 @@
 /*
- * amtop - small curses process/system monitor for AMIX/SVR4.
+ * amixtop - small curses process/system monitor for AMIX/SVR4.
  *
  * Its numbers come from libamixstat (library/amixstat): the CPU's user and
  * system shares (from the kernel profiler: AMIX books idle ticks as system
  * time of the last process), memory, swap, the network interface, and the
  * processes from /proc, sorted by their CPU share.  Core 1 of a Z3660 comes
- * from ztop.  amtop is installed setgid sys, as the library reads /dev/kmem.
+ * from ztop.  amixtop is installed setgid sys, as the library reads /dev/kmem.
  * Colours when the terminal has them (dtterm does; the entry for the amiga
  * console has none): the header, the sections, each process by its state,
  * and the bars.
@@ -253,7 +253,7 @@ int procs;
 	else
 		attrset(A_REVERSE);
 	mvhline(0, 0, ' ', COLS);
-	mvprintw(0, 0, "amtop  %s  processes: %d  refresh: %ds  q: quit",
+	mvprintw(0, 0, "amixtop  %s  processes: %d  refresh: %ds  q: quit",
 	    t, procs, REFRESH_SECS);
 	attrset(A_NORMAL);
 }
@@ -360,7 +360,7 @@ static void draw_screen()
 		human(a, m.swap_resv);
 		printw(", %s reserved", a);
 	} else
-		mvprintw(row + 1, 0, "Memory and swap: unknown (amtop needs group sys for /dev/kmem)");
+		mvprintw(row + 1, 0, "Memory and swap: unknown (amixtop needs group sys for /dev/kmem)");
 
 	label(row + 3, "Net");
 	if (netname[0])

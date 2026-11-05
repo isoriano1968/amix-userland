@@ -1,5 +1,5 @@
 # name, version and what building and running it needs
-name     sysutils/amtop
+name     sysutils/amixtop
 version  2
 summary  curses system monitor
 require  library/ncurses

@@ -1,5 +1,5 @@
 # libamixstat: what the running AMIX system is doing (memory, swap, CPU,
-# processes, file systems, network interfaces), for amixsysmon and amtop,
+# processes, file systems, network interfaces), for amixsysmon and amixtop,
 # and the amixstat command that prints it.  Ours: no download.  The command
 # is installed setgid sys, as the library reads /dev/kmem.
 COMPONENT_NAME    = amixstat

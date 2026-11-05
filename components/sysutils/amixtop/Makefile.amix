@@ -1,0 +1,20 @@
+CC = cc
+CFLAGS = -O `pkg-config --cflags ncurses amixstat`
+LDFLAGS =
+LIBS = `pkg-config --libs ncurses amixstat`
+PREFIX = /usr/local
+BINDIR = $(PREFIX)/bin
+
+all: amixtop
+
+amixtop: amixtop.o
+	$(CC) $(LDFLAGS) amixtop.o -o amixtop $(LIBS)
+
+amixtop.o: amixtop.c
+	$(CC) $(CFLAGS) -c amixtop.c
+
+clean:
+	rm -f amixtop.o amixtop
+
+install: amixtop
+	cp amixtop $(BINDIR)/amixtop

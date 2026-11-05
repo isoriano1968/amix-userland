@@ -83,7 +83,7 @@ version it names in its Makefile, and one version is linked into
 | `multimedia`   | video                                | moved: ffmpeg                                     |
 | `runtime`      | language runtimes                    | moved: python3                                    |
 | `shell`        | shells                               | bash, in `/usr/gnu/bin`                                            |
-| `sysutils`     | system tools                         | moved: amtop, fileutils, terminfo; amix-pkgtools (amix-install, amix-stubs) |
+| `sysutils`     | system tools                         | moved: amixtop, fileutils, terminfo; amix-pkgtools (amix-install, amix-stubs) |
 | `x11`          | X server, libraries, GL              | moved: libxp, x11r6.3, mesa-31, mesa-183, mesa-demos, xzz9000                 |
 
 Kernel drivers, the 68040/68060 port and the Z3660 core 1 programs are in

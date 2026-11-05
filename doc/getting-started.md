@@ -90,15 +90,18 @@ The component `developer/gcc-14/README.md` has the full background.
 A component is one directory under `components/<category>/`. Most build with
 `make build`, and each `Makefile` starts with a line saying what it is.
 
-`amtop`, a small system monitor, is a good first one. It needs ncurses. Its manifest
-says so, and `make build` builds and installs that first:
+`amixtop`, a small system monitor, is a good first one. It needs ncurses and
+library/amixstat. Its manifest says so, and `make build` builds and installs
+those first:
 
 ```sh
-cd ~/Sources/usr-amix/amix-userland/components/sysutils/amtop
-make build
+cd ~/Sources/usr-amix/amix-userland/components/sysutils/amixtop
+make build stage
 ```
 
-The result is `build/amtop`. Run `make clean` to remove what a build made.
+The result is `build/amixtop`, and `make stage` packs it as
+`build/amixtop-amix.tar`, the package for the Amiga. Run `make clean` to remove
+what a build made.
 
 Things worth knowing:
 
@@ -125,15 +128,11 @@ cd ~/Sources/usr-amix/amix-userland/tools/net
 Copy that file to `/usr/local/bin/netget` on the Amiga any way you can, such as
 FTP or a disk, then run `chmod +x /usr/local/bin/netget`.
 
-**From then on,** pack the program in the layout it has on the Amiga:
+**From then on,** send the package:
 
 ```sh
-cd ~/Sources/usr-amix/amix-userland/components/sysutils/amtop
-rm -rf pkg
-mkdir -p pkg/usr/local/bin
-cp build/amtop pkg/usr/local/bin/
-tar cf amtop.tar -C pkg usr
-python3 ../../../tools/net/netsend.py amtop.tar 5555
+cd ~/Sources/usr-amix/amix-userland/components/sysutils/amixtop
+python3 ../../../tools/net/netsend.py build/amixtop-amix.tar 5555
 ```
 
 `netsend.py` waits for one connection. On the Amiga, as root, using your PC's
@@ -141,13 +140,14 @@ address:
 
 ```sh
 cd /tmp
-netget 192.168.0.10 5555 amtop.tar
-cd /
-/usr/gnu/bin/tar --no-overwrite-dir -xf /tmp/amtop.tar
-rm /tmp/amtop.tar
+netget 192.168.0.10 5555 amixtop-amix.tar
+amix-install /tmp/amixtop-amix.tar
+rm /tmp/amixtop-amix.tar
 ```
 
-Then run `amtop`. Remove `pkg` and `amtop.tar` on the PC when you're done.
+`amix-install` (from sysutils/amix-pkgtools) unpacks it and runs what the
+package needs done on the Amiga itself: amixtop reads the kernel's counters
+through `/dev/kmem`, so it becomes setgid `sys`. Then run `amixtop`.
 
 Watch the disk space on the Amiga with `df -k /`, and clean up in `/tmp` after
 each transfer.
