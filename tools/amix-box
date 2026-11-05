@@ -83,7 +83,8 @@ case $? in
 *)	echo "amix-box: cannot ask the box whether a player runs (ssh failed) -- not now" >&2
 	exit 75 ;;
 esac
-# the command in its own process group, paused while the user plays
+# the command in its own process group, paused while the user plays (dash's
+# kill cannot signal a group: /bin/kill)
 setsid "$@" &
 child=$!
 stopped=0
@@ -93,11 +94,11 @@ while kill -0 $child 2>/dev/null; do
 	players >/dev/null
 	r=$?
 	if [ $r = 0 ] && [ $stopped = 0 ]; then
-		kill -STOP -- -$child 2>/dev/null && stopped=1
+		/bin/kill -s STOP -- -$child 2>/dev/null && stopped=1
 		echo "amix-box: a player started: ${what:-$*} paused" >&2
 		echo "pid $$: ${what:-$*} -- PAUSED while the user plays" > "$INFO"
 	elif [ $r = 1 ] && [ $stopped = 1 ]; then
-		kill -CONT -- -$child 2>/dev/null
+		/bin/kill -s CONT -- -$child 2>/dev/null
 		stopped=0
 		echo "amix-box: the player is gone: ${what:-$*} goes on" >&2
 		echo "pid $$: ${what:-$*} since $(date +%H:%M:%S) (resumed)" > "$INFO"
