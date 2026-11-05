@@ -193,7 +193,7 @@
      if (seek_by_bytes < 0)
          seek_by_bytes = !!(ic->iformat->flags & AVFMT_TS_DISCONT) && strcmp("ogg", ic->iformat->name);
  
-@@ -2909,6 +3072,170 @@
+@@ -2909,6 +3072,173 @@
              set_default_window_size(codecpar->width, codecpar->height, sar);
      }
  
@@ -337,7 +337,10 @@
 +                    last = pkt->pts * av_q2d(ic->streams[pkt->stream_index]->time_base);
 +                    if (first < 0.0) {
 +                        first = last;
-+                        if (net)
++                        /* the stream's first time stamp, once: a seek in a
++                           server's file keeps its time stamps, only a new
++                           stream from the PC (zz_c0 reset there) starts anew */
++                        if (net && zz_c0 < 0.0)
 +                            zz_c0 = first;
 +                    }
 +                }
@@ -364,7 +367,7 @@
      /* open the streams */
      if (st_index[AVMEDIA_TYPE_AUDIO] >= 0) {
          stream_component_open(is, st_index[AVMEDIA_TYPE_AUDIO]);
-@@ -3218,6 +3545,10 @@
+@@ -3218,6 +3548,10 @@
  static void toggle_full_screen(VideoState *is)
  {
      is_full_screen = !is_full_screen;
@@ -375,7 +378,7 @@
      SDL_SetWindowFullscreen(window, is_full_screen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
  }
  
-@@ -3244,6 +3575,34 @@
+@@ -3244,6 +3578,34 @@
          if (remaining_time > 0.0)
              av_usleep((int64_t)(remaining_time * 1000000.0));
          remaining_time = REFRESH_RATE;
@@ -410,7 +413,7 @@
          if (is->show_mode != SHOW_MODE_NONE && (!is->paused || is->force_refresh))
              video_refresh(is, &remaining_time);
          SDL_PumpEvents();
-@@ -3296,6 +3655,20 @@
+@@ -3296,6 +3658,20 @@
              if (!cur_stream->width)
                  continue;
              switch (event.key.keysym.sym) {
@@ -431,7 +434,7 @@
              case SDLK_f:
                  toggle_full_screen(cur_stream);
                  cur_stream->force_refresh = 1;
-@@ -3371,6 +3744,13 @@
+@@ -3371,6 +3747,13 @@
              case SDLK_DOWN:
                  incr = -60.0;
              do_seek:
@@ -445,7 +448,7 @@
                      if (seek_by_bytes) {
                          pos = -1;
                          if (pos < 0 && cur_stream->video_stream >= 0)
-@@ -3429,6 +3809,10 @@
+@@ -3429,6 +3812,10 @@
                      break;
                  x = event.motion.x;
              }
@@ -456,7 +459,7 @@
                  if (seek_by_bytes || cur_stream->ic->duration <= 0) {
                      uint64_t size =  avio_size(cur_stream->ic->pb);
                      stream_seek(cur_stream, size*x/cur_stream->width, 0, 1);
-@@ -3465,6 +3849,12 @@
+@@ -3465,6 +3852,12 @@
                      }
                  case SDL_WINDOWEVENT_EXPOSED:
                      cur_stream->force_refresh = 1;
