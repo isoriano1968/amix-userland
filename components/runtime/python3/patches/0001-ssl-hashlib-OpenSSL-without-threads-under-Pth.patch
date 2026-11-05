@@ -1,0 +1,32 @@
+AMIX's OpenSSL (library/openssl) is built no-threads and without Pth's
+pthread.h. Under GNU Pth's cooperative threads its blocking calls never
+yield, so no two threads are inside OpenSSL at once: accept it on AMIX.
+
+--- a/Modules/_ssl.c	2026-11-05 16:25:21.609756296 +0100
++++ b/Modules/_ssl.c	2026-11-05 16:25:21.637756251 +0100
+@@ -62,7 +62,10 @@
+ #include "openssl/bio.h"
+ #include "openssl/dh.h"
+ 
+-#ifndef OPENSSL_THREADS
++/* AMIX: OpenSSL is built no-threads and without Pth's pthread.h, so its
++   blocking calls never yield: under GNU Pth's cooperative threads no two
++   threads are ever inside OpenSSL at once. */
++#if !defined(OPENSSL_THREADS) && !defined(__amix__)
+ #  error "OPENSSL_THREADS is not defined, Python requires thread-safe OpenSSL"
+ #endif
+ 
+--- a/Modules/_hashopenssl.c	2026-11-05 16:25:21.613756290 +0100
++++ b/Modules/_hashopenssl.c	2026-11-05 16:25:21.637756251 +0100
+@@ -39,7 +39,10 @@
+ 
+ #include <openssl/crypto.h>       // FIPS_mode()
+ 
+-#ifndef OPENSSL_THREADS
++/* AMIX: OpenSSL is built no-threads and without Pth's pthread.h, so its
++   blocking calls never yield: under GNU Pth's cooperative threads no two
++   threads are ever inside OpenSSL at once. */
++#if !defined(OPENSSL_THREADS) && !defined(__amix__)
+ #  error "OPENSSL_THREADS is not defined, Python requires thread-safe OpenSSL"
+ #endif
+ 

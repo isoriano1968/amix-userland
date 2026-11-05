@@ -1,0 +1,24 @@
+AMIX's uint32_t is unsigned long, bzip2's avail_out an unsigned int:
+GCC 14 refuses the pointer conversion. Same as the zlib module's fix in
+tools/patch-python-amix.py.
+
+--- a/Modules/_bz2module.c	2026-11-05 16:29:12.853895331 +0100
++++ b/Modules/_bz2module.c	2026-11-05 16:29:12.869895372 +0100
+@@ -19,7 +19,7 @@
+    On failure, return -1 */
+ static inline Py_ssize_t
+ OutputBuffer_InitAndGrow(_BlocksOutputBuffer *buffer, Py_ssize_t max_length,
+-                         char **next_out, uint32_t *avail_out)
++                         char **next_out, unsigned int *avail_out)
+ {
+     Py_ssize_t allocated;
+ 
+@@ -33,7 +33,7 @@
+    On failure, return -1 */
+ static inline Py_ssize_t
+ OutputBuffer_Grow(_BlocksOutputBuffer *buffer,
+-                  char **next_out, uint32_t *avail_out)
++                  char **next_out, unsigned int *avail_out)
+ {
+     Py_ssize_t allocated;
+ 

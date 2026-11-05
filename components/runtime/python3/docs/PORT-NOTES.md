@@ -45,6 +45,64 @@ The link map records the GNU `libpthread.a` archive. The standalone recipe
 and the subsequent `/usr/local` build passed the physical Python test scripts.
 The hash above identifies the installed `/usr/local/bin/python3.11` executable.
 
+## All stdlib modules, sockets and TLS, 2026-11-05
+
+The interpreter now links every stdlib module AMIX can support:
+`patches/0002` makes configure use `Modules/Setup.stdlib` for AmigaUNIX (3.11
+does that only for Emscripten/WASI and runs setup.py otherwise) and the recipe
+sets `MODULE_BUILDTYPE=static`. Libraries come from the sysroot through
+`tools/amix-pkg-config`, all shared: Pth (`/usr/local/gnu/lib`), OpenSSL
+3.5.4, zlib, bzip2, expat (`/usr/local/lib`); the runpath is
+`/usr/local/lib:/usr/local/gnu/lib` and `tools/amix-fix-needed` puts the
+NEEDED names first (libnsl dlopens for its lookups). The stripped
+interpreter is 7.4 MB (3.6 MB before).
+
+What it took:
+
+- AMIX's `sys/socket.h`, `sys/mman.h` and `syslog.h` declare no functions.
+  `amix-python.h` declares them (before Pth's `pthread.h`, which then maps
+  connect/accept/recv/send to its yielding calls), plus `gethostname`
+  (libnsl), `INET_ADDRSTRLEN` and `_SC_PAGE_SIZE`.
+- configure's socket function tests compile against those headers and fail,
+  and since 3.11 (for WASI) `socketmodule.c` leaves out `socket()`, `bind()`,
+  `connect()`... without `HAVE_SOCKET` etc. The recipe answers
+  `ac_cv_func_socket=yes` and the rest; the functions are in libsocket.
+- `ports/python/amix-inet.c`: IPv4 `inet_pton`/`inet_ntop` for CPython's
+  getaddrinfo/getnameinfo fallbacks (AMIX has `inet_addr`/`inet_ntoa` only).
+- `patches/0004` with `ports/python/amix-connect.c`: AMIX's sockets (SVR4.0
+  sockmod) report a non-blocking connect done, with `SO_ERROR` 0, before it
+  is; the first send then fails. Pth's connect wrapper waits the same way.
+  Python connects blocking, with `O_NONBLOCK` cleared around libsocket's
+  connect, as curl and libupnp do on AMIX. The kernel's connect timeout
+  applies, not the socket's; other Pth threads wait meanwhile.
+- `patches/0001`: OpenSSL is built `no-threads` and without Pth's
+  `pthread.h`, so its blocking calls never yield and no two Pth threads are
+  in OpenSSL at once; `_ssl`/`_hashlib` accept it on AMIX.
+- `patches/0003`: `_bz2` used `uint32_t *` for bzip2's `unsigned int`
+  counters (`uint32_t` is unsigned long here), as the zlib module did.
+- `patches/0005`: AMIX libc's malloc aligns to 4, not 8. CPython's parser
+  arena then started a block's data 4 bytes in, and a one-off block of
+  exactly the requested size was overrun by 4 bytes. Compiling
+  `html/entities.py` (pip imports it) corrupted the heap and crashed in libc
+  `malloc`; `PYTHONMALLOC=debug` showed the overrun. `ab_mem` is now aligned
+  with slack.
+- The compat objects are an archive, `libamixpythoncompat.a`: as objects in
+  `LIBS`, configure's `-lsocket` test linked them twice and failed.
+
+Tested on the A3000 with the new binary against the installed stdlib: all
+modules import; OpenSSL 3.5.4; anonymous and file `mmap`; subprocess with
+pipes; bz2, decimal; `getaddrinfo("pypi.org")` 5.6 s (libnsl's resolver);
+`create_connection` 0.1 s; TLS 1.3 handshake with pypi.org 2.5 s and a
+verified HEAD; `urlopen` of a 16 KB HTTPS page 34 s; socketpair; loopback
+listen/accept/connect. A cold first run that compiles the stdlib byte code
+took minutes; after that `python3 -c pass` takes about 5 s, most of it
+loading the shared libraries (libcrypto.so.3 is 6 MB).
+
+Not built: `ctypes` (libffi closures need an instruction-cache flush AMIX
+does not offer user programs on the 68060), `sqlite3` (no component yet),
+`_lzma`, `_uuid`, `readline`, `_curses` (setup.py only in 3.11), `_dbm`,
+`_tkinter`, `_multiprocessing`/`_posixshmem` (no POSIX semaphores or shm).
+
 ## Random-device prerequisite
 
 Normal interpreter startup currently fails when obtaining its random hash
@@ -70,16 +128,12 @@ this proof.
 
 ## Reproduce the cross-build
 
-First build GNU Pth as described in [the GNU Pth recipe](https://github.com/isoriano1968/amix-userland/tree/main/components/library/pth/blob/main/docs/BUILD-RECIPE.md).
-Use the same pinned, AMIX-adapted GCC 14 toolchain and your own AMIX sysroot.
-
-From the project directory on Linux:
+The sysroot needs the components in `python3.manifest` (`make requires`
+builds and installs what is missing). Use the pinned, AMIX-adapted GCC 14
+toolchain. From the component directory on Linux:
 
 ```sh
-export CC="$HOME/opt/m68k-amix/bin/m68k-elf-gcc"
-export PTH_PREFIX="$HOME/opt/pth-amix"
-PYTHON_EXTRA_MODULES=yes bash tools/build-python-amix.sh
-python3 tools/stage-python-proof.py
+bash tools/build-python-amix.sh
 ```
 
 The script fetches the official CPython archive and verifies its SHA-256:
@@ -90,48 +144,19 @@ The script fetches the official CPython archive and verifies its SHA-256:
 
 Source: [Python 3.11.18](https://www.python.org/downloads/release/python-31118/).
 
-A matching Linux-native interpreter is built only to generate files needed
-for cross-compilation. Every AMIX target object uses GCC 14.2 with `-O2
--m68060 -fno-strict-aliasing`; CPython uses GNU C11 mode and 1 MiB default
-worker stacks. Configure uses `--prefix=/usr/local`. A clean rebuild can be
-requested with `PYTHON_CLEAN=yes`.
-`PYTHON_SKIP_CONFIGURE=yes` is only for incremental development with an
-already configured build tree.
+Every run unpacks a fresh tree and applies `tools/patch-python-amix.py`, then
+`patches/*.patch`. A matching Linux-native interpreter is built only to
+generate files needed for cross-compilation. Every AMIX target object uses
+GCC 14.2 with `-O2 -m68060 -fno-strict-aliasing`; CPython uses GNU C11 mode
+and 1 MiB default worker stacks. Configure uses `--prefix=/usr/local`.
+`PYTHON_SKIP_CONFIGURE=yes` reuses an already configured tree (no fresh
+unpack) for incremental work. Paths can be set through `PYTHON_UPSTREAM`,
+`PYTHON_SOURCE`, `PYTHON_BUILD`, `BUILD_PYTHON` and `AMIX_SYSROOT`.
 
-The extra-module build expects the previously cross-built zlib 1.3.1 tree at
-`~/src/upstream/zlib-1.3.1`; override `ZLIB_SOURCE` if needed. Other paths can be
-set through `PYTHON_SOURCE`, `PYTHON_BUILD` and `BUILD_PYTHON`.
-
-To build that dependency from a separately downloaded upstream zlib 1.3.1
-source tree, use the same cross-toolchain:
-
-```sh
-(
-    cd "$HOME/src/upstream/zlib-1.3.1"
-    CC="$CC" AR="$(dirname "$CC")/m68k-elf-ar" \
-        RANLIB="$(dirname "$CC")/m68k-elf-ranlib" \
-        CFLAGS='-O2 -m68060 -std=gnu89 -fno-strict-aliasing' \
-        ./configure --static
-    make -j4 libz.a
-)
-```
-
-Output is `~/build/python311-amix/python`. Keep the unstripped executable for
-debugging and strip a copy for transfer. Run the 68060 instruction checker on
-that copy. `dist/python311-amix-stdlib.tar.gz` contains the pure Python library
-and smoke test, with GUI/test/ensurepip/venv trees omitted. Extract it into
-the scratch directory to create `py311/`, and place the executable at
-`py311/bin/python3.11`.
-
-For this machine's current random-device limitation, run from the scratch
-directory:
-
-```sh
-PYTHONHASHSEED=0 PYTHONHOME="$PWD/py311" py311/bin/python3.11 -S py311/smoke.py
-```
-
-The separate test `tests/python3-stdlib.py` checks the extra modules. Bound
-hardware experiments with the cross-built `probes/bounded-run.c` launcher.
+Output is `~/build/python311-amix/python`, unstripped; the stage script
+strips the installed copy and runs the 68060 instruction checker on it.
+`tests/python3-smoke.py` and `tests/python3-stdlib.py` are the acceptance
+tests; bound hardware experiments with `probes/bounded-run.c`.
 
 ## Installation and SDK
 
@@ -147,7 +172,8 @@ resources, target sysconfig data, public/internal headers, the static Python
 archive, private compatibility/zlib archives, config helper, manual page,
 licence, receipt and tests. It creates `python3`/config/manual aliases and
 empty `site-packages`/`lib-dynload` directories. GUI, regression-test,
-ensurepip and venv trees remain outside this initial distribution.
+ensurepip trees remain outside the distribution (pip is library/python/pip);
+venv is included since 2026-11-05.
 
 Installed paths are listed in
 `/usr/local/share/doc/python3-amix/INSTALL-FILES` and `INSTALL-LINKS`.
@@ -203,10 +229,9 @@ or suitable waiting/I/O operations; this does not provide parallel CPU work.
 Signal handling, fork with live threads, extension loading and the complete
 cancellation/timeout surface have not passed a full audit.
 
-The proof includes static math, struct, binascii, JSON, random, datetime,
-select, builtin hash and zlib modules. Socket, SSL, ctypes, SQLite and
-subprocess extension modules have not been built for this milestone. There
-is no pip/bootstrap or package-compatibility claim yet.
+Extension modules are all built in; loading one from `lib-dynload` has never
+been tried, so pip cannot install packages with C extensions (see README).
+ctypes and sqlite3 are missing, see above.
 
 The configured `off_t` and `time_t` types are 32 bits. Large-file and
 post-2038 behavior are outside this acceptance milestone.

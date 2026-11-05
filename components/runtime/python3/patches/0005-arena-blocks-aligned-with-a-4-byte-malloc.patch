@@ -1,0 +1,30 @@
+CPython's arena puts a block's memory just past its 16-byte header and
+aligns the first allocation to 8 with ab_offset. AMIX libc's malloc aligns
+to 4, so ab_offset starts at 4 and a one-off block of exactly the size
+asked for is overrun by 4 bytes: compiling html/entities.py (a 2231-item
+dict) corrupted the heap and crashed in malloc. Align ab_mem with slack.
+
+--- a/Python/pyarena.c	2026-11-05 17:58:05.734251347 +0100
++++ b/Python/pyarena.c	2026-11-05 17:58:05.754251449 +0100
+@@ -77,15 +77,16 @@
+ block_new(size_t size)
+ {
+     /* Allocate header and block as one unit.
+-       ab_mem points just past header. */
+-    block *b = (block *)PyMem_Malloc(sizeof(block) + size);
++       ab_mem points just past header, aligned to ALIGNMENT: with a malloc
++       that aligns to 4 only (AMIX libc), an offset of 4 here made a one-off
++       block of exactly `size` bytes overflow by 4. */
++    block *b = (block *)PyMem_Malloc(sizeof(block) + size + ALIGNMENT - 1);
+     if (!b)
+         return NULL;
+     b->ab_size = size;
+-    b->ab_mem = (void *)(b + 1);
++    b->ab_mem = (void *)_Py_ALIGN_UP(b + 1, ALIGNMENT);
+     b->ab_next = NULL;
+-    b->ab_offset = (char *)_Py_ALIGN_UP(b->ab_mem, ALIGNMENT) -
+-            (char *)(b->ab_mem);
++    b->ab_offset = 0;
+     return b;
+ }
+ 

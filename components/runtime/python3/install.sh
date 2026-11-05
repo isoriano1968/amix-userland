@@ -90,4 +90,4 @@ while read destination target kind; do
 done < "$links"
 count=`awk 'END {print NR}' "$manifest"`
 echo "Python 3.11 installed under /usr/local; $count files and 4 links verified"
-echo 'Until the random driver is enabled, explicitly set PYTHONHASHSEED=0 when running Python.'
+echo 'pip is the library/python/pip component; see README.md.'

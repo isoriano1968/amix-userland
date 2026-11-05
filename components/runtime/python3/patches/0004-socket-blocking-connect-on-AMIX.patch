@@ -1,0 +1,32 @@
+AMIX's sockets (SVR4.0 sockmod) report a non-blocking connect done, with
+SO_ERROR 0, before it is; the first send then fails with ENOTCONN. Pth's
+connect wrapper waits the same way. Connect blocking through
+ports/python/amix-connect.c, as curl and libupnp do on AMIX.
+
+--- a/Modules/socketmodule.c	2026-11-05 16:47:40.853983487 +0100
++++ b/Modules/socketmodule.c	2026-11-05 16:47:40.877983089 +0100
+@@ -3243,6 +3243,10 @@
+     return 1;
+ }
+ 
++#ifdef __amix__
++extern int amix_python_connect(int, const struct sockaddr *, int);
++#endif
++
+ static int
+ internal_connect(PySocketSockObject *s, struct sockaddr *addr, int addrlen,
+                  int raise)
+@@ -3250,7 +3254,13 @@
+     int res, err, wait_connect;
+ 
+     Py_BEGIN_ALLOW_THREADS
++#ifdef __amix__
++    /* AMIX: a non-blocking connect is reported done before it is; connect
++       blocking (ports/python/amix-connect.c), the kernel's timeout applies */
++    res = amix_python_connect(s->sock_fd, addr, addrlen);
++#else
+     res = connect(s->sock_fd, addr, addrlen);
++#endif
+     Py_END_ALLOW_THREADS
+ 
+     if (!res) {

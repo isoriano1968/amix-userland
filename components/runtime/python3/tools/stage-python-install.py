@@ -13,8 +13,8 @@ project = Path.cwd()
 source = Path(os.environ.get('PYTHON_SOURCE', str(Path.home() / 'src/upstream/Python-3.11.18')))
 build = Path(os.environ.get('PYTHON_BUILD', str(Path.home() / 'build/python311-amix')))
 compiler = Path(os.environ.get('CC', str(Path.home() / 'opt/m68k-amix/bin/m68k-elf-gcc')))
-pth = Path(os.environ.get('PTH_PREFIX', str(Path.home() / 'opt/pth-amix')))
-zlib = Path(os.environ.get('ZLIB_SOURCE', str(Path.home() / 'src/upstream/zlib-1.3.1')))
+sysroot = Path(os.environ.get('AMIX_SYSROOT', str(Path.home() / 'opt/m68k-amix-sysroot')))
+checker = Path(os.environ.get('CHECK_68060', str(Path.home() / 'Sources/usr-amix/upstream/gcc14-cross-amix/tools/check-68060-safe.py')))
 stage = Path(os.environ.get('PYTHON_STAGE', str(project / 'build/python-install')))
 if stage.exists():
     raise SystemExit('Use a fresh build/python-install staging directory')
@@ -41,16 +41,18 @@ strip = str(compiler.parent / 'm68k-elf-strip')
 ar = str(compiler.parent / 'm68k-elf-ar')
 binary = put(build / 'python', '/usr/local/bin/python3.11', True)
 subprocess.run([strip, str(binary)], check=True)
-subprocess.run(['python3', str(Path.home() / 'src/gcc14-cross-amix/tools/check-68060-safe.py'), str(binary)], check=True)
+subprocess.run(['python3', str(checker), str(binary)], check=True)
 library = put(build / 'libpython3.11.a', '/usr/local/lib/libpython3.11.a')
 subprocess.run([strip, '--strip-debug', str(library)], check=True)
-compat = stage / 'libamixpythoncompat.a'
-subprocess.run([ar, 'rcs', str(compat), *(str(project / 'build/python-compat' / ('amix-' + name + '.o'))
-                                      for name in ('math', 'wide', 'clock', 'time', 'environ'))], check=True)
-put(compat, configuration + '/libamixpythoncompat.a')
-put(zlib / 'libz.a', configuration + '/libz.a')
+compat_dir = project / 'build/python-compat'
+put(compat_dir / 'libamixpythoncompat.a', configuration + '/libamixpythoncompat.a')
+# _decimal's bundled libmpdec, which libpython3.11.a needs for embedding
+mpdec = put(build / 'Modules/_decimal/libmpdec/libmpdec.a', configuration + '/libmpdec.a')
+subprocess.run([strip, '--strip-debug', str(mpdec)], check=True)
 put(project / 'tools/python3.11-config.sh', '/usr/local/bin/python3.11-config', True)
-excluded = {'test', 'tests', 'idlelib', 'tkinter', 'turtledemo', 'ensurepip', 'venv', '__pycache__'}
+# venv is shipped; ensurepip is not: pip and setuptools are components of
+# their own (library/python/pip, library/python/setuptools), not bundled wheels
+excluded = {'test', 'tests', 'idlelib', 'tkinter', 'turtledemo', 'ensurepip', '__pycache__'}
 for path in sorted((source / 'Lib').rglob('*')):
     relative = path.relative_to(source / 'Lib')
     if path.is_file() and not any(part in excluded for part in relative.parts):
@@ -72,22 +74,23 @@ if len(data_files) != 1:
 variables = runpy.run_path(str(data_files[0]))['build_time_vars']
 if variables['prefix'] != '/usr/local':
     raise SystemExit('Rebuild CPython with --prefix=/usr/local')
-compat_flags = configuration + '/libamixpythoncompat.a'
 variables.update(CC='m68k-elf-gcc', CXX='m68k-elf-g++', AR='m68k-elf-ar', RANLIB='m68k-elf-ranlib',
                  CPPFLAGS='-I/usr/local/include/python3.11/amixcompat -I/usr/local/gnu/include '
                           '-std=gnu11 -include /usr/local/include/python3.11/amix-python.h',
-                 LIBS=compat_flags + ' -lpthread -ldl -lsocket -lnsl',
+                 LIBS='-lamixpythoncompat -lm -lpthread -lpth -ldl -lsocket -lnsl',
                  LDFLAGS='-L/usr/local/lib -L' + configuration + ' -L/usr/local/gnu/lib')
+# the sysroot paths of the cross build are the same paths on AMIX
 for key, value in list(variables.items()):
     if isinstance(value, str):
-        variables[key] = value.replace(str(pth), '/usr/local/gnu').replace(str(zlib), configuration)
+        variables[key] = (value.replace(str(compat_dir), configuration)
+                          .replace(str(sysroot) + '/', '/'))
 generated('build_time_vars = ' + pprint.pformat(variables, sort_dicts=True) + '\n',
           '/usr/local/lib/python3.11/' + data_files[0].name)
 makefile = (build / 'Makefile').read_text()
 for key in ('CC', 'CXX', 'AR', 'RANLIB', 'CPPFLAGS', 'LIBS', 'LDFLAGS'):
     makefile = re.sub(r'^' + key + r'\s*=.*$', key + '= ' + variables[key], makefile, flags=re.M)
-generated((build / 'Modules/Setup.local').read_text().replace(str(zlib), configuration),
-          configuration + '/Setup.local')
+makefile = makefile.replace(str(compat_dir), configuration).replace(str(sysroot) + '/', '/')
+generated((build / 'Modules/Setup.local').read_text(), configuration + '/Setup.local')
 generated(makefile, configuration + '/Makefile')
 put(source / 'LICENSE', documentation + '/LICENSE.PSF')
 put(project / 'README.md', documentation + '/README.md')
@@ -96,7 +99,8 @@ for name in ('python3-smoke.py', 'python3-stdlib.py'):
     put(project / 'tests' / name, documentation + '/' + name)
 put(project / 'probes/python-embed.c', documentation + '/python-embed.c')
 generated('Python 3.11.18 AMIX; GCC 14.2; -O2 -m68060; GNU Pth pthread emulation\n'
-          'Install prefix: /usr/local; GNU Pth dependency: /usr/local/gnu\n'
+          'Install prefix: /usr/local; shared GNU Pth in /usr/local/gnu/lib; shared OpenSSL,\n'
+          'zlib, bzip2 and expat in /usr/local/lib; all stdlib modules built in\n'
           'Executable SHA256: ' + hashlib.sha256(binary.read_bytes()).hexdigest() + '\n',
           documentation + '/BUILD-RECEIPT.txt')
 generated('/usr/local/bin/python3 python3.11\n/usr/local/bin/python3-config python3.11-config hard\n'
@@ -107,10 +111,12 @@ generated('\n'.join(entries + [documentation + '/INSTALL-FILES', documentation +
 generated(''.join(hashlib.sha256((payload / name.lstrip('/')).read_bytes()).hexdigest() + '  ' + name + '\n'
                   for name in entries), documentation + '/SHA256SUMS')
 shutil.copyfile(project / 'install.sh', stage / 'install.sh')
+shutil.copyfile(project / 'tools/update-installed.sh', stage / 'update-installed.sh')
 destination = project / 'dist/python3-amix-install.tar.gz'
 destination.parent.mkdir(exist_ok=True)
 with tarfile.open(destination, 'w:gz') as archive:
     archive.add(payload, arcname='payload')
     archive.add(stage / 'install.sh', arcname='install.sh')
+    archive.add(stage / 'update-installed.sh', arcname='update-installed.sh')
 print('Staged', len(entries), 'files and 4 links for /usr/local')
 print(hashlib.sha256(destination.read_bytes()).hexdigest(), destination, destination.stat().st_size)

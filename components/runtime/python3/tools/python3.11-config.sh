@@ -1,5 +1,5 @@
 #!/bin/sh
-# AMIX static SDK flags; GNU Pth remains a separate dependency.
+# AMIX SDK flags: static libpython3.11.a on shared GNU Pth, OpenSSL, zlib, bzip2, expat
 prefix=/usr/local
 include=$prefix/include/python3.11
 config=$prefix/lib/python3.11/config-3.11
@@ -9,7 +9,7 @@ for option in "$@"; do
 done
 libs='-ldl -lm'
 if test "$embed" = yes; then
-    libs='-lpython3.11 -lamixpythoncompat -lz -lpthread -ldl -lsocket -lnsl -lm'
+    libs='-lpython3.11 -lmpdec -lamixpythoncompat -lssl -lcrypto -lbz2 -lexpat -lz -lpthread -lpth -ldl -lsocket -lnsl -lm'
 fi
 for option in "$@"; do
     case "$option" in

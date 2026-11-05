@@ -1,0 +1,27 @@
+Python 3.11 links stdlib modules from Modules/Setup.stdlib only for
+Emscripten and WASI and builds the rest with setup.py, which a cross build
+for AMIX cannot run. Use Setup.stdlib on AmigaUNIX too; the recipe sets
+MODULE_BUILDTYPE=static, so every module is linked into the interpreter.
+
+--- a/configure.ac	2026-11-05 16:26:27.213695075 +0100
++++ b/configure.ac	2026-11-05 16:26:27.245695069 +0100
+@@ -6922,6 +6922,8 @@
+ AS_CASE([$ac_sys_system],
+     [Emscripten], [MODULES_SETUP_STDLIB=Modules/Setup.stdlib],
+     [WASI], [MODULES_SETUP_STDLIB=Modules/Setup.stdlib],
++    dnl AMIX: no setup.py in a cross build; Setup.stdlib links the modules in
++    [AmigaUNIX], [MODULES_SETUP_STDLIB=Modules/Setup.stdlib],
+     [MODULES_SETUP_STDLIB=]
+ )
+ AC_MSG_RESULT([$MODULES_SETUP_STDLIB])
+--- a/configure	2026-11-05 16:26:27.205695077 +0100
++++ b/configure	2026-11-05 16:26:27.245695069 +0100
+@@ -23699,6 +23699,8 @@
+     MODULES_SETUP_STDLIB=Modules/Setup.stdlib ;; #(
+   WASI) :
+     MODULES_SETUP_STDLIB=Modules/Setup.stdlib ;; #(
++  AmigaUNIX) :
++    MODULES_SETUP_STDLIB=Modules/Setup.stdlib ;; #(
+   *) :
+     MODULES_SETUP_STDLIB=
+  ;;

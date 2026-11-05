@@ -10,6 +10,51 @@
 #include <limits.h>
 #include <math.h>
 #include <stdint.h>
+#include <sys/types.h>
+/* AMIX's sys/socket.h and sys/mman.h have the constants and structures but
+ * declare none of the functions (libsocket.so, libc.so.1); GCC 14 refuses
+ * implicit declarations.  Declared before pthread.h, which then maps connect,
+ * accept, recv, send, recvfrom and sendto to Pth's yielding versions. */
+struct sockaddr;
+struct msghdr;
+extern int socket(int, int, int);
+extern int socketpair(int, int, int, int *);
+extern int bind(int, const struct sockaddr *, int);
+extern int connect(int, const struct sockaddr *, int);
+extern int listen(int, int);
+extern int accept(int, struct sockaddr *, int *);
+extern int recv(int, void *, int, int);
+extern int recvfrom(int, void *, int, int, struct sockaddr *, int *);
+extern int recvmsg(int, struct msghdr *, int);
+extern int send(int, const void *, int, int);
+extern int sendto(int, const void *, int, int, const struct sockaddr *, int);
+extern int sendmsg(int, const struct msghdr *, int);
+extern int getsockopt(int, int, int, void *, int *);
+extern int setsockopt(int, int, int, const void *, int);
+extern int getsockname(int, struct sockaddr *, int *);
+extern int getpeername(int, struct sockaddr *, int *);
+extern int shutdown(int, int);
+extern int munmap(void *, size_t);
+extern int msync(void *, size_t, int);
+extern int mprotect(void *, size_t, int);
+/* libnsl.so */
+extern int gethostname(char *, int);
+/* syslog.o of libc's static part; syslog.h declares nothing */
+extern void openlog(const char *, int, int);
+extern void syslog(int, const char *, ...);
+extern void closelog(void);
+extern int setlogmask(int);
+/* IPv4 only, ports/python/amix-inet.c: AMIX has inet_addr/inet_ntoa only;
+ * CPython's getaddrinfo.c/getnameinfo.c fallbacks need these */
+extern int inet_pton(int, const char *, void *);
+extern const char *inet_ntop(int, const void *, char *, int);
+#ifndef INET_ADDRSTRLEN
+#define INET_ADDRSTRLEN 16
+#endif
+/* SVR4 spells it _SC_PAGESIZE (sys/unistd.h) */
+#ifndef _SC_PAGE_SIZE
+#define _SC_PAGE_SIZE _SC_PAGESIZE
+#endif
 #include <pthread.h>
 #include <sys/resource.h>
 /* CPython's generated pyconfig.h spells this as 1. */
