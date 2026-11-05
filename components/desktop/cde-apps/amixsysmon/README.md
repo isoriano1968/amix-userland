@@ -32,5 +32,7 @@ alone and the CPU graph says so.
 ## Build and install
 
 `../build.sh amixsysmon` on the PC (library/amixstat staged first), then on
-the box, as root, in a copy of this directory: `sh install.sh`, and Reload
-Actions in CDE. It appears in the Application Manager under Desktop_Apps.
+the box, as root, in a copy of this directory with `panel/` beside it:
+`sh install.sh`, which puts it in the AMIX subpanel too. Restart Workspace
+Manager for the panel; it is in the Application Manager under Desktop_Apps
+after the next login (or Reload Applications there).

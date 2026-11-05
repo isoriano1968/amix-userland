@@ -18,7 +18,12 @@ The core 1 programs and `armbench` are in
 `build.sh` cross-builds them with gcc14-cross-amix against the shared Motif and
 X11R6.3 libraries, taking the flags from `tools/amix-pkg-config xm` (and
 `amixstat` for amixsysmon: stage library/amixstat into the sysroot first).
-Each directory has an `install.sh` to run on the box.
+Each directory has an `install.sh` to run on the box. Every application has a
+control in the AMIX subpanel of the front panel (`panel/amix.fp`): a new one
+adds its CONTROL there, and its `install.sh` runs `panel/install.sh`. The
+Application Manager entry (`/etc/dt/appconfig/appmanager/C/<group>/<action>`)
+shows after the next login, or Application Manager, Reload Applications;
+Reload Actions does not gather it.
 
 ## AmixCast
 
