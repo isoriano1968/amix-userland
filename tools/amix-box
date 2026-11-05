@@ -1,0 +1,71 @@
+#!/bin/sh
+# amix-box -- every command that touches the A3000 (ssh, scp, tests,
+# measurements) goes through this, from every session: one at a time, and
+# never while the user plays something.
+#
+#   amix-box [-w seconds] [-m "what"] command [args...]
+#   amix-box -s            who holds the box now (and is a player running?)
+#
+# - Takes an exclusive lock on the PC (/tmp/amix-box.lock).  Held by another
+#   session: says who and what since when, waits up to -w seconds (default 0),
+#   then exits 75.  So copies, builds' installs and tests of different
+#   sessions never overlap, and no measurement runs beside someone's load.
+# - With the lock, asks the box whether a player runs (ffplay, vplay, mikmod,
+#   quake, pt2): if one does, exits 75 without running anything.
+# - Runs the command with the lock held; its exit status is ours.
+# Exit 75 (EX_TEMPFAIL): not now -- wait for the user or the other session,
+# never work around it.
+LOCK=/tmp/amix-box.lock
+INFO=/tmp/amix-box.who
+BOX=root@192.168.0.133
+KEY="-i $HOME/.ssh/id_ed25519_amix -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=60"
+PLAYERS='[f]fplay|[v]play |[m]ikmod|[q]uake|[p]t2'
+wait=0
+what=""
+
+players() {
+	# shellcheck disable=SC2086
+	timeout 120 ssh $KEY "$BOX" "ps -ef | /usr/gnu/bin/grep -E '$PLAYERS'"
+}
+
+case "$1" in
+-s)
+	if [ -s "$INFO" ] && ! flock -n "$LOCK" true 2>/dev/null; then
+		echo "held: $(cat "$INFO")"
+	else
+		echo "free"
+	fi
+	players >/dev/null
+	case $? in
+	0) echo "a player runs on the box" ;;
+	1) echo "no player on the box" ;;
+	*) echo "cannot ask the box (ssh failed)" ;;
+	esac
+	exit 0 ;;
+esac
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-w) wait=$2; shift 2 ;;
+	-m) what=$2; shift 2 ;;
+	--) shift; break ;;
+	*) break ;;
+	esac
+done
+[ $# -gt 0 ] || { echo "usage: amix-box [-w seconds] [-m what] command [args...] | amix-box -s" >&2; exit 2; }
+
+exec 9>>"$LOCK"
+if ! flock -w "$wait" 9; then
+	echo "amix-box: the box is busy: $(cat "$INFO" 2>/dev/null) -- not now" >&2
+	exit 75
+fi
+echo "pid $$ (${CLAUDE_SESSION_NAME:-$(basename "$PWD")}): ${what:-$*} since $(date +%H:%M:%S)" > "$INFO"
+trap ': > "$INFO"' EXIT
+players >/dev/null
+case $? in
+0)	echo "amix-box: a player runs on the box -- nothing is done until the user has stopped" >&2
+	exit 75 ;;
+1)	;;
+*)	echo "amix-box: cannot ask the box whether a player runs (ssh failed) -- not now" >&2
+	exit 75 ;;
+esac
+"$@"
