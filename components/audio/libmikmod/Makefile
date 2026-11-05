@@ -40,5 +40,7 @@ player:
 	$(MAKE) -C $(BUILD_DIR)/mikmod mikmod CC=m68k-elf-gcc \
 		CFLAGS='$(BASE) -I. -Isrc `$(PKG_CONFIG) --cflags libmikmod ncurses`' \
 		LDFLAGS='`$(PKG_CONFIG) --libs libmikmod ncurses` -lm'
+	mkdir -p $(STAGE_DIR)$(PREFIX)/bin
+	cp $(BUILD_DIR)/mikmod/mikmod $(STAGE_DIR)$(PREFIX)/bin/
 
 .PHONY: build stage player
