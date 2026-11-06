@@ -1,7 +1,9 @@
 # name, version and what building and running it needs
 name     games/quake
 version  1.09
-summary  GLQuake on zzgl and on Mesa 18
+summary  GLQuake on core 1 (zzgl); Mesa 18 and software builds stay in the repo
 require  x11/mesa-183
 require  x11/x11r6.3
 require  library/lib060
+file     /opt/quake/glquake.sh
+file     /opt/quake/glquake.zzgl

@@ -5,3 +5,5 @@ summary  ioquake3 on core 1
 require  x11/mesa-183
 require  x11/x11r6.3
 require  library/lib060
+file     /opt/ioq3/q3.sh
+file     /opt/ioq3/ioquake3.zzgl

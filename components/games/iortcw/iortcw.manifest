@@ -5,3 +5,5 @@ summary  Return to Castle Wolfenstein on core 1
 require  x11/mesa-183
 require  x11/x11r6.3
 require  library/lib060
+file     /opt/rtcw/wolf.sh
+file     /opt/rtcw/iowolfsp.m68k

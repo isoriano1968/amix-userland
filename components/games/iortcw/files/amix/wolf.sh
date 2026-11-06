@@ -2,10 +2,11 @@
 # wolf.sh [iortcw options] -- Return to Castle Wolfenstein with the GL on the
 # Z3660's second ARM core (zzgl), sound over HDMI.  /opt/rtcw/wolf.sh; the
 # game's paks (amix/trimpaks.py reduces them) in /opt/rtcw/main.
+# Core 1 must run the "amix" image; anything else there is replaced by it.  F10 quits.
 ulimit -d 262144
 ulimit -v 393216
 C=/root/z3660ARMCores
-if /usr/amiga/bin/ztop | grep "ARM core 1" | grep -v " gpu," | grep -v " amix," >/dev/null; then
+if /usr/amiga/bin/ztop | grep "ARM core 1" | grep " amix," >/dev/null; then :; else
 	$C/armbench -reload $C/z3660ARM_Core_amix.bin || exit 1
 fi
 [ $# -gt 0 ] || set -- +spmap escape1	# spmap: single player, devmap is multiplayer: no AI, no scripts
