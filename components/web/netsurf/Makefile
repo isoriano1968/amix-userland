@@ -20,6 +20,7 @@ NS_INCLUDE = $(abspath ../../../make-rules/netsurf-include)
 GNU_COMPAT = $(abspath ../../gnu/compat)
 RES = $(PREFIX)/share/netsurf
 FONTS = $(PREFIX)/share/fonts
+DT    = $(STAGE_DIR)/etc/dt/appconfig
 
 # NetSurf adds to CFLAGS and LDFLAGS with +=: ours come through the environment
 NS_ENV = CFLAGS="-O2 -m68060 -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4 -U__STRICT_ANSI__ \
@@ -52,7 +53,15 @@ stage:
 	rm -rf $(STAGE_DIR)
 	$(NS_MAKE) install DESTDIR=$(STAGE_DIR) > build/install.log 2>&1 || { tail -20 build/install.log; exit 1; }
 	m68k-elf-strip $(STAGE_DIR)$(PREFIX)/bin/netsurf-fb
+	# CDE: the netsurf launcher, the NetSurf action, icons, the Application
+	# Manager entry; the control in the AMIX panel is desktop/cde-apps/panel
+	mkdir -p $(DT)/types/C $(DT)/icons/C $(DT)/appmanager/C/Desktop_Apps
+	cp files/netsurf.sh $(STAGE_DIR)$(PREFIX)/bin/netsurf
+	cp files/netsurf.dt $(DT)/types/C/
+	python3 -I files/mkicons.py $(S)/frontends/gtk/res/netsurf.xpm $(DT)/icons/C
+	: > $(DT)/appmanager/C/Desktop_Apps/NetSurf
+	chmod 755 $(STAGE_DIR)$(PREFIX)/bin/netsurf $(DT)/appmanager/C/Desktop_Apps/NetSurf
 	chmod -R go-w $(STAGE_DIR)
-	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) -cf build/netsurf-amix.tar usr
+	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) -cf build/netsurf-amix.tar etc usr
 
 .PHONY: build stage

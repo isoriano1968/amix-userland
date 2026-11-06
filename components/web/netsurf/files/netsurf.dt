@@ -1,0 +1,15 @@
+#
+# netsurf.dt -- the NetSurf web browser in CDE.  Installed in
+# /etc/dt/appconfig/types/C.
+#
+ACTION NetSurf
+{
+	LABEL		NetSurf
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/usr/local/bin/netsurf %Arg_1%
+	ICON		NetSurf
+	DESCRIPTION	The NetSurf web browser: HTML, CSS and SVG, HTTPS with \
+			the Z3660's core 1, no JavaScript. Drop an HTML file \
+			on it to show the file.
+}
