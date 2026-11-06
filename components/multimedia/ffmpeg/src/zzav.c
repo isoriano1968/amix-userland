@@ -123,11 +123,31 @@ static int attach(void)
     c1ld = (volatile unsigned long *)map(C1LD_OFF, PAGE);
     if (!blk || !ring || !shared || !c1ld)
         return -1;
-    /* a stream opened (READY) or failed (ERROR) by a process that is gone:
-       nobody will CLOSE it but us */
-    if (blk[ZZAV_W_MAGIC] == ZZAV_MAGIC && !blk[ZZAV_W_CMD] &&
-        (blk[ZZAV_W_STATE] == ZZAV_READY || blk[ZZAV_W_STATE] == ZZAV_ERROR))
-        blk[ZZAV_W_CMD] = ZZAV_CMD_CLOSE;
+    /* a stream left by a player that is gone (killed, crashed, closed with
+       the window): nobody will CLOSE it but us, and until then every new
+       player falls back to the 060.  READY, ERROR and FINISHED are always
+       left over; PLAYING and OPENING are when nothing moves for 1.5 s -- no
+       packets written, no media time -- and the stream is not paused (a
+       paused player of someone else's is left alone). */
+    if (blk[ZZAV_W_MAGIC] == ZZAV_MAGIC && !blk[ZZAV_W_CMD] && blk[ZZAV_W_STATE] != ZZAV_IDLE) {
+        unsigned long st = blk[ZZAV_W_STATE];
+
+        if (st == ZZAV_READY || st == ZZAV_ERROR || st == ZZAV_FINISHED)
+            blk[ZZAV_W_CMD] = ZZAV_CMD_CLOSE;
+        else if (!blk[ZZAV_W_PAUSE]) {
+            unsigned long wr = blk[ZZAV_W_WR], clk = blk[ZZAV_W_CLOCK_MS];
+            int moved = 0;
+
+            for (t0 = now(); now() - t0 < 1.5 && !moved; usleep(50000))
+                moved = blk[ZZAV_W_WR] != wr || blk[ZZAV_W_CLOCK_MS] != clk ||
+                        blk[ZZAV_W_STATE] != st || blk[ZZAV_W_CMD] || blk[ZZAV_W_PAUSE];
+            if (!moved) {
+                if (verbose)
+                    fprintf(stderr, "%s: closing a stream left on core 1 (state %lu)\n", zzav_prog, st);
+                blk[ZZAV_W_CMD] = ZZAV_CMD_CLOSE;
+            }
+        }
+    }
     /* a seek opens it again at once: core 1 may still be closing the last one */
     for (t0 = now(); blk[ZZAV_W_MAGIC] == ZZAV_MAGIC && (blk[ZZAV_W_STATE] != ZZAV_IDLE || blk[ZZAV_W_CMD]) &&
          now() - t0 < 3; )
