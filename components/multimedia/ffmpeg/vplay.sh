@@ -1,7 +1,6 @@
 #!/bin/sh
 # vplay -- video player (FFmpeg 4.4 + X11R6.3 MIT-SHM + Paula) on the A3000.
 #   vplay [-x2] [-noaudio] [-stereo] [-stats] [-nosync] file
-LD_LIBRARY_PATH=/usr/x11r6/xc/exports/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}; export LD_LIBRARY_PATH
 DISPLAY=${DISPLAY:-:0}; export DISPLAY
 # core 1: the amix core (the player, GL and crypto) when a core without the
 # player runs there
