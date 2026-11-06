@@ -7,7 +7,9 @@
 #	ln -sf z3660ARM_Core_xxx.bin /root/z3660ARMCores/default
 # No link, nothing is loaded.  Core 0 starts core 1 once per power-on
 # (armbench -load); after a reboot without a power cycle core 1 still runs
-# and takes the program with armbench -reload.
+# and takes the program with armbench -reload.  Core 0 also starts the image
+# left in board memory by itself when it restarts (a long reset) and counts
+# no load: -load is then refused with -4 and the program goes in by -reload.
 #
 # Install as /etc/rc2.d/S98z3660core.
 
@@ -41,6 +43,10 @@ case "$1" in
 	elif [ "$loads" = 0 ]; then
 		how=loaded
 		out=`$AB -load default 2>&1`
+		if [ $? -ne 0 ] && echo "$out" | grep 'refused: -4' > /dev/null; then
+			how="reloaded (core 1 ran already)"
+			out=`$AB -reload default 2>&1`
+		fi
 	else
 		how=reloaded
 		out=`$AB -reload default 2>&1`
