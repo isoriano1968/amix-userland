@@ -93,7 +93,7 @@ LIBGCC2_FUNCS := _muldi3 _divdi3 _moddi3 _udivdi3 _umoddi3 _negdi2 \
 	_floatdidf _floatdisf _floatdixf _fixunsdfdi _fixdfdi _fixunssfdi \
 	__gcc_bcmp _clear_cache _shtab _trampoline
 
-.PHONY: all help deps-hint deps download extract binutils install-binutils sysroot validate-sysroot check-runtime github-safety-check sysroot-check gcc install-gcc gcc-full install-gcc-wrapper refresh-gcc-wrapper install-target-ar libgcc install-libgcc env test-random test-hello test-uint64 test-divmod test-float test-fcmp test-bitfield test-objdir test-dtneeded test-kernel-volatile test-user-volatile print-vars clean distclean
+.PHONY: all help deps-hint deps download extract binutils install-binutils sysroot validate-sysroot check-runtime github-safety-check sysroot-check gcc install-gcc gcc-full install-gcc-wrapper refresh-gcc-wrapper install-target-ar libgcc install-libgcc env test-random test-hello test-uint64 test-divmod test-float test-fcmp test-bitfield test-objdir test-dtneeded test-libc-archive test-kernel-volatile test-user-volatile print-vars clean distclean
 
 all: install-binutils sysroot install-gcc install-gcc-wrapper install-target-ar install-libgcc env
 
@@ -124,6 +124,7 @@ help:
 	@echo "  make test-uint64     64-bit / % >> link, helpers resolved from libgcc.a"
 	@echo "  make test-objdir     '-c' with no '-o' writes ./basename.o, not beside the source"
 	@echo "  make test-dtneeded   DT_NEEDED names resolve on the guest, not on the build host"
+	@echo "  make test-libc-archive -lsocket/-lgen/-lXt links: libc archive, /usr/ccs/lib, -Wl,"
 	@echo "  make test-kernel-volatile  spl()/splx() and MMIO volatile survive AMIX_KERNEL_CFLAGS"
 	@echo "  make test-user-volatile    volatile polls and const data survive AMIX_USER_CFLAGS"
 	@echo ""
@@ -922,9 +923,9 @@ test-objdir: refresh-gcc-wrapper env
 # The test program defines select/syslog/seteuid itself.  Those are BSD entry
 # points that libsocket.so imports but the stock shared libc.so.1 does not
 # export (it has _abi_select and friends; the plain names live in the static
-# /usr/ccs/lib stubs), so without them the link stops on libsocket.so's own
-# undefined references.  That gap is a property of the AMIX sysroot, not of the
-# wrapper, and stubbing it here keeps this gate about DT_NEEDED alone.
+# members of the /usr/ccs/lib/libc.so archive).  The wrapper now links that
+# archive (test-libc-archive gates it); the stubs stay so this gate is about
+# DT_NEEDED alone.
 #
 # Failure mode against the PRE-FIX wrapper (proof this test bites): check (a)
 # reports two NEEDED entries carrying the absolute sysroot path.
@@ -963,6 +964,102 @@ test-dtneeded: refresh-gcc-wrapper env check-runtime
 		echo "  FAIL the libc.so.1 dependency is gone"; status=1; \
 	fi; \
 	test $$status -eq 0 && echo "test-dtneeded PASS: guest-resolvable names only, libc SONAME intact"
+
+# Regression test for the libc ARCHIVE, the /usr/ccs/lib search and -Wl,.
+#
+# On AMIX "-lc" is the ar archive /usr/ccs/lib/libc.so: libc.so.1 plus ~100
+# static members the shared libc.so.1 does not export -- select, syslog,
+# seteuid (select.o), gettimeofday, ...  The stock libsocket.so imports the
+# first three and libXt imports gettimeofday.  The wrapper used to link
+# libc.so.1 alone, so a plain "cc prog.c -lsocket -lnsl" stopped on
+#
+#   .../sysroot/usr/lib/libsocket.so: undefined reference to `select'
+#
+# and so did every X link.  Two smaller gaps rode along: "-lm" and "-lgen"
+# (only in /usr/ccs/lib) stopped with "cannot resolve -lm", and "-Wl,..." was
+# filed as a compiler warning flag, so "-Wl,-rpath,DIR" never reached ld.
+#
+# This target links, with NO stub definitions:
+#   (a) "sock": a socket client against -lsocket -lnsl;
+#   (b) "misc": a program calling gettimeofday, sqrt (-lm) and basename
+#       (-lgen), with -Wl,-rpath,/usr/x11r6/lib and -Xlinker -rpath-link;
+#   (c) "xt", only when X11R6_DIR holds libXt.so (the gcc 14 sysroot's
+#       X11R6.3; the stock sysroot's X libraries are symlinks into /usr/X on
+#       the guest): an Xt program against -lXt -lX11 -lsocket -lnsl, the way
+#       a Motif/CDE program links.
+# It requires that the libc-archive-only symbols each program needs are
+# defined in the executable, "/usr/lib/libc.so.1" is still NEEDED, no NEEDED
+# or RPATH entry carries the build host's path, and (b) has RPATH
+# /usr/x11r6/lib.
+#
+# Failure mode against the PRE-FIX wrapper (proof this test bites): (a) and
+# (c) stop at the link on select/syslog/seteuid; (b) stops with "cannot
+# resolve -lgen".
+X11R6_DIR ?= $(HOME)/opt/m68k-amix-sysroot/usr/x11r6
+
+test-libc-archive: refresh-gcc-wrapper env check-runtime
+	mkdir -p $(BUILDDIR)/test
+	printf '%s\n' \
+		'extern int socket();' \
+		'extern int t_open();' \
+		'int main(void) { return socket(2, 1, 0) + t_open(); }' \
+		> $(BUILDDIR)/test/libcar-sock.c
+	printf '%s\n' \
+		'#include <sys/time.h>' \
+		'extern double sqrt();' \
+		'extern char *basename();' \
+		'int main(void) { struct timeval tv; gettimeofday(&tv, 0);' \
+		'    return sqrt(4.0) == 2.0 && basename("/a/b") != 0; }' \
+		> $(BUILDDIR)/test/libcar-misc.c
+	printf '%s\n' \
+		'extern void XtToolkitInitialize();' \
+		'int main(void) { XtToolkitInitialize(); return 0; }' \
+		> $(BUILDDIR)/test/libcar-xt.c
+	$(TARGET_CC) $(CPUFLAGS) -o $(BUILDDIR)/test/libcar-sock $(BUILDDIR)/test/libcar-sock.c -lsocket -lnsl
+	$(TARGET_CC) $(CPUFLAGS) -o $(BUILDDIR)/test/libcar-misc $(BUILDDIR)/test/libcar-misc.c \
+		-Wl,-rpath,/usr/x11r6/lib -Xlinker -rpath-link -Xlinker $(SYSROOT)/usr/lib -lgen -lm
+	@set -e; status=0; tests="sock misc"; \
+	if test -f "$(X11R6_DIR)/lib/libXt.so"; then \
+		tests="$$tests xt"; \
+		echo "$(TARGET_CC) $(CPUFLAGS) -o $(BUILDDIR)/test/libcar-xt ... -lXt -lX11 -lsocket -lnsl"; \
+		$(TARGET_CC) $(CPUFLAGS) -o $(BUILDDIR)/test/libcar-xt $(BUILDDIR)/test/libcar-xt.c \
+			-L$(X11R6_DIR)/lib -Wl,-rpath,/usr/x11r6/lib -Wl,-rpath-link,$(X11R6_DIR)/lib \
+			-lXt -lX11 -lsocket -lnsl; \
+	else \
+		echo "  skip xt: no $(X11R6_DIR)/lib/libXt.so (set X11R6_DIR)"; \
+	fi; \
+	for t in $$tests; do \
+		exe=$(BUILDDIR)/test/libcar-$$t; \
+		case $$t in \
+			sock) syms="select syslog seteuid" ;; \
+			misc) syms="gettimeofday" ;; \
+			xt)   syms="select syslog seteuid gettimeofday" ;; \
+		esac; \
+		for sym in $$syms; do \
+			if $(PREFIX)/bin/$(TARGET)-nm $$exe | grep -Eq "^[0-9a-f]+ [TtWw] $$sym\$$"; then \
+				echo "  ok   $$t: $$sym defined from the libc archive"; \
+			else \
+				echo "  FAIL $$t: $$sym not defined in the executable"; status=1; \
+			fi; \
+		done; \
+		dyn="$$($(PREFIX)/bin/$(TARGET)-objdump -p $$exe)"; \
+		if printf '%s\n' "$$dyn" | grep -Eq '^[ \t]*NEEDED[ \t]+/usr/lib/libc\.so\.1$$'; then \
+			echo "  ok   $$t: /usr/lib/libc.so.1 NEEDED"; \
+		else \
+			echo "  FAIL $$t: the libc.so.1 dependency is gone"; status=1; \
+		fi; \
+		if printf '%s\n' "$$dyn" | grep -E 'NEEDED|RPATH|RUNPATH' | grep -Fq -e '$(SYSROOT)' -e '$(X11R6_DIR)'; then \
+			echo "  FAIL $$t: the dynamic section carries a build-host path"; status=1; \
+		else \
+			echo "  ok   $$t: no build-host path in NEEDED/RPATH"; \
+		fi; \
+	done; \
+	if $(PREFIX)/bin/$(TARGET)-objdump -p $(BUILDDIR)/test/libcar-misc | grep -Eq '^[ \t]*RPATH[ \t]+/usr/x11r6/lib$$'; then \
+		echo "  ok   misc: -Wl,-rpath reached ld (RPATH /usr/x11r6/lib)"; \
+	else \
+		echo "  FAIL misc: -Wl,-rpath did not reach ld"; status=1; \
+	fi; \
+	test $$status -eq 0 && echo "test-libc-archive PASS ($$tests): libc archive linked, libc.so.1 NEEDED, -Wl passed to ld"
 
 # Regression test for AMIX_KERNEL_CFLAGS and the AMIX headers' "volatile".
 #

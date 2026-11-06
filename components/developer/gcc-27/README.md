@@ -147,6 +147,16 @@ The wrapper also handles the cases a real build runs into:
   died at exec time on the guest. `libc` is still named by path on purpose: the
   sysroot ships `libc.so.1` rather than `libc.so`, so `-lc` could not find it,
   and its `DT_SONAME` is what gets recorded anyway.
+- `libc` is **both halves** of AMIX's `-lc`: `libc.so.1`, then the archive
+  `usr/ccs/lib/libc.so`, whose static members (`select`, `syslog`, `seteuid`,
+  `gettimeofday`, ...) the shared `libc.so.1` does not export. The stock
+  `libsocket.so` and `libXt` import them, so `-lsocket` and every X link used
+  to stop on undefined references. `DT_NEEDED` still records
+  `/usr/lib/libc.so.1`.
+- `-l` searches `usr/ccs/lib` after `usr/lib`, as AMIX's `cc` does, so `-lm`,
+  `-lgen`, `-lcurses` and the other libraries that live only there resolve.
+- `-Wl,a,b` and `-Xlinker a` reach `ld` (they used to be filed as compiler
+  flags, so `-Wl,-rpath,DIR` was silently dropped).
 - `-c` with no `-o` writes the object into the **current working directory**
   under the input's basename: `m68k-cbm-sysv4-gcc -c ../src/foo.c` produces
   `./foo.o`, and so does `-c ../src/foo.s`. An explicit `-o` is honoured
@@ -260,6 +270,11 @@ make test-objdir     -c with no -o writes ./basename.o into the working
 make test-dtneeded   a program linked against -lsocket -lnsl records bare
                      library names, no build-host path, and still depends
                      on /usr/lib/libc.so.1
+make test-libc-archive
+                     -lsocket -lnsl, -lgen -lm and (with X11R6_DIR) -lXt
+                     links take select/syslog/seteuid/gettimeofday from the
+                     libc archive, keep libc.so.1 NEEDED, and -Wl,-rpath
+                     reaches ld
 make test-kernel-volatile
                      under AMIX_KERNEL_CFLAGS, spl6()/splx() still write
                      %sr and a volatile register poll re-reads memory
@@ -272,7 +287,10 @@ The first four compile with `-c` at both `-O0` and `-O` and inspect the object
 with `objdump`, so they need only the installed wrapper; `test-objdir` likewise
 needs nothing but the wrapper. `test-uint64` and `test-dtneeded` link, so like
 `test-hello` they need the AMIX crt objects and `libc.so.1` in the sysroot;
-`test-dtneeded` additionally needs `libsocket.so` and `libnsl.so` there.
+`test-dtneeded` additionally needs `libsocket.so` and `libnsl.so` there, and
+`test-libc-archive` also `usr/ccs/lib/libc.so`, `libgen.a` and `libm.a`; its
+Xt link runs only when `X11R6_DIR` (default
+`~/opt/m68k-amix-sysroot/usr/x11r6`) holds `lib/libXt.so`.
 `test-kernel-volatile` needs the AMIX headers (`AMIX_ROOT`), and
 `test-user-volatile` needs them in the sysroot (`SYSROOT`); see below.
 

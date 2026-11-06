@@ -11,7 +11,12 @@ sysroot="${AMIX_SYSROOT:-$prefix/$target/sysroot}"
 crt_dir="${AMIX_CRT_DIR:-$sysroot/usr/ccs/lib}"
 
 common_cflags=(-I"$sysroot/usr/include")
-default_lib_dirs=("$sysroot/usr/lib")
+# fix (linking): AMIX's cc searches /usr/ccs/lib as well as /usr/lib, and
+# several stock libraries live only there: libm.a, libgen.a, libcurses.a,
+# libelf.a, libl.a, liby.a...  With /usr/lib alone, "-lm" stopped with "cannot
+# resolve -lm".  /usr/lib stays first, so every library it already resolved is
+# still found in the same place.
+default_lib_dirs=("$sysroot/usr/lib" "$crt_dir")
 tmpfiles=()
 
 cleanup()
@@ -301,8 +306,9 @@ assemble_one()
 #             cannot find it at all.  It is also the one library with a
 #             DT_SONAME, so the recorded name is "/usr/lib/libc.so.1" from the
 #             SONAME rather than the host path.  (Routing libc through -lc
-#             instead would find the static stub archive in /usr/ccs/lib and the
-#             executable would silently lose its libc dependency.)
+#             ALONE would find only the archive in /usr/ccs/lib and the
+#             executable would silently lose its libc dependency; the link
+#             line below names that archive AFTER libc.so.1 instead.)
 #   libNAME.so.1
 #             a versioned DSO with no unversioned name, same search problem.
 #             Nothing but libc is shaped like this in the stock sysroot; if one
@@ -407,6 +413,21 @@ while test $# -gt 0; do
 				-L) lib_dirs+=("$next") ;;
 				*) compile_flags+=("$arg" "$next") ;;
 			esac
+			;;
+		# fix (linking): "-Wl,a,b,c" hands a, b and c to ld, and "-Xlinker x"
+		# hands it x, as in any gcc driver.  "-Wl,..." used to fall into the
+		# "-W*" warning case below and was filed as a compiler flag, so
+		# "-Wl,-rpath,/usr/motif/lib" never reached ld: the link succeeded
+		# with no runpath and the program failed to find its libraries on the
+		# guest.
+		-Wl,*)
+			IFS=, read -r -a wl_args <<< "${arg#-Wl,}"
+			ld_flags+=("${wl_args[@]}")
+			;;
+		-Xlinker)
+			test $# -gt 0 || { echo "amix gcc wrapper: $arg needs an argument" >&2; exit 1; }
+			ld_flags+=("$1")
+			shift
 			;;
 		-I*|-D*|-U*|-O*|-m*|-f*|-W*|-g|-traditional*)
 			compile_flags+=("$arg")
@@ -604,6 +625,17 @@ done
 # after the user's libraries (so their libc references still resolve) means an
 # explicit trailing -lc is no longer required; a redundant one is harmless.
 resolved_libs+=("$(resolve_lib c)")
+# fix (linking): ...and AMIX's "-lc" is not libc.so.1 alone.  It is the ar
+# archive /usr/ccs/lib/libc.so, which holds libc.so.1 plus ~100 static members:
+# select, syslog, seteuid (in select.o), gettimeofday, and others the shared
+# libc.so.1 does not export.  The stock libsocket.so imports select/syslog/
+# seteuid and libXt imports gettimeofday, so "-lsocket" or any X link stopped
+# on undefined references.  Name the archive right after libc.so.1, as AMIX's
+# own cc does with -lc: everything libc.so.1 exports is already bound to the
+# shared library, so ld takes only the static-only members from the archive,
+# and DT_NEEDED still records "/usr/lib/libc.so.1" from its SONAME.
+# ("make test-libc-archive" gates this.)
+test -f "$crt_dir/libc.so" && resolved_libs+=("$crt_dir/libc.so")
 
 for crt in crt1.o crti.o crtn.o; do
 	test -f "$crt_dir/$crt" || {
