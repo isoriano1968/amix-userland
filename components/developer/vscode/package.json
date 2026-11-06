@@ -1,9 +1,15 @@
 {
   "name": "vscode-amix",
   "displayName": "AMIX Development Tools",
-  "description": "VS Code helpers for building AMIX m68k-cbm-sysv4 C programs with gcc-cross-amix.",
-  "version": "0.2.1",
+  "description": "VS Code helpers for building AMIX m68k programs with gcc 2.7.2.3 (m68k-cbm-sysv4) or gcc 14 (gcc14-cross-amix).",
+  "version": "0.3.1",
   "publisher": "isoriano1968",
+  "icon": "images/amix-logo.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/isoriano1968/amix-userland.git",
+    "directory": "components/developer/vscode"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -12,12 +18,21 @@
     "Other"
   ],
   "activationEvents": [
+    "onStartupFinished",
+    "onLanguage:c",
+    "onLanguage:amix-m68k-asm",
     "onCommand:amix.configureWorkspace",
+    "onCommand:amix.selectToolchain",
     "onCommand:amix.buildCurrentExecutable",
     "onCommand:amix.compileCurrentObject",
     "onCommand:amix.compileDriverObject",
     "onCommand:amix.make",
-    "onCommand:amix.makeClean"
+    "onCommand:amix.makeClean",
+    "onCommand:amix.newCdeHelloProject",
+    "onCommand:amix.makeGcc272",
+    "onCommand:amix.makeGcc14",
+    "onCommand:amix.makeCleanGcc272",
+    "onCommand:amix.makeCleanGcc14"
   ],
   "main": "./src/extension.js",
   "contributes": {
@@ -25,6 +40,10 @@
       {
         "command": "amix.configureWorkspace",
         "title": "AMIX: Configure Workspace"
+      },
+      {
+        "command": "amix.selectToolchain",
+        "title": "AMIX: Select Toolchain (gcc 2.7.2.3 / gcc 14)"
       },
       {
         "command": "amix.buildCurrentExecutable",
@@ -40,35 +59,68 @@
       },
       {
         "command": "amix.make",
-        "title": "AMIX: Run Make in AMIX Project"
+        "title": "AMIX: Run Make in AMIX Project (selected toolchain)"
       },
       {
         "command": "amix.makeClean",
-        "title": "AMIX: Run Make Clean in AMIX Project"
+        "title": "AMIX: Run Make Clean in AMIX Project (selected toolchain)"
+      },
+      {
+        "command": "amix.makeGcc272",
+        "title": "AMIX: Run Make in AMIX Project with gcc 2.7.2.3"
+      },
+      {
+        "command": "amix.makeGcc14",
+        "title": "AMIX: Run Make in AMIX Project with gcc 14"
+      },
+      {
+        "command": "amix.makeCleanGcc272",
+        "title": "AMIX: Run Make Clean in AMIX Project with gcc 2.7.2.3"
+      },
+      {
+        "command": "amix.makeCleanGcc14",
+        "title": "AMIX: Run Make Clean in AMIX Project with gcc 14"
+      },
+      {
+        "command": "amix.newCdeHelloProject",
+        "title": "AMIX: New CDE Hello World Project"
       }
     ],
     "configuration": {
       "title": "AMIX",
       "properties": {
+        "amix.toolchain": {
+          "type": "string",
+          "default": "gcc272",
+          "enum": [
+            "gcc272",
+            "gcc14"
+          ],
+          "enumDescriptions": [
+            "gcc 2.7.2.3 (m68k-cbm-sysv4-gcc in amix.toolchainPath): kernel, drivers and userland",
+            "gcc 14 (gcc14-cross-amix, amix.gcc14.toolchainPath): userland only, usually -m68060"
+          ],
+          "description": "AMIX cross toolchain used for builds, Makefile commands, generated tasks and IntelliSense. Kernel/driver objects always use gcc 2.7.2.3."
+        },
         "amix.toolchainPath": {
           "type": "string",
           "default": "${env:HOME}/opt/amix-cross/bin",
-          "description": "Directory containing m68k-cbm-sysv4-gcc, as, ld, nm, and related tools."
+          "description": "gcc 2.7.2.3: directory containing m68k-cbm-sysv4-gcc, as, ld, nm, and related tools."
         },
         "amix.target": {
           "type": "string",
           "default": "m68k-cbm-sysv4",
-          "description": "AMIX cross target triple."
+          "description": "gcc 2.7.2.3: target triple, also the tool prefix (<target>-gcc, <target>-ld, ...)."
         },
         "amix.sysroot": {
           "type": "string",
           "default": "${env:HOME}/opt/amix-cross/m68k-cbm-sysv4/sysroot",
-          "description": "AMIX sysroot copied from a local AMIX installation."
+          "description": "gcc 2.7.2.3: AMIX sysroot copied from a local AMIX installation."
         },
         "amix.crtDir": {
           "type": "string",
           "default": "${config:amix.sysroot}/usr/ccs/lib",
-          "description": "Directory containing crt1.o, crti.o, and crtn.o."
+          "description": "gcc 2.7.2.3: directory containing crt1.o, crti.o, and crtn.o."
         },
         "amix.cpu": {
           "type": "string",
@@ -78,7 +130,7 @@
             "68030",
             "68040"
           ],
-          "description": "Target m68k CPU option passed as -m68020, -m68030, or -m68040."
+          "description": "gcc 2.7.2.3: target m68k CPU option passed as -m68020, -m68030, or -m68040."
         },
         "amix.extraCFlags": {
           "type": "array",
@@ -90,7 +142,7 @@
             "-traditional",
             "-fno-builtin"
           ],
-          "description": "Extra C compiler flags for userland AMIX builds."
+          "description": "gcc 2.7.2.3: extra C compiler flags for userland AMIX objects."
         },
         "amix.kernelDefines": {
           "type": "array",
@@ -103,7 +155,49 @@
             "-DSVR4",
             "-Dinline=__inline__"
           ],
-          "description": "Preprocessor defines used for AMIX kernel/driver objects."
+          "description": "Preprocessor defines used for AMIX kernel/driver objects (always gcc 2.7.2.3)."
+        },
+        "amix.gcc14.toolchainPath": {
+          "type": "string",
+          "default": "${env:HOME}/opt/m68k-amix/bin",
+          "description": "gcc 14: directory containing m68k-elf-gcc and its binutils (gcc14-cross-amix)."
+        },
+        "amix.gcc14.toolPrefix": {
+          "type": "string",
+          "default": "m68k-elf-",
+          "description": "gcc 14: tool prefix (m68k-elf-gcc, m68k-elf-ld, ...)."
+        },
+        "amix.gcc14.sysroot": {
+          "type": "string",
+          "default": "${env:HOME}/opt/m68k-amix-sysroot",
+          "description": "gcc 14: AMIX sysroot with the shared X11R6.3, Motif and CDE libraries (usr/x11r6, usr/motif, usr/dt, usr/local). Also used for Motif by the CDE sample with gcc 2.7.2.3."
+        },
+        "amix.gcc14.cpu": {
+          "type": "string",
+          "default": "68060",
+          "enum": [
+            "68020",
+            "68030",
+            "68040",
+            "68060"
+          ],
+          "description": "gcc 14: target m68k CPU option (-m68060 for the Z3660)."
+        },
+        "amix.gcc14.extraCFlags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "-O2",
+            "-fno-strict-aliasing"
+          ],
+          "description": "gcc 14: extra C compiler flags for userland AMIX objects."
+        },
+        "amix.gcc14.fixNeeded": {
+          "type": "boolean",
+          "default": true,
+          "description": "gcc 14: after linking an executable, run amix-fix-needed so that AMIX ld.so.1 finds the NEEDED names at the start of .dynstr."
         },
         "amix.makeCommand": {
           "type": "string",
@@ -169,6 +263,14 @@
           "message": 5
         }
       }
-    ]
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "amix.fixNeededScript",
+          "when": "false"
+        }
+      ]
+    }
   }
 }

@@ -1,0 +1,10 @@
+.git/**
+.gitignore
+.gitattributes
+*.vsix
+node_modules/**
+samples/**/hello
+samples/**/*.o
+Makefile
+vscode.manifest
+build/
