@@ -1,0 +1,25 @@
+--- a/frontends/framebuffer/gui.c
++++ b/frontends/framebuffer/gui.c
+@@ -34,6 +34,7 @@
+ #include "utils/filepath.h"
+ #include "utils/log.h"
+ #include "utils/messages.h"
++#include "netsurf/bitmap.h"
+ #include "netsurf/browser_window.h"
+ #include "netsurf/keypress.h"
+ #include "desktop/browser_history.h"
+@@ -2231,6 +2232,14 @@
+ 		die("NetSurf failed to initialise");
+ 	}
+ 
++	/* libnsfb reads bitmap pixels as native 32-bit 0xAABBGGRR words;
++	 * the core's default byte layout (R, G, B, A) is only that on a
++	 * little-endian host: say so, or a big-endian one (68k) swaps
++	 * the channels of every image */
++	bitmap_set_format(&(bitmap_fmt_t) {
++		.layout = BITMAP_LAYOUT_ABGR8888,
++	});
++
+ 	/* Override, since we have no support for non-core SELECT menu */
+ 	nsoption_set_bool(core_select_menu, true);
+ 
