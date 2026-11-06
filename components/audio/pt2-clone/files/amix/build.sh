@@ -2,9 +2,9 @@
 # build.sh -- pt2-clone for AMIX, cross-built on a Linux host with
 # gcc14-cross-amix for the 68060, with sdl2-amix and X11R6.3:
 #   sh amix/build.sh            -> amix/pt2-clone (an AMIX ELF)
-#   AMIX_SYSROOT  the sysroot with X11R6.3's exports (default ~/opt/m68k-amix-sysroot)
-#   SHM_LIBS      directory with a static libXext.a that has the XShm client
-#                 functions, and libshmsys.a (see README.md)
+#   AMIX_SYSROOT  the sysroot with the shared X11R6.3 in usr/x11r6
+#                 (default ~/opt/m68k-amix-sysroot)
+#   SHM_LIBS      directory with libshmsys.a (the shared libXext has XShm)
 #   AMIX_GATE     amix-gate (default beside amix-userland): core 1's zzgl.h and
 #                 bench.h for the HDMI sound
 #   m68k-elf-gcc must be on PATH.
@@ -12,13 +12,13 @@
 set -e
 H=$(cd "$(dirname "$0")" && pwd)
 PT2=${PT2_SRC:-$H/..}
-X=${AMIX_SYSROOT:-$HOME/opt/m68k-amix-sysroot}/usr/x11r6/xc/exports
+X=${AMIX_SYSROOT:-$HOME/opt/m68k-amix-sysroot}/usr/x11r6
 ZZ=$H/zzhdmi
 C1=${AMIX_GATE:-$H/../../../../../../../amix-gate}/usr/src/firmware/core1
 [ -f "$ZZ/zzhdmi_board.c" ] || { echo "no $ZZ/zzhdmi_board.c (library/sdl2's)"; exit 1; }
 [ -f "$C1/zzgl/zzgl.h" ] || { echo "no amix-gate's core 1 headers in $C1 (AMIX_GATE)"; exit 1; }
-[ -n "$SHM_LIBS" ] && [ -f "$SHM_LIBS/libXext.a" ] && [ -f "$SHM_LIBS/libshmsys.a" ] || {
-	echo "SHM_LIBS must name a directory with libXext.a (with XShm) and libshmsys.a"; exit 1; }
+[ -n "$SHM_LIBS" ] && [ -f "$SHM_LIBS/libshmsys.a" ] || {
+	echo "SHM_LIBS must name a directory with libshmsys.a"; exit 1; }
 CC=m68k-elf-gcc
 # -Wno-error=incompatible-pointer-types: here int32_t is long, SDL (and qsort)
 # use int -- the same 32 bits; gcc 14 only objects to the spelling.
@@ -36,5 +36,6 @@ $CC $CFLAGS -I$C1/zzgl -I$C1/cores/h264bench -c "$ZZ/zzhdmi_board.c" -o "$o" 2> 
 o=$O/amix-mem.o
 $CC -O2 -fno-builtin -fno-tree-loop-distribute-patterns -c "$H/compat/amix-mem.c" -o "$o" 2> "$o.log" || { echo "FAIL amix-mem.c"; cat "$o.log"; fail=1; }
 [ $fail = 0 ] || exit 1
-$CC -o "$H/pt2-clone" "$O"/*.o -L"$SHM_LIBS" -L"$X/lib" -lXext -lX11 -lshmsys -lsocket -lnsl -lm
+# the shared X libraries first: SHM_LIBS may also hold an old static libXext.a
+$CC -o "$H/pt2-clone" "$O"/*.o -L"$X/lib" -Wl,-rpath,/usr/x11r6/lib -L"$SHM_LIBS" -lXext -lX11 -lshmsys -lsocket -lnsl -lm
 ls -l "$H/pt2-clone"

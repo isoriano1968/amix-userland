@@ -47,24 +47,22 @@ at 80 MHz) and its RTG output.
 ## Building
 
 On a Linux host with [gcc14-cross-amix](https://github.com/asokero/gcc14-cross-amix)
-and its AMIX sysroot, which must include X11R6.3's `xc/exports`:
+and its AMIX sysroot, which must hold the shared X11R6.3 in `usr/x11r6`:
 
 ```sh
 export PATH=$HOME/opt/m68k-amix/bin:$PATH
 SHM_LIBS=/path/to/shm-libs sh amix/build.sh       # -> amix/pt2-clone
 ```
 
-`SHM_LIBS` names a directory with two static libraries for MIT-SHM:
+`SHM_LIBS` names a directory with `libshmsys.a`, the shared-memory system
+calls for MIT-SHM (the shared libXext in `/usr/x11r6/lib` has the XShm
+client functions), made from your own AMIX's C library:
 
-- `libXext.a` with the XShm client functions. X11R6.3's shared libXext has
-  none. Take the static `libXext.a` of an X11R6.3 build with MIT-SHM on
-  (`#define AmixHasShm YES` in x11r6.3-amix).
-- `libshmsys.a`, the shared-memory system calls, made from your own AMIX's C
-  library:
+```sh
+ar x /usr/ccs/lib/libc.a shmsys.o syscall.o && ar rc libshmsys.a shmsys.o syscall.o
+```
 
-  ```sh
-  ar x /usr/ccs/lib/libc.a shmsys.o syscall.o && ar rc libshmsys.a shmsys.o syscall.o
-  ```
+The program finds libX11 and libXext through its runpath, `/usr/x11r6/lib`.
 
 ## Installing and running
 
