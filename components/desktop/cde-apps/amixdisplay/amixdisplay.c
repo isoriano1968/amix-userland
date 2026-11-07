@@ -4,10 +4,13 @@
  * Xzz9000 server on the Z3660.
  *
  * The change is live through RandR 1.1 (x11/xzz9000 local-randr.patch).
- * After it, a dialog asks "Keep this resolution?" for 15 seconds and goes
+ * After it, a dialog asks "Keep this screen mode?" for 20 seconds and goes
  * back to the old one unless Keep is pressed, so a mode the monitor cannot
  * show undoes itself.  dtwm does not follow a root window resize, so it is
- * restarted (f.restart -noconfirm through _DT_WM_REQUEST) after each change.
+ * restarted (f.restart -noconfirm through _DT_WM_REQUEST) after each change
+ * of size; the dialog comes 3 s later, when dtwm has its windows again (a
+ * dialog mapped during the restart stayed hidden).  A new rate at the same
+ * size keeps the geometry: no restart, the dialog at once.
  *
  * Defaults:
  *   $HOME/.amixdisplay        the user's own, applied at login
@@ -52,7 +55,8 @@
 #define SYSFILE     "/etc/dt/config/rtg-mode"
 #define USERFILE    ".amixdisplay"
 #define SETLOGIN    "/opt/amix/lib/amixdisplay/setlogin"
-#define KEEP_SECS   15
+#define KEEP_SECS   20
+#define KEEP_WAIT_MS 3000   /* after a size change: dtwm restarts first */
 #define MAXSIZES    64
 
 /* without RandR: the modes the Z3660 kernel driver and every Xzz9000
@@ -81,7 +85,7 @@ static int sel_size = -1, sel_rate;     /* what the window has selected */
 
 static XtAppContext app;
 static Widget top, list, l_now, l_saved, l_info, rate_menu, rate_opt, depth_opt, t_user, t_login, keepdlg;
-static int keep_left;
+static int keep_left, keep_resized;
 static XtIntervalId keep_timer;
 static int old_size, old_rate;
 
@@ -553,8 +557,9 @@ static void keep_done(int keep)
         return;
     }
     if (set_mode(old_size, old_rate) != 0)
-        message("Display", "Could not go back to the old resolution.", 1);
-    restart_wm();
+        message("Display", "Could not go back to the old screen mode.", 1);
+    if (keep_resized)
+        restart_wm();
     after_change();
 }
 
@@ -568,7 +573,7 @@ static void keep_tick(XtPointer cd, XtIntervalId *id)
         keep_done(0);
         return;
     }
-    sprintf(s, "Keep this resolution?\n\nGoing back to the old one in %d s.", keep_left);
+    sprintf(s, "Keep this screen mode?\n\nGoing back to the old one in %d s.", keep_left);
     x = XmStringCreateLtoR(s, XmFONTLIST_DEFAULT_TAG);
     XtVaSetValues(keepdlg, XmNmessageString, x, NULL);
     XmStringFree(x);
@@ -590,6 +595,13 @@ static void ask_keep(void)
     XtManageChild(keepdlg);
     XtVaGetValues(XtParent(keepdlg), XmNwidth, &w, XmNheight, &h, NULL);
     XtVaSetValues(XtParent(keepdlg), XmNx, (sw - (int)w) / 2, XmNy, (sh - (int)h) / 2, NULL);
+    if (XtIsRealized(XtParent(keepdlg)))
+        XRaiseWindow(dpy, XtWindow(XtParent(keepdlg)));
+}
+
+static void ask_keep_later(XtPointer cd, XtIntervalId *id)
+{
+    ask_keep();
 }
 
 static void apply_cb(Widget w, XtPointer cd, XtPointer cb)
@@ -623,9 +635,14 @@ static void apply_cb(Widget w, XtPointer cd, XtPointer cb)
         after_change();
         return;
     }
-    restart_wm();
+    keep_resized = i != old_size;
+    if (keep_resized)
+        restart_wm();
     after_change();
-    ask_keep();
+    if (keep_resized)
+        XtAppAddTimeOut(app, KEEP_WAIT_MS, ask_keep_later, NULL);
+    else
+        ask_keep();
 }
 
 static void close_cb(Widget w, XtPointer cd, XtPointer cb)
