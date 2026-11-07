@@ -90,3 +90,17 @@ index ede5a9c..bc72d0b 100644
        #else
           // ~/.config/grafx2
           const char* Config_SubDir;
+diff --git a/src/realpath.c b/src/realpath.c
+--- a/src/realpath.c
++++ b/src/realpath.c
+@@ -110,6 +110,10 @@
+       if (resolved_path == NULL)
+         return NULL;
+ #endif
++#if defined(__amix__)
++      // SVR4's realpath() does not allocate the buffer for a null pointer
++      resolved_path = malloc(PATH_MAX);
++#endif
+       return realpath(_path, resolved_path);
+     }
+ #endif
