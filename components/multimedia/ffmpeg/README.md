@@ -36,6 +36,7 @@ With gcc14-cross-amix (`m68k-elf-gcc`) in `~/opt/m68k-amix/bin`:
     SHM_LIBS=<dir> make vplay  # vplay
     make ffplay                # ffplay
 
-`ffplay` needs `components/library/sdl2` (`SDL2_AMIX`) and `components/library/pth`
-(`PTH_LIB`); `SHM_LIBS` names a directory with `libXext.a` (with XShm) and
-`libshmsys.a`. `mkclips.sh` makes test clips with GStreamer.
+`ffplay` links the shared libSDL2 of `components/library/sdl2` and
+`components/library/pth` (`PTH_LIB`) from the sysroot; run `make sysroot-install`
+there first. `vplay`'s `SHM_LIBS` names a directory with `libXext.a` (with
+XShm) and `libshmsys.a`. `mkclips.sh` makes test clips with GStreamer.

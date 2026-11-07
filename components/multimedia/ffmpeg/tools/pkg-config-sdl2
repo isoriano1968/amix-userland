@@ -1,21 +1,24 @@
 #!/bin/sh
-# pkg-config-sdl2 -- just enough pkg-config for FFmpeg's configure to find
-# sdl2-amix: only "sdl2" exists, and its flags come from sdl2-config on PATH
-# (FFmpeg 4.4's sdl2-config route still refuses SDL 2.1 and later).
-mode=
-[ "$1" = --version ] && { echo 0.29.2; exit 0; }
+# pkg-config-sdl2 -- pkg-config for FFmpeg's configure that knows only "sdl2":
+# the shared libSDL2 of components/library/sdl2 in the sysroot, through
+# tools/amix-pkg-config (its -L also gives the runpath).  Nothing else is
+# found, so configure picks up no other library of the sysroot.
+P=$(cd "$(dirname "$0")/../../../../tools" && pwd)/amix-pkg-config
+args=
 for a in "$@"; do
 	case $a in
-	--exists|--cflags|--libs|--modversion) mode=$a ;;
-	--print-errors|--static) ;;
-	sdl2*|'>='|'<'|[0-9]*) ;;
-	*) exit 1 ;;		# anything but sdl2: not found
+	--version) echo 0.29.2; exit 0 ;;
+	--exists|--cflags|--libs|--modversion|--print-errors) args="$args $a" ;;
+	--static) ;;			# there is no static libSDL2
+	sdl2) ;;
+	sdl2*|'>='|'<'|[0-9]*) ;;	# configure's version range: 2.30 is in it
+	*) exit 1 ;;			# anything but sdl2: not found
 	esac
 done
-case $mode in
---exists) exit 0 ;;
---cflags) sdl2-config --cflags ;;
---libs) sdl2-config --libs ;;
---modversion) sdl2-config --version ;;
-*) exit 1 ;;
+# configure links with --as-needed, which drops libsocket.so when only the
+# libraries use it; its own needs (syslog, seteuid, from libc's archive) are
+# then never pulled into the program
+case $args in
+*--libs*) echo "-Wl,--no-as-needed `"$P" $args sdl2`" ;;
+*) exec "$P" $args sdl2 ;;
 esac

@@ -1,6 +1,13 @@
 # name, version and what building and running it needs
 name     library/sdl2
 version  2.30.12
-summary  SDL 2 for AMIX
+summary  SDL 2 for AMIX: libSDL2-2.0.so.0
+provide  sdl2
 require  x11/x11r6.3
 require  library/pth
+file     /usr/local/lib/libSDL2-2.0.so.0
+file     /usr/local/lib/libSDL2.so
+file     /usr/local/include/SDL2/SDL.h
+file     /usr/local/include/SDL2/SDL_config.h
+file     /usr/local/lib/pkgconfig/sdl2.pc
+file     /usr/local/bin/sdl2-config

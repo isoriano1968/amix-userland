@@ -9,6 +9,13 @@
 int SDL_AMIX_gethostname(char *name, int len);
 #define gethostname(n, l) SDL_AMIX_gethostname(n, l)
 
+/* MIT-SHM (src/video/x11): libc.so.1 has only shmat, and libc.a's shm*
+   wrappers are not PIC; src/core/amix/SDL_amix.c makes the shmsys calls */
+#define shmget SDL_AMIX_shmget
+#define shmat  SDL_AMIX_shmat
+#define shmdt  SDL_AMIX_shmdt
+#define shmctl SDL_AMIX_shmctl
+
 /* C99's isblank, not in AMIX's ctype.h */
 #ifndef isblank
 #define isblank(c) ((c) == ' ' || (c) == '\t')

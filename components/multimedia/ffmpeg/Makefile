@@ -22,7 +22,7 @@ build: compat
 	sh configure-amix.sh
 	$(MAKE) -C build-ff
 
-# on SDL 2: build library/sdl2 first
+# on the shared SDL 2 of library/sdl2 in the sysroot (make sysroot-install there)
 ffplay: compat
 	sh configure-amix.sh ffplay
 	$(MAKE) -C build-ffplay

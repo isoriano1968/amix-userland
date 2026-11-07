@@ -2,11 +2,11 @@
 # configure-amix.sh -- configure FFmpeg 4.4 for AMIX (68060) in build-ff/,
 # cross-built with gcc14-cross-amix (m68k-elf-gcc on PATH).
 #   sh configure-amix.sh          -> build-ff/      ffmpeg, and the libraries vplay links
-#   sh configure-amix.sh ffplay   -> build-ffplay/  ffmpeg and ffplay, on SDL 2 (sdl2-amix),
+#   sh configure-amix.sh ffplay   -> build-ffplay/  ffmpeg and ffplay, on SDL 2 (the shared
+#                                    libSDL2 of library/sdl2 in the sysroot),
 #                                    with patches/ applied to ffplay
 # The ffplay build compiles every file with gnu-pth's pthread.h, so read(),
-# usleep() and select() let ffplay's other threads run.  SDL2_AMIX names the
-# sdl2 component (default ../../library/sdl2).
+# usleep() and select() let ffplay's other threads run.
 set -e
 V=$(cd "$(dirname "$0")" && pwd)
 C=$V/compat
@@ -17,11 +17,8 @@ EXTRA_LIBS=
 PLAY="--disable-ffplay"
 if [ "$1" = ffplay ]; then
 	BD=build-ffplay
-	S2=${SDL2_AMIX:-$V/../../library/sdl2}
-	[ -x "$S2/build/sdl2-config-cross" ] || { echo "no $S2/build/sdl2-config-cross: build sdl2-amix first"; exit 1; }
-	mkdir -p "$V/$BD/bin"
-	ln -sf "$S2/build/sdl2-config-cross" "$V/$BD/bin/sdl2-config"
-	PATH=$V/$BD/bin:$PATH
+	S2=1
+	"$V/tools/pkg-config-sdl2" --exists sdl2 || { echo "no sdl2.pc in $SR: make sysroot-install in library/sdl2"; exit 1; }
 	# X11R6.3's headers: ffplay's window through SDL_syswm.h (patches/0002)
 	EXTRA_CF="-I$SR/usr/local/gnu/include -include $SR/usr/local/gnu/include/pthread.h -I$SR/usr/x11r6/include"
 	# linked too, or configure finds no usleep (pthread.h renames it) and
