@@ -24,13 +24,15 @@ LOCK=/tmp/amix-box.lock
 INFO=/tmp/amix-box.who
 BOX=root@192.168.0.133
 KEY="-i $HOME/.ssh/id_ed25519_amix -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=60"
-PLAYERS='[f]fplay|[v]play |[m]ikmod|[q]uake|[p]t2'
+PLAYERS='ffplay|vplay|mikmod|quake|pt2'
 wait=0
 what=""
 
 players() {
+	# the program names only (ps -e's last column), not the full command
+	# lines: a session's own command naming a player must not count as one
 	# shellcheck disable=SC2086
-	timeout 120 ssh $KEY "$BOX" "ps -ef | /usr/gnu/bin/grep -E '$PLAYERS'"
+	timeout 120 ssh $KEY "$BOX" "ps -e | awk 'NR > 1 { print \$NF }' | /usr/gnu/bin/grep -E '$PLAYERS'"
 }
 
 case "$1" in
