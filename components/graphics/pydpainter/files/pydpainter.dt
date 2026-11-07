@@ -1,0 +1,15 @@
+#
+# pydpainter.dt -- PyDPainter in CDE.  Installed in /etc/dt/appconfig/types/C.
+#
+ACTION PyDPainter
+{
+	LABEL		PyDPainter
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/usr/local/bin/pydpainter %Args%
+	ICON		PyDPainter
+	DESCRIPTION	PyDPainter, a Deluxe Paint clone in Python 3 and pygame: \
+			brushes, stencils, gradients, colour cycling, animation, \
+			IFF/ILBM, GIF, PNG and BMP pictures.  Slow to start on \
+			the 68060: Python, pygame and NumPy load first.
+}

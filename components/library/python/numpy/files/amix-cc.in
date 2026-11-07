@@ -1,0 +1,19 @@
+#!/bin/sh
+# @CC@ for meson's AMIX cross build of numpy (build/amix-gcc, build/amix-g++).
+# Compiles pass through.  A shared link (an extension module) also gets:
+#   - -Wl,--exclude-libs,ALL: what it takes from static archives (numpy's
+#     own npymath ..., AMIX's libm.a, lib060, libstdc++, libgcc) stays
+#     local, so that two modules never bind to each other's copies through
+#     ld.so.1, and a module exports only its PyInit_ function;
+#   - for C++ (g++): files/so-init around the whole link (constructors and
+#     exception frames, which ld.so.1 and gcc's -shared link leave out),
+#     with libstdc++, the maths libraries and libgcc named before its end,
+#     so that their constructors and frames are inside too.
+case " $* " in
+*" -shared "*) ;;
+*) exec @CC@ "$@" ;;
+esac
+case @CC@ in
+*++) exec @CC@ @SO_BEGIN@ "$@" -Wl,--exclude-libs,ALL -Wl,--start-group -lstdc++ @LIBM@ -lgcc -Wl,--end-group @SO_END@ ;;
+*) exec @CC@ "$@" -Wl,--exclude-libs,ALL ;;
+esac

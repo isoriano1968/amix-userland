@@ -1,0 +1,20 @@
+--- a/numpy/_core/src/multiarray/dragon4.c
++++ b/numpy/_core/src/multiarray/dragon4.c
+@@ -2649,9 +2649,14 @@
+     } buf96;
+ 
+     buf96.floatingPoint = *value;
+-    /* Motorola is big-endian */
+-    val128.lo = buf96.integer.b;
+-    val128.hi = buf96.integer.a >> 16;
++    /*
++     * Motorola is big-endian: the first 64 bits are sign and exponent (16),
++     * 16 bits of padding and the upper half of the significand, the last 32
++     * bits its lower half.  (This read the sign and exponent from the
++     * padding and lost the upper significand: every value printed as -0.)
++     */
++    val128.lo = ((buf96.integer.a & 0xffffffffULL) << 32) | buf96.integer.b;
++    val128.hi = buf96.integer.a >> 48;
+     /* once again we assume the int has same endianness as the float */
+ 
+     return Dragon4_PrintFloat_Intel_extended(val128, opt);

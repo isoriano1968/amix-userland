@@ -1,6 +1,13 @@
 #!/bin/sh
-# PyDPainter on AMIX: no sound (no SDL_mixer); a 15 MB+ Python process needs
-# more than AMIX's default soft data limit when started from CDE
+# PyDPainter on AMIX: no sound (no SDL_mixer).  A Python process with pygame
+# and numpy needs more than AMIX's default soft data limit when started from
+# CDE (dtexec children get 16 MB).
 ulimit -d unlimited 2>/dev/null
 ulimit -v unlimited 2>/dev/null
+# PyDPainter changes to its own directory first: a picture named relative to
+# the caller's must become absolute
+case $1 in
+""|/*|-*) ;;
+*) f=`pwd`/$1; shift; set -- "$f" "$@" ;;
+esac
 exec /usr/local/bin/python3 @DATA@/PyDPainter.py "$@"

@@ -1,0 +1,36 @@
+--- a/numpy/_core/getlimits.py	2025-05-15 23:43:51.000000000 +0200
++++ b/numpy/_core/getlimits.py	2026-11-07 16:50:12.620478225 +0100
+@@ -275,6 +275,33 @@
+     _register_type(float80_ma, b'\xcd\xcc\xcc\xcc\xcc\xcc\xcc\xcc\xfb\xbf')
+     _float_ma[80] = float80_ma
+ 
++    # Motorola 68881/68882/68040/68060 extended precision, 96 bits stored
++    # big-endian: sign and exponent, 16 bits of padding, the 64-bit
++    # significand with its explicit integer bit, as the x87's 80 bits; but
++    # the biased exponent 0 means 2**-16383 there (the x87: 2**-16382), so its
++    # normal numbers reach one binade lower (LDBL_MIN = 2**-16383).  The
++    # key is read little-endian: significand, padding, exponent.
++    epsneg_m96 = exp2(ld(-64))
++    tiny_m96 = exp2(ld(-16383))
++    with numeric.errstate(all='ignore'):
++        huge_m96 = (ld(1) - epsneg_m96) / tiny_m96 * ld(2)
++    float96_m68k_ma = MachArLike(ld,
++                                 machep=-63,
++                                 negep=-64,
++                                 minexp=-16383,
++                                 maxexp=16384,
++                                 it=63,
++                                 iexp=15,
++                                 ibeta=2,
++                                 irnd=5,
++                                 ngrd=0,
++                                 eps=exp2(ld(-63)),
++                                 epsneg=epsneg_m96,
++                                 huge=huge_m96,
++                                 tiny=tiny_m96)
++    _register_type(float96_m68k_ma,
++        b'\xcd\xcc\xcc\xcc\xcc\xcc\xcc\xcc\x00\x00\xfb\xbf')
++
+     # Guessed / known parameters for double double; see:
+     # https://en.wikipedia.org/wiki/Quadruple-precision_floating-point_format#Double-double_arithmetic
+     # These numbers have the same exponent range as float64, but extended

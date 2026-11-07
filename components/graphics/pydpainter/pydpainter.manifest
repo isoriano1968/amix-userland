@@ -5,8 +5,15 @@ summary  PyDPainter: Deluxe Paint clone in Python 3 and pygame
 require  runtime/python3
 require  library/python/pygame
 require  library/python/numpy
+require  library/sdl2
+require  library/sdl2-image
+require  library/freetype
+require  x11/x11r6.3
 file     /usr/local/bin/pydpainter
 file     /usr/local/share/pydpainter/PyDPainter.py
 file     /usr/local/share/pydpainter/libs/config.py
 file     /usr/local/share/pydpainter/data/tools.png
 file     /usr/local/share/pydpainter/data/FreeSans.ttf
+file     /etc/dt/appconfig/types/C/pydpainter.dt
+file     /etc/dt/appconfig/icons/C/PyDPainter.l.pm
+file     /etc/dt/appconfig/appmanager/C/Desktop_Apps/PyDPainter

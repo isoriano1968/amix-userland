@@ -1,0 +1,133 @@
+diff --git a/numpy/_core/meson.build b/numpy/_core/meson.build
+index 6b6fbd3..143e098 100644
+--- a/numpy/_core/meson.build
++++ b/numpy/_core/meson.build
+@@ -203,8 +203,9 @@ foreach func: mandatory_complex_math_funcs
+   endif
+ endforeach
+ 
++# AMIX's libc (SVR4.0) has neither; numpyos.c brings its own there
+ foreach func: ['strtoll', 'strtoull']
+-  if not cc.has_function(func, prefix: '#include <stdlib.h>')
++  if host_machine.system() != 'amix' and not cc.has_function(func, prefix: '#include <stdlib.h>')
+     error(f'Function `@func@` not found')
+   endif
+ endforeach
+diff --git a/numpy/_core/src/common/numpyos.c b/numpy/_core/src/common/numpyos.c
+index a5ca280..c0dd0e3 100644
+--- a/numpy/_core/src/common/numpyos.c
++++ b/numpy/_core/src/common/numpyos.c
+@@ -792,6 +792,113 @@ NumPyOS_ascii_ftoLf(FILE *fp, long double *value)
+     return r;
+ }
+ 
++#ifdef __amix__
++/*
++ * AMIX's libc (SVR4.0, 1991) has no strtoll and strtoull: C99's, for the
++ * C locale.  *sign is -1 for a leading '-', and the value saturates at
++ * ~0ULL with errno ERANGE.
++ */
++static npy_ulonglong
++amix_strtoull(const char *str, char **endptr, int base, int *sign)
++{
++    const char *s = str;
++    npy_ulonglong v = 0, lim;
++    unsigned int rem;
++    int any = 0, overflow = 0;
++
++    while (isspace((unsigned char)*s)) {
++        s++;
++    }
++    *sign = 1;
++    if (*s == '-' || *s == '+') {
++        *sign = (*s == '-') ? -1 : 1;
++        s++;
++    }
++    if ((base == 0 || base == 16) && s[0] == '0' &&
++            (s[1] == 'x' || s[1] == 'X') && isxdigit((unsigned char)s[2])) {
++        s += 2;
++        base = 16;
++    }
++    else if (base == 0) {
++        base = (s[0] == '0') ? 8 : 10;
++    }
++    if (base < 2 || base > 36) {
++        errno = EINVAL;
++        if (endptr != NULL) {
++            *endptr = (char *)str;
++        }
++        return 0;
++    }
++    lim = ~(npy_ulonglong)0 / (unsigned int)base;
++    rem = (unsigned int)(~(npy_ulonglong)0 % (unsigned int)base);
++    for (;; s++) {
++        int c = (unsigned char)*s;
++        unsigned int d;
++        if (c >= '0' && c <= '9') {
++            d = c - '0';
++        }
++        else if (c >= 'a' && c <= 'z') {
++            d = c - 'a' + 10;
++        }
++        else if (c >= 'A' && c <= 'Z') {
++            d = c - 'A' + 10;
++        }
++        else {
++            break;
++        }
++        if (d >= (unsigned int)base) {
++            break;
++        }
++        any = 1;
++        if (v > lim || (v == lim && d > rem)) {
++            overflow = 1;
++        }
++        else {
++            v = v * (unsigned int)base + d;
++        }
++    }
++    if (endptr != NULL) {
++        *endptr = (char *)(any ? s : str);
++    }
++    if (overflow) {
++        errno = ERANGE;
++        return ~(npy_ulonglong)0;
++    }
++    return v;
++}
++
++#define NPY_AMIX_LLONG_MAX ((npy_longlong)(~(npy_ulonglong)0 >> 1))
++
++static npy_longlong
++amix_strtoll(const char *str, char **endptr, int base)
++{
++    int sign, saved = errno;
++    npy_ulonglong v;
++
++    errno = 0;
++    v = amix_strtoull(str, endptr, base, &sign);
++    if (errno == ERANGE ||
++            v > (npy_ulonglong)NPY_AMIX_LLONG_MAX + (sign < 0)) {
++        errno = ERANGE;
++        return sign < 0 ? -NPY_AMIX_LLONG_MAX - 1 : NPY_AMIX_LLONG_MAX;
++    }
++    if (errno == 0) {
++        errno = saved;
++    }
++    return sign < 0 ? (npy_longlong)(0 - v) : (npy_longlong)v;
++}
++
++static npy_ulonglong
++amix_strtoull_c99(const char *str, char **endptr, int base)
++{
++    int sign;
++    npy_ulonglong v = amix_strtoull(str, endptr, base, &sign);
++    return sign < 0 ? 0 - v : v;
++}
++#define strtoll amix_strtoll
++#define strtoull amix_strtoull_c99
++#endif
++
+ NPY_NO_EXPORT npy_longlong
+ NumPyOS_strtoll(const char *str, char **endptr, int base)
+ {

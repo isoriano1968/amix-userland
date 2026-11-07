@@ -1,0 +1,17 @@
+diff --git a/numpy/_core/include/numpy/npy_common.h b/numpy/_core/include/numpy/npy_common.h
+index 79ad8ad..f812a74 100644
+--- a/numpy/_core/include/numpy/npy_common.h
++++ b/numpy/_core/include/numpy/npy_common.h
+@@ -113,7 +113,11 @@
+     #define NPY_NOINLINE static
+ #endif
+ 
+-#ifdef __cplusplus
++#if defined(__amix__)
++    /* AMIX's ld.so.1 (SVR4.0) knows no TLS relocations; threads there are
++     * GNU Pth's, under the GIL */
++    #define NPY_TLS
++#elif defined(__cplusplus)
+     #define NPY_TLS thread_local
+ #elif defined(HAVE_THREAD_LOCAL)
+     #define NPY_TLS thread_local

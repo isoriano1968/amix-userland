@@ -1,0 +1,20 @@
+--- a/src_py/ftfont.py
++++ b/src_py/ftfont.py
+@@ -21,7 +21,6 @@
+     init,
+     quit,
+ )
+-from pygame.sysfont import SysFont as _SysFont, get_fonts, match_font
+ 
+ 
+ class Font(_Font):
+@@ -230,3 +229,9 @@
+ 
+ 
+ del _Font, get_default_resolution, encode_file_path
++
++
++# last: sysfont imports Font from pygame.font, and this file is pygame.font
++# when pygame is built without SDL_ttf (src_py/meson.build installs it so);
++# imported at the top, that is a circular import and pygame.font is missing
++from pygame.sysfont import SysFont as _SysFont, get_fonts, match_font  # noqa: E402

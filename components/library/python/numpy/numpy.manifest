@@ -1,0 +1,13 @@
+# name, version and what building and running it needs
+name     library/python/numpy
+version  2.2.6
+summary  NumPy: N-dimensional arrays for Python 3.11 (no BLAS: bundled lapack-lite, no SIMD)
+require  runtime/python3
+require  library/libm99
+require  library/lib060
+file     /usr/local/lib/python3.11/site-packages/numpy/__init__.py
+file     /usr/local/lib/python3.11/site-packages/numpy/_core/_multiarray_umath.cpython-311.so
+file     /usr/local/lib/python3.11/site-packages/numpy/linalg/_umath_linalg.cpython-311.so
+file     /usr/local/lib/python3.11/site-packages/numpy/fft/_pocketfft_umath.cpython-311.so
+file     /usr/local/lib/python3.11/site-packages/numpy/random/mtrand.cpython-311.so
+file     /usr/local/lib/python3.11/site-packages/numpy/_core/include/numpy/arrayobject.h

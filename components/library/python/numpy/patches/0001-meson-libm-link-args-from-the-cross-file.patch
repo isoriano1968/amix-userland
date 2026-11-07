@@ -1,0 +1,27 @@
+diff --git a/numpy/meson.build b/numpy/meson.build
+index 6fef05b..95b5ea4 100644
+--- a/numpy/meson.build
++++ b/numpy/meson.build
+@@ -1,12 +1,22 @@
+ # We need -lm for all C code (assuming it uses math functions, which is safe to
+ # assume for NumPy). For C++ it isn't needed, because libstdc++/libc++ is
+ # guaranteed to depend on it.
++# A cross file may name the maths libraries itself (property libm_link_args),
++# for a system whose C99 maths is not all in libm: AMIX has a static C89 libm
++# and the rest in libm99.so.1.  They then go to C and C++ links alike.
++m_link_args = meson.get_external_property('libm_link_args', [])
++if m_link_args.length() > 0
++  m_dep = declare_dependency(link_args : m_link_args)
++  mlib_linkflag = ' '.join(m_link_args)
++  add_project_link_arguments(m_link_args, language : ['c', 'cpp'])
++else
+ m_dep = cc.find_library('m', required : false)
+ mlib_linkflag = ''
+ if m_dep.found()
+   mlib_linkflag = '-lm'
+   add_project_link_arguments(mlib_linkflag, language : 'c')
+ endif
++endif
+ 
+ # Platform detection
+ is_windows = host_machine.system() == 'windows'

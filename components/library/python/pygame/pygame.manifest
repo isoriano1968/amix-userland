@@ -6,6 +6,7 @@ require  runtime/python3
 require  library/sdl2
 require  library/sdl2-image
 require  library/freetype
+require  library/lib060
 require  library/python/numpy
 file     /usr/local/lib/python3.11/site-packages/pygame/__init__.py
 file     /usr/local/lib/python3.11/site-packages/pygame/base.cpython-311.so

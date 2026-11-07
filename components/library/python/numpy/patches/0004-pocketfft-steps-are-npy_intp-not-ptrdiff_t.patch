@@ -1,0 +1,22 @@
+diff --git a/numpy/fft/_pocketfft_umath.cpp b/numpy/fft/_pocketfft_umath.cpp
+index 8488887..aec3bdd 100644
+--- a/numpy/fft/_pocketfft_umath.cpp
++++ b/numpy/fft/_pocketfft_umath.cpp
+@@ -32,7 +32,7 @@
+ template<PyUFuncGenericFunction cpp_ufunc>
+ static void
+ wrap_legacy_cpp_ufunc(char **args, npy_intp const *dimensions,
+-                      ptrdiff_t const *steps, void *func)
++                      npy_intp const *steps, void *func)
+ {
+     NPY_ALLOW_C_API_DEF
+     try {
+@@ -86,7 +86,7 @@ copy_output(T buff[], char *out, npy_intp step_out, size_t n)
+  */
+ template <typename T>
+ static void
+-fft_loop(char **args, npy_intp const *dimensions, ptrdiff_t const *steps,
++fft_loop(char **args, npy_intp const *dimensions, npy_intp const *steps,
+          void *func)
+ {
+     char *ip = args[0], *fp = args[1], *op = args[2];
