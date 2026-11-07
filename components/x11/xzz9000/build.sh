@@ -83,6 +83,9 @@ cp "$W/work-randr/randrproto-1.1.2/randr.h" \
 	"$W/work-randr/randrproto-1.1.2/randrproto.h" include/extensions/
 rm -rf "$W/work-randr"
 patch -p1 --no-backup-if-mismatch < "$W/local-randr.patch" > "$W/log/patch-local-randr.log"
+# local change: RandR rates from the kernel's table (GETMODES/SETMODEHZ), so
+# that the display panel offers 1080p at 50 Hz too; 60 alone on older kernels
+patch -p1 --no-backup-if-mismatch < "$W/local-randr-rates.patch" > "$W/log/patch-local-randr-rates.log"
 
 # local change: MIT-SHM on (Mesa's back buffer, x11perf -shmput); the port
 # kernel's ISSUE-62/66 fixes made shmget/shmat safe, shmband-tested 2026-10-25

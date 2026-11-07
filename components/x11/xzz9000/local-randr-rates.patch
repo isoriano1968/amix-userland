@@ -1,0 +1,344 @@
+RandR rates from the kernel's mode table (ZZ9KIOC_GETMODES/SETMODEHZ, amix-gate 32e04d7):
+every size gets the rates of its kernel rows (whole Hz: 1080p 61 and 51), the
+current one from the CURRENT row; a new rate at the same size changes the timing
+only (same stride and pixels, no clear, no exposures).  An older kernel answers
+EINVAL: 60 Hz alone, as before.
+
+--- a/programs/Xserver/hw/amix/rtg/rtgRandR.c
++++ b/programs/Xserver/hw/amix/rtg/rtgRandR.c
+@@ -5,8 +5,9 @@
+ ** (programs/Xserver/randr).  This file is the DDX side:
+ **
+ **   rtgRRGetInfo    registers every mode of the card's table that fits its
+-**                   framebuffer, one 60 Hz rate each, no rotation, and marks
+-**                   the current one.  The physical size keeps the server's
++**                   framebuffer with the kernel's rates for it (GETMODES,
++**                   whole Hz; 60 alone on an older kernel), no rotation, and
++**                   marks the current size and rate.  The physical size keeps the server's
+ **                   dpi (-dpi, XmonitorResolution), as at start-up.
+ **   rtgRRSetConfig  sets the new mode on the card (ZZ9000SetSize), updates
+ **                   the ScreenRec, and resizes the root window.  The old
+@@ -47,7 +48,7 @@
+ extern fbFd amixFbs[];
+ extern WindowPtr *WindowTable;
+ 
+-#define RTG_RR_RATE 60
++#define RTG_RR_RATES 8
+ 
+ static int
+ rtgMM(pixels, dpi)
+@@ -66,7 +67,8 @@
+     rtgScreenPtr    pRTG = GetRTGScreen(pScreen);
+     ZZ9000ModePtr   m;
+     RRScreenSizePtr pSize;
+-    int             i;
++    int             i, j, n;
++    short           rates[RTG_RR_RATES];
+ 
+     *rotations = RR_Rotate_0;
+     for (i = 0; (m = ZZ9000ModeAt(i)) != (ZZ9000ModePtr)0; i++) {
+@@ -77,10 +79,13 @@
+                                rtgMM(m->h, YmonitorResolution));
+         if (!pSize)
+             return FALSE;
+-        if (!RRRegisterRate(pScreen, pSize, RTG_RR_RATE))
+-            return FALSE;
++        n = ZZ9000RatesOf(pRTG, m->w, m->h, rates, RTG_RR_RATES);
++        for (j = 0; j < n; j++)
++            if (!RRRegisterRate(pScreen, pSize, rates[j]))
++                return FALSE;
+         if (m->w == pScreen->width && m->h == pScreen->height)
+-            RRSetCurrentConfig(pScreen, RR_Rotate_0, RTG_RR_RATE, pSize);
++            RRSetCurrentConfig(pScreen, RR_Rotate_0,
++                               ZZ9000CurrentRate(pRTG, m->w, m->h), pSize);
+     }
+     return TRUE;
+ }
+@@ -227,13 +232,19 @@
+     if (rotation != RR_Rotate_0)
+         return FALSE;
+     if (pSize->width == pScreen->width && pSize->height == pScreen->height)
+-        return TRUE;
++    {
++        /* the same size: only the timing, if the rate is another one */
++        if (rate <= 0 ||
++            rate == ZZ9000CurrentRate(pRTG, pSize->width, pSize->height))
++            return TRUE;
++        return ZZ9000SetRate(pRTG, rate);
++    }
+ 
+     ErrorF("rtgRRSetConfig: %dx%d -> %dx%d\n", pScreen->width,
+            pScreen->height, pSize->width, pSize->height);
+ 
+     rtgSetRootClip(pScreen, FALSE);
+-    if (!ZZ9000SetSize(pRTG, pSize->width, pSize->height))
++    if (!ZZ9000SetSize(pRTG, pSize->width, pSize->height, rate))
+     {
+         rtgSetRootClip(pScreen, TRUE);  /* old mode, old size: repaint */
+         return FALSE;
+--- a/programs/Xserver/hw/amix/rtg/zz9000/zz9000hw.c
++++ b/programs/Xserver/hw/amix/rtg/zz9000/zz9000hw.c
+@@ -84,6 +84,166 @@
+ }
+ 
+ /*
++** RandR rates: the kernel's rows (ZZ9KIOC_GETMODES), asked again each time,
++** since the CURRENT flag follows every switch.  RandR rates are whole Hz:
++** a row's is its hz100 rounded (1080p: 61 and 51).
++*/
++static struct zz9k_moderow zz9000_rows[ZZ9K_MODES_MAX];
++static int zz9000_nrows;
++
++static void
++ZZ9000GetModes(pZZ)
++ZZ9000ScreenPtr pZZ;
++{
++    struct zz9k_modelist ml;
++
++    ml.rows = zz9000_rows;
++    ml.n = ZZ9K_MODES_MAX;
++    if (!pZZ || ioctl(pZZ->fd, ZZ9KIOC_GETMODES, &ml) < 0)
++        zz9000_nrows = 0;               /* older kernel: 60 Hz only */
++    else
++        zz9000_nrows = ml.n < ZZ9K_MODES_MAX ? (int)ml.n : ZZ9K_MODES_MAX;
++}
++
++#define ZZ9000_RR_RATE(hz100) (((hz100) + 50) / 100)
++#define ZZ9000_RR_DEFAULT 60
++
++/* the rates of size w x h into rates[] (at most max), in table order */
++int
++ZZ9000RatesOf(pRTG, w, h, rates, max)
++rtgScreenPtr pRTG;
++int w, h, max;
++short *rates;
++{
++    int i, j, n = 0, r;
++
++    ZZ9000GetModes(GetZZ9000Screen(pRTG));
++    for (i = 0; i < zz9000_nrows && n < max; i++) {
++        if (zz9000_rows[i].width != w || zz9000_rows[i].height != h ||
++            !zz9000_rows[i].hz100)
++            continue;
++        r = ZZ9000_RR_RATE(zz9000_rows[i].hz100);
++        for (j = 0; j < n && rates[j] != r; j++)
++            ;
++        if (j == n)
++            rates[n++] = (short)r;
++    }
++    if (n == 0 && max > 0)
++        rates[n++] = ZZ9000_RR_DEFAULT;
++    return n;
++}
++
++/* the rate the board shows now for w x h */
++int
++ZZ9000CurrentRate(pRTG, w, h)
++rtgScreenPtr pRTG;
++int w, h;
++{
++    int i;
++
++    ZZ9000GetModes(GetZZ9000Screen(pRTG));
++    for (i = 0; i < zz9000_nrows; i++)
++        if (zz9000_rows[i].width == w && zz9000_rows[i].height == h &&
++            (zz9000_rows[i].flags & ZZ9K_MF_CURRENT) && zz9000_rows[i].hz100)
++            return ZZ9000_RR_RATE(zz9000_rows[i].hz100);
++    return ZZ9000_RR_DEFAULT;
++}
++
++/* the hz100 of the row of w x h whose RandR rate is rate; 0 if none */
++static int
++ZZ9000Hz100(pZZ, w, h, rate)
++ZZ9000ScreenPtr pZZ;
++int w, h, rate;
++{
++    int i;
++
++    if (rate <= 0)
++        return 0;
++    ZZ9000GetModes(pZZ);
++    for (i = 0; i < zz9000_nrows; i++)
++        if (zz9000_rows[i].width == w && zz9000_rows[i].height == h &&
++            zz9000_rows[i].hz100 && ZZ9000_RR_RATE(zz9000_rows[i].hz100) == rate)
++            return zz9000_rows[i].hz100;
++    return 0;
++}
++
++/* the hz100 the board shows now (0: not known) */
++static int
++ZZ9000CurrentHz100(pZZ)
++ZZ9000ScreenPtr pZZ;
++{
++    int i;
++
++    ZZ9000GetModes(pZZ);
++    for (i = 0; i < zz9000_nrows; i++)
++        if (zz9000_rows[i].flags & ZZ9K_MF_CURRENT)
++            return zz9000_rows[i].hz100;
++    return 0;
++}
++
++/* SETMODE, or SETMODEHZ when hz100 is known; the ioctl's result */
++static int
++ZZ9000SetTiming(pZZ, w, h, hz100)
++ZZ9000ScreenPtr pZZ;
++int w, h, hz100;
++{
++    struct zz9k_mode mode;
++    struct zz9k_modehz mhz;
++
++    if (hz100 > 0) {
++        mhz.width = (unsigned short)w;
++        mhz.height = (unsigned short)h;
++        mhz.hz100 = (unsigned short)hz100;
++        mhz.color_mode = ZZ9K_COLOR_16BIT565;
++        mhz.scale_mode = 0;
++        mhz.pad = 0;
++        return ioctl(pZZ->fd, ZZ9KIOC_SETMODEHZ, &mhz);
++    }
++    mode.width = (unsigned short)w;
++    mode.height = (unsigned short)h;
++    mode.color_mode = ZZ9K_COLOR_16BIT565;
++    mode.scale_mode = 0;
++    return ioctl(pZZ->fd, ZZ9KIOC_SETMODE, &mode);
++}
++
++/*
++** RandR: the same size at another rate.  Only the timing changes (same
++** stride, same pixels: no clear, no exposures).  FALSE leaves the old rate.
++*/
++Bool
++ZZ9000SetRate(pRTG, rate)
++rtgScreenPtr pRTG;
++int rate;
++{
++    ZZ9000ScreenPtr pZZ = GetZZ9000Screen(pRTG);
++    struct zz9k_fbinfo fbi;
++    int hz, old;
++
++    if (!pZZ)
++        return FALSE;
++    hz = ZZ9000Hz100(pZZ, pRTG->width, pRTG->height, rate);
++    if (!hz)
++        return FALSE;
++    old = ZZ9000CurrentHz100(pZZ);
++    ZZ9000BlitFlush();
++    if (ZZ9000SetTiming(pZZ, pRTG->width, pRTG->height, hz) < 0) {
++        ErrorF("ZZ9000SetRate: SETMODEHZ %dx%d %d failed (%s)\n",
++               pRTG->width, pRTG->height, hz, strerror(errno));
++        return FALSE;
++    }
++    if (ioctl(pZZ->fd, ZZ9KIOC_GETFBINFO, &fbi) < 0 ||
++        fbi.width != pRTG->width || fbi.height != pRTG->height ||
++        fbi.stride != pRTG->pitch || fbi.fb_offset != pZZ->fbOffset) {
++        ErrorF("ZZ9000SetRate: the frame changed, back to the old rate\n");
++        (void) ZZ9000SetTiming(pZZ, pRTG->width, pRTG->height, old);
++        return FALSE;
++    }
++    ErrorF("ZZ9000SetRate: %dx%d at %d.%02d Hz\n", pRTG->width, pRTG->height,
++           hz / 100, hz % 100);
++    return TRUE;
++}
++
++/*
+ ** RandR: switch the running screen to w x h (a mode of the table).  The
+ ** framebuffer stays where it is (same fb_offset, same mapping); only the
+ ** stride changes, so every drawing path picks the new geometry up from
+@@ -92,28 +252,26 @@
+ ** caller exposes every window again.
+ */
+ Bool
+-ZZ9000SetSize(pRTG, w, h)
++ZZ9000SetSize(pRTG, w, h, rate)
+ rtgScreenPtr pRTG;
+-int w, h;
++int w, h, rate;                 /* rate: RandR Hz, 0 = the size's first row */
+ {
+     ZZ9000ScreenPtr pZZ = GetZZ9000Screen(pRTG);
+     ZZ9000ModePtr m, old = ZZ9000_selected_mode;
+-    struct zz9k_mode mode;
+     struct zz9k_fbinfo fbi;
+     struct zz9k_fill fill;
++    int hz, oldhz;
+ 
+     for (m = zz9000_modes; m->name; m++)
+         if (m->w == w && m->h == h)
+             break;
+     if (!m->name || !pZZ || !ZZ9000SizeFits(pRTG, w, h))
+         return FALSE;
++    hz = ZZ9000Hz100(pZZ, w, h, rate);
++    oldhz = ZZ9000CurrentHz100(pZZ);
+     ZZ9000BlitFlush();          /* queued records belong to the old size */
+ 
+-    mode.width = (unsigned short)w;
+-    mode.height = (unsigned short)h;
+-    mode.color_mode = ZZ9K_COLOR_16BIT565;
+-    mode.scale_mode = 0;
+-    if (ioctl(pZZ->fd, ZZ9KIOC_SETMODE, &mode) < 0) {
++    if (ZZ9000SetTiming(pZZ, w, h, hz) < 0) {
+         ErrorF("ZZ9000SetSize: SETMODE %dx%d failed (%s)\n",
+                w, h, strerror(errno));
+         return FALSE;
+@@ -123,9 +281,7 @@
+         fbi.fb_offset != pZZ->fbOffset) {
+         ErrorF("ZZ9000SetSize: GETFBINFO after %dx%d failed, back to %dx%d\n",
+                w, h, old->w, old->h);
+-        mode.width = (unsigned short)old->w;
+-        mode.height = (unsigned short)old->h;
+-        (void) ioctl(pZZ->fd, ZZ9KIOC_SETMODE, &mode);
++        (void) ZZ9000SetTiming(pZZ, old->w, old->h, oldhz);
+         return FALSE;
+     }
+ 
+--- a/programs/Xserver/hw/amix/rtg/zz9000/zz9000.h
++++ b/programs/Xserver/hw/amix/rtg/zz9000/zz9000.h
+@@ -23,6 +23,38 @@
+ #define ZZ9KIOC_FILLRECT    (ZZ9K_IOC | 12)
+ #define ZZ9KIOC_COPYRECT    (ZZ9K_IOC | 13)
+ #define ZZ9KIOC_BLITS       (ZZ9K_IOC | 16)
++#define ZZ9KIOC_GETMODES    (ZZ9K_IOC | 19)
++#define ZZ9KIOC_SETMODEHZ   (ZZ9K_IOC | 20)
++
++/* ZZ9KIOC_GETMODES / SETMODEHZ (the driver's zz9000.h, amix-gate 32e04d7):
++   the kernel's mode table with the refresh of each firmware timing.  An
++   older kernel answers EINVAL: one rate, 60, per size, as before. */
++#define ZZ9K_MODES_MAX      64
++#define ZZ9K_MF_CURRENT     0x0002
++
++struct zz9k_moderow {
++    unsigned short width;
++    unsigned short height;
++    unsigned short hz100;           /* 1/100 Hz; 0 = not known */
++    unsigned short id;
++    unsigned long  pixclk;
++    unsigned short flags;
++    unsigned short pad;
++};
++
++struct zz9k_modelist {
++    struct zz9k_moderow *rows;
++    unsigned long        n;
++};
++
++struct zz9k_modehz {
++    unsigned short width;
++    unsigned short height;
++    unsigned short hz100;           /* in: wanted; out: chosen */
++    unsigned short color_mode;
++    unsigned short scale_mode;
++    unsigned short pad;
++};
+ 
+ /* ZZ9KIOC_BLITS records (the driver's zz9000.h): the card's blitter */
+ #define ZZ9K_BLIT_FILL      1
+@@ -160,6 +192,9 @@
+ ZZ9000ModePtr ZZ9000ModeAt();
+ Bool    ZZ9000SizeFits();
+ Bool    ZZ9000SetSize();
++Bool    ZZ9000SetRate();
++int     ZZ9000RatesOf();
++int     ZZ9000CurrentRate();
+ void    ZZ9000BlitFlush();
+ Bool    ZZ9000InitHW();
+ void    ZZ9000CloseHW();
