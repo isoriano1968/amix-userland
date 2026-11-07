@@ -66,7 +66,13 @@ export READELF="$tools/m68k-elf-readelf" PKG_CONFIG="$top/tools/amix-pkg-config"
 export AMIX_SYSROOT="$sysroot"
 export CFLAGS='-O2 -m68060 -fno-strict-aliasing'
 export CPPFLAGS="-I$project/ports/python/include -I$sysroot/usr/local/gnu/include -I$sysroot/usr/local/include"
-export LDFLAGS="-L$compat -L$sysroot/usr/local/gnu/lib -L$sysroot/usr/local/lib -Wl,-R,/usr/local/lib:/usr/local/gnu/lib"
+# The runpath is the only one AMIX's ld.so.1 searches when an extension module
+# is dlopened (the libraries' own runpaths are not used), so it names the X
+# directory too (pygame -> libSDL2 -> libXext).  Shared libraries leave libc
+# functions that only libc's archive has to the program: the interpreter
+# links and exports (-E) those its modules' libraries need -- the utmp calls
+# and modff for libSDL2.
+export LDFLAGS="-L$compat -L$sysroot/usr/local/gnu/lib -L$sysroot/usr/local/lib -Wl,-R,/usr/local/lib:/usr/local/gnu/lib:/usr/x11r6/lib -Wl,-u,getutid,-u,setutent,-u,endutent,-u,modff"
 export LIBS="-lamixpythoncompat -lm -lpthread -lpth -ldl -lsocket -lnsl"
 # Both device paths were checked on the physical AMIX machine.
 export ac_cv_file__dev_ptmx=yes ac_cv_file__dev_ptc=no
