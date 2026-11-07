@@ -1,0 +1,50 @@
+#!/bin/sh
+# amix-fpu-scan [-q] FILE...: the instructions in m68k objects, archives or
+# shared libraries that the 68060 does not execute and traps on (into the
+# kernel's FPSP/ISP emulation: ~78 us for an fsin on the A3000/Z3660, against
+# ~1 us for the same in plain arithmetic).  Prints each with its file and
+# function and exits 1 if there is one; -q prints only the count per name.
+#
+# Trapping on the 060 (MC68060 User's Manual, 060SP release notes):
+#   FPU   facos fasin fatan fatanh fcos fcosh fetox fetoxm1 fgetexp fgetman
+#         flog10 flog2 flogn flognp1 fmod frem fscale fsin fsincos fsinh ftan
+#         ftanh ftentox ftwotox fmovecr; FScc, FDBcc, FTRAPcc; packed decimal
+#         (.p); fmovem.x with a register list in a data register; an
+#         immediate .x operand
+#   int   divs.l/divu.l 64/32 (objdump: divsl/divul with three registers),
+#         muls.l/mulu.l 32x32->64 (mulsl/mulul with three), movep, cas2,
+#         chk2, cmp2
+# False hits: gcc's m68k switch tables sit in .text and disassemble as
+# junk (often movep or cp0 ...) right after a `jmp %pc@(2,%dN:w)`; build
+# with -fno-jump-tables to scan an object of your own cleanly.
+# Executed in hardware and not reported: fint, fintrz (unlike the 68040),
+# fsqrt, fdsqrt/fssqrt, fadd ... fsglmul, fmove to/from fpcr/fpsr/fpiar.
+q=
+[ "$1" = -q ] && { q=1; shift; }
+[ $# -gt 0 ] || { echo "usage: amix-fpu-scan [-q] FILE..." >&2; exit 2; }
+${OBJDUMP:-m68k-elf-objdump} -d --no-show-raw-insn "$@" | awk -v q="$q" '
+/file format/ { file = $1; sub(/:$/, "", file); next }
+/^[0-9a-f]+ <.*>:$/ { fn = $2; next }
+/^ *[0-9a-f]+:\t/ {
+	line = $0; sub(/^ *[0-9a-f]+:\t/, "", line)
+	m = line; sub(/[ \t].*/, "", m)
+	ops = line; sub(/^[^ \t]*[ \t]*/, "", ops)
+	top = ops; gsub(/\([^)]*\)/, "", top)	# commas inside @(...) are not operands
+	nops = split(top, o, ",")
+	bad = 0
+	if (m ~ /^f(acos|asin|atan|atanh|cos|cosh|etox|etoxm1|getexp|getman|log10|log2|logn|lognp1|mod|rem|scale|sin|sincos|sinh|tan|tanh|tentox|twotox|movecr)[bwlsdxp]?$/) bad = 1
+	else if (m ~ /^fs(f|eq|ogt|oge|olt|ole|ogl|or|un|ueq|ugt|uge|ult|ule|ne|t|sf|seq|gt|ge|lt|le|gl|gle|ngle|ngl|nle|nlt|nge|ngt|sne|st)b?$/) bad = 1
+	else if (m ~ /^fdb/ || m ~ /^ftrap/ || m ~ /^ftp/) bad = 1
+	else if (m ~ /^f[a-z]*p$/ && m != "fnop") bad = 1
+	else if (m == "fmovemx" && ops ~ /(^|,)%d[0-7]($|,)/) bad = 1
+	else if (m ~ /^f[a-z]*x$/ && m != "fmovemx" && ops ~ /^#/) bad = 1
+	else if (m ~ /^(divsl|divul|mulsl|mulul)$/ && nops == 3) bad = 1
+	else if (m ~ /^(movep|cas2|chk2|cmp2)/) bad = 1
+	if (bad) {
+		n++; count[m]++
+		if (!q) printf "%s: %s %s\n", file, fn, line
+	}
+}
+END {
+	if (n) { for (m in count) printf "%6d %s\n", count[m], m; exit 1 }
+}'

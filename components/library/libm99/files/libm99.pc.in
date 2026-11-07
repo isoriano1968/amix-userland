@@ -1,0 +1,9 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: libm99
+Description: C99 maths for AMIX (musl's libm): <math.h> additions, <complex.h>, <fenv.h>
+Version: @VERSION@
+Libs: -L${libdir} -lm99
+Cflags: -I${includedir}/amix-c99

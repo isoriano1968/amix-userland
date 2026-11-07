@@ -1,0 +1,13 @@
+# name, version and what building and running it needs
+name     library/libm99
+version  1.2.5
+summary  C99 maths AMIX lacks (float/long double, expm1, round, fma, tgamma ...), complex.h, fenv.h; musl's libm
+provide  libm99
+file     /usr/local/lib/libm99.so.1
+file     /usr/local/lib/libm99.so
+file     /usr/local/lib/pkgconfig/libm99.pc
+file     /usr/local/include/amix-c99/math.h
+file     /usr/local/include/amix-c99/complex.h
+file     /usr/local/include/amix-c99/fenv.h
+file     /usr/local/share/doc/libm99/COPYRIGHT.musl
+file     /usr/local/share/amix-stubs/libm99/LIST

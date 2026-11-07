@@ -1,0 +1,43 @@
+diff -ruN a/src/math/m68k/sqrt.c b/src/math/m68k/sqrt.c
+--- a/src/math/m68k/sqrt.c	1970-01-01 01:00:00.000000000 +0100
++++ b/src/math/m68k/sqrt.c	2026-11-07 11:36:49.653050252 +0100
+@@ -0,0 +1,18 @@
++#include <math.h>
++
++#if __HAVE_68881__ && (__mc68040__ || __mc68060__)
++
++/* fdsqrt rounds straight to double: no double rounding through extended.
++ * The 68040 and 68060 do it in hardware (the 68060 FPSP is not involved). */
++double sqrt(double x)
++{
++	double r;
++	__asm__ ("fdsqrt.x %1,%0" : "=f"(r) : "f"(x));
++	return r;
++}
++
++#else
++
++#include "../sqrt.c"
++
++#endif
+diff -ruN a/src/math/m68k/sqrtf.c b/src/math/m68k/sqrtf.c
+--- a/src/math/m68k/sqrtf.c	1970-01-01 01:00:00.000000000 +0100
++++ b/src/math/m68k/sqrtf.c	2026-11-07 11:36:49.653050252 +0100
+@@ -0,0 +1,17 @@
++#include <math.h>
++
++#if __HAVE_68881__ && (__mc68040__ || __mc68060__)
++
++/* fssqrt rounds straight to single precision, in hardware on the 68040/060 */
++float sqrtf(float x)
++{
++	float r;
++	__asm__ ("fssqrt.x %1,%0" : "=f"(r) : "f"(x));
++	return r;
++}
++
++#else
++
++#include "../sqrtf.c"
++
++#endif
