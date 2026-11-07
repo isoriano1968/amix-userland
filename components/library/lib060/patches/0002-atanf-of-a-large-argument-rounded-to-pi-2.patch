@@ -1,0 +1,14 @@
+musl 1.2.5 atanf returns atanhi[3] (pi/2 rounded down, 0.6 ulp low) for |x| >= 2^26 and
++-inf; fdlibm adds atanlo[3], which rounds to pi/2 as glibc gives it.
+
+--- a/src/math/atanf.c	2026-11-07 15:39:32.592564407 +0100
++++ b/src/math/atanf.c	2026-11-07 15:39:32.596564405 +0100
+@@ -50,7 +50,7 @@
+ 	if (ix >= 0x4c800000) {  /* if |x| >= 2**26 */
+ 		if (isnan(x))
+ 			return x;
+-		z = atanhi[3] + 0x1p-120f;
++		z = atanhi[3] + atanlo[3];  /* pi/2 rounded to float: atanhi[3] alone is 0.6 ulp below it */
+ 		return sign ? -z : z;
+ 	}
+ 	if (ix < 0x3ee00000) {   /* |x| < 0.4375 */

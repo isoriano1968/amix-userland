@@ -1,3 +1,7 @@
 # name, version and what building and running it needs
 name     library/lib060
-summary  068060 fast math and memory routines
+version  1.1
+summary  68060 fast math and memory routines: trap-free sin cos tan fmod sqrt, atan atan2 hypot pow erf erfc lgamma j0 j1 y0 y1 jn yn (musl), mem*
+file     /usr/local/lib/libm060.a
+file     /usr/local/lib/libc060.a
+file     /usr/local/share/doc/lib060/lib060.license

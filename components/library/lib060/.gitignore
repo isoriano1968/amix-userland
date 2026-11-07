@@ -9,3 +9,5 @@ test060
 *.amix
 sqrtt
 build/
+/musl-1.2.5/
+/*.tar.gz

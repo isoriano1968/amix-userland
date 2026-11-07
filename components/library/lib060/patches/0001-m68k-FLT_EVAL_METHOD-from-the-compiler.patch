@@ -1,0 +1,28 @@
+diff -ru a/arch/m68k/bits/alltypes.h.in b/arch/m68k/bits/alltypes.h.in
+--- a/arch/m68k/bits/alltypes.h.in	2026-11-07 11:34:53.424854904 +0100
++++ b/arch/m68k/bits/alltypes.h.in	2026-11-07 11:34:53.436854924 +0100
+@@ -14,7 +14,7 @@
+ #endif
+ #endif
+ 
+-#if __mcffpu__
++#if __mcffpu__ || __FLT_EVAL_METHOD__ == 0
+ TYPEDEF float float_t;
+ TYPEDEF double double_t;
+ #else
+diff -ru a/arch/m68k/bits/float.h b/arch/m68k/bits/float.h
+--- a/arch/m68k/bits/float.h	2026-11-07 11:34:53.424854904 +0100
++++ b/arch/m68k/bits/float.h	2026-11-07 11:34:53.436854924 +0100
+@@ -1,6 +1,12 @@
+ #if !__mcffpu__
+ 
++/* 2 for the 68881/68882; 0 when gcc rounds each operation to its type,
++ * as it does with -m68040 and -m68060 (fsadd, fdmul ...) */
++#ifdef __FLT_EVAL_METHOD__
++#define FLT_EVAL_METHOD __FLT_EVAL_METHOD__
++#else
+ #define FLT_EVAL_METHOD 2
++#endif
+ 
+ #define LDBL_TRUE_MIN 3.6451995318824746025e-4951L
+ #define LDBL_MIN     1.68105157155604675313e-4932L

@@ -10,6 +10,9 @@
  * loses the low bits.  (AMIX libm's sin cannot be called for it: its
  * object defines sin and cos too.)
  *
+ * The other libm060.a members (atan ... j1, AMIX's FMOVECR users) are
+ * musl's: see the Makefile.
+ *
  * Link before -lm, and compile callers with -fno-builtin-sin
  * -fno-builtin-cos -fno-builtin-tan -fno-builtin-fmod (and the f
  * variants): gcc -ffast-math otherwise inlines the trapping instructions.
@@ -144,8 +147,10 @@ float fmodf(float x, float y) { return (float) fmod(x, y); }
 
 /*
  * sqrt: the 060 has FSQRT; AMIX's libm computes it in software (5.8 us,
- * sqrtf 10 us).  A negative argument gives a NaN (AMIX's prints a DOMAIN
- * message through matherr and returns 0).
+ * sqrtf 10 us).  FDSQRT rounds straight to double, so the result is the
+ * correctly rounded one (FSQRT.X would round to extended first, then to
+ * double when stored).  A negative argument gives a NaN (AMIX's prints a
+ * DOMAIN message through matherr and returns 0).
  */
 double sqrt(double x)
 {
@@ -153,12 +158,11 @@ double sqrt(double x)
 
     if (x < 0.0)
         return (x - x) / (x - x);
-    __asm__ ("fsqrt%.x %1,%0" : "=f" (r) : "f" (x));
+    __asm__ ("fdsqrt%.x %1,%0" : "=f" (r) : "f" (x));
     return r;
 }
 
 float sqrtf(float x) { return (float) sqrt(x); }
 
-/* atanf: AMIX's takes twice as long as its own atan */
-extern double atan(double);
-float atanf(float x) { return (float) atan(x); }
+/* atan atan2 atanf atan2f hypot pow erf erfc lgamma j0 j1 y0 y1 jn yn: musl's,
+   built from the release into separate members (see the Makefile) */

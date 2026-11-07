@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <math.h>
 #include <sys/time.h>
+/* not ANSI, so hidden by AMIX math.h in strict mode */
+double hypot(double, double), erf(double), erfc(double), lgamma(double);
+double j0(double), j1(double), y0(double), y1(double), jn(int, double);
 
 static volatile double sink;
 
@@ -38,7 +41,17 @@ int main(void)
     BENCH("ceil", ceil(x * 100.0));
     BENCH("fabs", fabs(x - 0.5));
     BENCH("fmod", fmod(x * 100.0, 3.0));
+    BENCH("hypot", hypot(x, 0.7));
+    BENCH("erf", erf(x));
+    BENCH("erfc", erfc(x));
+    BENCH("lgamma", lgamma(x + 1.0));
+    BENCH("j0", j0(x * 10));
+    BENCH("j1", j1(x * 10));
+    BENCH("y0", y0(x * 10));
+    BENCH("y1", y1(x * 10));
+    BENCH("jn(3)", jn(3, x * 10));
     BENCH("atanf", atanf((float) x));
+    BENCH("atan2f", atan2f((float) x, 0.7f));
     BENCH("sqrtf", sqrtf((float) x));
     BENCH("floorf", floorf((float) x * 100.0f));
     return 0;
