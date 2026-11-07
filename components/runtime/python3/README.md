@@ -37,7 +37,13 @@ empty): `_socket`, `mmap`, `_ssl` and `_hashlib` (OpenSSL 3.5), `_bz2`,
 `resource`, `syslog`, `unicodedata`, `_decimal`, the CJK codecs and the rest
 of the standard set. GNU Pth, OpenSSL, zlib, bzip2 and expat are the shared
 libraries of their own components, found through the runpath
-`/usr/local/lib:/usr/local/gnu/lib`. `venv` is installed; `ensurepip` is not:
+`/usr/local/lib:/usr/local/gnu/lib`. Since 2026-11-07 the interpreter is linked with `-Wl,-E` (configure's
+`LINKFORSHARED`), so it exports the Python C API (1707 symbols) and an
+extension module dlopened from `lib-dynload` or `site-packages` can link
+to it; whether AMIX's `ld.so.1` resolves such a module is still untested on
+the machine. `tests/python3-speed.py [scale]` times interpreter work in the
+shape of an interactive program (2020 PC: 132 ms at scale 1).
+`venv` is installed; `ensurepip` is not:
 pip and setuptools are packages of their own (see below).
 
 Not available:

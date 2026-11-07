@@ -81,6 +81,10 @@ done
 export MODULE_BUILDTYPE=static
 export py_cv_module__lzma=n/a py_cv_module__uuid=n/a
 export py_cv_module_xxlimited=n/a py_cv_module_xxlimited_35=n/a
+# the interpreter exports the Python C API, so that extension modules
+# (pygame, ...) dlopened from lib-dynload or site-packages can link to it;
+# configure keeps a preset LINKFORSHARED, and sysconfig reports it
+export LINKFORSHARED='-Wl,-E'
 if test "${PYTHON_SKIP_CONFIGURE:-no}" != yes; then
     "$source/configure" --build="$("$source/config.guess")" --host=m68k-cbm-sysv4 \
         --with-build-python="$host_python" --prefix=/usr/local \
