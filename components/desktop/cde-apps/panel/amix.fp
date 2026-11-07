@@ -1,7 +1,7 @@
 #
 # amix.fp -- the AMIX control in CDE's front panel, with the AMIX logo: its
 # subpanel holds AmixCast, the Z3660 window, the System Monitor, NEdit,
-# fsv, NetSurf, Grafx2 and Display.  Every CDE application of ours gets a control here.  Installed in
+# fsv, NetSurf, Grafx2, Display and PyDPainter.  Every CDE application of ours gets a control here.  Installed in
 # /etc/dt/appconfig/types/C in place of ztopcde.fp; dtwm reads it when the
 # workspace manager starts (Restart Workspace Manager).
 #
@@ -121,4 +121,17 @@ CONTROL DisplayPanel
 	LABEL		Display
 	PUSH_ACTION	AmixDisplay
 	HELP_STRING	Screen resolution, refresh and colours (amixdisplay)
+}
+
+CONTROL PyDPainterPanel
+{
+	TYPE		icon
+	CONTAINER_NAME	AmixPanel
+	CONTAINER_TYPE	SUBPANEL
+	POSITION_HINTS	9
+	ICON		PyDPainter
+	LABEL		PyDPainter
+	PUSH_ACTION	PyDPainter
+	DROP_ACTION	PyDPainter
+	HELP_STRING	Deluxe Paint clone in Python 3 and pygame, slow to start (graphics/pydpainter)
 }
