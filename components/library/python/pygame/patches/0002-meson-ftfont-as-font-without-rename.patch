@@ -1,0 +1,12 @@
+--- a/src_py/meson.build	2026-11-07 10:36:40.819118829 +0100
++++ b/src_py/meson.build	2026-11-07 10:36:40.819118829 +0100
+@@ -25,7 +25,8 @@
+ 
+ # if not building font, install use ftfont for font.py
+ if not sdl_ttf_dep.found() and freetype_dep.found()
+-    py.install_sources('ftfont.py', subdir: pg, rename: 'font.py')
++    # install_sources() takes rename: only from meson 1.10 on
++    py.install_sources(configure_file(input: 'ftfont.py', output: 'font.py', copy: true), subdir: pg)
+ endif
+ 
+ if sdl_api == 3

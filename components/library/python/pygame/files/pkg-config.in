@@ -1,0 +1,12 @@
+#!/bin/sh
+# tools/amix-pkg-config for meson, without -lsocket and -lnsl: sdl2.pc names
+# them (through x11) for programs, but AMIX's libsocket.so and libnsl.so have
+# no SONAME, and meson links a library it finds by its full path, so a module
+# would NEED /<sysroot>/usr/lib/libsocket.so.  The modules do not use them;
+# libSDL2 and the interpreter bring them.
+out=`@PKG_CONFIG@ "$@"` || exit $?
+r=
+for a in $out; do
+	case $a in -lsocket|-lnsl) ;; *) r="$r $a" ;; esac
+done
+[ -z "$r" ] || echo $r

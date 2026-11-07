@@ -1,0 +1,6 @@
+#!/bin/sh
+# PyDPainter on AMIX: no sound (no SDL_mixer); a 15 MB+ Python process needs
+# more than AMIX's default soft data limit when started from CDE
+ulimit -d unlimited 2>/dev/null
+ulimit -v unlimited 2>/dev/null
+exec /usr/local/bin/python3 @DATA@/PyDPainter.py "$@"

@@ -1,0 +1,13 @@
+--- a/src_c/pixelcopy.c	2026-11-07 10:36:40.823118831 +0100
++++ b/src_c/pixelcopy.c	2026-11-07 10:36:40.827118833 +0100
+@@ -928,8 +928,8 @@
+     }
+     ndim = tar_view_p->ndim;
+     tar_itemsize = tar_view_p->itemsize;
+-    shape = tar_view_p->shape;
+-    tar_strides = tar_view_p->strides;
++    shape = (Py_intptr_t *)tar_view_p->shape;
++    tar_strides = (Py_intptr_t *)tar_view_p->strides;
+     if (ndim < 1) {
+         PyErr_SetString(PyExc_ValueError, "target array must be at least 1D");
+         goto fail;

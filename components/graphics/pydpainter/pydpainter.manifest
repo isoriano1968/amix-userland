@@ -1,0 +1,12 @@
+# name, version and what building and running it needs
+name     graphics/pydpainter
+version  2.2.1
+summary  PyDPainter: Deluxe Paint clone in Python 3 and pygame
+require  runtime/python3
+require  library/python/pygame
+require  library/python/numpy
+file     /usr/local/bin/pydpainter
+file     /usr/local/share/pydpainter/PyDPainter.py
+file     /usr/local/share/pydpainter/libs/config.py
+file     /usr/local/share/pydpainter/data/tools.png
+file     /usr/local/share/pydpainter/data/FreeSans.ttf

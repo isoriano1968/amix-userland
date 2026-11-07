@@ -1,0 +1,49 @@
+--- a/libs/config.py	2026-01-24 03:29:19.000000000 +0100
++++ b/libs/config.py	2026-11-07 10:39:52.659196734 +0100
+@@ -181,7 +181,8 @@
+         animation_set_config(self)
+         xevent_set_config(self)
+         pygame.init()
+-        pygame.mixer.quit() #hack to stop 100% CPU ultilization
++        if pygame.mixer:   # a MissingModule when built without SDL_mixer
++            pygame.mixer.quit() #hack to stop 100% CPU ultilization
+         
+         #parse command line
+         parser = argparse.ArgumentParser(description='A usable pixel art program written in Python')
+--- a/libs/menureq.py	2026-01-24 03:29:19.000000000 +0100
++++ b/libs/menureq.py	2026-11-07 10:39:52.659196734 +0100
+@@ -4,7 +4,10 @@
+ import os.path, colorsys
+ import textwrap
+ 
+-from tkinter import filedialog as fd
++try:
++    from tkinter import filedialog as fd
++except ImportError:   # no Tk (AMIX): the PyDPainter requester only
++    fd = None
+ 
+ import libs.gadget
+ from libs.gadget import *
+@@ -210,7 +213,7 @@
+     return retval
+ 
+ def file_req(screen, title, action_label, filepath, filename, filetype_list=None):
+-    if config.sys_file_dialog and not config.fullscreen:
++    if config.sys_file_dialog and not config.fullscreen and fd is not None:
+         selected_file = file_req_system(screen, title, action_label, filepath, filename, filetype_list)
+     else:
+         selected_file = file_req_custom(screen, title, action_label, filepath, filename, filetype_list)
+--- a/PyDPainter.py	2026-01-24 03:29:19.000000000 +0100
++++ b/PyDPainter.py	2026-11-07 10:39:52.659196734 +0100
+@@ -91,7 +91,10 @@
+ 
+ def check_recover():
+     global root
+-    import tkinter as tk
++    try:
++        import tkinter as tk
++    except ImportError:   # no Tk (AMIX): no recovery dialog
++        return
+     if not is_android:
+         root = tk.Tk()
+     recover_path = os.path.join(os.path.expanduser('~'), ".pydpainter-recover")

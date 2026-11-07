@@ -1,0 +1,4 @@
+#!/bin/sh
+# The build machine's CPython 3.11 answering with AMIX's sysconfig, for meson
+# (cross builds of Python extension modules only).
+_PYTHON_SYSCONFIGDATA_NAME=_sysconfigdata__amigaunix_ PYTHONPATH=@PYAMIX@ exec @HOST_PYTHON@ "$@"

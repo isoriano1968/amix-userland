@@ -1,0 +1,58 @@
+--- a/meson.build	2026-11-07 10:36:40.815118827 +0100
++++ b/meson.build	2026-11-07 10:36:40.815118827 +0100
+@@ -366,6 +366,10 @@
+     endif
+ 
+     bases = ['/usr/local', '/usr', homebrew_prefix, '/opt/local']
++    if meson.is_cross_build()
++        # the build machine's headers and libraries are never the target's
++        bases = []
++    endif
+     foreach inc_dir : bases
+         foreach sub_inc : [
+             '',
+@@ -400,7 +404,7 @@
+ 
+ # optional
+ sdl_image_dep = dependency(sdl_image, required: false)
+-if not sdl_image_dep.found()
++if not sdl_image_dep.found() and not get_option('image').disabled()
+     sdl_image_dep = declare_dependency(
+         include_directories: pg_inc_dirs,
+         dependencies: cc.find_library(
+@@ -412,7 +416,7 @@
+ endif
+ 
+ sdl_mixer_dep = dependency(sdl_mixer, required: false)
+-if not sdl_mixer_dep.found()
++if not sdl_mixer_dep.found() and not get_option('mixer').disabled()
+     sdl_mixer_dep = declare_dependency(
+         include_directories: pg_inc_dirs,
+         dependencies: cc.find_library(
+@@ -424,7 +428,7 @@
+ endif
+ 
+ sdl_ttf_dep = dependency(sdl_ttf, required: false)
+-if not sdl_ttf_dep.found()
++if not sdl_ttf_dep.found() and not get_option('font').disabled()
+     sdl_ttf_dep = declare_dependency(
+         include_directories: pg_inc_dirs,
+         dependencies: cc.find_library(
+@@ -436,7 +440,7 @@
+ endif
+ 
+ freetype_dep = dependency('freetype2', required: false)
+-if not freetype_dep.found()
++if not freetype_dep.found() and not get_option('freetype').disabled()
+     freetype_dep = declare_dependency(
+         include_directories: pg_inc_dirs,
+         dependencies: cc.find_library(
+@@ -450,7 +454,7 @@
+ endif # emscripten
+ 
+ portmidi_dep = dependency('portmidi', required: false)
+-if not portmidi_dep.found() and not plat.startswith('emscripten')
++if not portmidi_dep.found() and not get_option('midi').disabled() and not plat.startswith('emscripten')
+     portmidi_dep = declare_dependency(
+         include_directories: pg_inc_dirs,
+         dependencies: cc.find_library(
