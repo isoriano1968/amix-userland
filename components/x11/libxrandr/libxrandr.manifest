@@ -1,0 +1,11 @@
+# name, version and what building and running it needs
+name     x11/libxrandr
+version  1.1.0.2
+summary  X RandR extension client library
+require  x11/x11r6.3
+require  x11/randrproto
+require  x11/libxrender
+provide  xrandr
+file     /usr/x11r6/lib/libXrandr.so.2
+file     /usr/x11r6/include/X11/extensions/Xrandr.h
+file     /usr/x11r6/lib/pkgconfig/xrandr.pc

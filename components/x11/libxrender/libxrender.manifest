@@ -1,0 +1,10 @@
+# name, version and what building and running it needs
+name     x11/libxrender
+version  0.9.0.2
+summary  X Render extension client library
+require  x11/x11r6.3
+require  x11/renderproto
+provide  xrender
+file     /usr/x11r6/lib/libXrender.so.1
+file     /usr/x11r6/include/X11/extensions/Xrender.h
+file     /usr/x11r6/lib/pkgconfig/xrender.pc

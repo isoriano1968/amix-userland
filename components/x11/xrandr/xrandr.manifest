@@ -1,0 +1,7 @@
+# name, version and what building and running it needs
+name     x11/xrandr
+version  1.0.2
+summary  RandR command: list and set the screen size
+require  x11/libxrandr
+file     /usr/x11r6/bin/xrandr
+file     /usr/x11r6/man/man1/xrandr.1

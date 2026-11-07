@@ -1,0 +1,10 @@
+prefix=/usr/x11r6
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: Xrender
+Description: X Render Library (libXrender 0.9.0.2 on the X11R6.3 libX11)
+Version: @VERSION@
+Requires: renderproto x11
+Libs: -L${libdir} -lXrender
+Cflags: -I${includedir}

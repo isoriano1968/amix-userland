@@ -1,0 +1,10 @@
+prefix=/usr/x11r6
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: Xrandr
+Description: X RandR Library (libXrandr 1.1.0.2 on the X11R6.3 libX11)
+Version: @VERSION@
+Requires: randrproto xrender xext x11
+Libs: -L${libdir} -lXrandr
+Cflags: -I${includedir}

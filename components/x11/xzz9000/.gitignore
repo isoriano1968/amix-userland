@@ -16,3 +16,5 @@ bench/m16fill
 bench/memlong
 bench/shmput
 bench/vrambw
+/distfiles/
+/work-randr/

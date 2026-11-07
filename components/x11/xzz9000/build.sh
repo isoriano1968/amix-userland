@@ -4,14 +4,18 @@
 # copy of isoriano's X11R6.3 tree.  Every step logs to log/.
 #   sh build.sh            full build from a fresh copy of the tree
 # Inputs:
-#   XC_SRC   the X11R6.3 tree (default ../usr/x11r6/xc; copied, never edited)
-#   RTG      amix-z3660rtg clone (default ../upstream/amix-z3660rtg)
+#   XC_SRC   the X11R6.3 tree (default usr-amix/usr/x11r6/xc; copied, never edited)
+#   RTG      amix-z3660rtg clone (default usr-amix/upstream/amix-z3660rtg)
+#   DISTFILES  xorg-server-1.0.2 and randrproto-1.1.2 tarballs (default ./distfiles,
+#            checked against SOURCES.sha256)
 #   HDF      AMIX disk image for /usr/amiga and /usr/ucblib (read-only)
 # Output: src/xc/programs/Xserver/Xzz9000
 set -e
 W=$(cd "$(dirname "$0")" && pwd)
-XC_SRC=${XC_SRC:-$W/../usr/x11r6/xc}
-RTG=${RTG:-$W/../upstream/amix-z3660rtg}
+UA=$(cd "$W/../../../.." && pwd)	# usr-amix, above amix-userland
+XC_SRC=${XC_SRC:-$UA/usr/x11r6/xc}
+RTG=${RTG:-$UA/upstream/amix-z3660rtg}
+DISTFILES=${DISTFILES:-$W/distfiles}
 HDF=${HDF:-"$HOME/Documents/FS-UAE/Hard Drives/hd0Z3660AMIX_AMIGA3000.hdf"}
 SYSROOT=$HOME/opt/amix-cross/m68k-cbm-sysv4/sysroot
 mkdir -p "$W/log"
@@ -60,6 +64,25 @@ patch -p1 --no-backup-if-mismatch < "$W/local-putimage-move16.patch" > "$W/log/p
 # frame copied into its window through the clip list by the card's blitter
 # (TinyGL on the Z3660's soft3D), so menus and overlapping windows survive
 patch -p1 --no-backup-if-mismatch < "$W/local-soft3d-swap.patch" > "$W/log/patch-local-soft3d-swap.log"
+
+# local change: RandR 1.1, a live resolution change (xrandr, the CDE display
+# panel).  The DIX extension is xorg-server 1.0.2's randr/ and the headers are
+# randrproto 1.1.2, both pristine from the tarballs; local-randr.patch fits
+# randr.c to the R6.3 DIX, registers the extension, adds ScreenRestructured
+# to dix/events.c and the DDX side (rtg/rtgRandR.c, ZZ9000SetSize)
+(cd "$DISTFILES" && sha256sum -c "$W/SOURCES.sha256") > "$W/log/randr-sha256.log"
+rm -rf "$W/work-randr"; mkdir -p "$W/work-randr"
+tar -xjf "$DISTFILES/xorg-server-1.0.2.tar.bz2" -C "$W/work-randr" \
+	xorg-server-1.0.2/randr/randr.c xorg-server-1.0.2/randr/randrstr.h
+tar -xjf "$DISTFILES/randrproto-1.1.2.tar.bz2" -C "$W/work-randr" \
+	randrproto-1.1.2/randr.h randrproto-1.1.2/randrproto.h
+mkdir -p programs/Xserver/randr
+cp "$W/work-randr/xorg-server-1.0.2/randr/randr.c" \
+	"$W/work-randr/xorg-server-1.0.2/randr/randrstr.h" programs/Xserver/randr/
+cp "$W/work-randr/randrproto-1.1.2/randr.h" \
+	"$W/work-randr/randrproto-1.1.2/randrproto.h" include/extensions/
+rm -rf "$W/work-randr"
+patch -p1 --no-backup-if-mismatch < "$W/local-randr.patch" > "$W/log/patch-local-randr.log"
 
 # local change: MIT-SHM on (Mesa's back buffer, x11perf -shmput); the port
 # kernel's ISSUE-62/66 fixes made shmget/shmat safe, shmband-tested 2026-10-25

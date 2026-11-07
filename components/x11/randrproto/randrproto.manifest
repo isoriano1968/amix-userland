@@ -1,0 +1,8 @@
+# name, version and what building and running it needs
+name     x11/randrproto
+version  1.1.2
+summary  RandR extension headers (protocol 1.1)
+provide  randrproto
+file     /usr/x11r6/include/X11/extensions/randr.h
+file     /usr/x11r6/include/X11/extensions/randrproto.h
+file     /usr/x11r6/lib/pkgconfig/randrproto.pc

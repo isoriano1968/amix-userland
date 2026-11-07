@@ -1,0 +1,13 @@
+diff -ru a/src/Picture.c b/src/Picture.c
+--- a/src/Picture.c	2005-07-23 20:06:16.000000000 +0200
++++ b/src/Picture.c	2026-11-07 11:23:16.579323648 +0100
+@@ -26,7 +26,8 @@
+ #include <config.h>
+ #endif
+ #include "Xrenderint.h"
+-#include <X11/Xregion.h>
++/* AMIX: X11R6.3 has the Region internals as lib/X11/region.h (later Xregion.h) */
++#include "region.h"
+ 
+ static void
+ _XRenderProcessPictureAttributes (Display		    *dpy,

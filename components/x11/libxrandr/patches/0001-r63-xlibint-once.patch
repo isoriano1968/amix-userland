@@ -1,0 +1,12 @@
+diff -ru a/src/Xrandr.c b/src/Xrandr.c
+--- a/src/Xrandr.c	2005-09-30 06:25:14.000000000 +0200
++++ b/src/Xrandr.c	2026-11-07 11:24:13.607486158 +0100
+@@ -31,7 +31,7 @@
+ #include <stdio.h>
+ #include <X11/Xlib.h>
+ /* we need to be able to manipulate the Display structure on events */
+-#include <X11/Xlibint.h>
++/* AMIX: X11R6.3's Xlibint.h has no include guard; Xrandrint.h includes it */
+ #include <X11/extensions/render.h>
+ #include <X11/extensions/Xrender.h>
+ #include "Xrandrint.h"

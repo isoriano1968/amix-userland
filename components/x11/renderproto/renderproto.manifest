@@ -1,0 +1,8 @@
+# name, version and what building and running it needs
+name     x11/renderproto
+version  0.9.2
+summary  Render extension headers (protocol 0.9)
+provide  renderproto
+file     /usr/x11r6/include/X11/extensions/render.h
+file     /usr/x11r6/include/X11/extensions/renderproto.h
+file     /usr/x11r6/lib/pkgconfig/renderproto.pc
