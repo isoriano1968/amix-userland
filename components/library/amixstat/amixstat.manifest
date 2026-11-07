@@ -1,5 +1,5 @@
 # name, version and what building and running it needs
 name     library/amixstat
-version  1.1
+version  1.2
 summary  libamixstat and amixstat: memory, swap, CPU, processes, file systems, network, core 1's network
 provide  amixstat

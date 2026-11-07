@@ -1,9 +1,11 @@
 # libamixstat: what the running AMIX system is doing (memory, swap, CPU,
 # processes, file systems, network interfaces, the Z3660 core 1's network), for amixsysmon and amixtop,
 # and the amixstat command that prints it.  Ours: no download.  The command
-# is installed setgid sys, as the library reads /dev/kmem.
+# is installed setgid sys, as the library reads /dev/kmem.  The process list
+# comes from the setuid root helper lib/amixstat/psinfo for a user other
+# than root: AMIX's /proc lets a process open only its own user's processes.
 COMPONENT_NAME    = amixstat
-COMPONENT_VERSION = 1.1
+COMPONENT_VERSION = 1.2
 
 include ../../../make-rules/shared.mk
 include ../../../make-rules/shlib.mk
@@ -24,17 +26,28 @@ build:
 	$(CC) -o build/amixstat build/amixstat-cmd.o -Lbuild -lamixstat -Wl,-R,$(PREFIX)/lib
 	m68k-elf-strip build/amixstat
 	../../../tools/amix-fix-needed build/amixstat
+	# the helper links the library's archive: as a setuid program it loads
+	# no library but libc (by its absolute name)
+	$(CC) $(CFLAGS) -Ifiles -c files/psinfo.c -o build/psinfo.o
+	$(CC) -o build/psinfo build/psinfo.o build/libamixstat.a
+	m68k-elf-strip build/psinfo
+	../../../tools/amix-fix-needed build/psinfo
 
 stage:
 	rm -rf $(STAGE_DIR)
 	mkdir -p $(STAGE_DIR)$(PREFIX)/bin $(STAGE_DIR)$(PREFIX)/include $(STAGE_DIR)$(PREFIX)/lib/pkgconfig
 	cp build/amixstat $(STAGE_DIR)$(PREFIX)/bin/
+	mkdir -p $(STAGE_DIR)$(PREFIX)/lib/amixstat
+	cp build/psinfo $(STAGE_DIR)$(PREFIX)/lib/amixstat/
+	chmod 4755 $(STAGE_DIR)$(PREFIX)/lib/amixstat/psinfo
 	cp files/amixstat.h $(STAGE_DIR)$(PREFIX)/include/
 	sed -e 's|@PREFIX@|$(PREFIX)|' -e 's|@VERSION@|$(COMPONENT_VERSION)|' files/amixstat.pc.in \
 		> $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/amixstat.pc
 	mkdir -p $(STUB_DIR)
 	printf '%s\n' '# amixstat reads /dev/kmem: group sys, setgid (amix-install runs this)' \
 		'/usr/bin/chgrp sys $(PREFIX)/bin/amixstat && /usr/bin/chmod 2755 $(PREFIX)/bin/amixstat' \
+		'# psinfo reads every /proc entry for the process list: setuid root' \
+		'/usr/bin/chown root $(PREFIX)/lib/amixstat/psinfo && /usr/bin/chmod 4755 $(PREFIX)/lib/amixstat/psinfo' \
 		> $(STUB_DIR)/native.sh
 	$(stage_finish)
 

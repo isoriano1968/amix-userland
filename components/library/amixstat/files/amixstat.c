@@ -25,6 +25,8 @@
 #include <sys/socket.h>
 #include <net/if.h>
 #include <sys/mman.h>
+#include <sys/wait.h>
+#include <errno.h>
 #include "amixstat.h"
 
 #define KBASE       0x08000000UL
@@ -418,7 +420,8 @@ int ast_cpu(struct ast_cpu *c)
     return 0;
 }
 
-int ast_procs(struct ast_proc **list)
+/* every process, as root: the setuid helper psinfo calls this */
+int ast__procs_scan(struct ast_proc **list)
 {
     DIR *dir = opendir("/proc");
     struct dirent *e;
@@ -426,9 +429,17 @@ int ast_procs(struct ast_proc **list)
     int n = 0, cap = 0;
     unsigned long pg = (unsigned long)sysconf(_SC_PAGESIZE);
 
+    /* /proc opens a process's file only for a caller with that process's
+     * real, effective and saved ids; a setgid sys program (amixsysmon,
+     * amixtop, amixstat) has egid sys and is refused even its own processes.
+     * Run the scan with the real gid; the saved gid sys brings it back. */
+    gid_t egid = getegid(), rgid = getgid();
+
     *list = NULL;
     if (!dir)
         return -1;
+    if (egid != rgid)
+        setgid(rgid);
     while ((e = readdir(dir)) != NULL) {
         char path[64];
         prpsinfo_t ps;
@@ -472,8 +483,87 @@ int ast_procs(struct ast_proc **list)
         memcpy(p->args, ps.pr_psargs, sizeof p->args - 1 < PRARGSZ ? sizeof p->args - 1 : PRARGSZ);
     }
     closedir(dir);
+    if (egid != rgid)
+        setgid(egid);
     *list = v;
     return n;
+}
+
+/*
+ * AMIX's /proc lets a process open only its own user's process files.  The
+ * setuid root helper AMIXSTAT_PSINFO reads every process (its scan is
+ * ast__procs_scan) and writes them to a pipe: "APS1", the record size, the
+ * count and the records.  Without the helper, or when it fails, the list
+ * has the caller's own processes only.
+ */
+#ifndef AMIXSTAT_PSINFO
+#define AMIXSTAT_PSINFO "/usr/local/lib/amixstat/psinfo"
+#endif
+
+static int read_all(int fd, void *buf, size_t len)
+{
+    char *p = buf;
+
+    while (len > 0) {
+        ssize_t r = read(fd, p, len);
+        if (r < 0 && errno == EINTR)
+            continue;
+        if (r <= 0)
+            return -1;
+        p += r;
+        len -= (size_t)r;
+    }
+    return 0;
+}
+
+static int procs_helper(struct ast_proc **list)
+{
+    int fd[2], status;
+    long hdr[3];
+    pid_t pid;
+    struct ast_proc *v = NULL;
+    char *noenv[] = { NULL };
+
+    if (access(AMIXSTAT_PSINFO, X_OK) < 0 || pipe(fd) < 0)
+        return -1;
+    if ((pid = fork()) < 0) {
+        close(fd[0]);
+        close(fd[1]);
+        return -1;
+    }
+    if (pid == 0) {
+        dup2(fd[1], 1);
+        close(fd[0]);
+        close(fd[1]);
+        execle(AMIXSTAT_PSINFO, "psinfo", (char *)NULL, noenv);
+        _exit(127);
+    }
+    close(fd[1]);
+    if (read_all(fd[0], hdr, sizeof hdr) == 0 && hdr[0] == 0x41505331L &&
+        hdr[1] == (long)sizeof(struct ast_proc) && hdr[2] >= 0 && hdr[2] < 100000 &&
+        (hdr[2] == 0 || (v = malloc((size_t)hdr[2] * sizeof *v)) != NULL) &&
+        (hdr[2] == 0 || read_all(fd[0], v, (size_t)hdr[2] * sizeof *v) == 0)) {
+        close(fd[0]);
+        while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
+            ;
+        *list = v;
+        return (int)hdr[2];
+    }
+    free(v);
+    close(fd[0]);
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
+        ;
+    return -1;
+}
+
+int ast_procs(struct ast_proc **list)
+{
+    int n;
+
+    *list = NULL;
+    if (geteuid() != 0 && (n = procs_helper(list)) >= 0)
+        return n;
+    return ast__procs_scan(list);
 }
 
 int ast_filesystems(struct ast_fs **list)
