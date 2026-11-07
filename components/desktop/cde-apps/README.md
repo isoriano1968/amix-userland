@@ -8,6 +8,7 @@ One directory per application.
 | `amixcast/` | Streaming: a window with the tree of a DLNA server's folders. `amixcast.py` runs on a PC, reads the server and has VLC transcode at the bitrate and from the time asked for; ffplay shows it through the Z3660's second ARM core |
 | `ztopcde/` | The Z3660 in a window: temperatures, clocks, and the programs of its second ARM core |
 | `amixsysmon/` | System Monitor, after GNOME's: processes (end, kill), the last minute of CPU, memory, swap and network, the file systems, the Z3660; on [library/amixstat](../../library/amixstat) |
+| `amixdisplay/` | Display, after the Linux desktops' panels: the screen resolution and refresh, live through RandR with a 15 s "keep?" countdown; the user's own default and (setuid helper) the login screen's; design and mode table in [DESIGN.md](amixdisplay/DESIGN.md) |
 | `panel/` | The AMIX control in CDE's front panel, with a subpanel holding both |
 
 The core 1 programs and `armbench` are in

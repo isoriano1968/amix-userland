@@ -1,0 +1,14 @@
+#
+# amixdisplay.dt -- Display: the screen resolution, refresh and colours of
+# the Z3660 X server.  Installed in /etc/dt/appconfig/types/C.
+#
+ACTION AmixDisplay
+{
+	LABEL		Display
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/opt/amix/bin/amixdisplay
+	ICON		Display
+	DESCRIPTION	The screen resolution, refresh and colours, for you \
+			and for the login screen.
+}

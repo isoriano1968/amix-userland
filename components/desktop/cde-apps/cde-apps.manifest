@@ -5,3 +5,4 @@ require  x11/x11r6.3
 require  desktop/cde
 require  desktop/motif
 require  library/amixstat
+require  x11/libxrandr

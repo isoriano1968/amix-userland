@@ -1,0 +1,3 @@
+# AMIX: the user's own screen mode ($HOME/.amixdisplay, set in Display),
+# before the window manager starts (amixdisplay -restore)
+[ -x /opt/amix/bin/amixdisplay ] && /opt/amix/bin/amixdisplay -restore
