@@ -276,6 +276,12 @@ int main(int argc, char **argv)
 			}
 			default:
 				err = ulps(res[0], w->g[0], p, emin);
+				/* m68k's extended format has one more denormal binade than
+				 * the x87's the glibc values come from (smallest denormal
+				 * 2^-16446, not 2^-16445): the next long double toward zero
+				 * differs by format, so these are judged against musl's bits */
+				if (e->ty == 'l' && !strncmp(e->name, "next", 4))
+					err = same_bits(res[0], w->m[0]) ? 0 : 1e30;
 			}
 			/* C99 Annex G (an infinite or NaN part): musl does not follow
 			 * it everywhere, so these are counted, not judged */
