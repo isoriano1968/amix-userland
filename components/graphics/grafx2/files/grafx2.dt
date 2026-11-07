@@ -1,0 +1,15 @@
+#
+# grafx2.dt -- Grafx2 in CDE.  Installed in /etc/dt/appconfig/types/C.
+#
+ACTION Grafx2
+{
+	LABEL		Grafx2
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/usr/local/bin/grafx2 %Args%
+	ICON		Grafx2
+	DESCRIPTION	Grafx2, the 256-colour pixel art paint program in the \
+			spirit of Deluxe Paint: brushes, stencils, gradients, \
+			colour cycling, layers and animation, IFF/ILBM, GIF, PNG, \
+			PCX and the classic Amiga, Atari and C64 picture formats.
+}

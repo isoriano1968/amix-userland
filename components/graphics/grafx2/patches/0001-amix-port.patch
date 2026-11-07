@@ -1,0 +1,92 @@
+AMIX: no free-memory call (default size), SVR4 mount table (getmntent on
+/etc/mnttab), config in ~/.grafx2, the installed bin directory when argv[0]
+has none, and getcwd(NULL, 0), which allocates only on glibc.
+
+diff --git a/src/io.c b/src/io.c
+index 074445b..c6c5d49 100644
+--- a/src/io.c
++++ b/src/io.c
+@@ -1073,7 +1073,13 @@ char * Get_current_directory(char * buf, word * * unicode, size_t size)
+   free(cur_dir);
+   return buf;
+ #else
+-  char * ret = getcwd(buf, size);
++  char * ret;
++#if defined(__amix__)
++  // SVR4's getcwd() allocates the buffer only when it is given a size
++  if (buf == NULL && size == 0)
++    size = 1024;
++#endif
++  ret = getcwd(buf, size);
+ #if !defined (__amigaos__)
+   if (ret == NULL)
+     GFX2_Log(GFX2_ERROR, "getcwd(%p, %lu) failed !\n", buf, (unsigned long)size);
+diff --git a/src/mountlist.c b/src/mountlist.c
+index 0db7bb5..9af8176 100644
+--- a/src/mountlist.c
++++ b/src/mountlist.c
+@@ -45,6 +45,8 @@
+     #warning "Your platform is missing some specific code here ! please check and fix :)"
+ #elif defined(__SWITCH__)
+     // Nothing much to do
++#elif defined(__amix__)
++    #define MOUNTED_GETMNTENT2
+ #else
+     #define MOUNTED_GETMNTENT1
+ #endif
+@@ -704,10 +706,10 @@ read_file_system_list (bool need_fs_type)
+       {
+         while ((ret = getmntent (fp, &mnt)) == 0)
+           {
+-            me = xmalloc (sizeof *me);
+-            me->me_devname = xstrdup (mnt.mnt_special);
+-            me->me_mountdir = xstrdup (mnt.mnt_mountp);
+-            me->me_type = xstrdup (mnt.mnt_fstype);
++            me = malloc (sizeof *me);
++            me->me_devname = strdup (mnt.mnt_special);
++            me->me_mountdir = strdup (mnt.mnt_mountp);
++            me->me_type = strdup (mnt.mnt_fstype);
+             me->me_type_malloced = 1;
+             me->me_dummy = MNT_IGNORE (&mnt) != 0;
+             me->me_remote = ME_REMOTE (me->me_devname, me->me_type);
+diff --git a/src/osdep.c b/src/osdep.c
+index e71df0b..cc0e390 100644
+--- a/src/osdep.c
++++ b/src/osdep.c
+@@ -268,7 +268,7 @@ unsigned long Memory_free(void)
+   // There is some way to get memory information on switch (see include switch/kernel/svc.h svcGetInfo svcGetSystemInfo)
+   // but the usage is a bit confusing for the first and the later need privilege to be used.
+   // If you come here with a solution, you'r welcome. For now we just return the default value.
+-#elif
++#elif !defined(__amix__)
+ #warning "There is missing code there for your platform ! please check and correct :)"
+ #endif
+   return 10*1024*1024;
+diff --git a/src/setup.c b/src/setup.c
+index ede5a9c..bc72d0b 100644
+--- a/src/setup.c
++++ b/src/setup.c
+@@ -138,6 +138,12 @@ char * Get_program_directory(const char * argv0)
+   }
+   else
+     program_dir = Extract_path(argv0);
++  #elif defined(__amix__)
++  // started through PATH, argv[0] has no directory: the installed one
++  if (strchr(argv0, '/') != NULL)
++    program_dir = Extract_path(argv0);
++  else
++    program_dir = strdup(AMIX_BINDIR "/");
+   #elif defined(__HAIKU__)
+   program_dir = Extract_path(haiku_get_app_path());
+   
+@@ -272,6 +278,10 @@ char * Get_config_directory(const char * program_dir)
+          const char* Config_SubDir = "";
+          printf("GFX2.CFG not found in %s\n",filename);
+          config_parent_dir = strdup(config_dir);
++      #elif defined(__amix__)
++         // ~/.grafx2: AMIX has no ~/.config, and the creation is one level only
++         const char* Config_SubDir = ".grafx2";
++         config_parent_dir = getenv("HOME");
+       #else
+          // ~/.config/grafx2
+          const char* Config_SubDir;

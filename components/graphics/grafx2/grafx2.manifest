@@ -1,0 +1,15 @@
+# name, version and what building and running it needs
+name     graphics/grafx2
+version  2.9
+summary  Grafx2: 256-colour pixel art paint program inspired by Deluxe Paint, X11 front end
+require  x11/x11r6.3
+require  library/libpng
+require  library/zlib
+require  library/amixc99
+file     /usr/local/bin/grafx2
+file     /usr/local/share/grafx2/gfx2def.ini
+file     /usr/local/share/grafx2/gfx2.gif
+file     /usr/local/share/grafx2/skins/skin_DPaint.png
+file     /usr/local/share/grafx2/fonts/8pxfont.png
+file     /etc/dt/appconfig/types/C/grafx2.dt
+file     /etc/dt/appconfig/icons/C/Grafx2.l.pm

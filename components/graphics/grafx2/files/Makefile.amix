@@ -1,0 +1,36 @@
+# Makefile.amix -- Grafx2 with its X11 back end for AMIX, no autoconf.
+# make -f Makefile.amix CC=... CFLAGS=... XCFLAGS=... XLIBS=... (in src/)
+OBJS = main.o init.o graph.o x11screen.o misc.o osdep.o special.o \
+       buttons.o palette.o help.o operatio.o pages.o \
+       readline.o engine.o filesel.o fileseltools.o \
+       op_c.o readini.o saveini.o \
+       shade.o keyboard.o io.o version.o text.o SFont.o setup.o \
+       pxsimple.o pxtall.o pxwide.o pxdouble.o pxtriple.o \
+       pxtall2.o pxtall3.o pxwide2.o pxquad.o \
+       windows.o brush.o realpath.o mountlist.o input.o hotkeys.o \
+       transform.o pversion.o factory.o \
+       loadsave.o loadsavefuncs.o \
+       pngformat.o motoformats.o stformats.o c64formats.o cpcformats.o \
+       ifformat.o msxformats.o packbits.o giformat.o \
+       2gsformats.o packbytes.o \
+       fileformats.o miscfileformats.o libraw2crtc.o \
+       brush_ops.o buttons_effects.o layers.o \
+       oldies.o tiles.o colorred.o unicode.o gfx2surface.o \
+       gfx2log.o gfx2mem.o tifformat.o c64load.o 6502.o $(EXTRA_OBJS)
+CFLAGS ?= -O2
+CPPFLAGS = -DUSE_X11 -DNOTTF=1 -DNORECOIL -D__no_tifflib__ $(EXTRA_CPPFLAGS) $(XCFLAGS)
+
+grafx2: $(OBJS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(XLIBS)
+
+version.c:
+	echo 'const char SVN_revision[]="$(REVISION)";' > $@
+
+.c.o:
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
+clean:
+	rm -f grafx2 $(OBJS) version.c
+
+6502.o: 6502.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -DCPU_6502_STATIC -DCPU_6502_USE_LOCAL_HEADER -DCPU_6502_DEPENDENCIES_H=\"6502types.h\" -c 6502.c -o $@

@@ -1,7 +1,7 @@
 #
 # amix.fp -- the AMIX control in CDE's front panel, with the AMIX logo: its
 # subpanel holds AmixCast, the Z3660 window, the System Monitor, NEdit,
-# fsv and NetSurf.  Every CDE application of ours gets a control here.  Installed in
+# fsv, NetSurf and Grafx2.  Every CDE application of ours gets a control here.  Installed in
 # /etc/dt/appconfig/types/C in place of ztopcde.fp; dtwm reads it when the
 # workspace manager starts (Restart Workspace Manager).
 #
@@ -96,4 +96,17 @@ CONTROL NetSurfPanel
 	PUSH_ACTION	NetSurf
 	DROP_ACTION	NetSurf
 	HELP_STRING	Web browser (web/netsurf)
+}
+
+CONTROL Grafx2Panel
+{
+	TYPE		icon
+	CONTAINER_NAME	AmixPanel
+	CONTAINER_TYPE	SUBPANEL
+	POSITION_HINTS	7
+	ICON		Grafx2
+	LABEL		Grafx2
+	PUSH_ACTION	Grafx2
+	DROP_ACTION	Grafx2
+	HELP_STRING	Pixel art paint program in the spirit of Deluxe Paint (graphics/grafx2)
 }

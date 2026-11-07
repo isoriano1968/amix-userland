@@ -1,0 +1,190 @@
+The X11 back end for any TrueColor visual: pixel values from the visual's
+masks (16 bits on AMIX's Xzz9000), the image in the host's byte order (Xlib
+converts it), and the icon pixmap at the screen's depth instead of 24.
+
+diff --git a/src/x11screen.c b/src/x11screen.c
+index 6d8be42..d6047f2 100644
+--- a/src/x11screen.c
++++ b/src/x11screen.c
+@@ -24,6 +24,7 @@
+ #include <X11/Xutil.h>
+ #include <X11/Xatom.h>
+ #include <X11/XKBlib.h>
++#include <X11/keysym.h>
+ #include "screen.h"
+ #include "gfx2surface.h"
+ #include "loadsave.h"
+@@ -38,6 +39,52 @@ static GC X11_gc = 0;
+ static T_GFX2_Surface * screen = NULL;
+ static T_GFX2_Surface * icon = NULL;
+ 
++/*
++ * Any TrueColor visual, not only 32 bits in the PC's byte order: the pixel
++ * value of each palette entry from the visual's masks (16 bits on AMIX's
++ * Xzz9000), the image in this machine's byte order (Xlib swaps it for a
++ * server with the other one).
++ */
++static unsigned long X11_rmask, X11_gmask, X11_bmask;
++static unsigned long X11_palpix[256];
++
++static unsigned long X11_channel(byte v, unsigned long mask)
++{
++  int shift = 0, bits = 0;
++  unsigned long m = mask;
++  if (m == 0) return 0;
++  while (!(m & 1)) { m >>= 1; shift++; }
++  while (m & 1) { m >>= 1; bits++; }
++  if (bits < 8)
++    return ((unsigned long)v >> (8 - bits)) << shift;
++  return ((unsigned long)v << (bits - 8)) << shift;
++}
++
++static unsigned long X11_pixel(byte r, byte g, byte b)
++{
++  return X11_channel(r, X11_rmask) | X11_channel(g, X11_gmask) | X11_channel(b, X11_bmask);
++}
++
++static XImage * X11_new_image(Visual * visual, int depth, int w, int h)
++{
++  static const unsigned short one = 1;
++  XImage * img = XCreateImage(X11_display, visual, depth, ZPixmap, 0, NULL, w, h, 32, 0);
++  if (img == NULL) return NULL;
++  img->data = malloc((size_t)img->bytes_per_line * h);
++  if (img->data == NULL) { XDestroyImage(img); return NULL; }
++  memset(img->data, 0, (size_t)img->bytes_per_line * h);
++  // the image in our own byte order: Xlib converts it for the server
++  img->byte_order = *(const unsigned char *)&one ? LSBFirst : MSBFirst;
++  return img;
++}
++
++static void X11_update_palpix(void)
++{
++  int i;
++  for (i = 0; i < 256; i++)
++    X11_palpix[i] = X11_pixel(screen->palette[i].R, screen->palette[i].G, screen->palette[i].B);
++}
++
+ void GFX2_Set_mode(int *width, int *height, int fullscreen)
+ {
+   int s;
+@@ -72,7 +119,15 @@ void GFX2_Set_mode(int *width, int *height, int fullscreen)
+       XFree(depths);
+     }
+   }
+-  depth = DisplayPlanes(X11_display, s);
++  depth = DefaultDepth(X11_display, s);
++  if (visual->class != TrueColor && visual->class != DirectColor)
++  {
++    GFX2_Log(GFX2_ERROR, "X11: needs a TrueColor visual (the default is class %d, depth %d)\n", visual->class, depth);
++    exit(1);
++  }
++  X11_rmask = visual->red_mask;
++  X11_gmask = visual->green_mask;
++  X11_bmask = visual->blue_mask;
+ 
+   if (X11_window == 0)
+   {
+@@ -103,15 +158,13 @@ void GFX2_Set_mode(int *width, int *height, int fullscreen)
+     // set icon
+     if (icon != NULL)
+     {
+-      XImage * icon_image = XCreateImage(X11_display, visual, depth,
+-                             ZPixmap, 0, malloc(icon->w * icon->h * 4),
+-                             icon->w, icon->h, 32, 0/**width * 4*/);
++      XImage * icon_image = X11_new_image(visual, depth, icon->w, icon->h);
+       if (icon_image != NULL)
+       {
+         char * transp_data;
+         int x, y;
+         Pixmap icon_mask;
+-        Pixmap icon_pixmap = XCreatePixmap(X11_display, X11_window, icon->w, icon->h, 24);
++        Pixmap icon_pixmap = XCreatePixmap(X11_display, X11_window, icon->w, icon->h, depth);
+ 
+         transp_data = calloc(1, ((icon->w + 7) >> 3) * icon->h);
+         for (y = 0; y < icon->h; y++)
+@@ -122,7 +175,7 @@ void GFX2_Set_mode(int *width, int *height, int fullscreen)
+             if (v != 0) // assume 0 is transparent
+               transp_data[(x >> 3) + ((icon->w + 7) >> 3) * y] |= (1 << (x & 7));
+             XPutPixel(icon_image, x, y,
+-                      (unsigned)icon->palette[v].R << 16 | (unsigned)icon->palette[v].G << 8 | (unsigned)icon->palette[v].B);
++                      X11_pixel(icon->palette[v].R, icon->palette[v].G, icon->palette[v].B));
+           }
+         }
+         // Transfer icon_image to the icon_pixmap
+@@ -141,8 +194,8 @@ void GFX2_Set_mode(int *width, int *height, int fullscreen)
+           XFree(hints);
+         }
+         free(transp_data);
++        XDestroyImage(icon_image);
+       }
+-      XDestroyImage(icon_image);
+     }
+ 
+     XSelectInput(X11_display, X11_window,
+@@ -173,13 +226,8 @@ void GFX2_Set_mode(int *width, int *height, int fullscreen)
+ 
+   if (X11_image == NULL)
+   {
+-    char * image_pixels = NULL;
+-
+-    image_pixels = malloc(*height * *width * 4);
+-    memset(image_pixels, 64, *height * *width * 4);
+-    X11_image = XCreateImage(X11_display, visual, depth,
+-                             ZPixmap, 0, image_pixels, *width, *height,
+-                             32, 0/**width * 4*/);
++    X11_image = X11_new_image(visual, depth, *width, *height);
++    X11_update_palpix();
+     if(X11_image == NULL)
+     {
+       GFX2_Log(GFX2_ERROR, "XCreateImage failed\n");
+@@ -242,6 +290,7 @@ int GFX2_SetPalette(const T_Components * colors, int firstcolor, int ncolors)
+ {
+   if (screen == NULL) return 0;
+   memcpy(screen->palette + firstcolor, colors, ncolors * sizeof(T_Components));
++  X11_update_palpix();
+   // update full screen
+   Update_rect(0, 0, screen->w, screen->h);
+   return 1;
+@@ -268,28 +317,25 @@ void Update_rect(short x, short y, unsigned short width, unsigned short height)
+     width = screen->w - x;
+   for (line = y; line < y + height; line++)
+   {
+-#if 1
+     const byte * src = Get_Screen_pixel_ptr(x, line);
+-    byte * dest = (byte *)X11_image->data + line * X11_image->bytes_per_line + x * 4;
+-    i = width;
+-    do
++    char * row = X11_image->data + line * X11_image->bytes_per_line;
++    if (X11_image->bits_per_pixel == 32)
++    {
++      unsigned int * dest = (unsigned int *)row + x;
++      for (i = width; i > 0; i--)
++        *dest++ = (unsigned int)X11_palpix[*src++];
++    }
++    else if (X11_image->bits_per_pixel == 16)
+     {
+-      dest[0] = screen->palette[*src].B;
+-      dest[1] = screen->palette[*src].G;
+-      dest[2] = screen->palette[*src].R;
+-      dest[3] = 0;
+-      src++;
+-      dest += 4;
++      unsigned short * dest = (unsigned short *)row + x;
++      for (i = width; i > 0; i--)
++        *dest++ = (unsigned short)X11_palpix[*src++];
+     }
+-    while(--i > 0);
+-#else
+-    for (i = 0; i < width; i++)
++    else
+     {
+-      byte v = Get_Screen_pixel(x + i, line);
+-      XPutPixel(X11_image, x + i, line,
+-                (unsigned)screen->palette[v].R << 16 | (unsigned)screen->palette[v].G << 8 | (unsigned)screen->palette[v].B);
++      for (i = 0; i < width; i++)
++        XPutPixel(X11_image, x + i, line, X11_palpix[src[i]]);
+     }
+-#endif
+   }
+   XPutImage(X11_display, X11_window, X11_gc, X11_image,
+             x, y, x, y, width, height);
