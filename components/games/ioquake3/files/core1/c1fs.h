@@ -30,7 +30,9 @@ int c1fs_add(const char *name, size_t size, int flags);
 /* a file of SIZE bytes the 68k serves by request (read-only): its number, or -1 */
 int c1fs_add_remote(const char *name, size_t size);
 #define C1FS_BLOCK      (256u << 10)    /* remote files' block */
+#ifndef C1FS_CACHE_MAX
 #define C1FS_CACHE_MAX  (48u << 20)     /* what remote files may hold in memory */
+#endif
 /* the file by its path, or -1 */
 int c1fs_find(const char *name);
 /* number of files written since their last flush */

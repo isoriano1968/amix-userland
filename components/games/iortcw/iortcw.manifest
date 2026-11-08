@@ -1,9 +1,12 @@
 # name, version and what building and running it needs
 name     games/iortcw
 version  438e7d4
-summary  Return to Castle Wolfenstein on core 1
+summary  Return to Castle Wolfenstein: the 060 build with GL on core 1, and the whole engine on core 1 (wolf.sh, c1q3)
 require  x11/mesa-183
 require  x11/x11r6.3
 require  library/lib060
+require  library/dlmalloc
+require  games/ioquake3
 file     /opt/rtcw/wolf.sh
 file     /opt/rtcw/iowolfsp.m68k
+file     /root/z3660ARMCores/z3660ARM_Core_wolf.bin

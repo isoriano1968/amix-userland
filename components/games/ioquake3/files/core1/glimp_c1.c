@@ -13,7 +13,11 @@
 #include <string.h>
 #include <GL/osmesa.h>
 
+#ifdef C1_WOLF
+#include "renderer/tr_local.h"
+#else
 #include "renderercommon/tr_common.h"
+#endif
 #include "c1q3.h"
 
 cvar_t *r_allowSoftwareGL;

@@ -168,7 +168,7 @@ CONTROL AmixQ3Panel
 	CONTAINER_TYPE	SUBPANEL
 	POSITION_HINTS	12
 	ICON		AmixQ3
-	LABEL		Quake III
+	LABEL		Quake III / RtCW
 	PUSH_ACTION	AmixQ3
-	HELP_STRING	Quake III Arena (the demo) with the whole engine on the Z3660's ARM core 1 (games/ioquake3): picture in the overlay, sound on HDMI, F10 quits
+	HELP_STRING	Quake III Arena or Return to Castle Wolfenstein with the whole engine on the Z3660's ARM core 1 (games/ioquake3, games/iortcw): picture in the overlay, sound on HDMI, F10 quits
 }

@@ -13,7 +13,9 @@
  *     -volume N        0-256
  *     -exec SECS CMD   a console command SECS after the engine started (up to 8;
  *                      e.g. -exec 200 "setviewpos 1052 1432 24 135" -exec 300 quit)
- *     -core FILE       the core image (default /root/z3660ARMCores/z3660ARM_Core_q3.bin; root only)
+ *     -core FILE       the core image (default /root/z3660ARMCores/z3660ARM_Core_q3.bin;
+ *                      users may also name z3660ARM_Core_wolf.bin, RtCW from games/iortcw:
+ *                      -core .../z3660ARM_Core_wolf.bin -base /opt/rtcw -game main)
  *     -remote-over MB  files bigger than this (default 64) stay on AMIX: core 1 asks for
  *                      their blocks as it reads them (RtCW's 198 MB pak does not fit)
  *     -profile FILE    core 1's pc at every timer tick (200 a second) into FILE, one hex
@@ -84,6 +86,7 @@ struct zz9k_reg { unsigned short offset, value; };
 #define SHARED_OFF          0x07B00000UL
 
 #define DEFAULT_CORE        "/root/z3660ARMCores/z3660ARM_Core_q3.bin"
+#define WOLF_CORE           "/root/z3660ARMCores/z3660ARM_Core_wolf.bin"   /* games/iortcw */
 #define MAX_FILES           400
 #define HOME_FILE_MAX       (8UL << 20)     /* bigger files in the home stay out */
 
@@ -804,8 +807,9 @@ int main(int argc, char **argv)
         ovl_x = (info.width - pic_w) / 2;
         ovl_y = (info.height - pic_h) / 2;
     }
-    if (getuid() != 0 && strcmp(core, DEFAULT_CORE)) {
-        fprintf(stderr, "c1q3: -core is for root only\n");
+    /* a user may only name the game images that are installed (q3, wolf) */
+    if (getuid() != 0 && strcmp(core, DEFAULT_CORE) && strcmp(core, WOLF_CORE)) {
+        fprintf(stderr, "c1q3: -core %s is for root only (users: %s or %s)\n", core, DEFAULT_CORE, WOLF_CORE);
         return 2;
     }
     putenv("PATH=/bin:/usr/bin:/opt/amix/bin");

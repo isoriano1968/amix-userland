@@ -9,7 +9,8 @@ ACTION AmixQ3
 	WINDOW_TYPE	NO_STDIO
 	EXEC_STRING	/opt/amix/bin/amixq3
 	ICON		AmixQ3
-	DESCRIPTION	Quake III Arena (the demo) with the whole engine and \
+	DESCRIPTION	Quake III Arena (the demo) or Return to Castle \
+			Wolfenstein with the whole engine and \
 			its GL on the Z3660's second ARM core: picture in the \
 			RTG overlay, sound on HDMI.  F10 quits the game.
 }

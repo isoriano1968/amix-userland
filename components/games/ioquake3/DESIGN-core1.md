@@ -166,12 +166,43 @@ Later the same day:
   engine itself ~3 %. A second spawn-view run gave 226 ms with the same
   shape: scripted views vary; compare with a timedemo.
 
+## RtCW (games/iortcw), the same image design
+
+`games/iortcw/files/core1/Makefile` builds `z3660ARM_Core_wolf.bin` from
+iortcw's SP engine, renderer and modules with this directory's harness and
+glue (`-DC1_WOLF`: `Sys_GetDLLName` names, iortcw's few own system calls,
+the renderer's header; `-DC1_CORE_NAME="wolf"`). Its module lists come from
+upstream's Makefile (`lists.py`, as `amix/build.py`). `patches/0004` there:
+the platform block, hunk 64 / zone 16, 16 raw sound streams (RtCW streams
+its dialogue; 257 were 33 MB), and the pak checks off as for the 060 build
+(the paks are the user's own, reduced by trimpaks.py). The image is 9.9 MB,
+.bss 40 MB, heap 128 + 72 MB, the block cache 24 MB. c1q3 runs it
+(`-core .../z3660ARM_Core_wolf.bin -base /opt/rtcw -game main`, which a user
+may name too); `wolf.sh` does that with RtCW's settings and `+spmap escape1`;
+the 198 MB pak stays on AMIX (by request), the 21 MB one goes in whole.
+
+Board, 2026-11-09 00:00 (escape1, 640x480, com_recommendedSet 1, fresh home;
+the user clicked past the briefing):
+
+| | iortcw, engine on the 060 + zzgl | wolf image, all on core 1 |
+|---|---|---|
+| files into core 1 | - | pak1 21 MB in, pak0 198 MB by request (13 s) |
+| CL_InitCGame (escape1) | ~200 s (534 s to the end of loading) | **46.7 s** |
+| a frame in the level | ~900 ms (1.1 fps) | **~420 ms (2.4 fps)**, 365-500 |
+| of it: engine (gm+cl+ev+sv+rf) | ~600 ms on the 060 | ~21 ms |
+| of it: softpipe (bk) | the rest, on core 1 | ~344 ms |
+
+Profile (250 s in the level): span routines ~60 % (`nspan_1_2_0` 27 %,
+`nspan_1_1_*` 30 %), `util_format_r8g8b8a8_unorm_pack_rgba_float` 6 % (a
+generic path softpipe takes for some of RtCW's draws: a target), tex_setup
+5 %, vertex shader 3.5 %, c1p_fetch 1.4 % (pak blocks during play), present
+1.2 %.
+
 ## Next
 
 1. Renderer: the span routines (amix-gate sp_fast, shared with the gpu
    core): NEON bilinear for both units, 4 pixels at a time; a timedemo to
    measure.
 2. Done: q3.sh starts c1q3; Quake III (cde-apps/amixq3) in the AMIX panel.
-3. Renderer speed (the frame is softpipe): profile with the sampler.
-4. RtCW (iortcw) the same way, but its paks do not fit in core 1's memory:
-   blocks by request from the 060 (the data window has room for it).
+3. Done: RtCW (games/iortcw) on the same image design, paks by request.
+4. The generic pack path in RtCW's profile; a timedemo for both games.

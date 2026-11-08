@@ -51,8 +51,13 @@ extern void _vector_table(void);
 __attribute__((section(".benchid"), used))
 static const uint32_t bench_id[2] = { 0x48323634, (uint32_t)_vector_table };
 
-#define Q3_VERSION          HB_VERSION(0, 1, 0)     /* cores/CHANGES.md */
-static const char core_name[16] = "q3";
+/* the program's name and version for ztop (cores/CHANGES.md); the RtCW
+   image (games/iortcw) builds this same harness as "wolf" */
+#ifndef C1_CORE_NAME
+#define C1_CORE_NAME        "q3"
+#endif
+#define Q3_VERSION          HB_VERSION(0, 1, 0)
+static const char core_name[16] = C1_CORE_NAME;
 
 static volatile uint32_t *ctl = (volatile uint32_t *)(RTG_BASE + HB_CTL_OFF);
 static volatile uint32_t *pg = (volatile uint32_t *)(RTG_BASE + C1Q3_OFF);

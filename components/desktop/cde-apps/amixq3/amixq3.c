@@ -1,14 +1,15 @@
 /*
- * amixq3 -- Quake III: the CDE front end of Quake III Arena (ioquake3) on
- * the Z3660's ARM core 1 (games/ioquake3, z3660ARM_Core_q3.bin).  Choose
- * the picture's size and the map, then Start: c1q3 loads the game into core
+ * amixq3 -- Quake III: the CDE front end of Quake III Arena (ioquake3) and
+ * Return to Castle Wolfenstein (iortcw) on the Z3660's ARM core 1
+ * (games/ioquake3 z3660ARM_Core_q3.bin, games/iortcw z3660ARM_Core_wolf.bin).
+ * Choose the game, the picture's size and the map, then Start: c1q3 loads the game into core
  * 1 and opens the game's window, over which core 1 draws (the RTG overlay);
  * sound comes from HDMI.  F10 or closing the game's window quits the game,
  * Stop here too (the game writes its config back first).
  *
  * The board is c1q3's (root, /dev/zz9000); amixq3 runs it and shows its
- * status lines.  The game data is /opt/ioq3/demoq3 (the demo), the player's
- * files ~/.q3a (config, screenshots).  The setup is kept in ~/.amixq3; the
+ * status lines.  The game data is /opt/ioq3/demoq3 (the Quake III demo) and
+ * /opt/rtcw/main (your RtCW paks), the player's files ~/.q3a and ~/.wolf.  The setup is kept in ~/.amixq3; the
  * messages of c1q3 and of the engine on core 1 in ~/.q3a/amixq3.log.
  */
 #include <stdio.h>
@@ -37,16 +38,28 @@
 
 static const char *sizes[] = { "320x240", "400x300", "512x384", "640x480", "800x600" };
 #define NSIZES      5
-static const char *maps[] = { "Main menu", "q3dm1", "q3dm7", "q3dm17", "q3tourney2" };
 #define NMAPS       5
+static const struct game {
+    const char *label, *core, *base, *game, *home, *map_cmd, *maps[NMAPS], *extra[8];
+} games[] = {
+    { "Quake III Arena", "/root/z3660ARMCores/z3660ARM_Core_q3.bin", "/opt/ioq3", "demoq3", ".q3a", "+map",
+      { "Main menu", "q3dm1", "q3dm7", "q3dm17", "q3tourney2" }, { NULL } },
+    /* spmap: single player (AI, scripts); RtCW's memory settings, as wolf.sh */
+    { "Return to Castle Wolfenstein", "/root/z3660ARMCores/z3660ARM_Core_wolf.bin", "/opt/rtcw", "main", ".wolf",
+      "+spmap", { "Main menu", "escape1", "escape2", "tram", NULL },
+      { "+set", "com_zoneMegs", "16", "+set", "com_soundMegs", "4", "+set", "com_recommendedSet" } },
+};
+#define NGAMES      2
+static int game_i;
 
 static XtAppContext app;
-static Widget top, size_menu, size_btn[NSIZES], cb_map, tf_extra, status, b_start, b_stop;
+static Widget top, size_menu, size_btn[NSIZES], game_menu, game_btn[NGAMES], cb_map, tf_extra, status, b_start, b_stop;
 static int size_i = 3;
 static pid_t child = -1;
 static int from_c1 = -1;
 static XtInputId in_id;
 static char home[1024];
+static void maps_show(void);
 
 static void say(const char *s)
 {
@@ -81,7 +94,12 @@ static void setup_load(void)
         if (!v)
             continue;
         *v++ = 0;
-        if (!strcmp(line, "size")) {
+        if (!strcmp(line, "game")) {
+            for (i = 0; i < NGAMES; i++)
+                if (!strcmp(v, games[i].game))
+                    game_i = i;
+            maps_show();
+        } else if (!strcmp(line, "size")) {
             for (i = 0; i < NSIZES; i++)
                 if (!strcmp(v, sizes[i]))
                     size_i = i;
@@ -93,6 +111,7 @@ static void setup_load(void)
     }
     fclose(f);
     XtVaSetValues(size_menu, XmNmenuHistory, size_btn[size_i], NULL);
+    XtVaSetValues(game_menu, XmNmenuHistory, game_btn[game_i], NULL);
 }
 
 static char *map_text(void)
@@ -108,7 +127,7 @@ static void setup_save(void)
     char *m = map_text(), *e = XmTextFieldGetString(tf_extra);
 
     if (f) {
-        fprintf(f, "size=%s\nmap=%s\nextra=%s\n", sizes[size_i], m, e);
+        fprintf(f, "game=%s\nsize=%s\nmap=%s\nextra=%s\n", games[game_i].game, sizes[size_i], m, e);
         fclose(f);
     }
     XtFree(m);
@@ -199,8 +218,16 @@ static void start(Widget w, XtPointer cd, XtPointer cb)
         return;
     }
     sscanf(sizes[size_i], "%7[0-9]x%7[0-9]", ws, hs);
+    sprintf(home, "%.1000s/%s", getenv("HOME") ? getenv("HOME") : ".", games[game_i].home);
+    mkdir(home, 0755);
     argv[argc++] = C1Q3;
     argv[argc++] = "-v";                /* the engine's console: into the log */
+    argv[argc++] = "-core";
+    argv[argc++] = (char *)games[game_i].core;
+    argv[argc++] = "-base";
+    argv[argc++] = (char *)games[game_i].base;
+    argv[argc++] = "-game";
+    argv[argc++] = (char *)games[game_i].game;
     argv[argc++] = "-width";
     argv[argc++] = ws;
     argv[argc++] = "-height";
@@ -212,10 +239,18 @@ static void start(Widget w, XtPointer cd, XtPointer cb)
         static char map[128];
 
         strncpy(map, m, sizeof(map) - 1);
-        argv[argc++] = "+map";
+        argv[argc++] = (char *)games[game_i].map_cmd;
         argv[argc++] = map;
     }
     XtFree(m);
+    {
+        int k;
+
+        for (k = 0; k < 8 && games[game_i].extra[k]; k++)
+            argv[argc++] = (char *)games[game_i].extra[k];
+        if (game_i == 1)
+            argv[argc++] = "1";         /* com_recommendedSet 1 */
+    }
     e = XmTextFieldGetString(tf_extra);
     strncpy(extra_copy, e, sizeof(extra_copy) - 1);
     XtFree(e);
@@ -278,6 +313,28 @@ static void quit(Widget w, XtPointer cd, XtPointer cb)
     exit(0);
 }
 
+/* the chosen game's maps in the list */
+static void maps_show(void)
+{
+    XmString items[NMAPS];
+    int n;
+
+    for (n = 0; n < NMAPS && games[game_i].maps[n]; n++)
+        items[n] = XmStringCreateLocalized((char *)games[game_i].maps[n]);
+    XtVaSetValues(cb_map, XmNitems, items, XmNitemCount, n, XmNvisibleItemCount, n, NULL);
+    while (n-- > 0)
+        XmStringFree(items[n]);
+    if (XtNameToWidget(cb_map, "*Text"))
+        XmTextFieldSetString(XtNameToWidget(cb_map, "*Text"), "Main menu");
+}
+
+static void game_cb(Widget w, XtPointer cd, XtPointer cb)
+{
+    (void)w; (void)cb;
+    game_i = (int)(long)cd;
+    maps_show();
+}
+
 static void size_cb(Widget w, XtPointer cd, XtPointer cb)
 {
     (void)w; (void)cb;
@@ -294,8 +351,20 @@ int main(int argc, char **argv)
     signal(SIGPIPE, SIG_IGN);
     sprintf(home, "%.1000s/.q3a", getenv("HOME") ? getenv("HOME") : ".");
     mkdir(home, 0755);
-    top = XtVaAppInitialize(&app, "Amixq3", NULL, 0, &argc, argv, NULL, XmNtitle, "Quake III", NULL);
+    top = XtVaAppInitialize(&app, "Amixq3", NULL, 0, &argc, argv, NULL, XmNtitle, "Quake III / RtCW", NULL);
     form = XtVaCreateManagedWidget("form", xmFormWidgetClass, top, NULL);
+
+    pulldown = XmCreatePulldownMenu(form, "games", NULL, 0);
+    for (i = 0; i < NGAMES; i++) {
+        game_btn[i] = XtVaCreateManagedWidget(games[i].label, xmPushButtonWidgetClass, pulldown, NULL);
+        XtAddCallback(game_btn[i], XmNactivateCallback, game_cb, (XtPointer)(long)i);
+    }
+    XtSetArg(a[0], XmNsubMenuId, pulldown);
+    XtSetArg(a[1], XmNlabelString, XmStringCreateLocalized("Game"));
+    game_menu = XmCreateOptionMenu(form, "game", a, 2);
+    XtVaSetValues(game_menu, XmNtopAttachment, XmATTACH_FORM, XmNtopOffset, 8,
+                  XmNleftAttachment, XmATTACH_FORM, XmNleftOffset, 8, NULL);
+    XtManageChild(game_menu);
 
     pulldown = XmCreatePulldownMenu(form, "sizes", NULL, 0);
     for (i = 0; i < NSIZES; i++) {
@@ -305,7 +374,7 @@ int main(int argc, char **argv)
     XtSetArg(a[0], XmNsubMenuId, pulldown);
     XtSetArg(a[1], XmNlabelString, XmStringCreateLocalized("Picture"));
     size_menu = XmCreateOptionMenu(form, "size", a, 2);
-    XtVaSetValues(size_menu, XmNtopAttachment, XmATTACH_FORM, XmNtopOffset, 8,
+    XtVaSetValues(size_menu, XmNtopAttachment, XmATTACH_WIDGET, XmNtopWidget, game_menu, XmNtopOffset, 4,
                   XmNleftAttachment, XmATTACH_FORM, XmNleftOffset, 8, NULL);
     XtManageChild(size_menu);
 
@@ -313,7 +382,7 @@ int main(int argc, char **argv)
         XmNtopAttachment, XmATTACH_WIDGET, XmNtopWidget, size_menu, XmNtopOffset, 14,
         XmNleftAttachment, XmATTACH_FORM, XmNleftOffset, 14, NULL);
     for (i = 0; i < NMAPS; i++)
-        items[i] = XmStringCreateLocalized((char *)maps[i]);
+        items[i] = XmStringCreateLocalized((char *)games[0].maps[i]);
     cb_map = XtVaCreateManagedWidget("map", xmComboBoxWidgetClass, form,
         XmNcomboBoxType, XmDROP_DOWN_COMBO_BOX, XmNitems, items, XmNitemCount, NMAPS,
         XmNvisibleItemCount, NMAPS, XmNcolumns, 24,
@@ -344,7 +413,7 @@ int main(int argc, char **argv)
     XtAddCallback(b_start, XmNactivateCallback, start, NULL);
     XtAddCallback(b_stop, XmNactivateCallback, stop, NULL);
     XtAddCallback(last, XmNactivateCallback, quit, NULL);
-    status = XtVaCreateManagedWidget("Choose the picture and a map, then Start.  F10 quits the game.",
+    status = XtVaCreateManagedWidget("Choose the game, the picture and a map, then Start.  F10 quits the game.",
         xmLabelWidgetClass, form,
         XmNtopAttachment, XmATTACH_WIDGET, XmNtopWidget, row, XmNtopOffset, 6,
         XmNleftAttachment, XmATTACH_FORM, XmNleftOffset, 8, XmNbottomAttachment, XmATTACH_FORM,

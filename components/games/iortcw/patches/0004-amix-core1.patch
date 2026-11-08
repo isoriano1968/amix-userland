@@ -1,0 +1,93 @@
+AMIX: iortcw (single player) as a program for the Z3660's ARM core 1
+(files/core1), bare metal: the platform block, heap defaults, 16 raw sound
+streams instead of 257; the pak checks off as for the 060 build (the paks are
+the user's own, reduced by amix/trimpaks.py).
+
+diff -ruN a/code/client/snd_local.h b/code/client/snd_local.h
+--- a/code/client/snd_local.h	2026-11-08 23:05:59.684012856 +0100
++++ b/code/client/snd_local.h	2026-11-08 23:05:59.696012795 +0100
+@@ -226,7 +226,13 @@
+ } streamingSound_t;
+ 
+ #define	MAX_RAW_SAMPLES	16384
++#if defined(__z3660core__)
++// the Z3660's core 1: 16 streams (music and the streamed dialogue); the
++// 257 are 33 MB of its memory
++#define MAX_RAW_STREAMS 16
++#else
+ #define MAX_RAW_STREAMS (MAX_CLIENTS * 2 + 1)
++#endif
+ extern streamingSound_t streamingSounds[MAX_RAW_STREAMS];
+ extern	portable_samplepair_t s_rawsamples[MAX_RAW_STREAMS][MAX_RAW_SAMPLES];
+ extern	int		s_rawend[MAX_RAW_STREAMS];
+diff -ruN a/code/qcommon/common.c b/code/qcommon/common.c
+--- a/code/qcommon/common.c	2026-11-08 23:05:59.684012856 +0100
++++ b/code/qcommon/common.c	2026-11-08 23:05:59.696012795 +0100
+@@ -46,7 +46,13 @@
+ #define MAX_NUM_ARGVS   50
+ 
+ #define MIN_DEDICATED_COMHUNKMEGS 1
+-#ifdef __amix__
++#if defined(__z3660core__)
++/* the Z3660's core 1: about 224 MB of heap for everything (the core 1
++   image, files/core1); the paks stay on AMIX, by request */
++#define MIN_COMHUNKMEGS		56
++#define DEF_COMHUNKMEGS 	64
++#define DEF_COMZONEMEGS		16
++#elif defined(__amix__)
+ /* the A3000 has 128 MB and no swap */
+ #define MIN_COMHUNKMEGS		56
+ #define DEF_COMHUNKMEGS 	64
+diff -ruN a/code/qcommon/q_platform.h b/code/qcommon/q_platform.h
+--- a/code/qcommon/q_platform.h	2026-11-08 23:05:59.684012856 +0100
++++ b/code/qcommon/q_platform.h	2026-11-08 23:05:59.696012795 +0100
+@@ -167,6 +167,19 @@
+ 
+ //================================================================= LINUX ===
+ 
++#if defined(__z3660core__)
++/* the Z3660's second Cortex-A9, bare metal (newlib), as its own core 1
++   image beside AMIX (files/core1): the game modules are linked in */
++
++#define OS_STRING "z3660core1"
++#define ID_INLINE inline
++#define PATH_SEP '/'
++#define ARCH_STRING "arm"
++#define Q3_LITTLE_ENDIAN
++#define DLL_EXT ".so"
++
++#endif
++
+ #if defined(__amix__)
+ 
+ #define OS_STRING "amix"
+diff -ruN a/code/qcommon/files.c b/code/qcommon/files.c
+--- a/code/qcommon/files.c	2026-11-08 23:09:02.511224182 +0100
++++ b/code/qcommon/files.c	2026-11-08 23:09:02.527224125 +0100
+@@ -3967,7 +3967,7 @@
+ 	}
+ 
+ 	if(!founddemo)
+-#if defined(__amix__) || defined(AMIX_HOST)
++#if defined(__amix__) || defined(AMIX_HOST) || defined(__z3660core__)
+ 		;
+ #else
+ 		FS_CheckSPPaks();
+@@ -4300,7 +4300,7 @@
+ 	FS_Startup(com_basegame->string);
+ 
+ #ifndef STANDALONE
+-#if !defined(__amix__) && !defined(AMIX_HOST)	/* amix/trimpaks.py: one reduced pak */
++#if !defined(__amix__) && !defined(AMIX_HOST) && !defined(__z3660core__)	/* amix/trimpaks.py: one reduced pak */
+ 	FS_CheckPak0( );
+ #endif
+ #endif
+@@ -4340,7 +4340,7 @@
+ 	FS_Startup(com_basegame->string);
+ 
+ #ifndef STANDALONE
+-#if !defined(__amix__) && !defined(AMIX_HOST)	/* amix/trimpaks.py: one reduced pak */
++#if !defined(__amix__) && !defined(AMIX_HOST) && !defined(__z3660core__)	/* amix/trimpaks.py: one reduced pak */
+ 	FS_CheckPak0( );
+ #endif
+ #endif

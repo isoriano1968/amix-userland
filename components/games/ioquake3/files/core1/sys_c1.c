@@ -117,11 +117,29 @@ static void module_files(void)
             char path[MAX_OSPATH];
             int f;
 
+#ifdef C1_WOLF
+            Com_sprintf(path, sizeof(path), "/base/%s/%s", dirs[j], Sys_GetDLLName(modules[k].name));
+#else
             Com_sprintf(path, sizeof(path), "/base/%s/%s%s", dirs[j], modules[k].name, DLL_EXT);
+#endif
             if (c1fs_find(path) < 0 && (f = c1fs_add(path, 1, 0)) >= 0)
                 c1fs[f].data[0] = 0;
         }
 }
+
+#ifdef C1_WOLF
+/* iortcw names its modules cgame.sp.arm.so ... */
+char *Sys_GetDLLName(const char *name)
+{
+    return va("%s.sp." ARCH_STRING DLL_EXT, name);
+}
+
+/* iortcw's own system calls: one home, no other programs, a fast enough CPU */
+char *Sys_DefaultHomePath(void) { return "/home"; }
+void Sys_StartProcess(char *cmdline, qboolean doexit) { (void)cmdline; (void)doexit; }
+void Sys_OpenURL(char *url, qboolean doexit) { (void)url; (void)doexit; }
+int Sys_GetHighQualityCPU(void) { return 1; }
+#endif
 
 /* --- console, errors, exit --- */
 void Sys_Print(const char *msg)

@@ -210,7 +210,7 @@ def main():
             text(at.pop(0)[1]); print('fake060: exec', text_get()); command(CMD_EXEC)
         while keys and keys[0][0] <= el:
             k = keys.pop(0)[1]
-            code = KEYS.get(k, ord(k[0]) if len(k) == 1 else int(k))
+            code = KEYS[k] if k in KEYS else ord(k[0]) if len(k) == 1 else int(k)
             event(EV_KEY << 24 | 1 << 16 | code); event(EV_KEY << 24 | code)
             if len(k) == 1: event(EV_CHAR << 24 | ord(k))
             print('fake060: key', k)

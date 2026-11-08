@@ -5,6 +5,7 @@
 #
 #   files/qemu/run.sh [-gdb] fake060-options...      (see fake060.py)
 #
+# ELF=<image.elf> runs another image of this harness (games/iortcw build/core1/wolf.elf).
 # -gdb: a gdb stub on :12345 (arm-none-eabi-gdb build/core1/q3.elf, target remote :12345;
 # attaching stops the core where it is)
 # The ioquake3 image has no qemu-arm build: this is its only PC test.
@@ -18,7 +19,7 @@ rm -f "$ddr"
 # shellcheck disable=SC2086
 "$QEMU" -M xilinx-zynq-a9 -m 1G -nographic -monitor none -serial null $gdb \
     -object memory-backend-file,id=ddr,size=1G,mem-path="$ddr",share=on -machine memory-backend=ddr \
-    -device loader,file="$top/build/core1/q3.elf",cpu-num=0 &
+    -device loader,file="${ELF:-$top/build/core1/q3.elf}",cpu-num=0 &
 q=$!
 trap 'kill $q 2>/dev/null; rm -f "$ddr"' EXIT INT TERM
 while [ ! -s "$ddr" ]; do sleep 0.2; done
