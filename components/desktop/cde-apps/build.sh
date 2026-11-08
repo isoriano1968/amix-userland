@@ -5,7 +5,7 @@
 set -e
 cd "$(dirname "$0")"
 P=../../../tools/amix-pkg-config
-for app in ${*:-amixcast ztopcde amixsysmon amixdisplay amixuae}; do
+for app in ${*:-amixcast ztopcde amixsysmon amixdisplay amixuae amixprinters}; do
 	pkgs=xm
 	[ $app = amixsysmon ] && pkgs="xm amixstat"	# library/amixstat
 	[ $app = amixdisplay ] && pkgs="xm xrandr"	# x11/libxrandr
@@ -19,5 +19,13 @@ for app in ${*:-amixcast ztopcde amixsysmon amixdisplay amixuae}; do
 		  -o amixdisplay/setlogin amixdisplay/setlogin.c
 		../../../tools/amix-fix-needed amixdisplay/setlogin > /dev/null
 		ls -l amixdisplay/setlogin
+	fi
+	if [ $app = amixprinters ]; then	# the search tool, the sender, the setuid lp helper: no X
+		for t in amixprfind prsend prset; do
+			m68k-elf-gcc -O2 -m68060 -Wall -Wno-implicit-function-declaration -Wno-pointer-sign \
+			  -o amixprinters/$t amixprinters/$t.c -lsocket -lnsl
+			../../../tools/amix-fix-needed amixprinters/$t > /dev/null
+			ls -l amixprinters/$t
+		done
 	fi
 done

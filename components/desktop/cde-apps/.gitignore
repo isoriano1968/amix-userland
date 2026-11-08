@@ -7,3 +7,7 @@ amixdisplay/amixdisplay
 amixdisplay/setlogin
 amixuae/amixuae
 __pycache__/
+amixprinters/amixprinters
+amixprinters/amixprfind
+amixprinters/prsend
+amixprinters/prset

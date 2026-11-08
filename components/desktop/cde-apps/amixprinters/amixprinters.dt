@@ -1,0 +1,14 @@
+#
+# amixprinters.dt -- Printers: find the network printers (UPnP, Bonjour)
+# and set them up for lp.  Installed in /etc/dt/appconfig/types/C.
+#
+ACTION AmixPrinters
+{
+	LABEL		Printers
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/opt/amix/bin/amixprinters
+	ICON		AmixPrinters
+	DESCRIPTION	Find the printers on the network (UPnP and Bonjour), \
+			add one, make it the default, print a test page.
+}

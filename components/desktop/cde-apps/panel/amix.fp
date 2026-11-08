@@ -1,7 +1,7 @@
 #
 # amix.fp -- the AMIX control in CDE's front panel, with the AMIX logo: its
 # subpanel holds AmixCast, the Z3660 window, the System Monitor, NEdit,
-# fsv, NetSurf, Grafx2, Display and PyDPainter.  Every CDE application of ours gets a control here.  Installed in
+# fsv, NetSurf, Grafx2, Display, PyDPainter, AmixUAE and Printers.  Every CDE application of ours gets a control here.  Installed in
 # /etc/dt/appconfig/types/C in place of ztopcde.fp; dtwm reads it when the
 # workspace manager starts (Restart Workspace Manager).
 #
@@ -147,4 +147,16 @@ CONTROL AmixUAEPanel
 	PUSH_ACTION	AmixUAE
 	DROP_ACTION	AmixUAE
 	HELP_STRING	An Amiga 500/600/1200 on the Z3660's ARM core 1 (emulators/uae4arm): drop .adf or .hdf files here to boot them
+}
+
+CONTROL AmixPrintersPanel
+{
+	TYPE		icon
+	CONTAINER_NAME	AmixPanel
+	CONTAINER_TYPE	SUBPANEL
+	POSITION_HINTS	11
+	ICON		AmixPrinters
+	LABEL		Printers
+	PUSH_ACTION	AmixPrinters
+	HELP_STRING	Find network printers over UPnP and Bonjour, set them up for lp (amixprinters)
 }
