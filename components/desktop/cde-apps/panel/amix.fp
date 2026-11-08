@@ -145,5 +145,6 @@ CONTROL AmixUAEPanel
 	ICON		AmixUAE
 	LABEL		Amiga
 	PUSH_ACTION	AmixUAE
-	HELP_STRING	An Amiga emulated on the Z3660's ARM core 1 (emulators/uae4arm)
+	DROP_ACTION	AmixUAE
+	HELP_STRING	An Amiga 500/600/1200 on the Z3660's ARM core 1 (emulators/uae4arm): drop .adf or .hdf files here to boot them
 }

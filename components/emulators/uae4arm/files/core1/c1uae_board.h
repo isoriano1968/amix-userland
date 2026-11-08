@@ -93,6 +93,7 @@ enum {
     C1UA_W_IN_TAIL,             /* core 1: next input event it reads */
     C1UA_W_LOG_HEAD,            /* core 1: bytes written into the log ring */
     C1UA_W_ERR,                 /* core 1: why C1UA_FAILED (C1UA_E_*) */
+    C1UA_W_OWNER,               /* 68k: the pid of the c1uae that runs the Amiga (0: none) */
     C1UA_W_BM_STATE,            /* CMD_BENCH with c1bench.adf: the last mark seen ('S', 'E', 'D') */
     C1UA_W_BM_FRAMES,           /* emulated frames from 'S' to 'D' */
     C1UA_W_BM_TICKS_LO, C1UA_W_BM_TICKS_HI,  /* timer ticks from 'S' to 'D' */

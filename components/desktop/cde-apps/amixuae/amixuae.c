@@ -15,6 +15,12 @@
  *   Keys as joystick       cursor keys = port 2 stick, Right Alt fire,
  *                          Right Amiga second button
  *
+ * Files on the command line (CDE passes them for Open and for a drop on
+ * the panel control): .adf/.adz/.dms go into DF0, DF1 ..., .hdf into the
+ * hard file, a Kickstart (.rom, .bin, kick*.a500 ...: by name, else by its
+ * size and first bytes) into the Kickstart field.  With a disk among them
+ * the Amiga starts at once.
+ *
  * Settings in ~/.amixuae (one key=value a line).
  */
 #include <stdio.h>
@@ -357,8 +363,14 @@ static void stopped(void)
         close(from_c1);
         from_c1 = -1;
     }
-    if (child > 0)
-        waitpid(child, &st, 0);
+    if (child > 0 && waitpid(child, &st, 0) == child && WIFEXITED(st)) {
+        if (WEXITSTATUS(st) == 3)
+            say("The Amiga is already running (another window has it).");
+        else if (WEXITSTATUS(st) == 127)
+            say("c1uae is not installed (emulators/uae4arm).");
+        else if (WEXITSTATUS(st) != 0)
+            say("The Amiga could not start: see c1uae -v in a terminal.");
+    }
     child = -1;
     ungrab();
     if (emu_shell)
@@ -378,7 +390,7 @@ static void from_c1uae(XtPointer cd, int *src, XtInputId *id)
     r = (int)read(*src, buf + n, sizeof(buf) - 1 - n);
     if (r <= 0) {
         say("The Amiga stopped.");
-        stopped();
+        stopped();                      /* says why, if it did not end well */
         return;
     }
     n += r;
@@ -514,6 +526,173 @@ static void quit(Widget w, XtPointer cd, XtPointer cb)
     exit(0);
 }
 
+/* --- the windows' icon: our own XPM (1 char a pixel, as mkicons.py writes
+   it), read without libXpm --- */
+#define ICON_FILE   "/etc/dt/appconfig/icons/C/AmixUAE.l.pm"
+
+static void window_icon(Widget shell)
+{
+    Display *d = XtDisplay(top);
+    Window root = RootWindowOfScreen(XtScreen(top));
+    Colormap cm = DefaultColormapOfScreen(XtScreen(top));
+    FILE *f = fopen(ICON_FILE, "r");
+    char line[256], key[64];
+    unsigned long pix[64];
+    int w = 0, h = 0, nc = 0, i = 0, y = 0;
+    Pixmap p = 0, mask = 0;
+    GC gc = 0, mgc = 0;
+
+    if (!f)
+        return;
+    memset(key, 0, sizeof(key));
+    while (fgets(line, sizeof(line), f)) {
+        char *q = strchr(line, '"'), *e;
+
+        if (!q || !(e = strchr(q + 1, '"')))
+            continue;
+        *e = 0;
+        q++;
+        if (!w) {
+            if (sscanf(q, "%d %d %d", &w, &h, &nc) != 3 || w > 64 || h > 64 || nc > 63)
+                break;
+            p = XCreatePixmap(d, root, (unsigned)w, (unsigned)h, (unsigned)DefaultDepthOfScreen(XtScreen(top)));
+            mask = XCreatePixmap(d, root, (unsigned)w, (unsigned)h, 1);
+            gc = XCreateGC(d, p, 0, NULL);
+            mgc = XCreateGC(d, mask, 0, NULL);
+        } else if (i < nc) {            /* "X c #RRGGBB" or "X c None" */
+            XColor c, exact;
+
+            key[i] = q[0];
+            if (strstr(q + 1, "None"))
+                pix[i] = (unsigned long)-1;
+            else if (XAllocNamedColor(d, cm, strrchr(q, ' ') + 1, &c, &exact))
+                pix[i] = c.pixel;
+            else
+                pix[i] = BlackPixelOfScreen(XtScreen(top));
+            i++;
+        } else if (y < h) {
+            int x;
+
+            for (x = 0; x < w && q[x]; x++) {
+                const char *k = strchr(key, q[x]);
+                const unsigned long v = k ? pix[k - key] : (unsigned long)-1;
+
+                XSetForeground(d, mgc, v == (unsigned long)-1 ? 0 : 1);
+                XDrawPoint(d, mask, mgc, x, y);
+                if (v != (unsigned long)-1) {
+                    XSetForeground(d, gc, v);
+                    XDrawPoint(d, p, gc, x, y);
+                }
+            }
+            y++;
+        }
+    }
+    fclose(f);
+    if (gc)
+        XFreeGC(d, gc);
+    if (mgc)
+        XFreeGC(d, mgc);
+    if (p && y == h)
+        XtVaSetValues(shell, XmNiconPixmap, p, XmNiconMask, mask, NULL);
+}
+
+/* --- files given on the command line --- */
+enum { F_NONE, F_FLOPPY, F_HDF, F_KICK };
+
+static int ext_is(const char *path, const char *ext)
+{
+    const char *dot = strrchr(path, '.');
+    int i;
+
+    if (!dot)
+        return 0;
+    for (i = 0; ext[i] && dot[1 + i]; i++)
+        if ((dot[1 + i] | 0x20) != ext[i])
+            return 0;
+    return !ext[i] && !dot[1 + i];
+}
+
+static int kind(const char *path)
+{
+    const char *base = strrchr(path, '/');
+    unsigned char head[4];
+    FILE *f;
+    long size;
+
+    base = base ? base + 1 : path;
+    if (ext_is(path, "adf") || ext_is(path, "adz") || ext_is(path, "dms"))
+        return F_FLOPPY;
+    if (ext_is(path, "hdf"))
+        return F_HDF;
+    if (ext_is(path, "rom") || !strncmp(base, "kick", 4))
+        return F_KICK;
+    if (!(f = fopen(path, "rb")))
+        return F_NONE;
+    fseek(f, 0L, SEEK_END);
+    size = ftell(f);
+    rewind(f);
+    head[0] = head[1] = 0;
+    fread(head, 1, 4, f);
+    fclose(f);
+    if (size == 901120)
+        return F_FLOPPY;
+    if ((size == 262144 || size == 524288) &&
+        ((head[0] == 0x11 && (head[1] == 0x11 || head[1] == 0x14)) || (head[0] == 0x14 && head[1] == 0x11)))
+        return F_KICK;                      /* also EPROM byte order (.bin) */
+    return F_NONE;
+}
+
+static void autostart(XtPointer cd, XtIntervalId *id)
+{
+    (void)cd; (void)id;
+    start(NULL, NULL, NULL);
+}
+
+/* returns 1 when a disk came, so the Amiga starts */
+static int take_files(int argc, char **argv)
+{
+    int i, df = 0, disk = 0;
+
+    for (i = 1; i < argc; i++) {
+        char *full = argv[i];
+
+        switch (kind(full)) {
+        case F_FLOPPY:
+            if (df == 0) {                  /* new disks replace the last session's */
+                int k;
+
+                for (k = 0; k < 4; k++)
+                    XmTextFieldSetString(tf_df[k], "");
+                XmTextFieldSetString(tf_hdf, "");
+            }
+            if (df < 4)
+                XmTextFieldSetString(tf_df[df++], full);
+            disk = 1;
+            break;
+        case F_HDF:
+            if (!disk) {
+                int k;
+
+                for (k = 0; k < 4; k++)
+                    XmTextFieldSetString(tf_df[k], "");
+            }
+            XmTextFieldSetString(tf_hdf, full);
+            disk = 1;
+            break;
+        case F_KICK:
+            XmTextFieldSetString(tf_kick, full);
+            break;
+        default: {
+            char m[300];
+
+            sprintf(m, "Not an Amiga disk or Kickstart: %.250s", full);
+            say(m);
+        }
+        }
+    }
+    return disk;
+}
+
 /* --- file choice --- */
 static void file_ok(Widget w, XtPointer cd, XtPointer cb)
 {
@@ -642,6 +821,10 @@ int main(int argc, char **argv)
 
     settings_load();
     XtRealizeWidget(top);
+    window_icon(top);
+    window_icon(emu_shell);
+    if (take_files(argc, argv))
+        XtAppAddTimeOut(app, 500, autostart, NULL);
     p = XCreateBitmapFromData(XtDisplay(top), XtWindow(top), &none, 1, 1);
     black.red = black.green = black.blue = 0;
     blank = XCreatePixmapCursor(XtDisplay(top), p, p, &black, &black, 0, 0);

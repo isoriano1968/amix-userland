@@ -1,15 +1,114 @@
 #
 # amixuae.dt -- Amiga: the Amiga emulator on the Z3660's ARM core 1
-# (emulators/uae4arm), its front end.  Installed in /etc/dt/appconfig/types/C.
+# (emulators/uae4arm), its front end, and the Amiga's files in the File
+# Manager.  Installed in /etc/dt/appconfig/types/C.
+#
+#   Amiga (AmixUAE)     the front end; files dropped on it or given to it
+#                       go into its fields (.adf DF0-DF3, .hdf hard file,
+#                       .rom/.bin Kickstart), and a disk starts the Amiga
+#   floppy images       .adf .adz .dms: their own icon, Open = boot it
+#   hard files          .hdf: Open = boot it
+#   Kickstart ROMs      .rom (Amiga Kickstart names), .a500/.a1200 ...:
+#                       Open = take it as the Kickstart, no start
 #
 ACTION AmixUAE
 {
 	LABEL		Amiga
 	TYPE		COMMAND
 	WINDOW_TYPE	NO_STDIO
-	EXEC_STRING	/opt/amix/bin/amixuae
+	EXEC_STRING	/opt/amix/bin/amixuae %Args%
 	ICON		AmixUAE
 	DESCRIPTION	An Amiga 500, 600 or 1200 on the Z3660's second ARM \
 			core: your Kickstart, your floppies and hard files, \
-			picture in the RTG overlay, sound on HDMI.
+			picture in the RTG overlay, sound on HDMI.  Drop \
+			disk images on it to boot them.
+}
+
+# --- floppy images ----------------------------------------------------------
+
+DATA_ATTRIBUTES AmigaADF
+{
+	ACTIONS		Open,AmixUAE
+	ICON		AmigaADF
+	DESCRIPTION	An Amiga floppy disk image.  Open boots it in the \
+			Amiga emulator (core 1).
+}
+
+DATA_CRITERIA AmigaADF1
+{
+	DATA_ATTRIBUTES_NAME	AmigaADF
+	MODE			f
+	NAME_PATTERN		*.[aA][dD][fFzZ]
+}
+
+DATA_CRITERIA AmigaADF2
+{
+	DATA_ATTRIBUTES_NAME	AmigaADF
+	MODE			f
+	NAME_PATTERN		*.[dD][mM][sS]
+}
+
+ACTION Open
+{
+	ARG_TYPE	AmigaADF
+	TYPE		MAP
+	MAP_ACTION	AmixUAE
+	LABEL		Boot in the Amiga
+}
+
+# --- hard files ---------------------------------------------------------------
+
+DATA_ATTRIBUTES AmigaHDF
+{
+	ACTIONS		Open,AmixUAE
+	ICON		AmigaHDF
+	DESCRIPTION	An Amiga hard file.  Open boots it in the Amiga \
+			emulator (core 1).
+}
+
+DATA_CRITERIA AmigaHDF1
+{
+	DATA_ATTRIBUTES_NAME	AmigaHDF
+	MODE			f
+	NAME_PATTERN		*.[hH][dD][fF]
+}
+
+ACTION Open
+{
+	ARG_TYPE	AmigaHDF
+	TYPE		MAP
+	MAP_ACTION	AmixUAE
+	LABEL		Boot in the Amiga
+}
+
+# --- Kickstart ROMs ---------------------------------------------------------
+
+DATA_ATTRIBUTES AmigaROM
+{
+	ACTIONS		Open,AmixUAE
+	ICON		AmigaROM
+	DESCRIPTION	An Amiga Kickstart ROM.  Open puts it into the \
+			Amiga emulator as its Kickstart.
+}
+
+DATA_CRITERIA AmigaROM1
+{
+	DATA_ATTRIBUTES_NAME	AmigaROM
+	MODE			f
+	NAME_PATTERN		*.[rR][oO][mM]
+}
+
+DATA_CRITERIA AmigaROM2
+{
+	DATA_ATTRIBUTES_NAME	AmigaROM
+	MODE			f
+	NAME_PATTERN		kick*.[aA][0-9]*
+}
+
+ACTION Open
+{
+	ARG_TYPE	AmigaROM
+	TYPE		MAP
+	MAP_ACTION	AmixUAE
+	LABEL		Use as Kickstart
 }

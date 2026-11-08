@@ -37,6 +37,7 @@
  *   pause 0|1, reset, volume N, stop
  * End of input = stop.  A status line goes to standard output once a second:
  *   status FRAMES FRAME_US UNDERRUNS DIRTY STATE
+ * Exit 3: another c1uae runs the Amiga already.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -424,8 +425,16 @@ int main(int argc, char **argv)
     }
     putenv("PATH=/bin:/usr/bin:/opt/amix/bin");
     putenv("IFS= \t\n");
+    /* one Amiga at a time: another c1uae that still lives keeps it */
+    if (ua[C1UA_W_MAGIC] == C1UA_MAGIC && ua[C1UA_W_OWNER] && ua[C1UA_W_OWNER] != (unsigned long)getpid() &&
+        (ua[C1UA_W_STATE] == C1UA_RUNNING || ua[C1UA_W_STATE] == C1UA_LOADING) &&
+        kill((pid_t)ua[C1UA_W_OWNER], 0) == 0) {
+        fprintf(stderr, "c1uae: the Amiga is already running (c1uae %lu)\n", ua[C1UA_W_OWNER]);
+        return 3;
+    }
     if (core_ready(core) < 0)
         return 1;
+    ua[C1UA_W_OWNER] = (unsigned long)getpid();
     /* from here on as the caller: the files are theirs */
     if (setgid(getgid()) < 0 || setuid(getuid()) < 0) {
         perror("c1uae: setuid");
@@ -547,5 +556,6 @@ int main(int argc, char **argv)
         flush();
     overlay(0);
     show_log();
+    ua[C1UA_W_OWNER] = 0;
     return ret;
 }
