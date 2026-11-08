@@ -13,7 +13,7 @@
 #   then exits 75.  So copies, builds' installs and tests of different
 #   sessions never overlap, and no measurement runs beside someone's load.
 # - With the lock, asks the box whether a player runs (ffplay, vplay, mikmod,
-#   quake, pt2): if one does, exits 75 without running anything.
+#   quake, pt2, iowolf, c1uae): if one does, exits 75 without running anything.
 # - Runs the command with the lock held; its exit status is ours.  While it
 #   runs, the box is asked every 5 s for a player: if the user starts one,
 #   the command's processes are stopped (SIGSTOP, so an scp's transfer halts
@@ -24,7 +24,7 @@ LOCK=/tmp/amix-box.lock
 INFO=/tmp/amix-box.who
 BOX=root@192.168.0.133
 KEY="-i $HOME/.ssh/id_ed25519_amix -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=60"
-PLAYERS='ffplay|vplay|mikmod|quake|pt2'
+PLAYERS='ffplay|vplay|mikmod|quake|pt2|iowolf|c1uae'
 wait=0
 what=""
 
