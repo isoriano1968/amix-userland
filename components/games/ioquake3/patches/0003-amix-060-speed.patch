@@ -1,0 +1,139 @@
+AMIX: 060 speed-ups found with prsample in iortcw (2026-11-08)
+
+- ioapi.c: 16 KB stdio buffer for pk3s (AMIX buffers 1 KB; the zip code reads
+  directories a byte at a time)
+- renderergl1 tr_local.h, tr_shade*.c: 32-bit sine-table indexes (int64_t
+  conversions are libgcc software routines on the 060)
+- msg.c: the message Huffman trees from a table made on the PC (amix/huffgen),
+  27 s of the 060's start-up otherwise
+
+--- a/code/qcommon/ioapi.c
++++ b/code/qcommon/ioapi.c
+@@ -70,6 +70,20 @@
+    voidpf stream));
+ 
+ 
++#ifdef __amix__
++/* AMIX's stdio buffers 1 KB: the zip code reads pk3 directories a byte at a
++   time through it, so every KB is a read(2) of ~50 us plus the disk.  A
++   larger buffer for the pk3s. */
++static FILE *amix_zbuf(FILE *f)
++{
++    if (f != NULL)
++        setvbuf(f, NULL, _IOFBF, 16384);
++    return f;
++}
++#else
++#define amix_zbuf(f) (f)
++#endif
++
+ voidpf ZCALLBACK fopen_file_func (opaque, filename, mode)
+    voidpf opaque;
+    const char* filename;
+@@ -87,7 +101,7 @@
+         mode_fopen = "wb";
+ 
+     if ((filename!=NULL) && (mode_fopen != NULL))
+-        file = fopen(filename, mode_fopen);
++        file = amix_zbuf(fopen(filename, mode_fopen));
+     return file;
+ }
+ 
+--- a/code/qcommon/msg.c
++++ b/code/qcommon/msg.c
+@@ -1666,6 +1666,17 @@
+ 13504,			// 255
+ };
+ 
++#ifdef __amix__
++/* AMIX: the finished trees from a table made on the PC (amix/huffgen/):
++   building them here takes 27 s on the 060 at every start. */
++#include "../../amix/huffrestore.h"
++
++void MSG_initHuffman( void ) {
++	msgInit = qtrue;
++	Huff_RestoreInit( &msgHuff.compressor, &huffinit[0] );
++	Huff_RestoreInit( &msgHuff.decompressor, &huffinit[1] );
++}
++#else
+ void MSG_initHuffman( void ) {
+ 	int i,j;
+ 
+@@ -1678,6 +1689,7 @@
+ 		}
+ 	}
+ }
++#endif
+ 
+ /*
+ void MSG_NUinitHuffman() {
+--- a/code/renderergl1/tr_local.h
++++ b/code/renderergl1/tr_local.h
+@@ -30,6 +30,16 @@
+ #endif
+ 
+ #include "../qcommon/q_shared.h"
++
++/* the integer type for the sine-table indexes of the shader waves: int64_t
++   keeps them from overflowing after weeks of shader time, but on the 060
++   every such conversion is a libgcc software routine, several per vertex
++   and frame.  A long is exact for 24 days and more (AMIX). */
++#ifdef __amix__
++#define tr_wave_int long
++#else
++#define tr_wave_int int64_t
++#endif
+ #include "../qcommon/qfiles.h"
+ #include "../qcommon/qcommon.h"
+ #include "../renderercommon/tr_public.h"
+--- a/code/renderergl1/tr_shade.c
++++ b/code/renderergl1/tr_shade.c
+@@ -226,7 +226,7 @@
+ =================
+ */
+ static void R_BindAnimatedImage( textureBundle_t *bundle ) {
+-	int64_t index;
++	tr_wave_int index;
+ 
+ 	if ( bundle->isVideoMap ) {
+ 		ri.CIN_RunCinematic(bundle->videoMapHandle);
+--- a/code/renderergl1/tr_shade_calc.c
++++ b/code/renderergl1/tr_shade_calc.c
+@@ -24,7 +24,7 @@
+ #include "tr_local.h"
+ 
+ 
+-#define	WAVEVALUE( table, base, amplitude, phase, freq )  ((base) + table[ ( (int64_t) ( ( (phase) + tess.shaderTime * (freq) ) * FUNCTABLE_SIZE ) ) & FUNCTABLE_MASK ] * (amplitude))
++#define	WAVEVALUE( table, base, amplitude, phase, freq )  ((base) + table[ ( (tr_wave_int) ( ( (phase) + tess.shaderTime * (freq) ) * FUNCTABLE_SIZE ) ) & FUNCTABLE_MASK ] * (amplitude))
+ 
+ static float *TableForFunc( genFunc_t func ) 
+ {
+@@ -208,7 +208,7 @@
+ 	now = backEnd.refdef.time * 0.001 * ds->bulgeSpeed;
+ 
+ 	for ( i = 0; i < tess.numVertexes; i++, xyz += 4, st += 4, normal += 4 ) {
+-		int64_t off;
++		tr_wave_int off;
+ 		float scale;
+ 
+ 		off = (float)( FUNCTABLE_SIZE / (M_PI*2) ) * ( st[0] * ds->bulgeWidth + now );
+@@ -926,8 +926,8 @@
+ 		float s = st[0];
+ 		float t = st[1];
+ 
+-		st[0] = s + tr.sinTable[ ( ( int64_t ) ( ( ( tess.xyz[i][0] + tess.xyz[i][2] )* 1.0/128 * 0.125 + now ) * FUNCTABLE_SIZE ) ) & ( FUNCTABLE_MASK ) ] * wf->amplitude;
+-		st[1] = t + tr.sinTable[ ( ( int64_t ) ( ( tess.xyz[i][1] * 1.0/128 * 0.125 + now ) * FUNCTABLE_SIZE ) ) & ( FUNCTABLE_MASK ) ] * wf->amplitude;
++		st[0] = s + tr.sinTable[ ( ( tr_wave_int ) ( ( ( tess.xyz[i][0] + tess.xyz[i][2] )* 1.0/128 * 0.125 + now ) * FUNCTABLE_SIZE ) ) & ( FUNCTABLE_MASK ) ] * wf->amplitude;
++		st[1] = t + tr.sinTable[ ( ( tr_wave_int ) ( ( tess.xyz[i][1] * 1.0/128 * 0.125 + now ) * FUNCTABLE_SIZE ) ) & ( FUNCTABLE_MASK ) ] * wf->amplitude;
+ 	}
+ }
+ 
+@@ -993,7 +993,7 @@
+ {
+ 	double timeScale = tess.shaderTime;
+ 	double degs;
+-	int64_t index;
++	tr_wave_int index;
+ 	float sinValue, cosValue;
+ 	texModInfo_t tmi;
+ 

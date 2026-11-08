@@ -1,0 +1,172 @@
+AMIX: r_frontToBack, opaque batches drawn near to far (2026-11-07)
+
+Core 1 tests depth before it textures a pixel, so opaque surfaces drawn
+near to far cost less.  Within the opaque sort class the batches keep their
+state; only their order and the order inside them change.  Off by default
+(r_frontToBack 0).
+
+--- a/code/renderergl1/tr_init.c
++++ b/code/renderergl1/tr_init.c
+@@ -133,6 +133,7 @@
+ cvar_t	*r_lockpvs;
+ cvar_t	*r_noportals;
+ cvar_t	*r_portalOnly;
++cvar_t	*r_frontToBack;
+ 
+ cvar_t	*r_subdivisions;
+ cvar_t	*r_lodCurveError;
+@@ -1113,6 +1114,7 @@
+ 	r_drawworld = ri.Cvar_Get ("r_drawworld", "1", CVAR_CHEAT );
+ 	r_lightmap = ri.Cvar_Get ("r_lightmap", "0", 0 );
+ 	r_portalOnly = ri.Cvar_Get ("r_portalOnly", "0", CVAR_CHEAT );
++	r_frontToBack = ri.Cvar_Get ("r_frontToBack", "0", 0 );
+ 
+ 	r_flareSize = ri.Cvar_Get ("r_flareSize", "40", CVAR_CHEAT);
+ 	r_flareFade = ri.Cvar_Get ("r_flareFade", "7", CVAR_CHEAT);
+--- a/code/renderergl1/tr_local.h
++++ b/code/renderergl1/tr_local.h
+@@ -1061,6 +1061,7 @@
+ extern	cvar_t	*r_lockpvs;
+ extern	cvar_t	*r_noportals;
+ extern	cvar_t	*r_portalOnly;
++extern	cvar_t	*r_frontToBack;	// AMIX: opaque batches near to far (tr_main.c)
+ 
+ extern	cvar_t	*r_subdivisions;
+ extern	cvar_t	*r_lodCurveError;
+--- a/code/renderergl1/tr_main.c
++++ b/code/renderergl1/tr_main.c
+@@ -1127,6 +1127,125 @@
+ 
+ /*
+ =================
++R_OrderOpaqueFrontToBack
++
++AMIX: core 1 tests depth before it textures a pixel, so opaque surfaces
++drawn near to far cost less.  Within the opaque sort class the batches
++(runs of the same sort key: one shader, entity, fog and dlight state) are
++ordered by their nearest surface and each batch's surfaces near to far.
++The batches stay as they are, so the draws and state changes do not grow;
++with the depth test the picture is the same.  r_frontToBack 0 turns it off.
++=================
++*/
++typedef struct {
++	float		dist;
++	int			first, num;
++} amixRun_t;
++
++static float R_SurfDistance( const drawSurf_t *ds, int entityNum ) {
++	const float *o = tr.viewParms.or.origin;
++	vec3_t c;
++
++	if ( entityNum != REFENTITYNUM_WORLD ) {
++		VectorCopy( tr.refdef.entities[entityNum].e.origin, c );
++	} else switch ( *ds->surface ) {
++	case SF_FACE: {
++		const srfSurfaceFace_t *f = (const srfSurfaceFace_t *)ds->surface;
++		int i;
++
++		VectorClear( c );
++		for ( i = 0; i < f->numPoints; i++ ) {
++			c[0] += f->points[i][0];
++			c[1] += f->points[i][1];
++			c[2] += f->points[i][2];
++		}
++		if ( f->numPoints )
++			VectorScale( c, 1.0f / f->numPoints, c );
++		break;
++	}
++	case SF_GRID: {
++		const srfGridMesh_t *g = (const srfGridMesh_t *)ds->surface;
++		float d = Distance( g->localOrigin, o ) - g->meshRadius;
++		return d > 0 ? d : 0;
++	}
++	case SF_TRIANGLES: {
++		const srfTriangles_t *t = (const srfTriangles_t *)ds->surface;
++		float d = Distance( t->localOrigin, o ) - t->radius;
++		return d > 0 ? d : 0;
++	}
++	default:
++		return 0;
++	}
++	return Distance( c, o );
++}
++
++static int R_CompareRuns( const void *a, const void *b ) {
++	const amixRun_t *x = a, *y = b;
++
++	if ( x->dist != y->dist )
++		return x->dist < y->dist ? -1 : 1;
++	return x->first - y->first;		// stable
++}
++
++static void R_OrderOpaqueFrontToBack( drawSurf_t *drawSurfs, int numDrawSurfs ) {
++	static amixRun_t runs[MAX_DRAWSURFS];
++	static drawSurf_t tmp[MAX_DRAWSURFS];
++	static float dist[MAX_DRAWSURFS];
++	shader_t *shader;
++	int fogNum, entityNum, dlighted;
++	int a, b, i, j, k, n, nruns;
++
++	// the opaque class: one stretch, as the sort is by sort class first
++	for ( a = 0; a < numDrawSurfs; a++ ) {
++		R_DecomposeSort( drawSurfs[a].sort, &entityNum, &shader, &fogNum, &dlighted );
++		if ( shader->sort >= SS_OPAQUE )
++			break;
++	}
++	for ( b = a; b < numDrawSurfs; b++ ) {
++		R_DecomposeSort( drawSurfs[b].sort, &entityNum, &shader, &fogNum, &dlighted );
++		if ( shader->sort != SS_OPAQUE )
++			break;
++	}
++	if ( b - a < 2 )
++		return;
++
++	nruns = 0;
++	for ( i = a; i < b; i = j ) {
++		amixRun_t *r = &runs[nruns++];
++
++		R_DecomposeSort( drawSurfs[i].sort, &entityNum, &shader, &fogNum, &dlighted );
++		r->first = i;
++		r->dist = 1e30f;
++		for ( j = i; j < b && drawSurfs[j].sort == drawSurfs[i].sort; j++ ) {
++			dist[j] = R_SurfDistance( &drawSurfs[j], entityNum );
++			if ( dist[j] < r->dist )
++				r->dist = dist[j];
++		}
++		r->num = j - i;
++		// the run's surfaces near to far (insertion: runs are short and
++		// already in the BSP walk's order)
++		for ( k = i + 1; k < j; k++ ) {
++			drawSurf_t s = drawSurfs[k];
++			float d = dist[k];
++
++			for ( n = k - 1; n >= i && dist[n] > d; n-- ) {
++				drawSurfs[n + 1] = drawSurfs[n];
++				dist[n + 1] = dist[n];
++			}
++			drawSurfs[n + 1] = s;
++			dist[n + 1] = d;
++		}
++	}
++	qsort( runs, nruns, sizeof( runs[0] ), R_CompareRuns );
++	for ( n = 0, i = 0; i < nruns; i++ ) {
++		Com_Memcpy( tmp + n, drawSurfs + runs[i].first, runs[i].num * sizeof( drawSurf_t ) );
++		n += runs[i].num;
++	}
++	Com_Memcpy( drawSurfs + a, tmp, n * sizeof( drawSurf_t ) );
++}
++
++/*
++=================
+ R_SortDrawSurfs
+ =================
+ */
+@@ -1146,6 +1265,8 @@
+ 
+ 	// sort the drawsurfs by sort type, then orientation, then shader
+ 	R_RadixSort( drawSurfs, numDrawSurfs );
++	if ( r_frontToBack->integer )
++		R_OrderOpaqueFrontToBack( drawSurfs, numDrawSurfs );
+ 
+ 	// check for any pass through drawing, which
+ 	// may cause another view to be rendered first

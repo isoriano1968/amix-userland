@@ -421,14 +421,48 @@ unsigned int if_nametoindex(const char *name)
     return 0;                           /* no IPv6 scopes on AMIX */
 }
 
-/* --- C99 rounding (round half away from zero; lrint* to nearest) ---- */
+/* --- C99 rounding (round half away from zero; lrint* to nearest even) - */
 
-double round(double x) { return x >= 0.0 ? (double) (long long) (x + 0.5) : -(double) (long long) (-x + 0.5); }
+/* In the 060's FPU, not through long long: those went to libgcc's software
+   64-bit conversions (__fixdfdi, __floatdidf, __fixunsdfdi), 13% of a RtCW
+   frame.  fintrz truncates in hardware on the 060 (only the 040 traps on
+   it); fmove.l rounds by the FPCR, to nearest even by default, which is what
+   lrint/lrintf mean.  Outside the long range fmove.l saturates. */
+static __inline__ double amix_fintrz(double x)
+{
+    double r;
+
+    __asm__ ("fintrz.x %1,%0" : "=f" (r) : "f" (x));
+    return r;
+}
+
+double trunc(double x) { return amix_fintrz(x); }
+float truncf(float x) { return (float) amix_fintrz(x); }
+double round(double x)
+{
+    double t = amix_fintrz(x), d = x - t;
+
+    if (d >= 0.5)
+        t += 1.0;
+    else if (d <= -0.5)
+        t -= 1.0;
+    return t;
+}
 float roundf(float x) { return (float) round(x); }
-double trunc(double x) { return (double) (long long) x; }
-float truncf(float x) { return (float) (long long) x; }
-long lrint(double x) { return (long) round(x); }
-long lrintf(float x) { return (long) round(x); }
+long lrint(double x)
+{
+    long r;
+
+    __asm__ ("fmove.l %1,%0" : "=d" (r) : "f" (x));
+    return r;
+}
+long lrintf(float x)
+{
+    long r;
+
+    __asm__ ("fmove.l %1,%0" : "=d" (r) : "f" ((double) x));
+    return r;
+}
 
 /* --- sockets ---------------------------------------------------------------- */
 
