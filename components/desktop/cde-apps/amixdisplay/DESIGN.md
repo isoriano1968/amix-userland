@@ -1,7 +1,8 @@
 # amixdisplay: a CDE "Display" settings app for AMIX
 
 2026-11-07. Status: **pass 1 built and installed on the box; the user
-confirmed it works (2026-11-07).** Pass 2 (the kernel step) is not started.
+confirmed it works (2026-11-07).** Pass 2 (the kernel step) is built and
+not booted (2026-11-07, section 5.1); its boot plan is section 5.2.
 The user agreed to the design on 2026-11-07 ("yes to all", section 9).
 
 This is a screen-mode selector like the Display panels on Linux desktops.
@@ -247,7 +248,7 @@ long numbers are refused.
 - An Xzz9000 with RandR for live changes. Without it, the app only saves.
 - `cde-apps.manifest`: `require x11/libxrandr` added.
 
-## 5. Pass 2: the kernel step (agreed, separate, not started)
+## 5. Pass 2: the kernel step (agreed, separate; built, not booted)
 
 Its own step-by-step kernel boot: a fresh HDF backup first, then the new
 kernel at `-m #128`.
@@ -267,6 +268,147 @@ kernel at `-m #128`.
   because soft3D's back buffer starts at row 1100. Offering 1920x1200 and
   1600x1200 needs soft3D to move its buffer below the frame. The user chose
   "experimental" for them (Q3); that applies once they can be offered at all.
+
+### 5.1 What pass 2 built (2026-11-07, uncommitted)
+
+All in amix-gate `usr/src/uts/amiga/io/zz9000/overlay/usr/sys/amiga/driver/zz9000/`.
+
+- `zz9000.h`: `ZZ9KIOC_GETMODES` (19) with `struct zz9k_modelist {rows, n}`
+  and rows `struct zz9k_moderow {width, height, hz100, id, pixclk (kHz),
+  flags, pad}` (16 bytes). The caller passes room for `n` rows; the driver
+  copies min(n, 64) and returns the table's count in `n` (`n` 0 asks for the
+  count). Flags: `FIRST` (plain SETMODE's row for the size), `CURRENT`,
+  `CONSOLE`, `NOVT` (16 bpp frame > 8 MB), `NOFIT` (> fb_size). It only
+  reads: anyone who can open the device (0666) may ask.
+  `ZZ9KIOC_SETMODEHZ` (20) with `struct zz9k_modehz {width, height, hz100,
+  color_mode, scale_mode, pad}`: the nearest-rate row of the size (a tie
+  goes to the earlier row, `hz100` 0 = the first row). It returns the
+  firmware id and writes the chosen rate back into `hz100`.
+- `zz9k_modetab` gets `hz100` and `pixclk` columns. The Z3660 table holds
+  section 2's values, plus a last row 1920x1080 id 7 at 50.51 Hz. Id 5
+  stays first, so plain SETMODE does not change. The ZZ9000 rows report 0
+  ("not known"): I have no ZZ9000 firmware table to compute them from.
+- Plain SETMODE is now answered before the switch by the same helper
+  (`zz9k_setmodehz(..., 0)`), so it can grow the VT buffer. The old case
+  stays in the switch, unreachable, so that the switch keeps its bytes.
+  Changing a case moves the jump table's offsets, and that happened here
+  twice: an offset decoded as a 68060-unimplemented MOVEP in scan060, as in
+  407d379. Both attempts were rebuilt until the scan was clean.
+- **VT buffer, grown on demand instead of a fixed 8 MB.** The box kernel is
+  built on a 16 MB kvseg, and the driver's two 4 MB kernel mappings (KMAP
+  and VT) already take half of it. The buffer is now mapped at the size the
+  mode needs: 4 MB (everything up to 1920x1080, at framebuffer offset
+  0x2000000, as before) or 8 MB (1920x1200, 2560x1440, at 0x1C00000). The
+  8 MB mapping is made only when SETMODE/SETMODEHZ sets such a mode with the
+  console redirect on. A machine that never uses a big mode spends nothing
+  more. The 4 MB mapping is kept after the switch (vt040.c may still hold
+  its address), which costs 4 MB of address space once. Both sizes end at
+  0x2400000, where soft3D's data block starts (libs3d `DATA_OFF`, and
+  TinyGL's textures from 0x2500000). So the buffer stays inside soft3D's
+  texture area, as it always did, and never reaches the data block. A
+  plain 8 MB at the old 0x2000000 would have covered soft3D's vertex batch
+  and owner record. If the 8 MB mapping cannot be had, the kernel prints
+  "no kernel space for a 0x800000 console buffer", and the big modes have
+  no console mirror, as before.
+- **`ZZ9K_KMAP_FB` stays at 4 MB, on purpose.** The kernel console renderer
+  always switches to its own 1920x1080 (`zz9k_console_start`), and the
+  console mirror and Alt+F use the VT buffer above, not this mapping. What
+  is left on KMAP is the CPU fallbacks (blitter off) and `ZZ9KIOC_FILL` /
+  `read`/`write`. Those stop quietly at 4 MB, so they reach only part of a
+  1920x1200 frame. Raising KMAP would cost 4 MB of kvseg on every boot for
+  that alone. The one visible user is `ZZ9000SetSize`'s FILL clear (5.3).
+- Tools: `tools/zz9k_modes` (new, read-only: `open O_RDONLY` +
+  GETMODES, one line per row), and `zz9k_mode WxH@HZ [16|32]` (SETMODEHZ;
+  it prints the firmware id and rate). Both are in `tools/Makefile`.
+- Kernel image: port `build/z3l/p2-ksg`, build id 68040-1107-1645, `sum`
+  49637 3816, sha256 `c570f462673d55d2a04980ef2cbf5e6a0ac8ca34a9d9c2bb3c08a2d0bac2153f`.
+  It is the box kernel's chain (chain-z3660-a3000.sh through the ksegtbl
+  stage, the box's `/stand/unix` = `ksg-shm`) with
+  `Z3660_RTG_SRC` = the amix-gate driver. The same chain with the
+  unchanged driver (`p2ref-ksg`) reproduces the box kernel except for the
+  9-byte build id. So p2-ksg is the box kernel plus this driver change and
+  nothing else. gcc 2.7.2.3 (m68k-cbm-sysv4); scan060 of zz9000_040.o is
+  clean; the relink gates (page geometry, 64-bit mul/div, cdevsw) pass.
+  Recipe: the chain's first eleven commands with the prefix `p2`, under
+  `Z3660_RTG_SRC=.../amix-gate/.../driver/zz9000`.
+
+### 5.2 Boot plan (each step only when the user says so)
+
+Every box command goes through `amix-box -m "..."`, never while a player
+runs, and `df -k /` must show at least 200 MB free first.
+
+1. **Backup.** A fresh HDF backup (firmware web server,
+   `1:/hdf/hd0Z3660AMIX_AMIGA3000.hdf`, ~30 min), unless the user has a
+   current one.
+2. **Install as a test kernel.** Copy p2-ksg to `/stand/unix.p2.new`, check
+   the sha256 on the box, then `mv` it to `/stand/unix.p2`. `/stand/unix`
+   stays the default and is the way back. Copy `zz9k_modes` and the new
+   `zz9k_mode` to `/usr/amiga/bin` as `.new`, check the sha256, then `mv`.
+   The new zz9k_mode only adds `@HZ`; on the old kernel `@` answers EINVAL.
+3. **Serial first.** `stty -F /dev/ttyUSB0 115200 cs8 -parenb`, the boot-menu
+   catcher, and the serial view in a terminal tab, all before `shutdown`.
+   Keep 115200 after `boot`.
+4. **Boot at the known memory.** At the pvmk shell:
+   `boot -m #128 unix_root:/stand/unix.p2`. Wait until the user says AMIX is
+   at login with dtlogin up; no ssh before that.
+5. **Checks with the user at the monitor** (one at a time):
+   a. dtlogin at 1920x1080 as before (plain SETMODE through the new helper).
+      The boot messages are mirrored. Alt+F2 shows a text console, Alt+F1
+      returns to X with the windows intact (4 MB VT buffer, unchanged
+      place).
+   b. `zz9k_modes`: 18 rows. 1920x1080 id 5 `first current console`,
+      1920x1080 id 7 at 50.51 Hz without `first`, 2560x1440 `novt` not set
+      (7.0 MB < 8 MB).
+   c. From an X terminal: `zz9k_mode 1920x1080@50` gives "firmware id 7,
+      50.51 Hz". The monitor resyncs, and X goes on unchanged (same size and
+      stride, pan 0). Then the user says whether the picture holds, and what
+      the monitor's OSD says. `zz9k_mode 1920x1080@60` goes back to id 5.
+      If the monitor shows nothing at 50 Hz, the same command from ssh brings
+      60 Hz back.
+   d. VT growth, optional, needs the user's OK: on a text console (Alt+F2),
+      from ssh `zz9k_mode 1920x1200`, then Alt+F3 and Alt+F2 again (any
+      SETMODE resets the pan to 0, which is unchanged behaviour; the next
+      switch pans back). The console mirror should fill 1920x1200 (8 MB
+      buffer at 0x1C00000), and the kernel prints no "no kernel space"
+      line. Then `zz9k_mode 1920x1080` and Alt+F1: X is intact, because its
+      frame at offset 0 was never touched.
+   e. Normal use for a while (a video through amixcast, ssh, a GL program).
+      `/var/log/bus-errors` is empty.
+6. **Make it the default** only on the user's word: `mv /stand/unix.p2
+   /stand/unix`. There is no copy of the old kernel (rule): it is rebuilt
+   from git (`ksg-shm` = chain prefix ksg). Until then, rolling back is
+   `boot unix_root:/stand/unix` at the pvmk shell.
+
+### 5.3 The X side (for the RandR session: `local-randr.patch`, `rtgRandR.c`, `zz9000hw.c`)
+
+- `zz9000hw.c`: `ZZ9000GetModes()` calls GETMODES once at screen init and
+  keeps the rows. EINVAL (an older kernel) means one rate, 60, per size,
+  which is today's behaviour.
+- `rtgRRGetInfo`: for each size of the X table that fits, `RRRegisterRate`
+  every kernel row of that size, at `(hz100 + 50) / 100` (61 and 51 at
+  1080p, 56 at 1280x800, 57/58 for the other "60 Hz" ones; the panel shows
+  the computed rate, section 2). Register them in table order, so that the
+  sizes and rates keep their order across a server reset.
+  `RRSetCurrentConfig` uses the rate of the `CURRENT` row.
+- `rtgRRSetConfig`: today it returns TRUE at once when the size is
+  unchanged. It must compare the rate too. Same size, new rate: SETMODEHZ
+  only, with no root-clip off/on and no clear, because the stride and
+  pixels stay. A new size: as now, with the rate passed on.
+- `ZZ9000SetSize(pRTG, w, h, rate)`: SETMODEHZ with `hz100 = rate * 100`
+  when the rate is > 0 and the kernel has it, else SETMODE. The fallback
+  sets the old size and rate again. It remembers the chosen `hz100` for
+  GetInfo.
+- The clear after a size change: `ZZ9KIOC_FILL` goes through the kernel's
+  4 MB mapping (5.1), so it clears only the first 4 MB of a 1920x1200
+  frame. Use the blitter (`ZZ9KIOC_BLITX` op 0, or a FILLRECT of the whole
+  frame) instead, or leave it to the exposures.
+- `-mode WxH[@Hz]` at start, so that Xzz9000-dt and line 2 of rtg-mode
+  (`rate N`) can start straight at 50 Hz, without a RandR switch after
+  login. The panel's `-restore`/`-system` already switch the rate through
+  RandR once the server registers several.
+- The big modes stay out until soft3D's back buffer moves below the frame
+  (`ZZ9000SizeFits`, row 1100), as section 5 says. The kernel side is
+  ready for them (VT buffer, GETMODES `novt`).
 
 ## 6. Testing on the box (agreed: the user at the monitor)
 
