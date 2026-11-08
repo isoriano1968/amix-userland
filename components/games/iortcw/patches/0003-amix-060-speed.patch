@@ -1,0 +1,244 @@
+AMIX: 060 speed-ups found with prsample (2026-11-08)
+
+- ioapi.c: 16 KB stdio buffer for pk3s (AMIX buffers 1 KB; the zip code reads
+  directories a byte at a time)
+- tr_image.c: R_RMSE in integers with early exit; the low-memory RMSE pass only
+  when r_lowMemTextureSize is set
+- tr_local.h, tr_shade*.c: 32-bit sine-table indexes (int64_t conversions are
+  libgcc software routines on the 060)
+- msg.c: the message Huffman trees from a table made on the PC (amix/huffgen),
+  27 s of the 060's start-up otherwise
+
+--- a/code/zlib-1.2.11/ioapi.c
++++ b/code/zlib-1.2.11/ioapi.c
+@@ -92,6 +92,20 @@
+ static int     ZCALLBACK fclose_file_func OF((voidpf opaque, voidpf stream));
+ static int     ZCALLBACK ferror_file_func OF((voidpf opaque, voidpf stream));
+ 
++#ifdef __amix__
++/* AMIX's stdio buffers 1 KB: the zip code reads pk3 directories a byte at a
++   time through it, so every KB is a read(2) of ~50 us plus the disk.  A
++   larger buffer for the pk3s. */
++static FILE *amix_zbuf(FILE *f)
++{
++    if (f != NULL)
++        setvbuf(f, NULL, _IOFBF, 16384);
++    return f;
++}
++#else
++#define amix_zbuf(f) (f)
++#endif
++
+ static voidpf ZCALLBACK fopen_file_func (voidpf opaque, const char* filename, int mode)
+ {
+     FILE* file = NULL;
+@@ -106,7 +120,7 @@
+         mode_fopen = "wb";
+ 
+     if ((filename!=NULL) && (mode_fopen != NULL))
+-        file = fopen(filename, mode_fopen);
++        file = amix_zbuf(fopen(filename, mode_fopen));
+     return file;
+ }
+ 
+@@ -124,7 +138,7 @@
+         mode_fopen = "wb";
+ 
+     if ((filename!=NULL) && (mode_fopen != NULL))
+-        file = FOPEN_FUNC((const char*)filename, mode_fopen);
++        file = amix_zbuf(FOPEN_FUNC((const char*)filename, mode_fopen));
+     return file;
+ }
+ 
+--- a/code/renderer/tr_image.c
++++ b/code/renderer/tr_image.c
+@@ -527,7 +527,54 @@
+ Operates in place, quartering the size of the texture
+ ================
+ */
+-static float R_RMSE( byte *in, int width, int height ) {
++#ifdef __amix__
++/*
++ * AMIX: the same root mean square error in integers, one FPU add per row,
++ * and it stops as soon as the result can no longer stay below limit (the
++ * callers only ask "below limit?").  The original costs four fabs and
++ * float conversions per channel: minutes of the 060's loading time.
++ * Returns limit or more when the texture is not below it.
++ */
++static float R_RMSE( byte *in, int width, int height, float limit ) {
++	int i, j, k;
++	int row;
++	double sum = 0.0, stop;
++
++	if ( width <= 32 || height <= 32 ) {
++		return 9999.0f;
++	}
++
++	row = width * 4;
++
++	width >>= 1;
++	height >>= 1;
++	stop = (double)limit * limit * ( (double)height * width * 4 );
++
++	for ( i = 0 ; i < height ; i++, in += row ) {
++		unsigned int rs = 0;	/* <= 512 pixels * 4 channels * 1020^2 fits */
++
++		for ( j = 0 ; j < width ; j++, in += 8 ) {
++			for ( k = 0; k < 4; k++ ) {
++				int a = in[k], b = in[4 + k], c = in[row + k], d = in[row + 4 + k];
++				int out = ( a + b + c + d ) >> 2;
++				int t = abs( out - a ) + abs( out - b ) + abs( out - c ) + abs( out - d );
++
++				rs += (unsigned int)( t * t );
++			}
++			if ( rs & 0x80000000u ) {	/* wide textures: spill early */
++				sum += rs;
++				rs = 0;
++			}
++		}
++		sum += rs;
++		if ( sum >= stop ) {
++			return limit > 9999.0f ? limit : 9999.0f;
++		}
++	}
++	return (float)sqrt( sum / ( (double)height * width * 4 ) );
++}
++#else
++static float R_RMSE( byte *in, int width, int height, float limit ) {
+ 	int i, j;
+ 	float out, rmse, rtemp;
+ 	int row;
+@@ -566,6 +613,7 @@
+ 	rmse = sqrt( rmse / ( height * width * 4 ) );
+ 	return rmse;
+ }
++#endif
+ 
+ 
+ /*
+@@ -747,7 +795,7 @@
+ 
+ 	// do the root mean square error stuff first
+ 	if ( r_rmse->value ) {
+-		while ( R_RMSE( (byte *)data, width, height ) < r_rmse->value ) {
++		while ( R_RMSE( (byte *)data, width, height, r_rmse->value ) < r_rmse->value ) {
+ 			rmse_saved += ( height * width * 4 ) - ( ( width >> 1 ) * ( height >> 1 ) * 4 );
+ 			resampledBuffer = ri.Hunk_AllocateTempMemory( ( width >> 1 ) * ( height >> 1 ) * 4 );
+ 			ResampleTexture( data, width, height, resampledBuffer, width >> 1, height >> 1 );
+@@ -761,7 +809,7 @@
+ 	else
+ 	{
+ 		// just do the RMSE of 1 (reduce perfect)
+-		while ( R_RMSE( (byte *)data, width, height ) < 1.0 ) {
++		while ( R_RMSE( (byte *)data, width, height, 1.0f ) < 1.0 ) {
+ 			rmse_saved += ( height * width * 4 ) - ( ( width >> 1 ) * ( height >> 1 ) * 4 );
+ 			resampledBuffer = ri.Hunk_AllocateTempMemory( ( width >> 1 ) * ( height >> 1 ) * 4 );
+ 			ResampleTexture( data, width, height, resampledBuffer, width >> 1, height >> 1 );
+@@ -817,7 +865,8 @@
+ 	}
+ 
+ #ifndef USE_BLOOM
+-	rmse = R_RMSE( (byte *)data, width, height );
++	/* only when the option is on: an RMSE pass per texture otherwise (AMIX) */
++	rmse = r_lowMemTextureSize->integer ? R_RMSE( (byte *)data, width, height, r_lowMemTextureThreshold->value ) : 9999.0f;
+ 
+ 	if ( r_lowMemTextureSize->integer && ( scaled_width > r_lowMemTextureSize->integer || scaled_height > r_lowMemTextureSize->integer ) && rmse < r_lowMemTextureThreshold->value ) {
+ 		int scale;
+--- a/code/renderer/tr_local.h
++++ b/code/renderer/tr_local.h
+@@ -31,6 +31,16 @@
+ #define TR_LOCAL_H
+ 
+ #include "../qcommon/q_shared.h"
++
++/* the integer type for the sine-table indexes of the shader waves: int64_t
++   keeps them from overflowing after weeks of shader time, but on the 060
++   every such conversion is a libgcc software routine, several per vertex
++   and frame.  A long is exact for 24 days and more (AMIX). */
++#ifdef __amix__
++#define tr_wave_int long
++#else
++#define tr_wave_int int64_t
++#endif
+ #include "../qcommon/qfiles.h"
+ #include "../qcommon/qcommon.h"
+ #include "tr_public.h"
+--- a/code/renderer/tr_shade.c
++++ b/code/renderer/tr_shade.c
+@@ -238,7 +238,7 @@
+ =================
+ */
+ void R_BindAnimatedImage( textureBundle_t *bundle ) {
+-	int64_t index;
++	tr_wave_int index;
+ 
+ 	if ( bundle->isVideoMap ) {
+ 		ri.CIN_RunCinematic( bundle->videoMapHandle );
+--- a/code/renderer/tr_shade_calc.c
++++ b/code/renderer/tr_shade_calc.c
+@@ -31,7 +31,7 @@
+ #include "tr_local.h"
+ 
+ 
+-#define	WAVEVALUE( table, base, amplitude, phase, freq )  ( ( base ) + table[ ( ( int64_t ) ( ( ( phase ) + tess.shaderTime * ( freq ) ) * FUNCTABLE_SIZE ) ) & FUNCTABLE_MASK ] * ( amplitude ) )
++#define	WAVEVALUE( table, base, amplitude, phase, freq )  ( ( base ) + table[ ( ( tr_wave_int ) ( ( ( phase ) + tess.shaderTime * ( freq ) ) * FUNCTABLE_SIZE ) ) & FUNCTABLE_MASK ] * ( amplitude ) )
+ 
+ static float *TableForFunc( genFunc_t func ) {
+ 	switch ( func )
+@@ -259,7 +259,7 @@
+ 	now = backEnd.refdef.time * 0.001 * ds->bulgeSpeed;
+ 
+ 	for ( i = 0; i < tess.numVertexes; i++, xyz += 4, st += 4, normal += 4 ) {
+-		int64_t off;
++		tr_wave_int off;
+ 		float scale;
+ 
+ 		off = (float)( FUNCTABLE_SIZE / ( M_PI * 2 ) ) * ( st[0] * ds->bulgeWidth + now );
+@@ -1017,8 +1017,8 @@
+ 		float s = st[0];
+ 		float t = st[1];
+ 
+-		st[0] = s + tr.sinTable[ ( ( int64_t ) ( ( ( tess.xyz[i][0] + tess.xyz[i][2] )* 1.0/128 * 0.125 + now ) * FUNCTABLE_SIZE ) ) & ( FUNCTABLE_MASK ) ] * wf->amplitude;
+-		st[1] = t + tr.sinTable[ ( ( int64_t ) ( ( tess.xyz[i][1] * 1.0/128 * 0.125 + now ) * FUNCTABLE_SIZE ) ) & ( FUNCTABLE_MASK ) ] * wf->amplitude;
++		st[0] = s + tr.sinTable[ ( ( tr_wave_int ) ( ( ( tess.xyz[i][0] + tess.xyz[i][2] )* 1.0/128 * 0.125 + now ) * FUNCTABLE_SIZE ) ) & ( FUNCTABLE_MASK ) ] * wf->amplitude;
++		st[1] = t + tr.sinTable[ ( ( tr_wave_int ) ( ( tess.xyz[i][1] * 1.0/128 * 0.125 + now ) * FUNCTABLE_SIZE ) ) & ( FUNCTABLE_MASK ) ] * wf->amplitude;
+ 	}
+ }
+ 
+@@ -1080,7 +1080,7 @@
+ void RB_CalcRotateTexCoords( float degsPerSecond, float *st ) {
+ 	double timeScale = tess.shaderTime;
+ 	double degs;
+-	int64_t index;
++	tr_wave_int index;
+ 	float sinValue, cosValue;
+ 	texModInfo_t tmi;
+ 
+--- a/code/qcommon/msg.c
++++ b/code/qcommon/msg.c
+@@ -2178,6 +2178,17 @@
+ 	13504,      // 255
+ };
+ 
++#ifdef __amix__
++/* AMIX: the finished trees from a table made on the PC (amix/huffgen/):
++   building them here takes 27 s on the 060 at every start. */
++#include "../../amix/huffrestore.h"
++
++void MSG_initHuffman( void ) {
++	msgInit = qtrue;
++	Huff_RestoreInit( &msgHuff.compressor, &huffinit[0] );
++	Huff_RestoreInit( &msgHuff.decompressor, &huffinit[1] );
++}
++#else
+ void MSG_initHuffman( void ) {
+ 	int i,j;
+ 
+@@ -2190,6 +2201,7 @@
+ 		}
+ 	}
+ }
++#endif
+ 
+ /*
+ void MSG_NUinitHuffman() {
