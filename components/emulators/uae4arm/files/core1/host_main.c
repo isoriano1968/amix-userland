@@ -38,7 +38,7 @@ void c1_dbg_chip_str(uint32_t addr, char *buf, unsigned n);
 #define C1BENCH_TEXT 0x7E000
 static uint32_t sum;
 
-#define MAX_EV 32
+#define MAX_EV 64
 static struct { unsigned f, n, port, kind; unsigned v; } ev[MAX_EV];
 static int nev;
 
@@ -166,7 +166,7 @@ void c1p_input(void)
 /* @FILE: the arguments, one per line */
 static int argfile(const char *name, char ***argvp)
 {
-    static char *av[64];
+    static char *av[256];
     static char buf[8192];
     FILE *f = fopen(name, "r");
     int n = 1;
@@ -179,7 +179,7 @@ static int argfile(const char *name, char ***argvp)
     fclose(f);
     buf[len] = 0;
     av[0] = "uaehost";
-    for (p = strtok(buf, "\n"); p && n < 63; p = strtok(NULL, "\n"))
+    for (p = strtok(buf, "\n"); p && n < 255; p = strtok(NULL, "\n"))
         if (*p)
             av[n++] = p;
     av[n] = NULL;
@@ -219,7 +219,7 @@ int main(int argc, char **argv)
                 wav_header(0);
         } else if ((!strcmp(argv[i], "-joy") || !strcmp(argv[i], "-key")) && i + 3 < argc - 2 && nev < MAX_EV) {
             ev[nev].kind = argv[i][1] == 'k';
-            ev[nev].port = 1;
+            ev[nev].port = 0;      /* libretro port 0 = the Amiga's joystick port 2 */
             ev[nev].f = (unsigned)atoi(argv[i + 1]);
             ev[nev].n = (unsigned)atoi(argv[i + 2]);
             ev[nev].v = (unsigned)strtoul(argv[i + 3], NULL, 0);

@@ -267,7 +267,7 @@ static void key(int down, KeySym k)
         }
         if (bit) {
             joy_bits = down ? joy_bits | bit : joy_bits & ~bit;
-            send("joy %d %d", 1, joy_bits);
+            send("joy %d %d", 0, joy_bits);    /* libretro port 0: the Amiga's joystick port 2 */
             return;
         }
     }

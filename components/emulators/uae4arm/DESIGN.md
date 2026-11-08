@@ -98,7 +98,7 @@ key is **Right Amiga + Right Alt + Help** (gives keyboard and mouse back to CDE)
 Joystick:
 
 - *keyboard joystick* (in amixuae): cursor keys, Right Alt fire, Right Amiga second
-  button, on port 2 (libretro port 1);
+  button, on port 2 (libretro port 0);
 - *the A3000's own joystick port 2*: still to do. AMIX has no joystick driver; the
   stick's state is JOY1DAT (0xDFF00C) and the fire button CIA-A PRA bit 7 (POTGO
   for button 2). Either a small kernel driver (`/dev/joy`), or c1uae reads them at

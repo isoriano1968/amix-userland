@@ -116,7 +116,8 @@ enum { C1UA_E_NONE, C1UA_E_NOMEM, C1UA_E_FILE, C1UA_E_CONFIG, C1UA_E_CORE };
  *   KEY     down << 16 | RETROK code (libretro's, the X front end maps keysyms)
  *   MOUSE   dx (signed 12 bits) << 12 | dy (signed 12 bits)
  *   BUTTONS mouse buttons (bit 0 left, 1 right, 2 middle)
- *   JOY     port << 16 | RETRO_DEVICE_ID_JOYPAD_* bits (the whole state)
+ *   JOY     port << 16 | RETRO_DEVICE_ID_JOYPAD_* bits (the whole state); port 0 is
+ *           the Amiga's joystick port 2, port 1 a second joystick (the mouse port)
  */
 enum { C1UA_EV_KEY = 1, C1UA_EV_MOUSE, C1UA_EV_BUTTONS, C1UA_EV_JOY };
 
