@@ -135,6 +135,21 @@ static void show_log(void)
             fputc(uab[C1UA_LOG_OFF + log_seen % C1UA_LOG_LEN], stderr);
 }
 
+/* where core 1 is: its timer's last sample (pc, lr, sp, code addresses on
+   the stack; look them up in the image's map) */
+static void show_sample(void)
+{
+    int k;
+
+    if (!ua[C1UA_W_SAMPLE])
+        return;
+    printf("c1uae: core 1 sample %lu: pc %08lx lr %08lx sp %08lx stack",
+           ua[C1UA_W_SAMPLE], ua[C1UA_W_SAMPLE + 1], ua[C1UA_W_SAMPLE + 2], ua[C1UA_W_SAMPLE + 3]);
+    for (k = C1UA_W_SAMPLE + 4; k < C1UA_W_SAMPLE_END && ua[k]; k++)
+        printf(" %08lx", ua[k]);
+    printf("\n");
+}
+
 /* a command, and its end (core 1 clears it); polls slowly: 68k reads of
    board memory stall core 0 */
 static long command(unsigned long cmd, unsigned long arg, double timeout)
@@ -481,9 +496,27 @@ int main(int argc, char **argv)
         printf("c1uae: bench %d frames, %s, ARM %lu MHz\n", bench, model, ua[C1UA_W_CPU_HZ] / 1000000);
         ua[C1UA_W_ARG] = (unsigned long)bench;
         ua[C1UA_W_CMD] = C1UA_CMD_BENCH;
-        while (ua[C1UA_W_STATE] != C1UA_STOPPED && ua[C1UA_W_STATE] != C1UA_FAILED) {
+        unsigned long last_frames = 0;
+        int still = 0;
+
+        for (i = 0; ua[C1UA_W_STATE] != C1UA_STOPPED && ua[C1UA_W_STATE] != C1UA_FAILED; i++) {
             sleep(1);
             show_log();
+            if (i % 5 == 4) {           /* progress: a long CoreMark run must not look hung */
+                printf("c1uae: %lu frames, last %lu us, avg %lu us, coremark %c, 68k pc %08lx\n",
+                       ua[C1UA_W_FRAMES], ua[C1UA_W_FRAME_US], ua[C1UA_W_FRAME_US_AVG],
+                       ua[C1UA_W_BM_STATE] ? (int)ua[C1UA_W_BM_STATE] : '-', ua[C1UA_W_PC]);
+                show_sample();
+                fflush(stdout);
+            }
+            still = ua[C1UA_W_FRAMES] == last_frames ? still + 1 : 0;
+            last_frames = ua[C1UA_W_FRAMES];
+            if (still >= 20) {
+                fprintf(stderr, "c1uae: no frame for 20 s: core 1 hangs (armbench -reload -force %s)\n", core);
+                show_sample();
+                ua[C1UA_W_OWNER] = 0;
+                return 4;
+            }
         }
         show_log();
         if (ua[C1UA_W_STATE] == C1UA_FAILED) {

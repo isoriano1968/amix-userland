@@ -122,7 +122,7 @@ each run (`armbench -reload`, about a second; `-load` once after a power cycle).
 ## Building and testing
 
 ```
-make prep             # pristine uae4arm-rpi + patches/0001-amix-core1.patch
+make prep             # pristine uae4arm-rpi + patches/*.patch
 make build            # build/core1/z3660ARM_Core_uae.bin, build/host/uaehost.elf,
                       # build/amix/c1uae, build/bench/{c1bench.adf,coremark.060,coremark.000}
 make check KICK=~/Documents/FS-UAE/Kickstarts/A1200.47.115.rom   # qemu-arm: CoreMark validates
@@ -152,32 +152,69 @@ On the PC (qemu-arm, virtual time):
   the Amiga's own time, i.e. **6.4 CoreMark for an emulated A1200**. That is
   emulation accuracy, not core 1's speed.
 
-On the board (still to do, when AMIX is up; every step through `amix-box`):
+On the board, 2026-11-08 (core 1 at 866 MHz, interpreter, every step through
+`amix-box`):
+
+| run | result |
+|---|---|
+| `coremark.060 0x0 0x0 0x66 3000` (real 060, X running) | **55.1 CoreMark** |
+| A500, `-bench 12000` (cycle-exact, unpaced) | 6.34 ms a frame = **316 % of real time** |
+| A500 CoreMark (Amiga time, S to E marks) | ~144 s for 300 iterations = **~2.1 CoreMark** |
+| A1200, `-bench 5000` | 3.04 ms a frame = **657 %**; CoreMark 47.2 s Amiga time = **6.4**, validated |
+| A1200 `-cfg cpu_speed=max` | 300 iterations in 12.08 s on core 1 = **24.8 CoreMark**, validated |
+| Giana SE, A500, run mode, overlay + HDMI | paced at PAL 50 Hz (~19 ms a frame); 45 underruns while loading, none after |
+
+So the interpreted 68020 flat out is ~3.9x an A1200 and 0.45x the real 060;
+an A500 or A1200 runs at full speed with room to spare. Faster than that needs
+the JIT.
+
+Known: with the A500 model, c1bench.adf reboots the Amiga after CoreMark's end
+mark (in qemu-arm too, so it is the 68000 benchmark disk, not core 1); its
+CoreMark figure comes from the marks. coremark.000 validates on the 060 but its
+own timer is broken (ticks 0xFFFFFFFF): time it from outside.
 
 ```
-c1uae -model A500  -kick .../CDTVA500A600A2000.47.115.bin -df0 /opt/uae/bench/c1bench.adf -bench 3000
-c1uae -model A1200 -kick .../A1200.47.115.rom             -df0 /opt/uae/bench/c1bench.adf -bench 3000
-c1uae -model A1200 -kick ... -df0 c1bench.adf -cfg cpu_speed=max -bench 3000   # the CPU flat out
+c1uae -model A500  -kick .../CDTVA500A600A2000.47.115.bin -df0 /opt/uae/bench/c1bench.adf -bench 12000
+c1uae -model A1200 -kick .../A1200.47.115.rom             -df0 /opt/uae/bench/c1bench.adf -bench 5000
+c1uae -model A1200 -kick ... -df0 c1bench.adf -cfg cpu_speed=max -bench 5000   # the CPU flat out
 /opt/uae/bench/coremark.060 0x0 0x0 0x66 3000                                  # the real 060
-/opt/uae/bench/coremark.000 0x0 0x0 0x66 3000                                  # 68000 code on the 060
-c1uae -model A500 -kick ... -df0 Giana_SE_MainGame.adf -bench 1500             # a game's ms per frame
 ```
 
 `-bench` reports the time per emulated frame (20 ms = full PAL speed) and the
 share of real time, both against core 1's own clock (from the PLL, so right at
 any ARM speed). With c1bench.adf it also gives CoreMark's run time on core 1 and
-in the Amiga's own time. CoreMark per second on core 1 at `cpu_speed=max`,
-against coremark.060, is the emulated 68k against the real 060.
+in the Amiga's own time. Every 5 s it prints the frames and core 1's timer
+sample; after 20 s without a frame it says core 1 hangs and exits 4.
 
-What to expect (not measured): uae4arm ran A500 games at full speed with the
-interpreter on a Raspberry Pi 1 and AGA on a Pi 2. One A9 at 866 MHz is above a
-Pi 1 and near one core of a Pi 2. So an A500 should run at full speed
-interpreted, and an A1200 with AGA at 14 MHz probably too. A fast 68020/030
-needs the JIT. The box numbers decide.
+### The real image on the PC: files/qemu/run.sh
+
+`qemu-arm` (user mode, `host_main.c`) tests uae and the frontend, NOT the core 1
+program: no BSP start, MMU, interrupts, heap layout, memory files or board
+protocol, and Linux system calls work there. The first board run hung in
+exactly that gap (below). `files/qemu/run.sh` runs the real `build/core1/uae.elf`
+in `qemu-system-arm -M xilinx-zynq-a9` (Cortex-A9, MMU, GIC, timers), its 1 GB
+DDR a shared file in /dev/shm, and `fake68k.py` does c1uae's part on it (files,
+chunks, config text, BENCH) at the board's offsets:
+
+```
+files/qemu/run.sh [-gdb] -model A500 -kick ROM -df0 build/bench/c1bench.adf -bench 300 -secs 90
+arm-none-eabi-gdb build/core1/uae.elf -ex 'target remote :12345'   # with -gdb: stops it where it is
+```
+
+qemu-system-arm is Debian's 10.0 package unpacked into ~/opt/qemu (no root).
+qemu's GIC is not enabled there (core 0 does that on the board), so the timer
+samples stay 0 in qemu: use gdb.
+
+The hang it found: the JIT's `flush_cpu_icache` is Linux `sys_cacheflush`
+(`svc 0`, r7 0xf0002), and `build_comp()` calls it at start-up even with the
+interpreter. On bare metal the svc lands in the BSP's empty SVC handler, which
+spins in SVC mode with interrupts off: no fault, no sample, heartbeat frozen,
+power cycle. patches/0002 does per-line cache maintenance instead (core 1
+build only; the PC build keeps the syscall). No `svc` is left in the image.
 
 ## Next
 
-1. **Board run** of the above, then picture and sound with Giana Sisters SE through amixuae.
+1. **amixuae on the desktop** with Giana: keys, mouse grab, keyboard joystick, sound.
 2. **The JIT on core 1.** uae4arm's JIT reaches the Amiga's memory directly
    (natmem) and relies on SIGSEGV for the I/O areas (`sigsegv_handler.cpp`
    decodes the ARM load/store, does it through the memory banks and patches the

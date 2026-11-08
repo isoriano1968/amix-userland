@@ -1,0 +1,28 @@
+core 1: the JIT flushes its code through Linux sys_cacheflush (svc 0,
+r7 0xf0002), also at start-up with the interpreter (build_comp).  On bare
+metal the svc spins in the BSP SVC handler: per-line cache maintenance.
+
+--- a/src/jit/compemu_midfunc_arm.cpp	2026-11-08 12:49:54.573099267 +0100
++++ b/src/jit/compemu_midfunc_arm.cpp	2026-11-08 12:49:54.589099268 +0100
+@@ -555,6 +555,21 @@
+ 
+ STATIC_INLINE void flush_cpu_icache(void *start, void *stop)
+ {
++#ifdef AMIX_C1_core1
++	/* core 1 is bare metal (the PC test build keeps the syscall): no kernel for sys_cacheflush (its svc lands in
++	   the BSP's empty SVC handler, which spins with interrupts off).  Clean
++	   the data lines to the point of unification and drop the instruction
++	   lines, line by line (never whole-L2 work: core 0 does that) */
++	uintptr a = (uintptr)start & ~31u;
++	__asm __volatile ("dsb" : : : "memory");
++	for (; a < (uintptr)stop; a += 32)
++		__asm __volatile ("mcr p15, 0, %0, c7, c11, 1\n\t"	/* DCCMVAU */
++		                  "mcr p15, 0, %0, c7, c5, 1"		/* ICIMVAU */
++		                  : : "r" (a) : "memory");
++	__asm __volatile ("mcr p15, 0, %0, c7, c5, 6\n\t"		/* BPIALL */
++	                  "dsb\n\tisb" : : "r" (0) : "memory");
++	return;
++#endif
+ 	register void *_beg __asm ("a1") = start;
+ 	register void *_end __asm ("a2") = stop;
+ 	register void *_flg __asm ("a3") = 0;

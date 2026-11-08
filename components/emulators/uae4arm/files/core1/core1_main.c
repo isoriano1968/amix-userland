@@ -113,7 +113,9 @@ static uint32_t cpu_hz(void)
 
 uint64_t c1p_now_us(void)
 {
-    return ticks() * 1000000ULL / tick_hz;
+    const uint64_t t = ticks();     /* t * 1000000 would wrap after 11.8 hours up */
+
+    return t / tick_hz * 1000000ULL + t % tick_hz * 1000000ULL / tick_hz;
 }
 
 int _gettimeofday(struct timeval *tv, void *tz);
@@ -185,6 +187,8 @@ __asm__(
     "  dsb\n  isb\n  bx r3\n"
     ".global c1_reload_tramp_end\nc1_reload_tramp_end:\n");
 
+static void samp_stop(void);
+
 static int reload_posted(void)
 {
     const uint32_t src = get(W_DATA_OFF), size = get(W_DATA_SIZE), entry = get(W_FLAGS);
@@ -202,6 +206,7 @@ static int reload_posted(void)
         put(W_STATE, HB_ERROR);
         return 1;
     }
+    samp_stop();                /* no interrupt into the image being overwritten */
     put(W_STATE, HB_IDLE);
     put(W_MAGIC, 0);
     put(W_STAGE, 0);
@@ -223,6 +228,7 @@ static void fault(void *kind)
 {
     uint32_t far = 0, pc;
 
+    samp_stop();                /* the reload below comes from this loop */
     switch ((uint32_t)kind) {
     case XIL_EXCEPTION_ID_DATA_ABORT_INT:
         __asm__ volatile("mrc p15, 0, %0, c6, c0, 0" : "=r"(far));
@@ -246,6 +252,114 @@ static void fault(void *kind)
             put(W_FAULT, 0);
             reload_posted();
         }
+}
+
+/*
+ * --- where core 1 is (as cores/gpu/gpu.c): the private timer, 4 times a
+ * second, writes the interrupted pc, lr, sp and the code addresses on the
+ * stack into C1UA_W_SAMPLE.., and takes armbench -reload -force when the
+ * emulator spins without faulting (nothing else could reach a hung core).
+ * Own vectors, only the IRQ differs; it saves no FP state, so samp_tick()
+ * uses none.
+ */
+#define PRIV(off)       (*(volatile uint32_t *)(0xF8F00000UL + (off)))
+#define ICCICR          PRIV(0x100)
+#define ICCPMR          PRIV(0x104)
+#define ICCIAR          PRIV(0x10C)
+#define ICCEOIR         PRIV(0x110)
+#define PT_LOAD         PRIV(0x600)
+#define PT_CTRL         PRIV(0x608)
+#define PT_ISR          PRIV(0x60C)
+#define ICDISER0        PRIV(0x1100)
+#define ICDICER0        PRIV(0x1180)
+#define ICDIPR_29       (*(volatile uint8_t *)0xF8F0141DUL)
+#define PT_IRQ          29
+#define PT_PRESCALE     255             /* half the CPU clock / 256 */
+#define PT_ON           (PT_PRESCALE << 8 | 1 << 2 | 1 << 1 | 1)   /* interrupt, reload, on */
+
+extern char __rodata_start[], _stack[];
+extern void samp_vectors(void);
+
+__asm__(".text\n"
+        ".arm\n"
+        ".balign 32\n"
+        ".global samp_vectors\n"
+        "samp_vectors:\n"
+        "  b _vector_table+0\n"
+        "  b _vector_table+4\n"
+        "  b _vector_table+8\n"
+        "  b _vector_table+12\n"
+        "  b _vector_table+16\n"
+        "  b _vector_table+20\n"
+        "  b samp_irq\n"
+        "  b _vector_table+28\n"
+        "samp_irq:\n"
+        "  sub lr, lr, #4\n"
+        "  push {r0-r3, r12, lr}\n"
+        "  mov r0, lr\n"
+        "  mrs r3, cpsr\n"
+        "  cps #0x1f\n"                /* the program's lr and sp */
+        "  mov r1, lr\n"
+        "  mov r2, sp\n"
+        "  msr cpsr_c, r3\n"
+        "  bl samp_tick\n"
+        "  pop {r0-r3, r12, lr}\n"
+        "  movs pc, lr\n");
+
+void samp_tick(uint32_t pc, uint32_t lr, uint32_t sp);
+__attribute__((used, target("general-regs-only"))) void samp_tick(uint32_t pc, uint32_t lr, uint32_t sp)
+{
+    const uint32_t id = ICCIAR;
+
+    if ((id & 0x3ff) == PT_IRQ) {
+        const uint32_t *w = (const uint32_t *)(sp & ~3u);
+        int k = C1UA_W_SAMPLE + 4, i;
+
+        PT_ISR = 1;
+        ua[C1UA_W_SAMPLE + 1] = __builtin_bswap32(pc);
+        ua[C1UA_W_SAMPLE + 2] = __builtin_bswap32(lr);
+        ua[C1UA_W_SAMPLE + 3] = __builtin_bswap32(sp);
+        /* libco's stacks are in the heap, below the image: at most 4096 words up */
+        for (i = 0; i < 4096 && k < C1UA_W_SAMPLE_END && ((uint32_t)w & 0xFFF00000u) == (sp & 0xFFF00000u);
+             i++, w++)
+            if (*w >= (uint32_t)_vector_table && *w < (uint32_t)__rodata_start)
+                ua[k++] = __builtin_bswap32(*w);
+        while (k < C1UA_W_SAMPLE_END)
+            ua[k++] = 0;
+        ua[C1UA_W_SAMPLE] = __builtin_bswap32(__builtin_bswap32(ua[C1UA_W_SAMPLE]) + 1);
+        /* -reload -force: the new image finds the interrupt off and answered */
+        PT_CTRL = 0;
+        ICCEOIR = id;
+        if (get(W_STATE) == HB_RELOAD)
+            reload_posted();
+        PT_CTRL = PT_ON;
+        return;
+    }
+    if ((id & 0x3ff) < 1020)
+        ICCEOIR = id;
+}
+
+static void samp_start(void)
+{
+    __asm__ volatile("mcr p15, 0, %0, c12, c0, 0\n isb" : : "r"((uint32_t)samp_vectors));
+    PT_CTRL = 0;
+    PT_ISR = 1;
+    PT_LOAD = (uint32_t)(tick_hz / (PT_PRESCALE + 1) / 4);     /* a quarter second, at any clock */
+    ICDIPR_29 = 0xA0;
+    ICDISER0 = 1u << PT_IRQ;
+    ICCPMR = 0xF0;
+    ICCICR = 1;
+    PT_CTRL = PT_ON;
+    __asm__ volatile("cpsie i");
+}
+
+static void samp_stop(void)
+{
+    __asm__ volatile("cpsid i");
+    PT_CTRL = 0;
+    PT_ISR = 1;
+    ICDICER0 = 1u << PT_IRQ;
+    __asm__ volatile("mcr p15, 0, %0, c12, c0, 0\n isb" : : "r"((uint32_t)_vector_table));
 }
 
 /* --- load per second, as ztop reads it --- */
@@ -676,6 +790,7 @@ int main(void)
     put(W_MAGIC, HB_MAGIC_READY);
     put(W_STAGE, 5);
     CORE0_ACK = 0;
+    samp_start();
 
     for (;;) {
         const uint32_t cmd = uget(C1UA_W_CMD);

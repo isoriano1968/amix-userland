@@ -97,7 +97,10 @@ enum {
     C1UA_W_BM_STATE,            /* CMD_BENCH with c1bench.adf: the last mark seen ('S', 'E', 'D') */
     C1UA_W_BM_FRAMES,           /* emulated frames from 'S' to 'D' */
     C1UA_W_BM_TICKS_LO, C1UA_W_BM_TICKS_HI,  /* timer ticks from 'S' to 'D' */
-    C1UA_W_FILES = 64,          /* C1UA_MAX_FILES x { size, flags, crc32 }, names at C1UA_NAMES_OFF */
+    C1UA_W_SAMPLE = 40,         /* core 1, 4 times a second (private timer): count, then the
+                                   interrupted pc, lr, sp, then code addresses on its stack */
+    C1UA_W_SAMPLE_END = 60,
+    C1UA_W_FILES = 64,         /* C1UA_MAX_FILES x { size, flags, crc32 }, names at C1UA_NAMES_OFF */
     C1UA_W_NWORDS = C1UA_W_FILES + C1UA_MAX_FILES * 3
 };
 
