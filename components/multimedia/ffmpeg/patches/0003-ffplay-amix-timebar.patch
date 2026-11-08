@@ -1,0 +1,405 @@
+--- a/fftools/ffplay.c
++++ b/fftools/ffplay.c
+@@ -1320,6 +1320,7 @@
+ #define ZZ_LEAD 15.0
+ #define ZZ_LEAD_SEEK 3.0
+ #define ZZ_WAIT 40.0            /* ... or after this long, if the network is slower */
++#define ZZ_BAR 20               /* the time bar's strip under the picture, pixels */
+ static volatile double zz_buf_have = -1.0, zz_buf_want;   /* pre-loading: seconds in, wanted */
+ static int zz_scale = 1;        /* the window's size, not fullscreen */
+ static int zz_half = -1;        /* the size chosen with 1, 2 or h; -1 none yet */
+@@ -1343,7 +1344,7 @@
+     snprintf(out, n, "%.*s%s&t=%d", p ? (int)(p - url) : (int)strlen(url), url, e ? e : "", (int)t);
+ }
+ 
+-/* the overlay in the middle of the window (it does not scale) */
++/* the overlay in the middle of the window above the time bar (it does not scale) */
+ static void zzav_window(void)
+ {
+     int x, y, w, h, ow, oh, vsc;
+@@ -1353,7 +1354,7 @@
+     SDL_GetWindowPosition(window, &x, &y);
+     SDL_GetWindowSize(window, &w, &h);
+     zzav_size(&ow, &oh, &vsc);
+-    zzav_place(x + (w - ow) / 2, y + (h - oh * vsc) / 2);
++    zzav_place(x + (w - ow) / 2, y + FFMAX((h - ZZ_BAR - oh * vsc) / 2, 0));
+ }
+ 
+ /* the window manager's frame around ours: the child of the root above it */
+@@ -1417,7 +1418,7 @@
+     zzav_half(half);
+     zzav_scale(k);
+     zzav_size(&ow, &oh, &vsc);
+-    zz_resize(ow, oh * vsc);
++    zz_resize(ow, oh * vsc + ZZ_BAR);
+ }
+ 
+ /* what the title names: of a file its name, of a stream what -window_title says */
+@@ -3003,7 +3004,7 @@
+     zzav_size(&ow, &oh, &vsc);
+     if (!screen_width) {        /* the window the size of the picture */
+         default_width = ow;
+-        default_height = oh * vsc;
++        default_height = oh * vsc + ZZ_BAR;
+     }
+     zzav_on = 1;
+     seek_by_bytes = 0;
+@@ -3284,7 +3285,7 @@
+         zzav_size(&ow, &oh, &vsc);
+         if (!screen_width) {    /* the window the size of the picture */
+             default_width = ow;
+-            default_height = oh * vsc;
++            default_height = oh * vsc + ZZ_BAR;
+         }
+         zzav_on = 1;
+         seek_by_bytes = 0;
+@@ -3754,16 +3755,300 @@
+ }
+ 
+ 
++#ifdef FFPLAY_ZZAV
++static void zz_full_scale(void);
++#endif
+ static void toggle_full_screen(VideoState *is)
+ {
+     is_full_screen = !is_full_screen;
+ #ifdef FFPLAY_ZZAV
+-    if (zzav_on)                /* the picture grows with the window */
+-        zzav_scale(is_full_screen ? 4 : zz_scale);
++    if (zzav_on) {              /* the picture grows with the window */
++        if (is_full_screen)
++            zz_full_scale();
++        else
++            zzav_scale(zz_scale);
++    }
+ #endif
+     SDL_SetWindowFullscreen(window, is_full_screen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+ }
+ 
++#ifdef FFPLAY_ZZAV
++/*
++ * The time bar in the strip under the picture (as AmigaCast's zzplay on
++ * AmigaOS): where it is and how long, filled up to where it is; pointing at
++ * it shows the time under the pointer, a click goes there.  A click in the
++ * picture goes to that fraction of the length (a double click is still
++ * fullscreen, so a single one waits ZZ_CLICK first); the right button as
++ * ffplay's.  Core 1's overlay is always on top: the strip is drawn with Xlib
++ * straight into the window, as SDL only clears it (black) when it changes.
++ */
++#define ZZ_CLICK 400000         /* us: a second click within this is a double click */
++static int zz_hover = -1;       /* the time under the pointer on the bar, -1 off it */
++static int zz_pend = -1;        /* a click in the picture waiting: its x */
++static int64_t zz_pend_t;
++static int zz_bar_force;
++static int64_t zz_bar_again;    /* once more a little after a clear (SDL may present late) */
++
++static struct {
++    Display *d;
++    Window w;
++    GC gc;
++    XFontStruct *font;
++    unsigned long bg, dark, light, fill, text, hi;
++} zzb;
++
++static unsigned long zz_pixel(Display *d, int r, int g, int b, unsigned long dflt)
++{
++    XColor c;
++
++    c.red = (unsigned short)(r * 257);
++    c.green = (unsigned short)(g * 257);
++    c.blue = (unsigned short)(b * 257);
++    c.flags = DoRed | DoGreen | DoBlue;
++    return XAllocColor(d, DefaultColormap(d, DefaultScreen(d)), &c) ? c.pixel : dflt;
++}
++
++/* the X window and a GC for it, once per window */
++static int zz_bar_x(void)
++{
++    SDL_SysWMinfo wm;
++    Display *d;
++
++    SDL_VERSION(&wm.version);
++    if (!window || !SDL_GetWindowWMInfo(window, &wm) || wm.subsystem != SDL_SYSWM_X11)
++        return 0;
++    if (zzb.gc && zzb.d == wm.info.x11.display && zzb.w == wm.info.x11.window)
++        return 1;
++    d = wm.info.x11.display;
++    if (zzb.gc && zzb.d == d)
++        XFreeGC(d, zzb.gc);
++    zzb.d = d;
++    zzb.w = wm.info.x11.window;
++    zzb.gc = XCreateGC(d, zzb.w, 0, NULL);
++    if (!zzb.font && !(zzb.font = XLoadQueryFont(d, "fixed")))
++        zzb.font = XLoadQueryFont(d, "6x13");
++    if (zzb.font)
++        XSetFont(d, zzb.gc, zzb.font->fid);
++    zzb.bg = zz_pixel(d, 0x30, 0x30, 0x30, BlackPixel(d, DefaultScreen(d)));
++    zzb.dark = zz_pixel(d, 0x10, 0x10, 0x10, BlackPixel(d, DefaultScreen(d)));
++    zzb.light = zz_pixel(d, 0x90, 0x90, 0x90, WhitePixel(d, DefaultScreen(d)));
++    zzb.fill = zz_pixel(d, 0x50, 0x80, 0xc0, WhitePixel(d, DefaultScreen(d)));
++    zzb.text = zz_pixel(d, 0xe0, 0xe0, 0xe0, WhitePixel(d, DefaultScreen(d)));
++    zzb.hi = zz_pixel(d, 0xff, 0xd0, 0x40, WhitePixel(d, DefaultScreen(d)));
++    return 1;
++}
++
++/* the field each time takes beside the track */
++static int zz_bar_tw(void)
++{
++    return (zzb.font ? XTextWidth(zzb.font, "0:00:00", 7) : 42) + 12;
++}
++
++/* the track: x0..x1, y0..y1 in the window */
++static void zz_bar_box(int w, int h, int *x0, int *x1, int *y0, int *y1)
++{
++    const int tw = zz_bar_tw();
++
++    *x0 = tw;
++    *x1 = w - 1 - tw;
++    *y0 = h - ZZ_BAR + 5;
++    *y1 = h - 1 - 5;
++}
++
++/* the time at window x, y on the bar; -1 when it is not on it */
++static int zz_bar_time(int mx, int my)
++{
++    int w, h, x0, x1, y0, y1, t;
++
++    if (!window || zz_dur <= 0)
++        return -1;
++    SDL_GetWindowSize(window, &w, &h);
++    if (my < h - ZZ_BAR || my >= h)
++        return -1;
++    zz_bar_box(w, h, &x0, &x1, &y0, &y1);
++    if (x1 - x0 < 8 || mx < x0 || mx > x1)
++        return -1;
++    t = (int)((double)(mx - x0 - 1) * zz_dur / (x1 - x0 - 2) + 0.5);
++    return t < 0 ? 0 : t > zz_dur ? zz_dur : t;
++}
++
++static void zz_hms(char *b, int n, int t)
++{
++    if (t < 0)
++        t = 0;
++    if (t >= 3600)
++        snprintf(b, n, "%d:%02d:%02d", t / 3600, t / 60 % 60, t % 60);
++    else
++        snprintf(b, n, "%d:%02d", t / 60, t % 60);
++}
++
++static void zz_bar_draw(void)
++{
++    static int shown_t = -2, shown_h = -2, shown_w, shown_hh, shown_d = -2;
++    const int t = (int)zz_pos();
++    int w, h, x0, x1, y0, y1, top, tw, n, ty;
++    char a[16], b[16];
++    Display *d;
++
++    if (!window || !zz_bar_x())
++        return;
++    SDL_GetWindowSize(window, &w, &h);
++    if (!zz_bar_force && t == shown_t && zz_hover == shown_h && w == shown_w && h == shown_hh && zz_dur == shown_d)
++        return;
++    zz_bar_force = 0;
++    shown_t = t;
++    shown_h = zz_hover;
++    shown_w = w;
++    shown_hh = h;
++    shown_d = zz_dur;
++    if (h < ZZ_BAR || w < 40)
++        return;
++    d = zzb.d;
++    top = h - ZZ_BAR;
++    tw = zz_bar_tw();
++    XSetForeground(d, zzb.gc, zzb.bg);
++    XFillRectangle(d, zzb.w, zzb.gc, 0, top, (unsigned)w, ZZ_BAR);
++    zz_bar_box(w, h, &x0, &x1, &y0, &y1);
++    if (x1 - x0 >= 8) {
++        /* the track: sunken, filled up to where it is */
++        XSetForeground(d, zzb.gc, zzb.dark);
++        XFillRectangle(d, zzb.w, zzb.gc, x0, y0, (unsigned)(x1 - x0 + 1), (unsigned)(y1 - y0 + 1));
++        XDrawLine(d, zzb.w, zzb.gc, x0, y1, x0, y0);
++        XDrawLine(d, zzb.w, zzb.gc, x0, y0, x1, y0);
++        XSetForeground(d, zzb.gc, zzb.light);
++        XDrawLine(d, zzb.w, zzb.gc, x1, y0 + 1, x1, y1);
++        XDrawLine(d, zzb.w, zzb.gc, x1, y1, x0 + 1, y1);
++        if (zz_dur > 0) {
++            const int iw = x1 - x0 - 2;
++
++            n = (int)((double)(t < 0 ? 0 : t > zz_dur ? zz_dur : t) * iw / zz_dur);
++            if (n > 0) {
++                XSetForeground(d, zzb.gc, zzb.fill);
++                XFillRectangle(d, zzb.w, zzb.gc, x0 + 1, y0 + 1, (unsigned)n, (unsigned)(y1 - y0 - 1));
++            }
++            if (zz_hover >= 0) {        /* the pointer's place */
++                const int hx = x0 + 1 + (int)((double)zz_hover * iw / zz_dur);
++
++                XSetForeground(d, zzb.gc, zzb.hi);
++                XDrawLine(d, zzb.w, zzb.gc, hx, top + 2, hx, h - 3);
++            }
++        }
++    }
++    /* the times: left where it is (or under the pointer), right how long */
++    if (zzb.font) {
++        ty = top + (ZZ_BAR - zzb.font->ascent - zzb.font->descent) / 2 + zzb.font->ascent;
++        zz_hms(a, sizeof a, zz_hover >= 0 ? zz_hover : t);
++        XSetForeground(d, zzb.gc, zz_hover >= 0 ? zzb.hi : zzb.text);
++        XDrawString(d, zzb.w, zzb.gc, tw - 6 - XTextWidth(zzb.font, a, (int)strlen(a)), ty, a, (int)strlen(a));
++        if (zz_dur > 0) {
++            zz_hms(b, sizeof b, zz_dur);
++            XSetForeground(d, zzb.gc, zzb.text);
++            XDrawString(d, zzb.w, zzb.gc, x1 + 6, ty, b, (int)strlen(b));
++        }
++    }
++    XFlush(d);
++}
++
++/* to t seconds into the file, through read_thread's seek (it saves the place) */
++static void zz_seek_to(VideoState *is, double t)
++{
++    if (zz_dur <= 0)
++        return;
++    if (t > zz_dur - 5)
++        t = zz_dur - 5;
++    if (t < 0.0)
++        t = 0.0;
++    stream_seek(is, (int64_t)(t * AV_TIME_BASE), 0, 0);
++    zz_goal = t;                /* the bar goes there at once */
++    zz_bar_force = 1;
++}
++
++/* the fraction x of the window's width of the length */
++static void zz_seek_frac(VideoState *is, int x)
++{
++    int w, h;
++
++    SDL_GetWindowSize(window, &w, &h);
++    if (w > 0)
++        zz_seek_to(is, (double)x * zz_dur / w);
++}
++
++static void zz_mouse(VideoState *is, const SDL_Event *ev)
++{
++    if (ev->type == SDL_MOUSEMOTION) {
++        const int t = zz_bar_time(ev->motion.x, ev->motion.y);
++
++        if (t != zz_hover) {
++            zz_hover = t;
++            zz_bar_draw();
++        }
++        return;
++    }
++    if (ev->type != SDL_MOUSEBUTTONDOWN || zz_dur <= 0)
++        return;
++    {
++        const int x = ev->button.x, y = ev->button.y, bt = zz_bar_time(x, y);
++        int w, h;
++
++        SDL_GetWindowSize(window, &w, &h);
++        if (bt >= 0 && ev->button.button == SDL_BUTTON_LEFT) {
++            zz_pend = -1;
++            zz_seek_to(is, bt);         /* on the bar: that time */
++        } else if (y >= h - ZZ_BAR) {
++            ;                           /* beside the bar: nothing */
++        } else if (ev->button.button == SDL_BUTTON_RIGHT) {
++            zz_seek_frac(is, x);
++        } else if (ev->button.button == SDL_BUTTON_LEFT) {
++            if (zz_pend >= 0 && av_gettime_relative() - zz_pend_t <= ZZ_CLICK) {
++                zz_pend = -1;           /* a double click: fullscreen */
++                toggle_full_screen(is);
++                is->force_refresh = 1;
++            } else {
++                zz_pend = x;
++                zz_pend_t = av_gettime_relative();
++            }
++        }
++    }
++}
++
++/* every refresh: a single click's seek once no second came, the bar */
++static void zz_bar_tick(VideoState *is)
++{
++    if (zz_pend >= 0 && av_gettime_relative() - zz_pend_t > ZZ_CLICK) {
++        const int x = zz_pend;
++
++        zz_pend = -1;
++        zz_seek_frac(is, x);
++    }
++    if (zz_bar_again && av_gettime_relative() >= zz_bar_again) {
++        zz_bar_again = 0;
++        zz_bar_force = 1;
++    }
++    zz_bar_draw();
++}
++
++/* the window cleared: the bar again now and a little later */
++static void zz_bar_cleared(void)
++{
++    zz_bar_force = 1;
++    zz_bar_again = av_gettime_relative() + 300000;
++    zz_bar_draw();
++}
++
++/* fullscreen: each pixel as often as fits with the bar under it */
++static void zz_full_scale(void)
++{
++    SDL_DisplayMode dm;
++    int s = 4, ow, oh, vsc;
++
++    zzav_scale(s);
++    if (SDL_GetDesktopDisplayMode(0, &dm) != 0)
++        return;
++    for (zzav_size(&ow, &oh, &vsc); s > 1 && oh * vsc + ZZ_BAR > dm.h; zzav_size(&ow, &oh, &vsc))
++        zzav_scale(--s);
++}
++#endif
++
+ static void toggle_audio_display(VideoState *is)
+ {
+     int next = is->show_mode;
+@@ -3806,8 +4091,10 @@
+                 SDL_RenderPresent(renderer);
+                 zzav_window();
+                 is->force_refresh = 0;
++                zz_bar_cleared();
+             }
+             zz_title(is);
++            zz_bar_tick(is);
+             if (getenv("ZZ_STATS")) {
+                 static int64_t t_st;
+                 char sb[512];
+@@ -4003,6 +4290,9 @@
+                 do_exit(cur_stream);
+                 break;
+             }
++#ifdef FFPLAY_ZZAV
++            if (!zzav_on)       /* core 1: zz_mouse() tells a click from a double click */
++#endif
+             if (event.button.button == SDL_BUTTON_LEFT) {
+                 static int64_t last_mouse_left_click = 0;
+                 if (av_gettime_relative() - last_mouse_left_click <= 500000) {
+@@ -4019,6 +4309,12 @@
+                 cursor_hidden = 0;
+             }
+             cursor_last_shown = av_gettime_relative();
++#ifdef FFPLAY_ZZAV
++            if (zzav_on) {      /* the time bar, a click in the picture */
++                zz_mouse(cur_stream, &event);
++                break;
++            }
++#endif
+             if (event.type == SDL_MOUSEBUTTONDOWN) {
+                 if (event.button.button != SDL_BUTTON_RIGHT)
+                     break;
+@@ -4073,6 +4369,12 @@
+                 case SDL_WINDOWEVENT_MOVED:
+                     zzav_window();
+                     break;
++                case SDL_WINDOWEVENT_LEAVE:
++                    if (zz_hover >= 0) {
++                        zz_hover = -1;
++                        zz_bar_draw();
++                    }
++                    break;
+ #endif
+             }
+             break;

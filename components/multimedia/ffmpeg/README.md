@@ -12,16 +12,23 @@ reads the file or the network and hands the packets over.
 - `compat/`: what AMIX lacks: 68060 FPU rounding (its libm has no `lrint`),
   `gettimeofday` without a system call, fast `mem*`, socket prototypes,
   a blocking `connect` (AMIX's `poll` reports a non-blocking one done too early).
-- `patches/`: ffplay: refresh rate, core 1 (below).
+- `patches/`: ffplay: refresh rate, core 1, its time bar (below).
 - `src/zzav.c`: the link to core 1, used by vplay and compiled into ffplay.
 - `src/vplay.c`: the player, on X11 with MIT-SHM. `src/zzmpeg.c`: MPEG-1 by the firmware.
 - `tools/`: launchers for the box.
 
 ## ffplay on core 1
 
-Left/Right 10 s, Down/Up 60 s, PgUp/PgDn 10 min, right click a place in the
-file, p pause, m mute, q quit. 1, 2, h: normal, double and half size; f
-fullscreen. The window's title shows position and length.
+Left/Right 10 s, Down/Up 60 s, PgUp/PgDn 10 min, p pause, m mute, q quit.
+1, 2, h: normal, double and half size; f or a double click fullscreen. The
+window's title shows position and length.
+
+A time bar under the picture (20 pixels, also in fullscreen) shows where it
+is and how long; pointing at it shows the time under the pointer, a click
+goes there. A click in the picture (left or right button) goes to that
+fraction of the length, as AmigaCast does on AmigaOS; a single left click
+waits 0.4 s to be told from a double click. Seeks never go past 5 s before
+the end. The place is kept for AmixCast's resume as before.
 
 A seek opens core 1's player anew at the new place. For a stream of
 [AmixCast](https://github.com/isoriano1968/amix-userland/tree/main/components/desktop/cde-apps) the PC starts a new
