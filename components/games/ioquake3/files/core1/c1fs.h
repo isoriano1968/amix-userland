@@ -18,12 +18,19 @@ struct c1file {
     int dirty;                          /* written since the last flush */
     int removed;                        /* unlinked: the 68k removes it too */
     int arena;                          /* data from c1p_file_alloc: never freed */
+    int remote;                         /* blocks from the 68k as they are read (c1p_fetch) */
+    uint8_t **blk;                      /* remote: the cached blocks, NULL where not */
+    uint32_t *stamp;                    /* remote: when each block was last used */
 };
 
 extern struct c1file c1fs[C1FS_MAX];
 
 /* a file of SIZE bytes for the 68k to fill (CMD_OPEN): its number, or -1 */
 int c1fs_add(const char *name, size_t size, int flags);
+/* a file of SIZE bytes the 68k serves by request (read-only): its number, or -1 */
+int c1fs_add_remote(const char *name, size_t size);
+#define C1FS_BLOCK      (256u << 10)    /* remote files' block */
+#define C1FS_CACHE_MAX  (48u << 20)     /* what remote files may hold in memory */
 /* the file by its path, or -1 */
 int c1fs_find(const char *name);
 /* number of files written since their last flush */

@@ -66,40 +66,33 @@ static uint32_t qget(int w) { return be(pg[w]); }
 
 /*
  * --- the heap: 0x30000000 up to the image (128 MB), and above the image's
- * .bss to the stack.  _sbrk hands out the region a request fits in and
- * switches between them as needed: newlib's malloc takes a jump of the
- * break as foreign memory and puts the rest of the old top into its free
- * lists, so neither region's tail is lost (a 46 MB pak, a 64 MB hunk and
- * the textures would not fit in one region).  But it takes no memory below
- * its old top (newlib's malloc_extend_top), so it only ever moves up: low
- * region first, then the high one.  Big files that stay for the whole run
- * (the paks) are cut from the top of the high region instead
- * (c1p_file_alloc), before the engine starts.
+ * .bss to the stack.  dlmalloc 2.8.6 (c1_malloc.c, built with a
+ * non-contiguous MORECORE) takes its memory from c1p_morecore, which hands
+ * out the region a request fits in, the current one first; dlmalloc keeps
+ * the two as separate segments, so neither region's rest is lost.  Big
+ * files that stay for the whole run (the paks) are cut from the top of the
+ * high region (c1p_file_alloc), before the engine starts.
  */
 extern char _heap_start[], _heap_end[];
 static struct { char *cur, *end, *start; } region[2];
 static int cur_region = -1;
 static void heap_init(void);
 
-void *_sbrk(ptrdiff_t incr);
-void *_sbrk(ptrdiff_t incr)
+void *c1p_morecore(ptrdiff_t incr);
+void *c1p_morecore(ptrdiff_t incr)
 {
     char *p;
     int r;
 
     heap_init();
     r = cur_region;
-    if (incr < 0) {
-        if (region[r].cur + incr < region[r].start) {
-            errno = EINVAL;
+    if (incr < 0)
+        return (void *)-1;              /* MORECORE_CANNOT_TRIM */
+    if (incr > region[r].end - region[r].cur) {
+        r ^= 1;
+        if (incr > region[r].end - region[r].cur)
             return (void *)-1;
-        }
-    } else if (incr > region[r].end - region[r].cur) {
-        if (r == 1 || incr > region[1].end - region[1].cur) {
-            errno = ENOMEM;
-            return (void *)-1;
-        }
-        cur_region = r = 1;
+        cur_region = r;
     }
     p = region[r].cur;
     region[r].cur += incr;
@@ -121,7 +114,7 @@ void *c1p_file_alloc(size_t size)
 {
     heap_init();
     size = (size + 63) & ~(size_t)63;
-    if (cur_region == 0 && size <= (size_t)(region[1].end - region[1].cur)) {
+    if (size <= (size_t)(region[1].end - region[1].cur)) {
         region[1].end -= size;
         return region[1].end;
     }
@@ -131,8 +124,6 @@ void *c1p_file_alloc(size_t size)
 static uint32_t heap_left_kb(void)
 {
     heap_init();
-    if (cur_region == 1)
-        return (uint32_t)((size_t)(region[1].end - region[1].cur) >> 10);
     return (uint32_t)(((size_t)(region[0].end - region[0].cur) + (size_t)(region[1].end - region[1].cur)) >> 10);
 }
 
@@ -511,6 +502,12 @@ __attribute__((used)) void samp_tick(uint32_t pc, uint32_t lr, uint32_t sp)
     if ((id & 0x3ff) == PT_IRQ) {
         PT_ISR = 1;
         snd_pump();
+        if (pg[C1Q3_W_PROF_ON]) {       /* the profile: every tick's pc */
+            const uint32_t h = __builtin_bswap32(pg[C1Q3_W_PROF_HEAD]);
+
+            ((volatile uint32_t *)(board + C1Q3_OFF + C1Q3_PROF_OFF))[h % C1Q3_PROF_N] = __builtin_bswap32(pc);
+            pg[C1Q3_W_PROF_HEAD] = __builtin_bswap32(h + 1);
+        }
         if (++n % PT_SAMPLE_EVERY == 0) {
             const uint32_t *w = (const uint32_t *)(sp & ~3u);
             int k = C1Q3_W_SAMPLE + 4, i;
@@ -665,7 +662,12 @@ static void open_file(void)
     int f;
 
     text(name, sizeof(name));
-    f = name[0] == '/' ? c1fs_add(name, qget(C1Q3_W_SIZE), (int)qget(C1Q3_W_FLAGS)) : -1;
+    if (name[0] != '/')
+        f = -1;
+    else if (qget(C1Q3_W_FLAGS) & C1Q3_FILE_REMOTE)
+        f = c1fs_add_remote(name, qget(C1Q3_W_SIZE));
+    else
+        f = c1fs_add(name, qget(C1Q3_W_SIZE), (int)qget(C1Q3_W_FLAGS));
     if (f < 0)
         qput(C1Q3_W_ERR, C1Q3_E_NOMEM);
     qput(C1Q3_W_RESULT, (uint32_t)f);
@@ -675,12 +677,42 @@ static void chunk(void)
 {
     const uint32_t f = qget(C1Q3_W_FILE), off = qget(C1Q3_W_OFF), len = qget(C1Q3_W_LEN);
 
-    if (f >= C1FS_MAX || !c1fs[f].name || len > C1Q3_CHUNK_MAX || (size_t)off + len > c1fs[f].size) {
+    if (f >= C1FS_MAX || !c1fs[f].name || c1fs[f].remote || len > C1Q3_CHUNK_MAX || (size_t)off + len > c1fs[f].size) {
         qput(C1Q3_W_RESULT, (uint32_t)-1);
         return;
     }
     memcpy(c1fs[f].data + off, (const void *)(board + C1Q3_WIN_OFF), len);
     qput(C1Q3_W_RESULT, 0);
+}
+
+/* a block of a REMOTE file from the 68k (c1q3 reads it into C1Q3_REQ_OFF);
+   waiting counts as idle */
+int c1p_fetch(int file, uint32_t off, uint32_t len, void *dst)
+{
+    const uint32_t seq = qget(C1Q3_W_REQ_SEQ) + 1;
+    const uint64_t t0 = ticks();
+    uint32_t r;
+
+    if (len > C1Q3_REQ_MAX)
+        len = C1Q3_REQ_MAX;
+    qput(C1Q3_W_REQ_FILE, (uint32_t)file);
+    qput(C1Q3_W_REQ_OFF, off);
+    qput(C1Q3_W_REQ_LEN, len);
+    qput(C1Q3_W_REQ_SEQ, seq);
+    while (qget(C1Q3_W_REQ_DONE) != seq) {
+        if (ticks() - t0 > 60 * tick_hz) {
+            c1p_log("c1q3: no answer to a file request for 60 s\n");
+            return -1;
+        }
+        reload_posted();
+    }
+    win_idle += ticks() - t0;
+    load_window(ticks());
+    r = qget(C1Q3_W_REQ_RESULT);
+    if (r > len)
+        return -1;
+    memcpy(dst, (const void *)(board + C1Q3_REQ_OFF), r);
+    return (int)r;
 }
 
 /* the next piece of a written file into the window */

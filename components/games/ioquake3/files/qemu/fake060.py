@@ -12,6 +12,7 @@ write-back as c1q3, at the board's offsets, big-endian as the 060 writes.
     -shot SECS FILE  the overlay as a PPM at SECS
     -secs S          give up after S seconds (default 300)
     -w W -h H        the picture's size (default 640x480)
+    -remote-over MB  files bigger than this are served by request (blocks), as c1q3 does
 
 Prints core 1's log as it comes, and every 5 s the state, frames, frame
 time, heap left and core 1's timer sample (pc lr sp + stack code addresses,
@@ -26,8 +27,9 @@ import time
 RTG = 0x18000000                    # board offset 0 as core 1 sees it
 PG = RTG + 0x07AFD000               # C1Q3_OFF
 CTL = RTG + 0x07AFF000              # HB_CTL_OFF
-WIN, CHUNK_MAX = RTG + 0x07100000, 0x005F0000
-LOG, LOG_LEN = WIN + CHUNK_MAX, 0x10000
+WIN, CHUNK_MAX = RTG + 0x07100000, 0x00400000
+REQ, REQ_MAX = WIN + 0x00400000, 0x001F0000
+LOG, LOG_LEN = WIN + 0x005F0000, 0x10000
 OVL0 = RTG + 0x06000000
 HDMI, HDMI_SIZE = RTG + 0x07CE0000, 30720
 IN_OFF, IN_N, TEXT, TEXT_LEN = 0x400, 256, 0x800, 0x800
@@ -38,6 +40,8 @@ MAGIC = 0x43315133
  W_WIDTH, W_HEIGHT, W_MOUSE, W_FRAME_MS_MAX) = range(33)
 W_SAMPLE, W_SAMPLE_END = 40, 60
 CMD_OPEN, CMD_CHUNK, CMD_START, CMD_EXEC, CMD_FLUSH, CMD_STOP = 1, 2, 3, 4, 5, 6
+W_REQ_SEQ, W_REQ_DONE, W_REQ_FILE, W_REQ_OFF, W_REQ_LEN, W_REQ_RESULT = 35, 36, 60, 61, 62, 63
+FILE_REMOTE = 2
 REMOVED = 0xFFFFFFFF
 STATES = ['IDLE', 'LOADING', 'RUNNING', 'QUIT', 'FAILED']
 EV_KEY, EV_CHAR = 1, 2
@@ -51,6 +55,7 @@ def main():
     ddr = a.pop(0)
     base = home = None
     at, keys, shots, secs, w, h = [], [], [], 300.0, 640, 480
+    remote_over = None
     words = []
     while a:
         o = a.pop(0)
@@ -62,6 +67,7 @@ def main():
         elif o == '-secs': secs = float(a.pop(0))
         elif o == '-w': w = int(a.pop(0))
         elif o == '-h': h = int(a.pop(0))
+        elif o == '-remote-over': remote_over = int(a.pop(0)) << 20
         elif o == '--': words, a = a, []
         else: sys.exit('fake060: ' + o + '?')
     f = open(ddr, 'r+b')
@@ -78,11 +84,32 @@ def main():
         bs = bytes(m[PG + TEXT:PG + TEXT + TEXT_LEN])
         return bs[:bs.index(b'\0')].decode('latin-1')
 
+    remote = {}                         # core 1's file number -> open file
+    req = {'seen': 0, 'n': 0, 'bytes': 0}
+
+    def serve():
+        seq = get(W_REQ_SEQ)
+        if seq == req['seen']:
+            return False
+        req['seen'] = seq
+        fi, off, ln = get(W_REQ_FILE), get(W_REQ_OFF), get(W_REQ_LEN)
+        if fi in remote and ln <= REQ_MAX:
+            remote[fi].seek(off)
+            data = remote[fi].read(ln)
+            m[REQ:REQ + len(data)] = data
+            put(W_REQ_RESULT, len(data))
+            req['n'] += 1; req['bytes'] += len(data)
+        else:
+            put(W_REQ_RESULT, 0xFFFFFFFF)
+        put(W_REQ_DONE, seq)
+        return True
+
     def command(c, timeout=60):
         put(W_CMD, c)
         t1 = time.time()
         while get(W_CMD):
             if time.time() - t1 > timeout: sys.exit('fake060: command %d not taken' % c)
+            serve()
             time.sleep(0.005)
         r = get(W_RESULT)
         return r - (1 << 32) if r & 0x80000000 else r
@@ -111,6 +138,14 @@ def main():
             for n in sorted(names):
                 lp = os.path.join(d, n)
                 cp = prefix + '/' + os.path.relpath(lp, top)
+                size = os.path.getsize(lp)
+                if not rw and remote_over is not None and size > remote_over:
+                    text(cp); put(W_SIZE, size); put(W_FLAGS, FILE_REMOTE)
+                    fi = command(CMD_OPEN)
+                    if fi < 0: sys.exit('fake060: OPEN %s refused' % cp)
+                    remote[fi] = open(lp, 'rb')
+                    print('fake060: %s (%d bytes) as file %d, by request' % (cp, size, fi))
+                    continue
                 data = open(lp, 'rb').read()
                 text(cp); put(W_SIZE, len(data)); put(W_FLAGS, rw)
                 fi = command(CMD_OPEN)
@@ -128,6 +163,7 @@ def main():
 
     put(W_OVL_PITCH, w * 4); put(W_OVL_ROW0, 0); put(W_OVL_MAXW, w); put(W_OVL_MAXH, h)
     put(W_VOLUME, 256); put(W_IN_HEAD, 0); put(W_IN_TAIL, 0)
+    req['seen'] = get(W_REQ_SEQ)
     line = ' '.join(words)
     text(line)
     command(CMD_START)
@@ -165,7 +201,9 @@ def main():
         el = time.time() - t0
         if el > secs:
             print('fake060: still running after %d s' % secs); return 3
-        time.sleep(0.1)
+        t2 = time.time()
+        while time.time() - t2 < 0.1:
+            if not serve(): time.sleep(0.002)
         show_log()
         st = get(W_STATE)
         while at and at[0][0] <= el:
@@ -192,10 +230,11 @@ def main():
             s = [get(i) for i in range(W_SAMPLE, W_SAMPLE_END)]
             pcm = struct.unpack_from('<%dh' % (HDMI_SIZE // 2), m, HDMI)
             rms = int((sum(v * v for v in pcm) / len(pcm)) ** 0.5)
-            print('fake060: %5.1f s %s frames %d avg %d ms max %d ms heap %d MB mouse %d dirty %d hdmi rms %d | '
+            print('fake060: %5.1f s %s frames %d avg %d ms max %d ms heap %d MB mouse %d dirty %d hdmi rms %d req %d/%dMB | '
                   'sample %d pc %08x lr %08x sp %08x stack %s'
                   % (el, STATES[st] if st < 5 else st, get(W_FRAMES), get(W_AVG) // 1000,
                      get(W_FRAME_MS_MAX), get(W_HEAP_KB) // 1024, get(W_MOUSE), get(W_DIRTY), rms,
+                     req['n'], req['bytes'] >> 20,
                      s[0], s[1], s[2], s[3], ' '.join('%08x' % v for v in s[4:] if v)))
             if get(HB_W_FAULT, CTL):
                 print('fake060: core 1 FAULT %d at pc %08x addr %08x' % (get(HB_W_FAULT, CTL),

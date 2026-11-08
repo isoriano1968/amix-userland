@@ -14,6 +14,10 @@
  *     -exec SECS CMD   a console command SECS after the engine started (up to 8;
  *                      e.g. -exec 200 "setviewpos 1052 1432 24 135" -exec 300 quit)
  *     -core FILE       the core image (default /root/z3660ARMCores/z3660ARM_Core_q3.bin; root only)
+ *     -remote-over MB  files bigger than this (default 64) stay on AMIX: core 1 asks for
+ *                      their blocks as it reads them (RtCW's 198 MB pak does not fit)
+ *     -profile FILE    core 1's pc at every timer tick (200 a second) into FILE, one hex
+ *                      number a line (files/tools/c1prof.py maps them to functions)
  *     -v               core 1's messages (the engine's console) on stderr
  *
  * Installed setuid root (the board is root's): it maps the board, loads
@@ -93,6 +97,14 @@ static char home[1024];
 static int nfiles;
 static struct { double at; const char *cmd; } execs[8];
 static int nexec;
+static unsigned long remote_over = 64UL << 20;
+static struct { long fi; int fd; } remote[16];
+static int nremote;
+static unsigned long req_seen;
+static double req_last;
+static int serve(void);
+static FILE *prof;
+static unsigned long prof_seen;
 
 static double now(void)
 {
@@ -130,7 +142,7 @@ static void show_log(void)
         log_seen = head - C1Q3_LOG_LEN;
     for (; log_seen != head; log_seen++)
         if (verbose)
-            fputc(win[C1Q3_CHUNK_MAX + log_seen % C1Q3_LOG_LEN], stderr);
+            fputc(win[C1Q3_LOG_OFF - C1Q3_WIN_OFF + log_seen % C1Q3_LOG_LEN], stderr);
 }
 
 /* the last lines of it, after a failure */
@@ -139,7 +151,7 @@ static void show_log_tail(void)
     unsigned long head = pg[C1Q3_W_LOG_HEAD], from = head > 2048 ? head - 2048 : 0, i;
 
     for (i = from; i != head; i++)
-        fputc(win[C1Q3_CHUNK_MAX + i % C1Q3_LOG_LEN], stderr);
+        fputc(win[C1Q3_LOG_OFF - C1Q3_WIN_OFF + i % C1Q3_LOG_LEN], stderr);
     fputc('\n', stderr);
 }
 
@@ -186,6 +198,8 @@ static long command(unsigned long cmd, double timeout)
     while (pg[C1Q3_W_CMD] != C1Q3_CMD_NONE) {
         if (now() - t0 > timeout)
             return -100;
+        if (nremote)
+            serve();                    /* core 1 may be in a read and take the command after it */
         usleep(5000);
     }
     return (long)pg[C1Q3_W_RESULT];
@@ -225,6 +239,7 @@ static int upload(const char *path, const char *cpath, unsigned long size, int r
     int f = open(path, O_RDONLY), r;
     unsigned long off = 0, n, got;
     long fi;
+    const int rem = !rw && size > remote_over && nremote < 16;
 
     if (f < 0) {
         fprintf(stderr, "c1q3: %s: %s\n", path, strerror(errno));
@@ -232,7 +247,20 @@ static int upload(const char *path, const char *cpath, unsigned long size, int r
     }
     set_text(cpath);
     pg[C1Q3_W_SIZE] = size;
-    pg[C1Q3_W_FLAGS] = rw ? C1Q3_FILE_RW : 0;
+    pg[C1Q3_W_FLAGS] = rem ? C1Q3_FILE_REMOTE : rw ? C1Q3_FILE_RW : 0;
+    if (rem) {                          /* stays open here: blocks by request */
+        if ((fi = command(C1Q3_CMD_OPEN, 10.0)) < 0) {
+            fprintf(stderr, "c1q3: core 1 refused %s\n", path);
+            close(f);
+            return -1;
+        }
+        remote[nremote].fi = fi;
+        remote[nremote++].fd = f;
+        nfiles++;
+        if (verbose)
+            fprintf(stderr, "c1q3: %s by request\n", cpath);
+        return 0;
+    }
     if ((fi = command(C1Q3_CMD_OPEN, 10.0)) < 0) {
         fprintf(stderr, "c1q3: core 1 has no room for %s (%lu bytes, err %lu, heap %lu KB)\n", path, size,
                 pg[C1Q3_W_ERR], pg[C1Q3_W_HEAP_KB]);
@@ -306,6 +334,32 @@ static int upload_tree(const char *dir, const char *prefix, int rw, int depth, u
     }
     closedir(d);
     return bad ? -1 : 0;
+}
+
+/* --- a block core 1 asks for (a REMOTE file); 1 if there was one --- */
+static int serve(void)
+{
+    const unsigned long seq = pg[C1Q3_W_REQ_SEQ];
+    unsigned long fi, off, len, got = 0;
+    int i, r;
+
+    if (seq == req_seen)
+        return 0;
+    req_seen = seq;
+    fi = pg[C1Q3_W_REQ_FILE];
+    off = pg[C1Q3_W_REQ_OFF];
+    len = pg[C1Q3_W_REQ_LEN];
+    for (i = 0; i < nremote && remote[i].fi != (long)fi; i++)
+        ;
+    if (i < nremote && len <= C1Q3_REQ_MAX && lseek(remote[i].fd, (off_t)off, SEEK_SET) == (off_t)off)
+        for (; got < len; got += (unsigned long)r)
+            if ((r = read(remote[i].fd, win + (C1Q3_REQ_OFF - C1Q3_WIN_OFF) + got,
+                          (unsigned)(len - got > 262144 ? 262144 : len - got))) <= 0)
+                break;
+    pg[C1Q3_W_REQ_RESULT] = i < nremote ? got : 0xFFFFFFFFUL;
+    pg[C1Q3_W_REQ_DONE] = seq;
+    req_last = now();
+    return 1;
 }
 
 /* --- written files back, under the home directory only --- */
@@ -680,13 +734,14 @@ static void on_signal(int s)
 static void usage(void)
 {
     fprintf(stderr, "usage: c1q3 [-base DIR] [-game NAME] [-home DIR] [-width W -height H] [-at X Y]\n"
-                    "            [-volume N] [-exec SECS CMD]... [-core FILE] [-v] [engine arguments: +set ...]\n");
+                    "            [-volume N] [-exec SECS CMD]... [-remote-over MB] [-profile FILE] [-core FILE] [-v]\n"
+                    "            [engine arguments: +set ...]\n");
     exit(2);
 }
 
 int main(int argc, char **argv)
 {
-    const char *core = DEFAULT_CORE, *base = "/opt/ioq3", *game = "demoq3", *homearg = NULL;
+    const char *core = DEFAULT_CORE, *base = "/opt/ioq3", *game = "demoq3", *homearg = NULL, *prof_path = NULL;
     char cmdline[C1Q3_TEXT_LEN], path[1100];
     long volume = 256;
     unsigned long bytes = 0, last_frames = 0;
@@ -708,6 +763,8 @@ int main(int argc, char **argv)
             i += 2;
         }
         else if (!strcmp(argv[i], "-core") && i + 1 < argc) core = argv[++i];
+        else if (!strcmp(argv[i], "-profile") && i + 1 < argc) prof_path = argv[++i];
+        else if (!strcmp(argv[i], "-remote-over") && i + 1 < argc) remote_over = (unsigned long)atol(argv[++i]) << 20;
         else if (!strcmp(argv[i], "-v")) verbose = 1;
         else usage();
     }
@@ -802,10 +859,17 @@ int main(int argc, char **argv)
     pg[C1Q3_W_IN_HEAD] = 0;
     pg[C1Q3_W_IN_TAIL] = 0;
     pg[C1Q3_W_OVL_PITCH] = 0;
+    req_seen = pg[C1Q3_W_REQ_SEQ];
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
     signal(SIGHUP, on_signal);
     signal(SIGPIPE, SIG_IGN);
+    if (prof_path) {
+        if (!(prof = fopen(prof_path, "w")))
+            fprintf(stderr, "c1q3: %s: %s\n", prof_path, strerror(errno));
+        prof_seen = pg[C1Q3_W_PROF_HEAD];
+        pg[C1Q3_W_PROF_ON] = prof != NULL;
+    }
     set_text(cmdline);
     if (verbose)
         fprintf(stderr, "c1q3: engine: %s\n", cmdline);
@@ -828,8 +892,11 @@ int main(int argc, char **argv)
         FD_ZERO(&rs);
         FD_SET(xfd, &rs);
         tv.tv_sec = 0;
-        tv.tv_usec = 50000;
+        tv.tv_usec = nremote && now() - req_last < 1.0 ? 3000 : 50000;  /* a load: look often */
         select(xfd + 1, &rs, NULL, NULL, &tv);
+        if (nremote)
+            while (serve())
+                ;
         if (x_events()) {               /* the window was closed: quit as the console's quit */
             command(C1Q3_CMD_STOP, 5.0);
         }
@@ -845,6 +912,14 @@ int main(int argc, char **argv)
                 execs[i].cmd = NULL;
             }
         st = pg[C1Q3_W_STATE];
+        if (prof) {                     /* the pcs since the last look (the ring holds ~1 s) */
+            unsigned long h = pg[C1Q3_W_PROF_HEAD];
+
+            if (h - prof_seen > C1Q3_PROF_N)
+                prof_seen = h - C1Q3_PROF_N;
+            for (; prof_seen != h; prof_seen++)
+                fprintf(prof, "%08lx\n", ((volatile unsigned long *)(pgb + C1Q3_PROF_OFF))[prof_seen % C1Q3_PROF_N]);
+        }
         mouse(mapped && focused && pg[C1Q3_W_MOUSE] && st == C1Q3_RUNNING);
         show_log();
         if (pg[C1Q3_W_DIRTY])
@@ -882,6 +957,9 @@ int main(int argc, char **argv)
     show_log();
     flush();
 out:
+    pg[C1Q3_W_PROF_ON] = 0;
+    if (prof)
+        fclose(prof);
     mouse(0);
     overlay(0);
     pg[C1Q3_W_OWNER] = 0;

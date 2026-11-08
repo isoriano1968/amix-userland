@@ -22,6 +22,9 @@ void c1q3_main(const char *cmdline) __attribute__((noreturn));
 /* memory for a big file that stays for the whole run (a pak), from the
    top of the high heap region; NULL: use malloc */
 void *c1p_file_alloc(size_t size);
+/* LEN bytes at OFF of file FILE (opened REMOTE) from the 68k into DST:
+   the bytes it read, or -1 (it did not answer in 60 s, or could not read) */
+int c1p_fetch(int file, uint32_t off, uint32_t len, void *dst);
 /* say something: AMIX's log ring */
 void c1p_log(const char *s);
 /* microseconds and milliseconds of core 1's clock (from the PLL) */

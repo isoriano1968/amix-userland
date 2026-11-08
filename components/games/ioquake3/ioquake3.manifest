@@ -5,6 +5,7 @@ summary  ioquake3: the 060 build with GL on core 1 (q3.sh), and the whole engine
 require  x11/mesa-183
 require  x11/x11r6.3
 require  library/lib060
+require  library/dlmalloc
 file     /opt/ioq3/q3.sh
 file     /opt/ioq3/ioquake3.zzgl
 file     /root/z3660ARMCores/z3660ARM_Core_q3.bin

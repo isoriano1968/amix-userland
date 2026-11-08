@@ -70,7 +70,14 @@ ENGINE := \
 JPEG   := $(notdir $(filter-out %/jmemansi.c %/jmemdos.c %/jmemmac.c %/jmemname.c %/jpegtran.c, \
             $(wildcard $(C)/thirdparty/jpeg-9f/j*.c)))
 ZLIB   := $(notdir $(filter-out $(C)/thirdparty/zlib-1.3.1/gz%, $(wildcard $(C)/thirdparty/zlib-1.3.1/*.c)))
-GLUE   := core1_main.c c1fs.c sys_c1.c net_c1.c in_c1.c snd_c1.c glimp_c1.c
+GLUE   := core1_main.c c1fs.c sys_c1.c net_c1.c in_c1.c snd_c1.c glimp_c1.c c1_malloc.c
+# dlmalloc 2.8.6 from library/dlmalloc: the heap's two regions as segments
+DLMALLOC ?= $(abspath $(HERE)/../../../../library/dlmalloc/malloc-2.8.6.c)
+DLFLAGS := -DHAVE_MMAP=0 -DHAVE_MREMAP=0 -DHAVE_MORECORE=1 -DMORECORE=c1p_morecore \
+           -DMORECORE_CONTIGUOUS=0 -DMORECORE_CANNOT_TRIM=1 -DUSE_LOCKS=0 -DNO_MALLOC_STATS=1 \
+           -DDEFAULT_GRANULARITY=0x100000 -DLACKS_SYS_MMAN_H=1 -Dmalloc_getpagesize=4096 \
+           -fno-builtin -include $(HERE)/c1_morecore.h
+# -fno-builtin: GCC otherwise turns calloc's malloc + memset into a call to calloc
 
 CGAME  := cgame/cg_main.c game/bg_misc.c game/bg_pmove.c game/bg_slidemove.c game/bg_lib.c \
   $(addprefix cgame/,cg_consolecmds.c cg_draw.c cg_drawtools.c cg_effects.c cg_ents.c cg_event.c \
@@ -92,7 +99,8 @@ UI     := q3_ui/ui_main.c game/bg_misc.c game/bg_lib.c $(addprefix q3_ui/,ui_add
 
 E_OBJ  := $(patsubst %.c,$(OUT)/engine/%.o,$(ENGINE)) \
           $(patsubst %.c,$(OUT)/jpeg/%.o,$(JPEG)) $(patsubst %.c,$(OUT)/zlib/%.o,$(ZLIB)) \
-          $(patsubst %.c,$(OUT)/glue/%.o,$(GLUE)) $(OUT)/glue/armgl_compat.o $(OUT)/xil-crt0.o
+          $(patsubst %.c,$(OUT)/glue/%.o,$(GLUE)) $(OUT)/glue/armgl_compat.o $(OUT)/xil-crt0.o \
+          $(OUT)/glue/dlmalloc.o
 MODS   := $(OUT)/mod/cgame.o $(OUT)/mod/qagame.o $(OUT)/mod/ui.o
 
 all: $(OUT)/z3660ARM_Core_q3.bin
@@ -113,6 +121,9 @@ $(OUT)/glue/armgl_compat.o: $(MESA)/compat/arm/armgl_compat.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CPU) -O2 -fno-short-enums -ffunction-sections -fdata-sections -I$(MESA)/compat/arm \
 	    -include $(MESA)/compat/arm/armgl_compat.h -c $< -o $@
+$(OUT)/glue/dlmalloc.o: $(DLMALLOC)
+	@mkdir -p $(dir $@)
+	$(CC) $(CPU) -O2 -ffunction-sections -fdata-sections -fno-short-enums $(DLFLAGS) -c $< -o $@
 $(OUT)/xil-crt0.o: $(BSP)/libsrc/standalone_v9_0/src/xil-crt0.S
 	@mkdir -p $(dir $@)
 	$(CC) $(CPU) -I$(BSP)/include -c $< -o $@

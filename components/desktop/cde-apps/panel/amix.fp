@@ -1,7 +1,7 @@
 #
 # amix.fp -- the AMIX control in CDE's front panel, with the AMIX logo: its
 # subpanel holds AmixCast, the Z3660 window, the System Monitor, NEdit,
-# fsv, NetSurf, Grafx2, Display, PyDPainter, AmixUAE and Printers.  Every CDE application of ours gets a control here.  Installed in
+# fsv, NetSurf, Grafx2, Display, PyDPainter, AmixUAE, Printers and Quake III.  Every CDE application of ours gets a control here.  Installed in
 # /etc/dt/appconfig/types/C in place of ztopcde.fp; dtwm reads it when the
 # workspace manager starts (Restart Workspace Manager).
 #
@@ -159,4 +159,16 @@ CONTROL AmixPrintersPanel
 	LABEL		Printers
 	PUSH_ACTION	AmixPrinters
 	HELP_STRING	Find network printers over UPnP and Bonjour, set them up for lp (amixprinters)
+}
+
+CONTROL AmixQ3Panel
+{
+	TYPE		icon
+	CONTAINER_NAME	AmixPanel
+	CONTAINER_TYPE	SUBPANEL
+	POSITION_HINTS	12
+	ICON		AmixQ3
+	LABEL		Quake III
+	PUSH_ACTION	AmixQ3
+	HELP_STRING	Quake III Arena (the demo) with the whole engine on the Z3660's ARM core 1 (games/ioquake3): picture in the overlay, sound on HDMI, F10 quits
 }

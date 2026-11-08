@@ -145,11 +145,33 @@ of the user's arguments. A 50 MB request also cost ~38 MB of the low region
 Root has no X cookie for the user's display: run c1q3 as the user, or with
 XAUTHORITY of the session.
 
+Later the same day:
+
+- **Allocator:** dlmalloc 2.8.6 (`library/dlmalloc`, non-contiguous MORECORE over
+  both heap regions, `c1_malloc.c` maps newlib's `_malloc_r` family onto it) in
+  place of newlib's 2.6, which takes no memory below its top. The 060
+  config's 50 MB of sound loads again; and frames got faster: spawn view
+  **159 ms (6.3 fps)**, 221 before, other views near 10 fps (the user).
+  Trap: GCC turns dlmalloc's calloc (malloc + memset) into a call to calloc,
+  itself: build it with `-fno-builtin`.
+- **Files by request** (protocol 0.1.2): files over `-remote-over` MB (64)
+  stay on AMIX; core 1 asks for 256 KB blocks through the window's REQ area
+  and keeps 48 MB of them (LRU). With the demo pak so: start 0.4 s instead
+  of 6-17 s, CL_InitCGame 21.5 s instead of 6.3 s (each block waits for the
+  060's disk). For RtCW, whose paks do not fit.
+- **Profile** (`c1q3 -profile`, every 200 Hz tick's pc; `files/tools/c1prof.py`
+  with the ELF the stage kept in `build/elf/`): ~70 % softpipe's span
+  routines, `nspan_1_2_0` (texture x lightmap, depth test, no blend) 45 %,
+  `nspan_1_1_*` 25 %, tex_setup 5 %, vertex shader 3 %, present 2 %; the
+  engine itself ~3 %. A second spawn-view run gave 226 ms with the same
+  shape: scripted views vary; compare with a timedemo.
+
 ## Next
 
-1. An allocator that uses both heap regions without losing a tail.
-2. A launcher and a CDE front end like amixuae; q3.sh to c1q3 once it is the
-   faster way (the user decides).
+1. Renderer: the span routines (amix-gate sp_fast, shared with the gpu
+   core): NEON bilinear for both units, 4 pixels at a time; a timedemo to
+   measure.
+2. Done: q3.sh starts c1q3; Quake III (cde-apps/amixq3) in the AMIX panel.
 3. Renderer speed (the frame is softpipe): profile with the sampler.
 4. RtCW (iortcw) the same way, but its paks do not fit in core 1's memory:
    blocks by request from the 060 (the data window has room for it).

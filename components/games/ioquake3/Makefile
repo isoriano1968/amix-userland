@@ -34,6 +34,7 @@ Q3DATA      ?= $(abspath ../../../../private/quake/data)
 # and c1q3, the 060's helper
 core1:
 	test -d $(SRC) || $(MAKE) prep
+	$(MAKE) -C ../../library/dlmalloc malloc-2.8.6.c
 	$(C1MAKE)
 	mkdir -p $(BUILD_DIR)/amix
 	$(AMIX_CC) -O2 -m68060 -Wall -Wno-implicit-int -I$(Z3660_CORE1)/cores/h264bench -Ifiles/core1 \
@@ -55,9 +56,14 @@ check-core1:
 # what goes on AMIX for the core 1 game; files/amix/install-c1q3.sh puts it there
 stage-core1:
 	rm -rf $(STAGE_DIR)
-	mkdir -p $(STAGE_DIR)/root/z3660ARMCores $(STAGE_DIR)/opt/amix/bin
+	mkdir -p $(STAGE_DIR)/root/z3660ARMCores $(STAGE_DIR)/opt/amix/bin $(STAGE_DIR)/opt/ioq3
 	cp $(BUILD_DIR)/core1/z3660ARM_Core_q3.bin $(STAGE_DIR)/root/z3660ARMCores/
+	cp files/amix/q3.sh $(STAGE_DIR)/opt/ioq3/
 	cp $(BUILD_DIR)/amix/c1q3 $(STAGE_DIR)/opt/amix/bin/
 	cp files/amix/install-c1q3.sh $(STAGE_DIR)/
+	# the ELF of every staged image, by its hash: profiles (c1q3 -profile) map
+	# only onto the very build that ran
+	mkdir -p $(BUILD_DIR)/elf
+	cp $(BUILD_DIR)/core1/q3.elf $(BUILD_DIR)/elf/q3-`sha256sum $(BUILD_DIR)/core1/z3660ARM_Core_q3.bin | cut -c1-16`.elf
 
 .PHONY: core1 check-core1 stage-core1

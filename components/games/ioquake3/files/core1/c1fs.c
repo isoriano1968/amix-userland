@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include "c1fs.h"
 #include "c1q3.h"
+#include <errno.h>
 
 #define ARENA_MIN   (1u << 20)          /* read-only files from 1 MB: c1p_file_alloc */
 int _unlink(const char *name);
@@ -44,10 +45,104 @@ static int slot(const char *name)
             c1fs[i].data = NULL;
             c1fs[i].size = c1fs[i].cap = 0;
             c1fs[i].flags = 0;
-            c1fs[i].dirty = c1fs[i].removed = c1fs[i].arena = 0;
+            c1fs[i].dirty = c1fs[i].removed = c1fs[i].arena = c1fs[i].remote = 0;
+            c1fs[i].blk = NULL;
+            c1fs[i].stamp = NULL;
             return i;
         }
     return -1;
+}
+
+/* --- remote files: blocks from the 68k, the least recently used go first --- */
+static size_t cache_bytes;
+static uint32_t cache_clock;
+
+int c1fs_add_remote(const char *name, size_t size)
+{
+    const size_t nb = (size + C1FS_BLOCK - 1) / C1FS_BLOCK;
+    int i = c1fs_find(name);
+
+    if (i >= 0 || (i = slot(name)) < 0)
+        return -1;                      /* a remote file is never given twice */
+    c1fs[i].blk = calloc(nb ? nb : 1, sizeof(*c1fs[i].blk));
+    c1fs[i].stamp = calloc(nb ? nb : 1, sizeof(*c1fs[i].stamp));
+    if (!c1fs[i].blk || !c1fs[i].stamp) {
+        free(c1fs[i].blk);
+        free(c1fs[i].stamp);
+        free(c1fs[i].name);
+        c1fs[i].name = NULL;
+        return -1;
+    }
+    c1fs[i].size = c1fs[i].cap = size;
+    c1fs[i].remote = 1;
+    return i;
+}
+
+static void evict_one(void)
+{
+    uint32_t best = 0xFFFFFFFFu;
+    int bf = -1, f;
+    size_t bb = 0, b;
+
+    for (f = 0; f < C1FS_MAX; f++) {
+        const struct c1file *c = &c1fs[f];
+
+        if (!c->name || !c->remote)
+            continue;
+        for (b = 0; b < (c->size + C1FS_BLOCK - 1) / C1FS_BLOCK; b++)
+            if (c->blk[b] && c->stamp[b] < best) {
+                best = c->stamp[b];
+                bf = f;
+                bb = b;
+            }
+    }
+    if (bf >= 0) {
+        free(c1fs[bf].blk[bb]);
+        c1fs[bf].blk[bb] = NULL;
+        cache_bytes -= C1FS_BLOCK;
+    }
+}
+
+/* block B of remote file F, fetched if need be; NULL if it cannot be had */
+static uint8_t *block(int f, size_t b)
+{
+    struct c1file *c = &c1fs[f];
+    const size_t off = b * C1FS_BLOCK;
+    const size_t len = c->size - off < C1FS_BLOCK ? c->size - off : C1FS_BLOCK;
+
+    if (!c->blk[b]) {
+        uint8_t *p;
+
+        while (cache_bytes + C1FS_BLOCK > C1FS_CACHE_MAX && cache_bytes)
+            evict_one();
+        if (!(p = malloc(C1FS_BLOCK)) || c1p_fetch(f, (uint32_t)off, (uint32_t)len, p) != (int)len) {
+            free(p);
+            return NULL;
+        }
+        c->blk[b] = p;
+        cache_bytes += C1FS_BLOCK;
+    }
+    c->stamp[b] = ++cache_clock;
+    return c->blk[b];
+}
+
+static int read_remote(int f, off_t pos, void *buf, size_t n)
+{
+    size_t done = 0;
+
+    while (done < n) {
+        const size_t at = (size_t)pos + done, b = at / C1FS_BLOCK, in = at % C1FS_BLOCK;
+        const size_t k = n - done < C1FS_BLOCK - in ? n - done : C1FS_BLOCK - in;
+        const uint8_t *p = block(f, b);
+
+        if (!p) {
+            errno = EIO;
+            return done ? (int)done : -1;
+        }
+        memcpy((uint8_t *)buf + done, p + in, k);
+        done += k;
+    }
+    return (int)done;
 }
 
 int c1fs_find(const char *name)
@@ -209,7 +304,7 @@ int _open(const char *name, int flags, int mode)
     const int wr = (flags & O_ACCMODE) != O_RDONLY;
 
     (void)mode;
-    if (wr && !writable(name)) {
+    if (wr && (!writable(name) || (f >= 0 && c1fs[f].remote))) {
         errno = f < 0 ? ENOENT : EROFS;
         return -1;
     }
@@ -266,6 +361,13 @@ int _read(int fd, void *buf, size_t n)
         return 0;
     if (n > f->size - (size_t)fds[fd].pos)
         n = f->size - (size_t)fds[fd].pos;
+    if (f->remote) {
+        const int r = read_remote(fds[fd].file, fds[fd].pos, buf, n);
+
+        if (r > 0)
+            fds[fd].pos += r;
+        return r;
+    }
     memcpy(buf, f->data + fds[fd].pos, n);
     fds[fd].pos += (off_t)n;
     return (int)n;

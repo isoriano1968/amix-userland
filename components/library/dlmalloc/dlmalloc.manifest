@@ -1,0 +1,4 @@
+# name, version and what building and running it needs
+name     library/dlmalloc
+version  2.8.6
+summary  dlmalloc, the malloc of the Z3660 core 1 programs (source only, nothing on AMIX)

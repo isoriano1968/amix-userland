@@ -20,7 +20,10 @@
  *   4. while it runs: input events into the ring (68k writes, core 1 reads
  *      at every frame), CMD_EXEC for a console command, a few polls a
  *      second of W_DIRTY and W_LOG_HEAD by the 68k (each 68k read of board
- *      memory stalls core 0), CMD_FLUSH for a written file
+ *      memory stalls core 0), CMD_FLUSH for a written file; for a file
+ *      opened REMOTE, core 1 posts W_REQ_FILE/OFF/LEN and counts W_REQ_SEQ
+ *      up, the 68k reads the block into C1Q3_REQ_OFF and sets W_REQ_DONE
+ *      (it looks often while requests come, rarely otherwise)
  *   5. the game quits (or CMD_STOP): state C1Q3_QUIT, the 68k flushes what
  *      is left and reloads the image for the next run
  *
@@ -33,14 +36,17 @@
 
 #define C1Q3_OFF            0x07AFD000UL    /* the control page (ZZAV_OFF, as uae's C1UA page) */
 #define C1Q3_MAGIC          0x43315133UL    /* "C1Q3": the core runs and listens */
-#define C1Q3_VERSION        0x00000100UL    /* 0.1.0 of this protocol */
+#define C1Q3_VERSION        0x00000102UL    /* 0.1.2 of this protocol: files by request */
 
 /* the data window: the player's packet ring (ZZAV_RING_OFF, 6 MB, uncached
-   on both cores); its last 64 KB are core 1's log ring */
+   on both cores): 4 MB for files in and out (CMD_CHUNK, CMD_FLUSH), then
+   the blocks core 1 asks for (files by request), then core 1's log ring */
 #define C1Q3_WIN_OFF        0x07100000UL
 #define C1Q3_WIN_SIZE       0x00600000UL
-#define C1Q3_CHUNK_MAX      0x005F0000UL
-#define C1Q3_LOG_OFF        (C1Q3_WIN_OFF + C1Q3_CHUNK_MAX)
+#define C1Q3_CHUNK_MAX      0x00400000UL
+#define C1Q3_REQ_OFF        (C1Q3_WIN_OFF + 0x00400000UL)
+#define C1Q3_REQ_MAX        0x001F0000UL
+#define C1Q3_LOG_OFF        (C1Q3_WIN_OFF + 0x005F0000UL)
 #define C1Q3_LOG_LEN        0x00010000UL
 /* the overlay's two buffers, the HDMI ring (as c1uae_board.h) */
 #define C1Q3_OVL0_OFF       0x06000000UL
@@ -69,6 +75,8 @@ enum {
 #define C1Q3_REMOVED        0xFFFFFFFFUL
 
 #define C1Q3_FILE_RW        1               /* W_FLAGS: written back (under /home/ only) */
+#define C1Q3_FILE_REMOTE    2               /* W_FLAGS: no CHUNKs; core 1 asks for blocks as it
+                                               reads (W_REQ_*), and keeps some in a cache */
 
 /* the 32-bit words of the page */
 enum {
@@ -91,15 +99,23 @@ enum {
     C1Q3_W_WIDTH, C1Q3_W_HEIGHT,/* core 1: the picture's size (from the renderer) */
     C1Q3_W_MOUSE,               /* core 1: 1 the game wants the mouse (grab), 0 free (menu, console) */
     C1Q3_W_FRAME_MS_MAX,        /* core 1: the longest frame of the last second, ms */
+    C1Q3_W_PROF_ON,             /* 68k: 1 = core 1 puts every timer tick's pc into the profile ring */
+    C1Q3_W_PROF_HEAD,           /* core 1: pcs written into the ring so far */
+    C1Q3_W_REQ_SEQ,             /* core 1: a block wanted (W_REQ_FILE/OFF/LEN), counted up */
+    C1Q3_W_REQ_DONE,            /* 68k: = W_REQ_SEQ when it is at C1Q3_REQ_OFF (W_REQ_RESULT bytes) */
     C1Q3_W_SAMPLE = 40,         /* core 1, 4 times a second (private timer): count, then the
                                    interrupted pc, lr, sp, then code addresses on its stack */
     C1Q3_W_SAMPLE_END = 60,
+    C1Q3_W_REQ_FILE = 60, C1Q3_W_REQ_OFF, C1Q3_W_REQ_LEN,
+    C1Q3_W_REQ_RESULT,          /* 68k: bytes read, or 0xFFFFFFFF */
     C1Q3_W_NWORDS = 64
 };
 
 enum { C1Q3_E_NONE, C1Q3_E_NOMEM, C1Q3_E_FILE, C1Q3_E_ENGINE, C1Q3_E_CORE };
 
 /* byte offsets inside the page */
+#define C1Q3_PROF_OFF       0x100           /* profile ring: C1Q3_PROF_N pcs, 200 a second */
+#define C1Q3_PROF_N         192
 #define C1Q3_IN_OFF         0x400           /* input ring: C1Q3_IN_N events of 4 bytes */
 #define C1Q3_IN_N           256
 #define C1Q3_TEXT_OFF       0x800           /* paths, the command line, commands; NUL-ended */
