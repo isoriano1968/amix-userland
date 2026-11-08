@@ -1,0 +1,155 @@
+# Quake III on the Z3660's ARM core 1
+
+The whole of ioquake3 (client, server, botlib, the game modules, sound
+mixing) and its GL (Mesa 18.3 OSMesa with softpipe) as one bare-metal program
+on the Z3660's second Cortex-A9, `z3660ARM_Core_q3.bin`, the way the Amiga
+emulator runs there (`components/emulators/uae4arm`). The 68060 only holds
+the X window the picture lies over, passes keyboard and mouse on, and serves
+the files: `c1q3`.
+
+```
+ AMIX (68060)                                   Z3660 core 1 (Cortex-A9, bare metal)
+ ----------------------------------             ---------------------------------------
+ c1q3 (setuid root, drops root early)           z3660ARM_Core_q3.bin
+   X window (black, under the overlay)            core1_main.c  control page, MMU, faults, reload,
+   keys/mouse -> input ring                                     overlay, 200 Hz timer: HDMI pump + sampler
+   | /dev/zz9000: board memory + registers        sys_c1.c      Sys_*, the game modules linked in
+   |   C1Q3 page 0x07AFD000 (commands, input, status)           net_c1.c  loopback only, NET_Sleep polls the 68k
+   |   window   0x07100000 (files in/out, log ring at its end)  c1fs.c    files in memory, written ones go back
+   |   overlay  0x06000000/0x06800000 <-- picture ---          glimp_c1.c OSMesa, frame -> overlay
+   |   HDMI     0x07CE0000  <--------------- sound ---          snd_c1.c  48 kHz ring the timer drains
+   v                                                            in_c1.c   input ring -> engine events
+ armbench -load/-reload (amix-gate firmware/core1)
+```
+
+Why: on the A3000 (060 at 80 MHz) with the GL on core 1 through zzgl and the
+engine on the 060, q3dm1 ran at ~3 fps at 640x480; a /proc profile showed the
+060's own share would cap it even with a fast GPU (RtCW ~1.5 fps). An A9 at
+866 MHz runs this kind of code several times faster than the 060, and nothing
+has to cross the bus per frame.
+
+## Choices
+
+**Same harness as uae4arm, own protocol.** `core1_main.c` is uae's harness
+(control block, MMU table, fault handler, `-reload` trampoline, private-timer
+sampler) with the protocol in `c1q3_board.h`: the same areas (the player's
+control page, its packet ring as the data window, the overlay buffers, the
+HDMI ring), magic "C1Q3". The image runs alone on core 1; while the game runs
+there is no zzgl, H.264 or crypto offload for others (sshd falls back to the
+060).
+
+**Game modules linked in.** No dlopen on bare metal: cgame, qagame and ui are
+each compiled with their own define, linked into one relocatable object
+(`module.ld`) with only `dllEntry`/`vmMain` left global (renamed
+`<mod>_dllEntry`/`<mod>_vmMain`), so their copies of `q_shared.c`, `bg_*.c`
+and the `trap_*` functions never meet. `module.ld` gathers each module's
+globals between `<mod>_data_start/_end` and `<mod>_bss_start/_end`;
+`Sys_LoadGameDll` gives them back their first values at every load, as a
+fresh dlopen would (cgame and qagame are loaded again at every map). FS_FindVM
+wants a file per module: c1fs gets a one-byte `/base/<game>/<mod>.so` for
+each game directory. No QVMs and no QVM JIT (its cache flush would be a Linux
+system call, the trap uae4arm fell into).
+
+**Platform files instead of SDL.** `sys_c1.c` replaces `sys_main.c`,
+`sys_unix.c` and the consoles; `net_c1.c` replaces `net_ip.c` (no sockets:
+the local client and server talk over the loopback in `net_chan.c`);
+`glimp_c1.c`, `in_c1.c` and `snd_c1.c` replace `sdl/`. The engine sources are
+pristine plus `patches/0004-amix-core1.patch` (the `__z3660core__` platform
+block in `q_platform.h`, hunk 64 MB / zone 24 MB defaults, one raw sound
+stream instead of 129, which were 16.5 MB of .bss).
+
+**GL: OSMesa straight.** The renderer (renderergl1, linked in) gets its GL
+functions from `OSMesaGetProcAddress` and draws into an RGBA buffer in core
+1's memory (depth 16, no stencil, as the zzgl build). `GLimp_EndFrame`
+converts it into the overlay's back buffer (0x00RRGGBB, 0 is transparent so
+it becomes 0x010101) and asks core 0 to flip at vblank. The library is
+amix-gate's `build/arm/libOSMesa.a` (`build/xbuild.py arm`), the same one the
+gpu core uses, with its fast softpipe paths. Later the renderer can move to
+RRXGL (RasterIX); not part of this image.
+
+**Sound: the engine's ring, drained by a timer.** The HDMI ring is 160 ms; a
+frame of the game is longer than that. The engine mixes 48 kHz stereo into
+its own 64K-frame ring (`s_mixahead 0.5`, set by c1q3); the private timer
+interrupt (200 Hz) copies what is painted into the HDMI ring 80 ms ahead of
+the DMA and writes silence where nothing is painted yet, so a slow frame
+gives a gap, not a loop of old sound. The interrupt saves the caller-saved
+VFP/NEON registers. The engine's clock (`SNDDMA_GetDMAPos`) is the DMA's
+position (or core 1's clock while the DMA stands, as in qemu), moved on when
+the engine slept longer than half its ring so it never counts wraps wrong.
+
+**Memory.** The image is ~9 MB (limit 12 MB); .bss ~16 MB, stack 4 MB. The
+heap is 0x30000000-0x38000000 (128 MB) and 96 MB above the image. newlib's
+malloc takes no memory below its old top, so `_sbrk` gives the low region
+first and moves up once; the paks are cut from the top of the high region
+(`c1p_file_alloc`) before the engine starts. The demo: pak 46 MB, hunk 64,
+zone 24, sound 25, leaves ~42 MB for textures and Mesa after q3dm1 loads.
+
+**Files.** c1q3 hands over every file of `<base>/<game>` (as `/base/<game>/...`,
+read-only) and of the user's home (default `~/.q3a`, as `/home/...`). Only
+`/home/` is writable on core 1; written files come back whole through the
+window (`CMD_FLUSH`, in pieces of up to 5.9 MB), into `NAME.part` and renamed,
+removals too. c1q3 refuses paths outside `/home/`.
+
+**Input.** c1q3 maps X keysyms to the engine's key numbers (as `amix_input.c`
+does in the 060 build), sends printable characters as CHAR events, mouse
+buttons and the wheel as keys, and motion relative (pointer grabbed, hidden
+and warped to the centre while the game wants the mouse: core 1 says so in
+`W_MOUSE`, not in the console and not while a map loads). F10 quits (c1q3
+binds it), as does closing the window.
+
+## Building and testing
+
+```
+make prep              # pristine ioquake3 + patches/*.patch
+make core1             # build/core1/z3660ARM_Core_q3.bin (+ q3.elf, q3.map), build/amix/c1q3
+make check-core1       # the real image in qemu's Zynq, fake060.py as the 68k: q3dm1 loads,
+                       # is drawn, quit writes q3config.cfg back (Q3DATA= the demo's data)
+make stage-core1       # what goes on AMIX; files/amix/install-c1q3.sh puts it there
+```
+
+`files/qemu/run.sh` runs `build/core1/q3.elf` in `qemu-system-arm -M
+xilinx-zynq-a9` (Debian's qemu in ~/opt/qemu), its DDR a shared file, and
+`fake060.py` does c1q3's part (files, command line, console commands, keys,
+overlay dumps as PPM, write-back). qemu has no core 0, so the harness turns the
+GIC distributor on itself when it finds it off (on the board core 0 has).
+qemu's timing says nothing about the board's.
+
+PC results, 2026-11-08 (qemu): the UI comes up (the CD-key screen, as the
+060 build at its first start: ioquake3's q3_ui asks for a well-formed key
+unless one is stored); `devmap q3dm1` loads all three modules, the bots' AAS
+and the map (CL_InitCGame 17 s in qemu), draws it right (lightmaps, sky,
+models, HUD), the shotgun's sound reaches the HDMI ring; `quit` writes
+`q3config.cfg` and `games.log` back. com_speeds in qemu: server, client and
+game ~5 ms a frame, the rest is softpipe.
+
+Board, 2026-11-08 (A3000, core 1 at 866 MHz, 640x480, full quality as q3.sh):
+
+| | zzgl build (engine on the 060) | c1q3 (all on core 1) |
+|---|---|---|
+| files into core 1 | - | 44.7 MB in 6-36 s (disk cache) |
+| CL_InitCGame | 77.7-80.2 s | **6.6 s** |
+| q3dm1 spawn view, a frame | 225 ms (4.4 fps), 2026-11-07 | **221 ms (4.5 fps)** |
+| of it: engine (sv+cl+gm+rf+ev) | ~45 ms on the 060 | **~4 ms** |
+| of it: softpipe (bk) | ~225 ms on core 1 | 217 ms |
+
+The engine is no longer a cost; softpipe sets the frame rate, as it did with
+zzgl. Loading is 12 times faster. So the next gains are all in the renderer:
+the sp_fast paths, fewer pixels, or RasterIX (with it the 4 ms engine would
+allow far more than the 060 ever could). Quit wrote q3config.cfg back; no
+sound underruns counted.
+
+Traps on the board: the 060 build's `q3config.cfg` holds `com_hunkmegs 256`
+and `com_soundMegs 16` (50 MB): c1q3 now sets hunk 64, zone 24, sound 8 ahead
+of the user's arguments. A 50 MB request also cost ~38 MB of the low region
+(malloc only grows upward): a better allocator over both regions is to do.
+Root has no X cookie for the user's display: run c1q3 as the user, or with
+XAUTHORITY of the session.
+
+## Next
+
+1. An allocator that uses both heap regions without losing a tail.
+2. A launcher and a CDE front end like amixuae; q3.sh to c1q3 once it is the
+   faster way (the user decides).
+3. Renderer speed (the frame is softpipe): profile with the sampler.
+4. RtCW (iortcw) the same way, but its paks do not fit in core 1's memory:
+   blocks by request from the 060 (the data window has room for it).

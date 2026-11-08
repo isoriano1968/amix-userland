@@ -1,9 +1,11 @@
 # name, version and what building and running it needs
 name     games/ioquake3
 version  87a99d1
-summary  ioquake3 on core 1
+summary  ioquake3: the 060 build with GL on core 1 (q3.sh), and the whole engine on core 1 (c1q3)
 require  x11/mesa-183
 require  x11/x11r6.3
 require  library/lib060
 file     /opt/ioq3/q3.sh
 file     /opt/ioq3/ioquake3.zzgl
+file     /root/z3660ARMCores/z3660ARM_Core_q3.bin
+file     /opt/amix/bin/c1q3
