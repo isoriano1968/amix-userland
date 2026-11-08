@@ -11,9 +11,12 @@
  * In the Amiga's window:
  *   click                  the Amiga gets the mouse (the X pointer hides; the
  *                          Amiga draws its own)
- *   Right Amiga + Right Alt + Help   gives keyboard and mouse back to CDE
- *   Keys as joystick       cursor keys = port 2 stick, Right Alt fire,
- *                          Right Amiga second button
+ *   Left Amiga + Right Amiga, or both mouse buttons held 2 s
+ *                          gives keyboard and mouse back to CDE (the
+ *                          kernel takes Alt/Amiga + Help, Alt + F-keys and
+ *                          Alt + Esc before X: never use those)
+ *   Keys as joystick       cursor keys = port 2 stick, Right Alt (also as
+ *                          AltGr) or keypad 0 fire, Right Amiga second button
  *
  * Files on the command line (CDE passes them for Open and for a drop on
  * the panel control): .adf/.adz/.dms go into DF0, DF1 ..., .hdf into the
@@ -111,7 +114,7 @@ static pid_t child = -1;
 static FILE *to_c1;
 static int from_c1 = -1;
 static XtInputId in_id;
-static int grabbed, joy_bits, held_ramiga, held_ralt, scale = 1;
+static int grabbed, joy_bits, held_ramiga, held_lamiga, held_ralt, scale = 1;
 static Cursor blank;
 
 /* --- the AmixUAE folder: ~/Documents/AmixUAE --- */
@@ -311,11 +314,18 @@ static int retrok(KeySym k)
     case XK_Shift_R: return RK_RSHIFT;
     case XK_Control_L: case XK_Control_R: return RK_LCTRL;     /* the Amiga has one Ctrl */
     case XK_Alt_L: return RK_LALT;
-    case XK_Alt_R: return RK_RALT;
+    case XK_Alt_R: case XK_Mode_switch: case XK_ISO_Level3_Shift: return RK_RALT;
     case XK_Meta_L: case XK_Super_L: return RK_LMETA;          /* Left Amiga (check xev on the box) */
     case XK_Meta_R: case XK_Super_R: case XK_Multi_key: return RK_RMETA;  /* Right Amiga */
     }
     return -1;
+}
+
+/* Right Alt: with a German (or any AltGr) keymap X calls it Mode_switch or
+   ISO_Level3_Shift, not Alt_R */
+static int is_ralt(KeySym k)
+{
+    return k == XK_Alt_R || k == XK_Mode_switch || k == XK_ISO_Level3_Shift;
 }
 
 static void ungrab(void)
@@ -327,6 +337,13 @@ static void ungrab(void)
     XUndefineCursor(XtDisplay(emu_area), XtWindow(emu_area));
     grabbed = 0;
     send("buttons %d", 0, 0);
+    send("key %d %d", 0, RK_LMETA);         /* the release keys are not left held */
+    send("key %d %d", 0, RK_RMETA);
+    if (joy_bits) {
+        joy_bits = 0;
+        send("joy %d %d", 0, 0);
+    }
+    held_lamiga = held_ramiga = 0;
     say("Running. Click into the Amiga to give it the mouse.");
 }
 
@@ -344,7 +361,7 @@ static void grab(void)
     XGrabKeyboard(d, w, True, GrabModeAsync, GrabModeAsync, CurrentTime);
     XWarpPointer(d, None, w, 0, 0, 0, 0, PIC_W * scale / 2, PIC_H * scale / 2);
     grabbed = 1;
-    say("The Amiga has mouse and keyboard: Right Amiga + Right Alt + Help gives them back.");
+    say("The Amiga has mouse and keyboard: Left Amiga + Right Amiga (or both mouse buttons for 2 s) gives them back.");
 }
 
 static void key(int down, KeySym k)
@@ -353,9 +370,11 @@ static void key(int down, KeySym k)
 
     if (k == XK_Meta_R || k == XK_Super_R || k == XK_Multi_key)
         held_ramiga = down;
-    if (k == XK_Alt_R)
+    if (is_ralt(k))
         held_ralt = down;
-    if (down && k == XK_Help && held_ramiga && held_ralt) {
+    if (k == XK_Meta_L || k == XK_Super_L)
+        held_lamiga = down;
+    if (down && held_lamiga && held_ramiga) {
         ungrab();
         return;
     }
@@ -367,7 +386,8 @@ static void key(int down, KeySym k)
         case XK_Down: bit = JOY_DOWN; break;
         case XK_Left: bit = JOY_LEFT; break;
         case XK_Right: bit = JOY_RIGHT; break;
-        case XK_Alt_R: bit = JOY_B; break;
+        case XK_Alt_R: case XK_Mode_switch: case XK_ISO_Level3_Shift:
+        case XK_KP_0: case XK_KP_Insert: bit = JOY_B; break;   /* fire: Right Alt, or keypad 0 */
         case XK_Meta_R: case XK_Super_R: case XK_Multi_key: bit = JOY_A; break;
         }
         if (bit) {
@@ -380,9 +400,22 @@ static void key(int down, KeySym k)
         send("key %d %d", down, code);
 }
 
+/* both mouse buttons held 2 s: back to CDE, whatever the keymap calls keys */
+static XtIntervalId both_id;
+static int buttons;
+
+static void both_held(XtPointer cd, XtIntervalId *id)
+{
+    (void)cd; (void)id;
+    both_id = 0;
+    if (grabbed && (buttons & 3) == 3) {
+        buttons = 0;
+        ungrab();
+    }
+}
+
 static void area_event(Widget w, XtPointer cd, XEvent *ev, Boolean *cont)
 {
-    static int buttons;
 
     (void)w; (void)cd; (void)cont;
     switch (ev->type) {
@@ -402,6 +435,12 @@ static void area_event(Widget w, XtPointer cd, XEvent *ev, Boolean *cont)
 
             buttons = ev->type == ButtonPress ? buttons | bit : buttons & ~bit;
             send("buttons %d", buttons, 0);
+            if ((buttons & 3) == 3 && !both_id)
+                both_id = XtAppAddTimeOut(app, 2000, both_held, NULL);
+            else if ((buttons & 3) != 3 && both_id) {
+                XtRemoveTimeOut(both_id);
+                both_id = 0;
+            }
         }
         break;
     case MotionNotify:
