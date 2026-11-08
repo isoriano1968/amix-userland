@@ -15,8 +15,10 @@
  *                          gives keyboard and mouse back to CDE (the
  *                          kernel takes Alt/Amiga + Help, Alt + F-keys and
  *                          Alt + Esc before X: never use those)
- *   Keys as joystick       cursor keys = port 2 stick, Right Alt (also as
- *                          AltGr) or keypad 0 fire, Right Amiga second button
+ *   Joystick               Port 2: the A3000's own joystick port 2 (c1uae
+ *                          -joyport); Keyboard: cursor keys = the stick,
+ *                          Right Alt (also as AltGr) or keypad 0 fire, Right
+ *                          Amiga second button; or both
  *
  * Files on the command line (CDE passes them for Open and for a drop on
  * the panel control): .adf/.adz/.dms go into DF0, DF1 ..., .hdf into the
@@ -106,10 +108,13 @@
 #define JOY_RIGHT   (1 << 7)
 
 static XtAppContext app;
-static Widget top, model_menu, model_btn[3], tf_kick, tf_df[4], tf_hdf, tg_ro, tg_joy, tg_scale,
+static Widget top, model_menu, model_btn[3], joy_menu, joy_btn[3], tf_kick, tf_df[4], tf_hdf, tg_ro, tg_scale,
               b_start, b_stop, b_reset, status, emu_shell, emu_area, cb_conf;
 static const char *models[3] = { "A500", "A600", "A1200" };
 static int model = 0;
+enum { JOY_PORT, JOY_KEYS, JOY_BOTH };    /* "joy=" in settings: old 0/1 = off/keys */
+static const char *joy_modes[3] = { "Port 2", "Keyboard", "Port 2 + keyboard" };
+static int joy_mode = JOY_PORT;
 static pid_t child = -1;
 static FILE *to_c1;
 static int from_c1 = -1;
@@ -218,7 +223,7 @@ static int cfg_load(const char *path)
         if (!strncmp(line, "df", 2) && line[2] >= '0' && line[2] <= '3' && !line[3])
             set_field(tf_df[line[2] - '0'], v, D_FLOPPY);
         if (!strcmp(line, "ro")) XmToggleButtonSetState(tg_ro, atoi(v), False);
-        if (!strcmp(line, "joy")) XmToggleButtonSetState(tg_joy, atoi(v), False);
+        if (!strcmp(line, "joy") && atoi(v) >= 0 && atoi(v) <= 2) joy_mode = atoi(v);
         if (!strcmp(line, "scale")) XmToggleButtonSetState(tg_scale, atoi(v) == 2, False);
         if (!strcmp(line, "config")) {
             strncpy(conf_name, v, sizeof(conf_name) - 1);
@@ -227,6 +232,7 @@ static int cfg_load(const char *path)
     }
     fclose(f);
     XtVaSetValues(model_menu, XmNmenuHistory, model_btn[model], NULL);
+    XtVaSetValues(joy_menu, XmNmenuHistory, joy_btn[joy_mode], NULL);
     return 0;
 }
 
@@ -248,7 +254,7 @@ static int cfg_save(const char *path, const char *name)
         XtFree(s);
     }
     fprintf(f, "hdf=%s\n", s = XmTextFieldGetString(tf_hdf)); XtFree(s);
-    fprintf(f, "ro=%d\njoy=%d\nscale=%d\n", XmToggleButtonGetState(tg_ro), XmToggleButtonGetState(tg_joy),
+    fprintf(f, "ro=%d\njoy=%d\nscale=%d\n", XmToggleButtonGetState(tg_ro), joy_mode,
             XmToggleButtonGetState(tg_scale) ? 2 : 1);
     return fclose(f) == 0 ? 0 : -1;
 }
@@ -378,7 +384,7 @@ static void key(int down, KeySym k)
         ungrab();
         return;
     }
-    if (XmToggleButtonGetState(tg_joy)) {
+    if (joy_mode != JOY_PORT) {
         int bit = 0;
 
         switch (k) {
@@ -608,6 +614,8 @@ static void start(Widget w, XtPointer cd, XtPointer cb)
     }
     if (XmToggleButtonGetState(tg_ro))
         argv[argc++] = "-ro";
+    if (joy_mode != JOY_KEYS)
+        argv[argc++] = "-joyport";
     if (scale == 2) {
         argv[argc++] = "-scale";
         argv[argc++] = "2";
@@ -1088,6 +1096,15 @@ static void conf_delete(Widget w, XtPointer cd, XtPointer cb)
     XtManageChild(d);
 }
 
+static void joy_cb(Widget w, XtPointer cd, XtPointer cb)
+{
+    (void)w; (void)cb;
+    joy_mode = (int)(long)cd;
+    if (child > 0)
+        say(joy_mode == JOY_KEYS ? "Keyboard joystick now; port 2 still counts until the next Start."
+                                 : "Port 2 is read from the next Start on.");
+}
+
 static void model_cb(Widget w, XtPointer cd, XtPointer cb)
 {
     (void)w; (void)cb;
@@ -1163,6 +1180,18 @@ int main(int argc, char **argv)
                   XmNleftAttachment, XmATTACH_FORM, XmNleftOffset, 40, NULL);
     XtManageChild(model_menu);
 
+    pulldown = XmCreatePulldownMenu(form, "joys", NULL, 0);
+    for (i = 0; i < 3; i++) {
+        joy_btn[i] = XtVaCreateManagedWidget(joy_modes[i], xmPushButtonWidgetClass, pulldown, NULL);
+        XtAddCallback(joy_btn[i], XmNactivateCallback, joy_cb, (XtPointer)(long)i);
+    }
+    XtSetArg(a[0], XmNsubMenuId, pulldown);
+    XtSetArg(a[1], XmNlabelString, XmStringCreateLocalized("Joystick"));
+    joy_menu = XmCreateOptionMenu(form, "joystick", a, 2);
+    XtVaSetValues(joy_menu, XmNtopAttachment, XmATTACH_OPPOSITE_WIDGET, XmNtopWidget, model_menu,
+                  XmNleftAttachment, XmATTACH_WIDGET, XmNleftWidget, model_menu, XmNleftOffset, 20, NULL);
+    XtManageChild(joy_menu);
+
     tf_kick = file_row(form, model_menu, "Kickstart", D_KICK);
     last = tf_kick;
     for (i = 0; i < 4; i++) {
@@ -1178,7 +1207,6 @@ int main(int argc, char **argv)
         XmNtopAttachment, XmATTACH_WIDGET, XmNtopWidget, tf_hdf, XmNtopOffset, 8,
         XmNleftAttachment, XmATTACH_FORM, XmNleftOffset, 8, NULL);
     tg_ro = XtVaCreateManagedWidget("Write-protect disks", xmToggleButtonWidgetClass, row, NULL);
-    tg_joy = XtVaCreateManagedWidget("Keys as joystick", xmToggleButtonWidgetClass, row, NULL);
     tg_scale = XtVaCreateManagedWidget("Double size", xmToggleButtonWidgetClass, row, NULL);
 
     sep = XtVaCreateManagedWidget("sep", xmSeparatorWidgetClass, form,

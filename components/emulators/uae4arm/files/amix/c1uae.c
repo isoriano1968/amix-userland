@@ -17,6 +17,9 @@
  *     -at X Y                   the picture's place on the screen (else centred)
  *     -scale 1|2                pixel doubling
  *     -volume N                 0-256
+ *     -joyport                  the A3000's own joystick port 2 (JOY1DAT, CIA-A
+ *                               fire, read-only through /dev/mem) is the Amiga's
+ *                               joystick, besides "joy" lines from the front end
  *     -core FILE                the core image (default /root/z3660ARMCores/z3660ARM_Core_uae.bin)
  *     -bench FRAMES             no pacing, no picture: time FRAMES frames, print, stop
  *                               (with c1bench.adf as -df0: until CoreMark is done, its
@@ -92,6 +95,52 @@ static volatile unsigned long *ctl, *c1ld, *ua;
 static volatile unsigned char *uab;
 static unsigned char *win, *shared;
 static unsigned long log_seen, in_head, in_tail_seen;
+
+/* --- the A3000's joystick port 2: JOY1DAT (0xDFF00C) and CIA-A PRA bit 7
+   (0xBFE001), mapped read-only by root before dropping it.  Plain reads with
+   no side effect: never the CIA's ICR, never port 1 (the kernel's mouse) --- */
+#define JOY_B       (1 << 0)            /* libretro's bits, as amixuae sends */
+#define JOY_UP      (1 << 4)
+#define JOY_DOWN    (1 << 5)
+#define JOY_LEFT    (1 << 6)
+#define JOY_RIGHT   (1 << 7)
+static volatile unsigned char *custom_regs, *ciaa_regs;
+static unsigned long joy_keys, joy_sent;   /* the front end's bits, what core 1 has */
+
+static int joyport_map(void)
+{
+    int m = open("/dev/mem", O_RDONLY);
+    void *c, *a;
+
+    if (m < 0)
+        return -1;
+    c = mmap(0, 4096, PROT_READ, MAP_SHARED, m, (off_t)0xDFF000);
+    a = mmap(0, 4096, PROT_READ, MAP_SHARED, m, (off_t)0xBFE000);
+    close(m);
+    if (c == (void *)-1 || a == (void *)-1)
+        return -1;
+    custom_regs = (volatile unsigned char *)c;
+    ciaa_regs = (volatile unsigned char *)a;
+    return 0;
+}
+
+static unsigned long joyport_bits(void)
+{
+    unsigned int j, x, y;
+    unsigned long b = 0;
+
+    if (!custom_regs)
+        return 0;
+    j = *(volatile unsigned short *)(custom_regs + 0x00C);
+    y = j >> 8;
+    x = j & 0xFF;
+    if (x & 2) b |= JOY_RIGHT;
+    if (y & 2) b |= JOY_LEFT;
+    if (((x >> 1) ^ x) & 1) b |= JOY_DOWN;
+    if (((y >> 1) ^ y) & 1) b |= JOY_UP;
+    if (!(ciaa_regs[1] & 0x80)) b |= JOY_B;    /* fire is low */
+    return b;
+}
 
 static struct { char path[1024]; char name[C1UA_NAME_LEN]; unsigned long size, flags; } files[C1UA_MAX_FILES];
 static int nfiles;
@@ -347,8 +396,12 @@ static int line(char *s)
         event((unsigned long)C1UA_EV_MOUSE << 24 | ((unsigned long)a & 0xFFF) << 12 | ((unsigned long)b & 0xFFF));
     else if (!strcmp(w, "buttons"))
         event((unsigned long)C1UA_EV_BUTTONS << 24 | ((unsigned long)a & 7));
-    else if (!strcmp(w, "joy"))
-        event((unsigned long)C1UA_EV_JOY << 24 | ((unsigned long)a & 1) << 16 | ((unsigned long)b & 0xFFFF));
+    else if (!strcmp(w, "joy")) {
+        if ((a & 1) == 0 && custom_regs)
+            joy_keys = (unsigned long)b & 0xFFFF;   /* merged with port 2 in the loop */
+        else
+            event((unsigned long)C1UA_EV_JOY << 24 | ((unsigned long)a & 1) << 16 | ((unsigned long)b & 0xFFFF));
+    }
     else if (!strcmp(w, "place")) {
         if (overlay_on)
             place((int)a, (int)b);
@@ -380,7 +433,7 @@ static void usage(void)
 {
     fprintf(stderr, "usage: c1uae [-model A500|A600|A1200] -kick ROM [-df0..3 ADF] [-hdf HDF] [-ro]\n"
                     "             [-cfg LINE] [-fast MB] [-at X Y] [-scale 1|2] [-volume N] [-core FILE]\n"
-                    "             [-bench FRAMES] [-v]\n");
+                    "             [-joyport] [-bench FRAMES] [-v]\n");
     exit(2);
 }
 
@@ -388,7 +441,7 @@ int main(int argc, char **argv)
 {
     const char *core = "/root/z3660ARMCores/z3660ARM_Core_uae.bin", *model = "A500";
     const char *kick = NULL, *df[4] = { NULL, NULL, NULL, NULL }, *hdf = NULL, *cfg[16];
-    int ncfg = 0, ro = 0, fast = 0, bench = 0, i, kf = -1, dff[4] = { -1, -1, -1, -1 }, hf = -1;
+    int ncfg = 0, ro = 0, fast = 0, bench = 0, joyport = 0, i, kf = -1, dff[4] = { -1, -1, -1, -1 }, hf = -1;
     long volume = 256;
     char text[C1UA_TEXT_LEN], *t;
     double last_status = 0;
@@ -404,6 +457,7 @@ int main(int argc, char **argv)
         }
         else if (!strcmp(argv[i], "-hdf") && i + 1 < argc) hdf = argv[++i];
         else if (!strcmp(argv[i], "-ro")) ro = 1;
+        else if (!strcmp(argv[i], "-joyport")) joyport = 1;
         else if (!strcmp(argv[i], "-cfg") && i + 1 < argc && ncfg < 16) cfg[ncfg++] = argv[++i];
         else if (!strcmp(argv[i], "-fast") && i + 1 < argc) fast = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-at") && i + 2 < argc) { ovl_x = atoi(argv[i + 1]); ovl_y = atoi(argv[i + 2]); i += 2; }
@@ -451,6 +505,8 @@ int main(int argc, char **argv)
         return 1;
     ua[C1UA_W_OWNER] = (unsigned long)getpid();
     /* from here on as the caller: the files are theirs */
+    if (joyport && joyport_map() < 0)    /* still root: the chips are */
+        fprintf(stderr, "c1uae: joystick port 2: /dev/mem: %s (keyboard joystick only)\n", strerror(errno));
     if (setgid(getgid()) < 0 || setuid(getuid()) < 0) {
         perror("c1uae: setuid");
         return 1;
@@ -559,12 +615,21 @@ int main(int argc, char **argv)
         FD_ZERO(&rs);
         FD_SET(0, &rs);
         tv.tv_sec = 0;
-        tv.tv_usec = 200000;
+        tv.tv_usec = custom_regs ? 20000 : 200000;   /* port 2: 50 reads a second */
         if (select(1, &rs, NULL, NULL, &tv) > 0) {
             if (!fgets(buf, sizeof(buf), stdin) || line(buf))
                 break;
-            continue;
         }
+        if (custom_regs) {
+            const unsigned long b = joyport_bits() | joy_keys;
+
+            if (b != joy_sent) {
+                joy_sent = b;
+                event((unsigned long)C1UA_EV_JOY << 24 | (b & 0xFFFF));
+            }
+        }
+        if (FD_ISSET(0, &rs))
+            continue;
         if (now() - last_status >= 1.0) {     /* a few reads a second at most */
             unsigned long st = ua[C1UA_W_STATE];
 
