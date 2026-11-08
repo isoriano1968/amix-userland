@@ -9,6 +9,7 @@ One directory per application.
 | `ztopcde/` | The Z3660 in a window: temperatures, clocks, and the programs of its second ARM core |
 | `amixsysmon/` | System Monitor, after GNOME's: processes (end, kill), the last minute of CPU, memory, swap and network, the file systems, the Z3660; on [library/amixstat](../../library/amixstat) |
 | `amixdisplay/` | Display, after the Linux desktops' panels: the screen resolution and refresh, live through RandR with a 15 s "keep?" countdown; the user's own default and (setuid helper) the login screen's; design and mode table in [DESIGN.md](amixdisplay/DESIGN.md) |
+| `amixuae/` | Amiga: the front end of the Amiga emulator on the Z3660's second ARM core ([emulators/uae4arm](../../emulators/uae4arm)): model, Kickstart, DF0-DF3, hard file, Start/Stop/Reset; the picture lies in the RTG overlay over its window, keys, mouse and a keyboard joystick go to the Amiga (Right Amiga + Right Alt + Help gives them back) |
 | `panel/` | The AMIX control in CDE's front panel, with a subpanel holding both |
 
 The core 1 programs and `armbench` are in

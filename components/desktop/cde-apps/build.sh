@@ -5,7 +5,7 @@
 set -e
 cd "$(dirname "$0")"
 P=../../../tools/amix-pkg-config
-for app in ${*:-amixcast ztopcde amixsysmon amixdisplay}; do
+for app in ${*:-amixcast ztopcde amixsysmon amixdisplay amixuae}; do
 	pkgs=xm
 	[ $app = amixsysmon ] && pkgs="xm amixstat"	# library/amixstat
 	[ $app = amixdisplay ] && pkgs="xm xrandr"	# x11/libxrandr

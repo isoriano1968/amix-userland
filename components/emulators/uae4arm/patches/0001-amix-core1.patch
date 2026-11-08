@@ -1,0 +1,119 @@
+diff --git a/libretro/core/libretro-core.cpp b/libretro/core/libretro-core.cpp
+index 58d1f3d..180ce95 100644
+--- a/libretro/core/libretro-core.cpp
++++ b/libretro/core/libretro-core.cpp
+@@ -327,6 +327,10 @@ void zip_uncompress(char *in, char *out, char *lastfile)
+ 
+ 
+ 
++#ifdef AMIX_C1
++extern "C" const char *c1uae_config_line(int i);
++#endif
++
+ void update_prefs_retrocfg(struct uae_prefs * prefs)
+ {
+ 
+@@ -901,6 +905,24 @@ void update_prefs_retrocfg(struct uae_prefs * prefs)
+       if (strcmp(var.value, "off") == 0) prefs->fast_copper = 0;
+    }
+ 
++#ifdef AMIX_C1
++   /* the AMIX front end's own settings, as uae config lines (Kickstart,
++      DF0-DF3, hard files, CPU, memory): after the model's defaults, so
++      they win (c1uae.c) */
++   {
++      const char *line;
++      int i;
++
++      for (i = 0; (line = c1uae_config_line(i)) != NULL; i++) {
++         TCHAR tmp[MAX_DPATH * 2];
++
++         strncpy(tmp, line, sizeof(tmp) - 1);
++         tmp[sizeof(tmp) - 1] = 0;
++         cfgfile_parse_line(prefs, tmp, 0);
++      }
++   }
++#endif
++
+    set_config_changed();
+ 
+ }
+diff --git a/src/jit/codegen_arm.h b/src/jit/codegen_arm.h
+index 0500bbe..d4299a1 100644
+--- a/src/jit/codegen_arm.h
++++ b/src/jit/codegen_arm.h
+@@ -173,6 +173,9 @@
+ /* ========================================================================= */
+ 
+ /* Branch instructions */
++#ifdef _B
++#undef _B   /* newlib's ctype.h has one */
++#endif
+ #ifndef __ANDROID__
+ enum {
+ 	_B, _BL, _BLX, _BX, _BXJ
+diff --git a/src/od-pandora/pandora.cpp b/src/od-pandora/pandora.cpp
+index 92c6bd0..99884fe 100644
+--- a/src/od-pandora/pandora.cpp
++++ b/src/od-pandora/pandora.cpp
+@@ -939,6 +939,7 @@ LOGI("spd(%s)\n",start_path_data);
+   snprintf(savestate_fname, MAX_PATH, "%s/saves/default.ads", start_path_data);
+ 	logging_init ();
+   
++#ifndef AMIX_C1   /* core 1: faults are exceptions (core1_main.c), no signals */
+   memset(&action, 0, sizeof(action));
+   action.sa_sigaction = signal_segv;
+   action.sa_flags = SA_SIGINFO;
+@@ -970,6 +971,7 @@ LOGI("spd(%s)\n",start_path_data);
+     printf("Failed to set signal handler (SIGTERM).\n");
+     abort();
+   }
++#endif
+ 
+   alloc_AmigaMem();
+   RescanROMs();
+diff --git a/src/od-pandora/pandora_gui.cpp b/src/od-pandora/pandora_gui.cpp
+index 1e984b8..63e4e05 100644
+--- a/src/od-pandora/pandora_gui.cpp
++++ b/src/od-pandora/pandora_gui.cpp
+@@ -606,7 +606,7 @@ void gui_disk_image_change (int unitnum, const char *name, bool writeprotected)
+ 
+ void gui_led (int led, int on, int brightness)
+ {
+-#ifdef RASPBERRY
++#if defined(RASPBERRY) && !defined(AMIX_C1)
+    #define LED_ALL   -1         // Define for all LEDs
+    
+    unsigned char kbd_led_status;
+diff --git a/src/od-pandora/pandora_mem.cpp b/src/od-pandora/pandora_mem.cpp
+index c4fc634..3168e52 100644
+--- a/src/od-pandora/pandora_mem.cpp
++++ b/src/od-pandora/pandora_mem.cpp
+@@ -72,7 +72,7 @@ void alloc_AmigaMem(void)
+   // First attempt: allocate 16 MB for all memory in 24-bit area 
+   // and additional mem for Z3 and RTG at correct offset
+   natmem_size = 16 * 1024 * 1024;
+-#ifdef RASPBERRY
++#if defined(RASPBERRY) && !defined(AMIX_C1)   /* core 1: no address space to ask for, heap only */
+   // address returned by valloc() too high for later mmap() calls. Use mmap() also for first area.
+   regs.natmem_offset = (uae_u8*) mmap((void *)0x20000000, natmem_size + BARRIER,
+     PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+diff --git a/src/od-pandora/sysconfig.h b/src/od-pandora/sysconfig.h
+index b8626f7..29229de 100644
+--- a/src/od-pandora/sysconfig.h
++++ b/src/od-pandora/sysconfig.h
+@@ -548,8 +548,14 @@ typedef unsigned short USHORT;
+ typedef char TCHAR;
+ #endif
+ #define _tzset()            tzset()
++#ifdef AMIX_C1
++/* core 1 has no time zone: the Amiga clock is what the front end sends */
++#define _timezone           0L
++#define _daylight           0
++#else
+ #define _timezone           timezone
+ #define _daylight           daylight
++#endif
+ #define _ftime(x)           ftime(x)
+ #define _ftelli64(x)        ftello64(x)
+ #define _fseeki64(x,y,z)    fseeko64(x,y,z)

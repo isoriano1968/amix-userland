@@ -135,3 +135,15 @@ CONTROL PyDPainterPanel
 	DROP_ACTION	PyDPainter
 	HELP_STRING	Deluxe Paint clone in Python 3 and pygame, slow to start (graphics/pydpainter)
 }
+
+CONTROL AmixUAEPanel
+{
+	TYPE		icon
+	CONTAINER_NAME	AmixPanel
+	CONTAINER_TYPE	SUBPANEL
+	POSITION_HINTS	10
+	ICON		AmixUAE
+	LABEL		Amiga
+	PUSH_ACTION	AmixUAE
+	HELP_STRING	An Amiga emulated on the Z3660's ARM core 1 (emulators/uae4arm)
+}

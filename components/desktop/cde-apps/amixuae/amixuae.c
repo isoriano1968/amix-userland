@@ -1,0 +1,650 @@
+/*
+ * amixuae -- Amiga: the CDE front end of the Amiga emulator on the
+ * Z3660's ARM core 1 (emulators/uae4arm).  Choose the model, the Kickstart,
+ * floppies DF0-DF3 and a hard file, then Start: a window opens where the
+ * Amiga's picture is (the RTG overlay, drawn by core 1, never through X),
+ * and the window's keys, mouse and joystick go to the Amiga.
+ *
+ * The board is c1uae's (root, /dev/zz9000); amixuae runs it and talks to
+ * it through a pipe, one command a line (see c1uae.c).
+ *
+ * In the Amiga's window:
+ *   click                  the Amiga gets the mouse (the X pointer hides; the
+ *                          Amiga draws its own)
+ *   Right Amiga + Right Alt + Help   gives keyboard and mouse back to CDE
+ *   Keys as joystick       cursor keys = port 2 stick, Right Alt fire,
+ *                          Right Amiga second button
+ *
+ * Settings in ~/.amixuae (one key=value a line).
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <signal.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <X11/Intrinsic.h>
+#include <X11/StringDefs.h>
+#include <X11/Shell.h>
+#include <X11/keysym.h>
+#include <Xm/Xm.h>
+#include <Xm/Form.h>
+#include <Xm/RowColumn.h>
+#include <Xm/Label.h>
+#include <Xm/TextF.h>
+#include <Xm/PushB.h>
+#include <Xm/ToggleB.h>
+#include <Xm/FileSB.h>
+#include <Xm/DrawingA.h>
+#include <Xm/Separator.h>
+#include <Xm/MessageB.h>
+
+#define C1UAE       "/opt/amix/bin/c1uae"
+#define PIC_W       640
+#define PIC_H       512
+
+/* libretro's key codes (SDL 1.2's), as the core reads them */
+#define RK_BACKSPACE 8
+#define RK_TAB      9
+#define RK_RETURN   13
+#define RK_ESCAPE   27
+#define RK_DELETE   127
+#define RK_KP0      256
+#define RK_KP_PERIOD 266
+#define RK_KP_DIVIDE 267
+#define RK_KP_MULTIPLY 268
+#define RK_KP_MINUS 269
+#define RK_KP_PLUS  270
+#define RK_KP_ENTER 271
+#define RK_UP       273
+#define RK_DOWN     274
+#define RK_RIGHT    275
+#define RK_LEFT     276
+#define RK_INSERT   277     /* the core's Help */
+#define RK_HOME     278     /* the keypad's ( */
+#define RK_END      279     /* the keypad's ) */
+#define RK_F1       282
+#define RK_CAPSLOCK 301
+#define RK_RSHIFT   303
+#define RK_LSHIFT   304
+#define RK_LCTRL    306
+#define RK_RALT     307
+#define RK_LALT     308
+#define RK_RMETA    309     /* Right Amiga */
+#define RK_LMETA    310     /* Left Amiga */
+
+/* RETRO_DEVICE_ID_JOYPAD_* bits */
+#define JOY_B       (1 << 0)
+#define JOY_A       (1 << 8)
+#define JOY_UP      (1 << 4)
+#define JOY_DOWN    (1 << 5)
+#define JOY_LEFT    (1 << 6)
+#define JOY_RIGHT   (1 << 7)
+
+static XtAppContext app;
+static Widget top, model_menu, model_btn[3], tf_kick, tf_df[4], tf_hdf, tg_ro, tg_joy, tg_scale,
+              b_start, b_stop, b_reset, status, emu_shell, emu_area;
+static const char *models[3] = { "A500", "A600", "A1200" };
+static int model = 0;
+static pid_t child = -1;
+static FILE *to_c1;
+static int from_c1 = -1;
+static XtInputId in_id;
+static int grabbed, joy_bits, held_ramiga, held_ralt, scale = 1;
+static Cursor blank;
+
+/* --- settings --- */
+static char *settings_path(void)
+{
+    static char p[1024];
+    const char *h = getenv("HOME");
+
+    sprintf(p, "%.1000s/.amixuae", h ? h : "/tmp");
+    return p;
+}
+
+static void settings_load(void)
+{
+    FILE *f = fopen(settings_path(), "r");
+    char line[1200], *v;
+    int i;
+
+    if (!f)
+        return;
+    while (fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\n")] = 0;
+        if (!(v = strchr(line, '=')))
+            continue;
+        *v++ = 0;
+        if (!strcmp(line, "model"))
+            for (i = 0; i < 3; i++)
+                if (!strcmp(v, models[i]))
+                    model = i;
+        if (!strcmp(line, "kick")) XmTextFieldSetString(tf_kick, v);
+        if (!strcmp(line, "hdf")) XmTextFieldSetString(tf_hdf, v);
+        if (!strncmp(line, "df", 2) && line[2] >= '0' && line[2] <= '3' && !line[3])
+            XmTextFieldSetString(tf_df[line[2] - '0'], v);
+        if (!strcmp(line, "ro")) XmToggleButtonSetState(tg_ro, atoi(v), False);
+        if (!strcmp(line, "joy")) XmToggleButtonSetState(tg_joy, atoi(v), False);
+        if (!strcmp(line, "scale")) XmToggleButtonSetState(tg_scale, atoi(v) == 2, False);
+    }
+    fclose(f);
+    XtVaSetValues(model_menu, XmNmenuHistory, model_btn[model], NULL);
+}
+
+static void settings_save(void)
+{
+    FILE *f = fopen(settings_path(), "w");
+    char *s;
+    int i;
+
+    if (!f)
+        return;
+    fprintf(f, "model=%s\n", models[model]);
+    fprintf(f, "kick=%s\n", s = XmTextFieldGetString(tf_kick)); XtFree(s);
+    for (i = 0; i < 4; i++) {
+        fprintf(f, "df%d=%s\n", i, s = XmTextFieldGetString(tf_df[i]));
+        XtFree(s);
+    }
+    fprintf(f, "hdf=%s\n", s = XmTextFieldGetString(tf_hdf)); XtFree(s);
+    fprintf(f, "ro=%d\njoy=%d\nscale=%d\n", XmToggleButtonGetState(tg_ro), XmToggleButtonGetState(tg_joy),
+            XmToggleButtonGetState(tg_scale) ? 2 : 1);
+    fclose(f);
+}
+
+static void say(const char *s)
+{
+    XmString x = XmStringCreateLocalized((char *)s);
+
+    XtVaSetValues(status, XmNlabelString, x, NULL);
+    XmStringFree(x);
+}
+
+/* --- to c1uae --- */
+static void send(const char *fmt, int a, int b)
+{
+    if (!to_c1)
+        return;
+    fprintf(to_c1, fmt, a, b);
+    fputc('\n', to_c1);
+    fflush(to_c1);
+}
+
+/* --- keys --- */
+static int retrok(KeySym k)
+{
+    if (k >= XK_a && k <= XK_z) return (int)k;
+    if (k >= XK_A && k <= XK_Z) return (int)(k - XK_A + XK_a);
+    if (k >= XK_0 && k <= XK_9) return (int)k;
+    if (k >= XK_F1 && k <= XK_F10) return RK_F1 + (int)(k - XK_F1);
+    if (k >= XK_KP_0 && k <= XK_KP_9) return RK_KP0 + (int)(k - XK_KP_0);
+    switch (k) {
+    case XK_space: case XK_minus: case XK_equal: case XK_bracketleft: case XK_bracketright:
+    case XK_semicolon: case XK_apostrophe: case XK_comma: case XK_period: case XK_slash:
+    case XK_backslash: case XK_grave: return (int)k;
+    case XK_BackSpace: return RK_BACKSPACE;
+    case XK_Tab: return RK_TAB;
+    case XK_Return: return RK_RETURN;
+    case XK_Escape: return RK_ESCAPE;
+    case XK_Delete: return RK_DELETE;
+    case XK_Up: return RK_UP;
+    case XK_Down: return RK_DOWN;
+    case XK_Left: return RK_LEFT;
+    case XK_Right: return RK_RIGHT;
+    case XK_Help: case XK_Insert: return RK_INSERT;
+    case XK_KP_Decimal: return RK_KP_PERIOD;
+    case XK_KP_Divide: return RK_KP_DIVIDE;
+    case XK_KP_Multiply: return RK_KP_MULTIPLY;
+    case XK_KP_Subtract: return RK_KP_MINUS;
+    case XK_KP_Add: return RK_KP_PLUS;
+    case XK_KP_Enter: return RK_KP_ENTER;
+    case XK_Caps_Lock: return RK_CAPSLOCK;
+    case XK_Shift_L: return RK_LSHIFT;
+    case XK_Shift_R: return RK_RSHIFT;
+    case XK_Control_L: case XK_Control_R: return RK_LCTRL;     /* the Amiga has one Ctrl */
+    case XK_Alt_L: return RK_LALT;
+    case XK_Alt_R: return RK_RALT;
+    case XK_Meta_L: case XK_Super_L: return RK_LMETA;          /* Left Amiga (check xev on the box) */
+    case XK_Meta_R: case XK_Super_R: case XK_Multi_key: return RK_RMETA;  /* Right Amiga */
+    }
+    return -1;
+}
+
+static void ungrab(void)
+{
+    if (!grabbed)
+        return;
+    XUngrabPointer(XtDisplay(emu_area), CurrentTime);
+    XUngrabKeyboard(XtDisplay(emu_area), CurrentTime);
+    XUndefineCursor(XtDisplay(emu_area), XtWindow(emu_area));
+    grabbed = 0;
+    send("buttons %d", 0, 0);
+    say("Running. Click into the Amiga to give it the mouse.");
+}
+
+static void grab(void)
+{
+    Display *d = XtDisplay(emu_area);
+    Window w = XtWindow(emu_area);
+
+    if (grabbed)
+        return;
+    XDefineCursor(d, w, blank);
+    if (XGrabPointer(d, w, True, PointerMotionMask | ButtonPressMask | ButtonReleaseMask,
+                     GrabModeAsync, GrabModeAsync, w, blank, CurrentTime) != GrabSuccess)
+        return;
+    XGrabKeyboard(d, w, True, GrabModeAsync, GrabModeAsync, CurrentTime);
+    XWarpPointer(d, None, w, 0, 0, 0, 0, PIC_W * scale / 2, PIC_H * scale / 2);
+    grabbed = 1;
+    say("The Amiga has mouse and keyboard: Right Amiga + Right Alt + Help gives them back.");
+}
+
+static void key(int down, KeySym k)
+{
+    int code;
+
+    if (k == XK_Meta_R || k == XK_Super_R || k == XK_Multi_key)
+        held_ramiga = down;
+    if (k == XK_Alt_R)
+        held_ralt = down;
+    if (down && k == XK_Help && held_ramiga && held_ralt) {
+        ungrab();
+        return;
+    }
+    if (XmToggleButtonGetState(tg_joy)) {
+        int bit = 0;
+
+        switch (k) {
+        case XK_Up: bit = JOY_UP; break;
+        case XK_Down: bit = JOY_DOWN; break;
+        case XK_Left: bit = JOY_LEFT; break;
+        case XK_Right: bit = JOY_RIGHT; break;
+        case XK_Alt_R: bit = JOY_B; break;
+        case XK_Meta_R: case XK_Super_R: case XK_Multi_key: bit = JOY_A; break;
+        }
+        if (bit) {
+            joy_bits = down ? joy_bits | bit : joy_bits & ~bit;
+            send("joy %d %d", 1, joy_bits);
+            return;
+        }
+    }
+    if ((code = retrok(k)) >= 0)
+        send("key %d %d", down, code);
+}
+
+static void area_event(Widget w, XtPointer cd, XEvent *ev, Boolean *cont)
+{
+    static int buttons;
+
+    (void)w; (void)cd; (void)cont;
+    switch (ev->type) {
+    case KeyPress:
+    case KeyRelease:
+        key(ev->type == KeyPress, XLookupKeysym(&ev->xkey, 0));
+        break;
+    case ButtonPress:
+    case ButtonRelease:
+        if (!grabbed) {
+            if (ev->type == ButtonPress && child > 0)
+                grab();
+            break;
+        }
+        if (ev->xbutton.button >= 1 && ev->xbutton.button <= 3) {
+            const int bit = ev->xbutton.button == 1 ? 1 : ev->xbutton.button == 3 ? 2 : 4;
+
+            buttons = ev->type == ButtonPress ? buttons | bit : buttons & ~bit;
+            send("buttons %d", buttons, 0);
+        }
+        break;
+    case MotionNotify:
+        if (grabbed) {
+            const int cx = PIC_W * scale / 2, cy = PIC_H * scale / 2;
+            const int dx = ev->xmotion.x - cx, dy = ev->xmotion.y - cy;
+
+            if (dx || dy) {
+                send("mouse %d %d", dx, dy);
+                XWarpPointer(XtDisplay(emu_area), None, XtWindow(emu_area), 0, 0, 0, 0, cx, cy);
+            }
+        }
+        break;
+    }
+}
+
+/* where the window is, to the overlay */
+static void place(void)
+{
+    Window child_w;
+    int x, y;
+
+    if (!emu_area || !XtIsRealized(emu_area))
+        return;
+    XTranslateCoordinates(XtDisplay(emu_area), XtWindow(emu_area), DefaultRootWindow(XtDisplay(emu_area)),
+                          0, 0, &x, &y, &child_w);
+    send("place %d %d", x, y);
+}
+
+static void shell_event(Widget w, XtPointer cd, XEvent *ev, Boolean *cont)
+{
+    (void)w; (void)cd; (void)cont;
+    if (ev->type == ConfigureNotify)
+        place();
+    else if (ev->type == UnmapNotify) {
+        ungrab();
+        send("hide", 0, 0);
+    } else if (ev->type == MapNotify) {
+        send("show", 0, 0);
+        place();
+    }
+}
+
+/* --- c1uae's status lines --- */
+static void stopped(void)
+{
+    int st;
+
+    if (in_id) {
+        XtRemoveInput(in_id);
+        in_id = 0;
+    }
+    if (to_c1) {
+        fclose(to_c1);
+        to_c1 = NULL;
+    }
+    if (from_c1 >= 0) {
+        close(from_c1);
+        from_c1 = -1;
+    }
+    if (child > 0)
+        waitpid(child, &st, 0);
+    child = -1;
+    ungrab();
+    if (emu_shell)
+        XtPopdown(emu_shell);
+    XtSetSensitive(b_start, True);
+    XtSetSensitive(b_stop, False);
+    XtSetSensitive(b_reset, False);
+}
+
+static void from_c1uae(XtPointer cd, int *src, XtInputId *id)
+{
+    static char buf[512];
+    static int n;
+    int r;
+
+    (void)cd; (void)id;
+    r = (int)read(*src, buf + n, sizeof(buf) - 1 - n);
+    if (r <= 0) {
+        say("The Amiga stopped.");
+        stopped();
+        return;
+    }
+    n += r;
+    buf[n] = 0;
+    for (;;) {
+        char *nl = strchr(buf, '\n');
+        unsigned long frames, us, under, dirty, st;
+
+        if (!nl)
+            break;
+        *nl = 0;
+        if (sscanf(buf, "status %lu %lu %lu %lu %lu", &frames, &us, &under, &dirty, &st) == 5 && !grabbed) {
+            char s[200];
+
+            sprintf(s, "Running: frame %lu, %lu.%lu ms a frame (20 = full speed), sound gaps %lu%s",
+                    frames, us / 1000, us / 100 % 10, under, dirty ? ", saving disk" : "");
+            say(s);
+        }
+        n -= (int)(nl + 1 - buf);
+        memmove(buf, nl + 1, (size_t)n + 1);
+    }
+    if (n >= (int)sizeof(buf) - 1)
+        n = 0;
+}
+
+/* --- Start, Stop, Reset --- */
+static void start(Widget w, XtPointer cd, XtPointer cb)
+{
+    char *argv[32], *kick, *df[4], *hdf;
+    int to[2], from[2], argc = 0, i, x, y;
+    Window cw;
+
+    (void)w; (void)cd; (void)cb;
+    if (child > 0)
+        return;
+    kick = XmTextFieldGetString(tf_kick);
+    for (i = 0; i < 4; i++)
+        df[i] = XmTextFieldGetString(tf_df[i]);
+    hdf = XmTextFieldGetString(tf_hdf);
+    if (!*kick || (!*df[0] && !*hdf)) {
+        say("A Kickstart and a disk in DF0 (or a hard file) are needed.");
+        return;
+    }
+    settings_save();
+    scale = XmToggleButtonGetState(tg_scale) ? 2 : 1;
+    XtVaSetValues(emu_area, XmNwidth, PIC_W * scale, XmNheight, PIC_H * scale, NULL);
+    XtPopup(emu_shell, XtGrabNone);
+    XSync(XtDisplay(emu_area), False);
+    XTranslateCoordinates(XtDisplay(emu_area), XtWindow(emu_area), DefaultRootWindow(XtDisplay(emu_area)),
+                          0, 0, &x, &y, &cw);
+    if (pipe(to) < 0 || pipe(from) < 0) {
+        say("No pipe.");
+        return;
+    }
+    argv[argc++] = C1UAE;
+    argv[argc++] = "-model";
+    argv[argc++] = (char *)models[model];
+    argv[argc++] = "-kick";
+    argv[argc++] = kick;
+    for (i = 0; i < 4; i++)
+        if (*df[i]) {
+            static char opt[4][6];
+
+            sprintf(opt[i], "-df%d", i);
+            argv[argc++] = opt[i];
+            argv[argc++] = df[i];
+        }
+    if (*hdf) {
+        argv[argc++] = "-hdf";
+        argv[argc++] = hdf;
+    }
+    if (XmToggleButtonGetState(tg_ro))
+        argv[argc++] = "-ro";
+    if (scale == 2) {
+        argv[argc++] = "-scale";
+        argv[argc++] = "2";
+    }
+    {
+        static char xs[16], ys[16];
+
+        sprintf(xs, "%d", x);
+        sprintf(ys, "%d", y);
+        argv[argc++] = "-at";
+        argv[argc++] = xs;
+        argv[argc++] = ys;
+    }
+    argv[argc] = NULL;
+    if ((child = fork()) == 0) {
+        dup2(to[0], 0);
+        dup2(from[1], 1);
+        close(to[0]); close(to[1]); close(from[0]); close(from[1]);
+        execv(C1UAE, argv);
+        _exit(127);
+    }
+    close(to[0]);
+    close(from[1]);
+    if (child < 0) {
+        close(to[1]);
+        close(from[0]);
+        say("Could not start c1uae.");
+        return;
+    }
+    to_c1 = fdopen(to[1], "w");
+    from_c1 = from[0];
+    in_id = XtAppAddInput(app, from_c1, (XtPointer)XtInputReadMask, from_c1uae, NULL);
+    XtSetSensitive(b_start, False);
+    XtSetSensitive(b_stop, True);
+    XtSetSensitive(b_reset, True);
+    say("Loading the Kickstart and the disks into core 1 ...");
+}
+
+static void stop(Widget w, XtPointer cd, XtPointer cb)
+{
+    (void)w; (void)cd; (void)cb;
+    send("stop", 0, 0);         /* c1uae saves the disks, then ends: from_c1uae sees it */
+    say("Stopping, saving changed disks ...");
+}
+
+static void reset(Widget w, XtPointer cd, XtPointer cb)
+{
+    (void)w; (void)cd; (void)cb;
+    send("reset", 0, 0);
+}
+
+static void quit(Widget w, XtPointer cd, XtPointer cb)
+{
+    (void)w; (void)cd; (void)cb;
+    if (child > 0) {
+        send("stop", 0, 0);
+        stopped();
+    }
+    settings_save();
+    exit(0);
+}
+
+/* --- file choice --- */
+static void file_ok(Widget w, XtPointer cd, XtPointer cb)
+{
+    XmFileSelectionBoxCallbackStruct *c = (XmFileSelectionBoxCallbackStruct *)cb;
+    char *name;
+
+    if (XmStringGetLtoR(c->value, XmFONTLIST_DEFAULT_TAG, &name)) {
+        XmTextFieldSetString((Widget)cd, name);
+        XtFree(name);
+    }
+    XtUnmanageChild(w);
+}
+
+static void file_cancel(Widget w, XtPointer cd, XtPointer cb)
+{
+    (void)cd; (void)cb;
+    XtUnmanageChild(w);
+}
+
+static void browse(Widget w, XtPointer cd, XtPointer cb)
+{
+    Widget d = XmCreateFileSelectionDialog(top, "choose", NULL, 0);
+
+    (void)w; (void)cb;
+    XtAddCallback(d, XmNokCallback, file_ok, cd);
+    XtAddCallback(d, XmNcancelCallback, file_cancel, NULL);
+    XtManageChild(d);
+}
+
+static void model_cb(Widget w, XtPointer cd, XtPointer cb)
+{
+    (void)w; (void)cb;
+    model = (int)(long)cd;
+}
+
+/* a label, a text field and a "..." button in one row of the form */
+static Widget file_row(Widget form, Widget above, const char *label)
+{
+    Widget l, t, b;
+
+    l = XtVaCreateManagedWidget(label, xmLabelWidgetClass, form,
+        XmNtopAttachment, above ? XmATTACH_WIDGET : XmATTACH_FORM, XmNtopWidget, above, XmNtopOffset, 6,
+        XmNleftAttachment, XmATTACH_FORM, XmNleftOffset, 8, XmNwidth, 80, XmNalignment, XmALIGNMENT_END, NULL);
+    b = XtVaCreateManagedWidget("...", xmPushButtonWidgetClass, form,
+        XmNtopAttachment, XmATTACH_OPPOSITE_WIDGET, XmNtopWidget, l,
+        XmNrightAttachment, XmATTACH_FORM, XmNrightOffset, 8, NULL);
+    t = XtVaCreateManagedWidget("file", xmTextFieldWidgetClass, form,
+        XmNtopAttachment, XmATTACH_OPPOSITE_WIDGET, XmNtopWidget, l, XmNtopOffset, -4,
+        XmNleftAttachment, XmATTACH_WIDGET, XmNleftWidget, l, XmNleftOffset, 6,
+        XmNrightAttachment, XmATTACH_WIDGET, XmNrightWidget, b, XmNrightOffset, 4, XmNcolumns, 40, NULL);
+    XtAddCallback(b, XmNactivateCallback, browse, (XtPointer)t);
+    return t;
+}
+
+int main(int argc, char **argv)
+{
+    Widget form, pulldown, last, row, sep;
+    Arg a[4];
+    XColor black;
+    Pixmap p;
+    char none = 0;
+    int i;
+
+    signal(SIGPIPE, SIG_IGN);
+    top = XtVaAppInitialize(&app, "Amixuae", NULL, 0, &argc, argv, NULL, XmNtitle, "Amiga", NULL);
+    form = XtVaCreateManagedWidget("form", xmFormWidgetClass, top, NULL);
+
+    pulldown = XmCreatePulldownMenu(form, "models", NULL, 0);
+    for (i = 0; i < 3; i++) {
+        model_btn[i] = XtVaCreateManagedWidget(models[i], xmPushButtonWidgetClass, pulldown, NULL);
+        XtAddCallback(model_btn[i], XmNactivateCallback, model_cb, (XtPointer)(long)i);
+    }
+    XtSetArg(a[0], XmNsubMenuId, pulldown);
+    XtSetArg(a[1], XmNlabelString, XmStringCreateLocalized("Model"));
+    model_menu = XmCreateOptionMenu(form, "model", a, 2);
+    XtVaSetValues(model_menu, XmNtopAttachment, XmATTACH_FORM, XmNtopOffset, 6,
+                  XmNleftAttachment, XmATTACH_FORM, XmNleftOffset, 40, NULL);
+    XtManageChild(model_menu);
+
+    tf_kick = file_row(form, model_menu, "Kickstart");
+    last = tf_kick;
+    for (i = 0; i < 4; i++) {
+        char l[8];
+
+        sprintf(l, "DF%d", i);
+        tf_df[i] = file_row(form, last, l);
+        last = tf_df[i];
+    }
+    tf_hdf = file_row(form, last, "Hard file");
+
+    row = XtVaCreateManagedWidget("options", xmRowColumnWidgetClass, form, XmNorientation, XmHORIZONTAL,
+        XmNtopAttachment, XmATTACH_WIDGET, XmNtopWidget, tf_hdf, XmNtopOffset, 8,
+        XmNleftAttachment, XmATTACH_FORM, XmNleftOffset, 8, NULL);
+    tg_ro = XtVaCreateManagedWidget("Write-protect disks", xmToggleButtonWidgetClass, row, NULL);
+    tg_joy = XtVaCreateManagedWidget("Keys as joystick", xmToggleButtonWidgetClass, row, NULL);
+    tg_scale = XtVaCreateManagedWidget("Double size", xmToggleButtonWidgetClass, row, NULL);
+
+    sep = XtVaCreateManagedWidget("sep", xmSeparatorWidgetClass, form,
+        XmNtopAttachment, XmATTACH_WIDGET, XmNtopWidget, row, XmNtopOffset, 6,
+        XmNleftAttachment, XmATTACH_FORM, XmNrightAttachment, XmATTACH_FORM, NULL);
+    row = XtVaCreateManagedWidget("buttons", xmRowColumnWidgetClass, form, XmNorientation, XmHORIZONTAL,
+        XmNtopAttachment, XmATTACH_WIDGET, XmNtopWidget, sep, XmNtopOffset, 6,
+        XmNleftAttachment, XmATTACH_FORM, XmNleftOffset, 8, NULL);
+    b_start = XtVaCreateManagedWidget("Start", xmPushButtonWidgetClass, row, NULL);
+    b_stop = XtVaCreateManagedWidget("Stop", xmPushButtonWidgetClass, row, XmNsensitive, False, NULL);
+    b_reset = XtVaCreateManagedWidget("Reset", xmPushButtonWidgetClass, row, XmNsensitive, False, NULL);
+    last = XtVaCreateManagedWidget("Quit", xmPushButtonWidgetClass, row, NULL);
+    XtAddCallback(b_start, XmNactivateCallback, start, NULL);
+    XtAddCallback(b_stop, XmNactivateCallback, stop, NULL);
+    XtAddCallback(b_reset, XmNactivateCallback, reset, NULL);
+    XtAddCallback(last, XmNactivateCallback, quit, NULL);
+    status = XtVaCreateManagedWidget("Choose a Kickstart and a disk, then Start.", xmLabelWidgetClass, form,
+        XmNtopAttachment, XmATTACH_WIDGET, XmNtopWidget, row, XmNtopOffset, 6,
+        XmNleftAttachment, XmATTACH_FORM, XmNleftOffset, 8, XmNbottomAttachment, XmATTACH_FORM,
+        XmNbottomOffset, 8, XmNalignment, XmALIGNMENT_BEGINNING, NULL);
+
+    /* the Amiga's window: black, the overlay lies over it */
+    emu_shell = XtVaCreatePopupShell("Amiga", topLevelShellWidgetClass, top, XmNtitle, "Amiga",
+                                     XmNallowShellResize, True, NULL);
+    emu_area = XtVaCreateManagedWidget("screen", xmDrawingAreaWidgetClass, emu_shell,
+        XmNwidth, PIC_W, XmNheight, PIC_H, XmNbackground, BlackPixelOfScreen(XtScreen(top)),
+        XmNtraversalOn, True, NULL);
+    XtAddEventHandler(emu_area, KeyPressMask | KeyReleaseMask | ButtonPressMask | ButtonReleaseMask |
+                      PointerMotionMask, False, area_event, NULL);
+    XtAddEventHandler(emu_shell, StructureNotifyMask, False, shell_event, NULL);
+
+    settings_load();
+    XtRealizeWidget(top);
+    p = XCreateBitmapFromData(XtDisplay(top), XtWindow(top), &none, 1, 1);
+    black.red = black.green = black.blue = 0;
+    blank = XCreatePixmapCursor(XtDisplay(top), p, p, &black, &black, 0, 0);
+    XtAppMainLoop(app);
+    return 0;
+}

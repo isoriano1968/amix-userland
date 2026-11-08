@@ -6,3 +6,5 @@ require  desktop/cde
 require  desktop/motif
 require  library/amixstat
 require  x11/libxrandr
+# amixuae runs emulators/uae4arm's c1uae
+require  emulators/uae4arm

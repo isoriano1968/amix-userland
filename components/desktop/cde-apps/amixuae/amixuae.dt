@@ -1,0 +1,15 @@
+#
+# amixuae.dt -- Amiga: the Amiga emulator on the Z3660's ARM core 1
+# (emulators/uae4arm), its front end.  Installed in /etc/dt/appconfig/types/C.
+#
+ACTION AmixUAE
+{
+	LABEL		Amiga
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/opt/amix/bin/amixuae
+	ICON		AmixUAE
+	DESCRIPTION	An Amiga 500, 600 or 1200 on the Z3660's second ARM \
+			core: your Kickstart, your floppies and hard files, \
+			picture in the RTG overlay, sound on HDMI.
+}
