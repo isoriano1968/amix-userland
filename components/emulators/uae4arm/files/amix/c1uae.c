@@ -40,6 +40,8 @@
  *   pause 0|1, reset, volume N, stop
  * End of input = stop.  A status line goes to standard output once a second:
  *   status FRAMES FRAME_US UNDERRUNS DIRTY STATE
+ *   hang FRAMES          (once) no frame for 10 s while running; where core 1
+ *                        is goes to standard error
  * Exit 3: another c1uae runs the Amiga already.
  */
 #include <stdio.h>
@@ -105,7 +107,8 @@ static unsigned long log_seen, in_head, in_tail_seen;
 #define JOY_LEFT    (1 << 6)
 #define JOY_RIGHT   (1 << 7)
 static volatile unsigned char *custom_regs, *ciaa_regs;
-static unsigned long joy_keys, joy_sent;   /* the front end's bits, what core 1 has */
+static unsigned long joy_keys, joy_sent;
+static int paused;                      /* a paused Amiga makes no frames: no hang */   /* the front end's bits, what core 1 has */
 
 static int joyport_map(void)
 {
@@ -186,17 +189,23 @@ static void show_log(void)
 
 /* where core 1 is: its timer's last sample (pc, lr, sp, code addresses on
    the stack; look them up in the image's map) */
-static void show_sample(void)
+static void show_sample_to(FILE *f)
 {
     int k;
 
     if (!ua[C1UA_W_SAMPLE])
         return;
-    printf("c1uae: core 1 sample %lu: pc %08lx lr %08lx sp %08lx stack",
-           ua[C1UA_W_SAMPLE], ua[C1UA_W_SAMPLE + 1], ua[C1UA_W_SAMPLE + 2], ua[C1UA_W_SAMPLE + 3]);
+    fprintf(f, "c1uae: core 1 sample %lu: pc %08lx lr %08lx sp %08lx stack",
+            ua[C1UA_W_SAMPLE], ua[C1UA_W_SAMPLE + 1], ua[C1UA_W_SAMPLE + 2], ua[C1UA_W_SAMPLE + 3]);
     for (k = C1UA_W_SAMPLE + 4; k < C1UA_W_SAMPLE_END && ua[k]; k++)
-        printf(" %08lx", ua[k]);
-    printf("\n");
+        fprintf(f, " %08lx", ua[k]);
+    fprintf(f, "\n");
+    fflush(f);
+}
+
+static void show_sample(void)
+{
+    show_sample_to(stdout);
 }
 
 /* a command, and its end (core 1 clears it); polls slowly: 68k reads of
@@ -411,8 +420,10 @@ static int line(char *s)
         overlay(0);
     else if (!strcmp(w, "show"))
         overlay(1);
-    else if (!strcmp(w, "pause"))
+    else if (!strcmp(w, "pause")) {
+        paused = a != 0;
         command(C1UA_CMD_PAUSE, (unsigned long)a, 2.0);
+    }
     else if (!strcmp(w, "reset"))
         command(C1UA_CMD_RESET, 0, 2.0);
     else if (!strcmp(w, "volume"))
@@ -445,7 +456,8 @@ int main(int argc, char **argv)
     long volume = 256;
     char text[C1UA_TEXT_LEN], *t;
     double last_status = 0;
-    int ret = 0;
+    unsigned long last_frames = 0;
+    int ret = 0, still = 0;
 
     ovl_x = ovl_y = -1;
     for (i = 1; i < argc; i++) {
@@ -644,6 +656,20 @@ int main(int argc, char **argv)
                 ret = 1;
                 break;
             }
+            /* no frame for 10 s while running: say where core 1 is, once
+               (amixuae shows it and keeps it in its log; a power cycle loses it) */
+            if (st == C1UA_RUNNING && !paused && ua[C1UA_W_FRAMES] == last_frames) {
+                if (++still == 10) {
+                    printf("hang %lu\n", ua[C1UA_W_FRAMES]);
+                    fflush(stdout);
+                    fprintf(stderr, "c1uae: core 1 made no frame for 10 s (frame %lu, 68k pc %08lx, "
+                            "heartbeat %lu, load %lu)\n", ua[C1UA_W_FRAMES], ua[C1UA_W_PC],
+                            ctl[W_HEARTBEAT], ctl[W_LOAD]);
+                    show_sample_to(stderr);
+                }
+            } else
+                still = 0;
+            last_frames = ua[C1UA_W_FRAMES];
             if (ua[C1UA_W_DIRTY] && !ro)
                 flush();
         }

@@ -46,6 +46,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <dirent.h>
 #include <X11/Intrinsic.h>
 #include <X11/StringDefs.h>
@@ -156,7 +157,8 @@ static void folders_make(void)
                    "Hard Drives/     hard files: .hdf\n"
                    "Configurations/  saved setups, NAME.amixuae (Save in the Amiga window;\n"
                    "                 opening one in the File Manager starts it)\n\n"
-                   "A file in its folder is named by its name alone in a configuration.\n");
+                   "A file in its folder is named by its name alone in a configuration.\n"
+                   "amixuae.log: what the emulator and core 1 reported, each run with its time.\n");
         fclose(f);
     }
 }
@@ -546,7 +548,10 @@ static void from_c1uae(XtPointer cd, int *src, XtInputId *id)
         if (!nl)
             break;
         *nl = 0;
-        if (sscanf(buf, "status %lu %lu %lu %lu %lu", &frames, &us, &under, &dirty, &st) == 5 && !grabbed) {
+        if (!strncmp(buf, "hang", 4)) {
+            ungrab();
+            say("Core 1 makes no frames any more: Stop, and leave the box as it is (see amixuae.log).");
+        } else if (sscanf(buf, "status %lu %lu %lu %lu %lu", &frames, &us, &under, &dirty, &st) == 5 && !grabbed) {
             char s[200];
 
             sprintf(s, "Running: frame %lu, %lu.%lu ms a frame (20 = full speed), sound gaps %lu%s",
@@ -596,6 +601,7 @@ static void start(Widget w, XtPointer cd, XtPointer cb)
         return;
     }
     argv[argc++] = C1UAE;
+    argv[argc++] = "-v";                /* core 1's messages: into the log */
     argv[argc++] = "-model";
     argv[argc++] = (char *)models[model];
     argv[argc++] = "-kick";
@@ -633,6 +639,25 @@ static void start(Widget w, XtPointer cd, XtPointer cb)
     if ((child = fork()) == 0) {
         dup2(to[0], 0);
         dup2(from[1], 1);
+        {   /* c1uae's and core 1's messages: ~/Documents/AmixUAE/amixuae.log */
+            char lp[1200];
+            struct stat st;
+            time_t t = time(NULL);
+            int lf, k;
+
+            sprintf(lp, "%s/amixuae.log", base_dir);
+            lf = open(lp, O_WRONLY | O_CREAT | O_APPEND |
+                          (stat(lp, &st) == 0 && st.st_size > 256 * 1024 ? O_TRUNC : 0), 0644);
+            if (lf >= 0) {
+                dup2(lf, 2);
+                close(lf);
+                fprintf(stderr, "\n=== %s", ctime(&t));
+                for (k = 0; k < argc; k++)
+                    fprintf(stderr, "%s%s", k ? " " : "", argv[k]);
+                fprintf(stderr, "\n");
+                fflush(stderr);
+            }
+        }
         close(to[0]); close(to[1]); close(from[0]); close(from[1]);
         execv(C1UAE, argv);
         _exit(127);
