@@ -21,7 +21,15 @@
  * size and first bytes) into the Kickstart field.  With a disk among them
  * the Amiga starts at once.
  *
- * Settings in ~/.amixuae (one key=value a line).
+ * The AmixUAE folder, ~/Documents/AmixUAE (made at start, as FS-UAE's):
+ *   Kickstarts/  Floppies/  Hard Drives/  Configurations/
+ * The "..." dialogs open in the field's folder; a file in its folder is
+ * shown and stored by its name alone.  Configurations/NAME.amixuae holds a
+ * whole setup (the key=value lines below): pick it in Configuration, Save
+ * under the name typed there, Delete.  A .amixuae file given to amixuae
+ * (Open in the File Manager, a drop on the panel) loads and starts it.
+ *
+ * The last setup in ~/.amixuae (one key=value a line, config= its name).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,6 +40,8 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <dirent.h>
 #include <X11/Intrinsic.h>
 #include <X11/StringDefs.h>
 #include <X11/Shell.h>
@@ -47,6 +57,8 @@
 #include <Xm/DrawingA.h>
 #include <Xm/Separator.h>
 #include <Xm/MessageB.h>
+#include <Xm/ComboBox.h>
+#include <Xm/List.h>
 
 #define C1UAE       "/opt/amix/bin/c1uae"
 #define PIC_W       640
@@ -92,7 +104,7 @@
 
 static XtAppContext app;
 static Widget top, model_menu, model_btn[3], tf_kick, tf_df[4], tf_hdf, tg_ro, tg_joy, tg_scale,
-              b_start, b_stop, b_reset, status, emu_shell, emu_area;
+              b_start, b_stop, b_reset, status, emu_shell, emu_area, cb_conf;
 static const char *models[3] = { "A500", "A600", "A1200" };
 static int model = 0;
 static pid_t child = -1;
@@ -102,7 +114,74 @@ static XtInputId in_id;
 static int grabbed, joy_bits, held_ramiga, held_ralt, scale = 1;
 static Cursor blank;
 
-/* --- settings --- */
+/* --- the AmixUAE folder: ~/Documents/AmixUAE --- */
+enum { D_KICK, D_FLOPPY, D_HDF, D_CONF, D_N };
+static const char *dir_names[D_N] = { "Kickstarts", "Floppies", "Hard Drives", "Configurations" };
+static char base_dir[1024];
+
+static const char *folder(int d)
+{
+    static char p[D_N][1100];
+
+    sprintf(p[d], "%s/%s", base_dir, dir_names[d]);
+    return p[d];
+}
+
+static void folders_make(void)
+{
+    const char *h = getenv("HOME");
+    char p[1100];
+    FILE *f;
+    int d;
+
+    sprintf(p, "%.900s/Documents", h ? h : "/tmp");
+    mkdir(p, 0755);                     /* existing ones just fail */
+    sprintf(base_dir, "%.900s/Documents/AmixUAE", h ? h : "/tmp");
+    mkdir(base_dir, 0755);
+    for (d = 0; d < D_N; d++)
+        mkdir(folder(d), 0755);
+    sprintf(p, "%s/README.txt", base_dir);
+    if (access(p, F_OK) != 0 && (f = fopen(p, "w")) != NULL) {
+        fprintf(f, "AmixUAE -- the Amiga on the Z3660's ARM core 1 (Amiga in the AMIX panel).\n\n"
+                   "Kickstarts/      your own Kickstart ROMs (.rom, also .bin in EPROM byte order)\n"
+                   "Floppies/        floppy images: .adf .adz .dms\n"
+                   "Hard Drives/     hard files: .hdf\n"
+                   "Configurations/  saved setups, NAME.amixuae (Save in the Amiga window;\n"
+                   "                 opening one in the File Manager starts it)\n\n"
+                   "A file in its folder is named by its name alone in a configuration.\n");
+        fclose(f);
+    }
+}
+
+/* a field's value as shown and stored: a file in its folder by its name */
+static const char *short_name(const char *path, int d)
+{
+    const char *dir = folder(d);
+    size_t n = strlen(dir);
+
+    if (!strncmp(path, dir, n) && path[n] == '/' && path[n + 1] && !strchr(path + n + 1, '/'))
+        return path + n + 1;
+    return path;
+}
+
+/* and back: a name alone is in the field's folder */
+static char *full_name(const char *v, int d)
+{
+    char *p = XtMalloc((Cardinal)(strlen(v) + 1100));
+
+    if (*v && !strchr(v, '/'))
+        sprintf(p, "%s/%s", folder(d), v);
+    else
+        strcpy(p, v);
+    return p;
+}
+
+static void set_field(Widget t, const char *v, int d)
+{
+    XmTextFieldSetString(t, (char *)short_name(v, d));
+}
+
+/* --- settings: a setup in key=value lines --- */
 static char *settings_path(void)
 {
     static char p[1024];
@@ -112,43 +191,53 @@ static char *settings_path(void)
     return p;
 }
 
-static void settings_load(void)
+static char conf_name[256];
+
+static int cfg_load(const char *path)
 {
-    FILE *f = fopen(settings_path(), "r");
+    FILE *f = fopen(path, "r");
     char line[1200], *v;
     int i;
 
     if (!f)
-        return;
+        return -1;
     while (fgets(line, sizeof(line), f)) {
         line[strcspn(line, "\n")] = 0;
-        if (!(v = strchr(line, '=')))
+        if (line[0] == '#' || !(v = strchr(line, '=')))
             continue;
         *v++ = 0;
         if (!strcmp(line, "model"))
             for (i = 0; i < 3; i++)
                 if (!strcmp(v, models[i]))
                     model = i;
-        if (!strcmp(line, "kick")) XmTextFieldSetString(tf_kick, v);
-        if (!strcmp(line, "hdf")) XmTextFieldSetString(tf_hdf, v);
+        if (!strcmp(line, "kick")) set_field(tf_kick, v, D_KICK);
+        if (!strcmp(line, "hdf")) set_field(tf_hdf, v, D_HDF);
         if (!strncmp(line, "df", 2) && line[2] >= '0' && line[2] <= '3' && !line[3])
-            XmTextFieldSetString(tf_df[line[2] - '0'], v);
+            set_field(tf_df[line[2] - '0'], v, D_FLOPPY);
         if (!strcmp(line, "ro")) XmToggleButtonSetState(tg_ro, atoi(v), False);
         if (!strcmp(line, "joy")) XmToggleButtonSetState(tg_joy, atoi(v), False);
         if (!strcmp(line, "scale")) XmToggleButtonSetState(tg_scale, atoi(v) == 2, False);
+        if (!strcmp(line, "config")) {
+            strncpy(conf_name, v, sizeof(conf_name) - 1);
+            conf_name[sizeof(conf_name) - 1] = 0;
+        }
     }
     fclose(f);
     XtVaSetValues(model_menu, XmNmenuHistory, model_btn[model], NULL);
+    return 0;
 }
 
-static void settings_save(void)
+static int cfg_save(const char *path, const char *name)
 {
-    FILE *f = fopen(settings_path(), "w");
+    FILE *f = fopen(path, "w");
     char *s;
     int i;
 
     if (!f)
-        return;
+        return -1;
+    fprintf(f, "# AmixUAE configuration (amixuae; names alone are in ~/Documents/AmixUAE/...)\n");
+    if (name)
+        fprintf(f, "config=%s\n", name);
     fprintf(f, "model=%s\n", models[model]);
     fprintf(f, "kick=%s\n", s = XmTextFieldGetString(tf_kick)); XtFree(s);
     for (i = 0; i < 4; i++) {
@@ -158,7 +247,17 @@ static void settings_save(void)
     fprintf(f, "hdf=%s\n", s = XmTextFieldGetString(tf_hdf)); XtFree(s);
     fprintf(f, "ro=%d\njoy=%d\nscale=%d\n", XmToggleButtonGetState(tg_ro), XmToggleButtonGetState(tg_joy),
             XmToggleButtonGetState(tg_scale) ? 2 : 1);
-    fclose(f);
+    return fclose(f) == 0 ? 0 : -1;
+}
+
+static void settings_load(void)
+{
+    cfg_load(settings_path());
+}
+
+static void settings_save(void)
+{
+    cfg_save(settings_path(), conf_name);
 }
 
 static void say(const char *s)
@@ -426,10 +525,16 @@ static void start(Widget w, XtPointer cd, XtPointer cb)
     (void)w; (void)cd; (void)cb;
     if (child > 0)
         return;
-    kick = XmTextFieldGetString(tf_kick);
-    for (i = 0; i < 4; i++)
-        df[i] = XmTextFieldGetString(tf_df[i]);
-    hdf = XmTextFieldGetString(tf_hdf);
+    {
+        char *v;
+
+        kick = full_name(v = XmTextFieldGetString(tf_kick), D_KICK); XtFree(v);
+        for (i = 0; i < 4; i++) {
+            df[i] = full_name(v = XmTextFieldGetString(tf_df[i]), D_FLOPPY);
+            XtFree(v);
+        }
+        hdf = full_name(v = XmTextFieldGetString(tf_hdf), D_HDF); XtFree(v);
+    }
     if (!*kick || (!*df[0] && !*hdf)) {
         say("A Kickstart and a disk in DF0 (or a hard file) are needed.");
         return;
@@ -597,7 +702,7 @@ static void window_icon(Widget shell)
 }
 
 /* --- files given on the command line --- */
-enum { F_NONE, F_FLOPPY, F_HDF, F_KICK };
+enum { F_NONE, F_FLOPPY, F_HDF, F_KICK, F_CONF };
 
 static int ext_is(const char *path, const char *ext)
 {
@@ -624,6 +729,8 @@ static int kind(const char *path)
         return F_FLOPPY;
     if (ext_is(path, "hdf"))
         return F_HDF;
+    if (ext_is(path, "amixuae"))
+        return F_CONF;
     if (ext_is(path, "rom") || !strncmp(base, "kick", 4))
         return F_KICK;
     if (!(f = fopen(path, "rb")))
@@ -641,6 +748,8 @@ static int kind(const char *path)
         return F_KICK;                      /* also EPROM byte order (.bin) */
     return F_NONE;
 }
+
+static int conf_open(const char *path);
 
 static void autostart(XtPointer cd, XtIntervalId *id)
 {
@@ -666,7 +775,7 @@ static int take_files(int argc, char **argv)
                 XmTextFieldSetString(tf_hdf, "");
             }
             if (df < 4)
-                XmTextFieldSetString(tf_df[df++], full);
+                set_field(tf_df[df++], full, D_FLOPPY);
             disk = 1;
             break;
         case F_HDF:
@@ -676,11 +785,15 @@ static int take_files(int argc, char **argv)
                 for (k = 0; k < 4; k++)
                     XmTextFieldSetString(tf_df[k], "");
             }
-            XmTextFieldSetString(tf_hdf, full);
+            set_field(tf_hdf, full, D_HDF);
             disk = 1;
             break;
         case F_KICK:
-            XmTextFieldSetString(tf_kick, full);
+            set_field(tf_kick, full, D_KICK);
+            break;
+        case F_CONF:                        /* a whole setup: load it and start */
+            if (conf_open(full) == 0)
+                disk = 1;
             break;
         default: {
             char m[300];
@@ -693,14 +806,22 @@ static int take_files(int argc, char **argv)
     return disk;
 }
 
-/* --- file choice --- */
+/* --- file choice: in the field's folder (or where its file is) --- */
+static int field_dir(Widget t)
+{
+    XtPointer d;
+
+    XtVaGetValues(t, XmNuserData, &d, NULL);
+    return (int)(long)d;
+}
+
 static void file_ok(Widget w, XtPointer cd, XtPointer cb)
 {
     XmFileSelectionBoxCallbackStruct *c = (XmFileSelectionBoxCallbackStruct *)cb;
     char *name;
 
     if (XmStringGetLtoR(c->value, XmFONTLIST_DEFAULT_TAG, &name)) {
-        XmTextFieldSetString((Widget)cd, name);
+        set_field((Widget)cd, name, field_dir((Widget)cd));
         XtFree(name);
     }
     XtUnmanageChild(w);
@@ -714,11 +835,217 @@ static void file_cancel(Widget w, XtPointer cd, XtPointer cb)
 
 static void browse(Widget w, XtPointer cd, XtPointer cb)
 {
-    Widget d = XmCreateFileSelectionDialog(top, "choose", NULL, 0);
+    Widget t = (Widget)cd, d;
+    char *v = XmTextFieldGetString(t), *full = full_name(v, field_dir(t)), *slash;
+    XmString dir;
+    Arg a[1];
 
     (void)w; (void)cb;
+    if (*full && (slash = strrchr(full, '/')) != NULL && slash != full) {
+        *slash = 0;                     /* where the field's file is */
+        dir = XmStringCreateLocalized(full);
+    } else
+        dir = XmStringCreateLocalized((char *)folder(field_dir(t)));
+    XtSetArg(a[0], XmNdirectory, dir);
+    d = XmCreateFileSelectionDialog(top, "choose", a, 1);
+    XmStringFree(dir);
+    XtFree(v);
+    XtFree(full);
     XtAddCallback(d, XmNokCallback, file_ok, cd);
     XtAddCallback(d, XmNcancelCallback, file_cancel, NULL);
+    XtManageChild(d);
+}
+
+/* --- configurations: Configurations/NAME.amixuae --- */
+static char *conf_path(const char *name)
+{
+    static char p[1500];
+
+    sprintf(p, "%s/%.250s.amixuae", folder(D_CONF), name);
+    return p;
+}
+
+static Widget conf_text(void)
+{
+    Widget t;
+
+    XtVaGetValues(cb_conf, XmNtextField, &t, NULL);
+    return t;
+}
+
+static int by_name(const void *a, const void *b)
+{
+    return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+/* the list from the folder; the shown name stays */
+static void conf_list(void)
+{
+    Widget list;
+    DIR *d = opendir(folder(D_CONF));
+    struct dirent *e;
+    char *names[256];
+    int n = 0, i;
+
+    XtVaGetValues(cb_conf, XmNlist, &list, NULL);
+    XmListDeleteAllItems(list);
+    if (!d)
+        return;
+    while ((e = readdir(d)) != NULL && n < 256) {
+        size_t l = strlen(e->d_name);
+
+        if (l > 8 && e->d_name[0] != '.' && !strcmp(e->d_name + l - 8, ".amixuae")) {
+            names[n] = XtMalloc((Cardinal)l);
+            memcpy(names[n], e->d_name, l - 8);
+            names[n][l - 8] = 0;
+            n++;
+        }
+    }
+    closedir(d);
+    qsort(names, (size_t)n, sizeof(names[0]), by_name);
+    for (i = 0; i < n; i++) {
+        XmString x = XmStringCreateLocalized(names[i]);
+
+        XmListAddItemUnselected(list, x, 0);
+        XmStringFree(x);
+        XtFree(names[i]);
+    }
+    XtVaSetValues(list, XmNvisibleItemCount, n < 1 ? 1 : n > 10 ? 10 : n, NULL);
+}
+
+/* the name in the field, usable as a file name; "" when not */
+static char *conf_typed(void)
+{
+    static char n[256];
+    char *v = XmTextFieldGetString(conf_text()), *p = v, *q;
+
+    while (*p == ' ')
+        p++;
+    strncpy(n, p, sizeof(n) - 1);
+    n[sizeof(n) - 1] = 0;
+    XtFree(v);
+    for (q = n + strlen(n); q > n && q[-1] == ' '; )
+        *--q = 0;
+    if (n[0] == '.' || strchr(n, '/'))
+        n[0] = 0;
+    return n;
+}
+
+static void conf_show(const char *name)
+{
+    strncpy(conf_name, name, sizeof(conf_name) - 1);
+    conf_name[sizeof(conf_name) - 1] = 0;
+    XmTextFieldSetString(conf_text(), conf_name);
+}
+
+/* a .amixuae file (from the list, Open in the File Manager, a drop) */
+static int conf_open(const char *path)
+{
+    const char *base = strrchr(path, '/');
+    char name[256], m[400];
+    int k;
+
+    for (k = 0; k < 4; k++)             /* a setup is whole: no disks left over */
+        XmTextFieldSetString(tf_df[k], "");
+    XmTextFieldSetString(tf_hdf, "");
+    if (cfg_load(path) < 0) {
+        sprintf(m, "Cannot read %.300s", path);
+        say(m);
+        return -1;
+    }
+    strncpy(name, base ? base + 1 : path, sizeof(name) - 1);
+    name[sizeof(name) - 1] = 0;
+    if (strlen(name) > 8 && !strcmp(name + strlen(name) - 8, ".amixuae"))
+        name[strlen(name) - 8] = 0;
+    conf_show(name);
+    sprintf(m, "Configuration %.250s.", name);
+    say(m);
+    return 0;
+}
+
+static void conf_pick(Widget w, XtPointer cd, XtPointer cb)
+{
+    XmComboBoxCallbackStruct *c = (XmComboBoxCallbackStruct *)cb;
+    char *name;
+
+    (void)w; (void)cd;
+    if (c->reason != XmCR_SELECT || !c->event || c->event->type == KeyPress)
+        return;                         /* typing a new name loads nothing */
+    if (XmStringGetLtoR(c->item_or_text, XmFONTLIST_DEFAULT_TAG, &name)) {
+        if (*name && access(conf_path(name), R_OK) == 0)
+            conf_open(conf_path(name));
+        XtFree(name);
+    }
+}
+
+static void conf_save(Widget w, XtPointer cd, XtPointer cb)
+{
+    const char *name = conf_typed();
+    char m[400];
+
+    (void)w; (void)cd; (void)cb;
+    if (!*name) {
+        say("Type a name for the configuration first (no / in it).");
+        return;
+    }
+    if (cfg_save(conf_path(name), name) < 0) {
+        sprintf(m, "Cannot write %.300s", conf_path(name));
+        say(m);
+        return;
+    }
+    conf_show(name);
+    conf_list();
+    settings_save();
+    sprintf(m, "Saved configuration %.250s.", name);
+    say(m);
+}
+
+static void conf_delete_ok(Widget w, XtPointer cd, XtPointer cb)
+{
+    char *name = (char *)cd, m[400];
+
+    (void)cb;
+    if (unlink(conf_path(name)) == 0) {
+        sprintf(m, "Deleted configuration %.250s.", name);
+        conf_show("");
+        conf_list();
+        settings_save();
+    } else
+        sprintf(m, "Cannot delete %.300s", conf_path(name));
+    say(m);
+    XtFree(name);
+    XtDestroyWidget(XtParent(w));
+}
+
+static void conf_delete_no(Widget w, XtPointer cd, XtPointer cb)
+{
+    (void)cb;
+    XtFree((char *)cd);
+    XtDestroyWidget(XtParent(w));
+}
+
+static void conf_delete(Widget w, XtPointer cd, XtPointer cb)
+{
+    const char *name = conf_typed();
+    char m[400];
+    XmString x;
+    Widget d;
+    Arg a[1];
+
+    (void)w; (void)cd; (void)cb;
+    if (!*name || access(conf_path(name), F_OK) != 0) {
+        say("Choose a saved configuration to delete.");
+        return;
+    }
+    sprintf(m, "Delete the configuration %.250s?\n(The disks and ROMs it names stay.)", name);
+    x = XmStringCreateLocalized(m);
+    XtSetArg(a[0], XmNmessageString, x);
+    d = XmCreateQuestionDialog(top, "delete", a, 1);
+    XmStringFree(x);
+    XtUnmanageChild(XmMessageBoxGetChild(d, XmDIALOG_HELP_BUTTON));
+    XtAddCallback(d, XmNokCallback, conf_delete_ok, XtNewString(name));
+    XtAddCallback(d, XmNcancelCallback, conf_delete_no, XtNewString(name));
+    XtVaSetValues(XtParent(d), XmNtitle, "Amiga: delete configuration", NULL);
     XtManageChild(d);
 }
 
@@ -729,7 +1056,7 @@ static void model_cb(Widget w, XtPointer cd, XtPointer cb)
 }
 
 /* a label, a text field and a "..." button in one row of the form */
-static Widget file_row(Widget form, Widget above, const char *label)
+static Widget file_row(Widget form, Widget above, const char *label, int dir)
 {
     Widget l, t, b;
 
@@ -742,7 +1069,8 @@ static Widget file_row(Widget form, Widget above, const char *label)
     t = XtVaCreateManagedWidget("file", xmTextFieldWidgetClass, form,
         XmNtopAttachment, XmATTACH_OPPOSITE_WIDGET, XmNtopWidget, l, XmNtopOffset, -4,
         XmNleftAttachment, XmATTACH_WIDGET, XmNleftWidget, l, XmNleftOffset, 6,
-        XmNrightAttachment, XmATTACH_WIDGET, XmNrightWidget, b, XmNrightOffset, 4, XmNcolumns, 40, NULL);
+        XmNrightAttachment, XmATTACH_WIDGET, XmNrightWidget, b, XmNrightOffset, 4, XmNcolumns, 40,
+        XmNuserData, (XtPointer)(long)dir, NULL);
     XtAddCallback(b, XmNactivateCallback, browse, (XtPointer)t);
     return t;
 }
@@ -759,6 +1087,30 @@ int main(int argc, char **argv)
     signal(SIGPIPE, SIG_IGN);
     top = XtVaAppInitialize(&app, "Amixuae", NULL, 0, &argc, argv, NULL, XmNtitle, "Amiga", NULL);
     form = XtVaCreateManagedWidget("form", xmFormWidgetClass, top, NULL);
+    folders_make();
+
+    /* Configuration: the saved setups, Save, Delete */
+    {
+        Widget l, bs, bd;
+
+        l = XtVaCreateManagedWidget("Configuration", xmLabelWidgetClass, form,
+            XmNtopAttachment, XmATTACH_FORM, XmNtopOffset, 12,
+            XmNleftAttachment, XmATTACH_FORM, XmNleftOffset, 8, NULL);
+        bd = XtVaCreateManagedWidget("Delete", xmPushButtonWidgetClass, form,
+            XmNtopAttachment, XmATTACH_FORM, XmNtopOffset, 8,
+            XmNrightAttachment, XmATTACH_FORM, XmNrightOffset, 8, NULL);
+        bs = XtVaCreateManagedWidget("Save", xmPushButtonWidgetClass, form,
+            XmNtopAttachment, XmATTACH_FORM, XmNtopOffset, 8,
+            XmNrightAttachment, XmATTACH_WIDGET, XmNrightWidget, bd, XmNrightOffset, 4, NULL);
+        cb_conf = XtVaCreateManagedWidget("config", xmComboBoxWidgetClass, form,
+            XmNcomboBoxType, XmDROP_DOWN_COMBO_BOX,
+            XmNtopAttachment, XmATTACH_FORM, XmNtopOffset, 6,
+            XmNleftAttachment, XmATTACH_WIDGET, XmNleftWidget, l, XmNleftOffset, 6,
+            XmNrightAttachment, XmATTACH_WIDGET, XmNrightWidget, bs, XmNrightOffset, 6, NULL);
+        XtAddCallback(cb_conf, XmNselectionCallback, conf_pick, NULL);
+        XtAddCallback(bs, XmNactivateCallback, conf_save, NULL);
+        XtAddCallback(bd, XmNactivateCallback, conf_delete, NULL);
+    }
 
     pulldown = XmCreatePulldownMenu(form, "models", NULL, 0);
     for (i = 0; i < 3; i++) {
@@ -768,20 +1120,20 @@ int main(int argc, char **argv)
     XtSetArg(a[0], XmNsubMenuId, pulldown);
     XtSetArg(a[1], XmNlabelString, XmStringCreateLocalized("Model"));
     model_menu = XmCreateOptionMenu(form, "model", a, 2);
-    XtVaSetValues(model_menu, XmNtopAttachment, XmATTACH_FORM, XmNtopOffset, 6,
+    XtVaSetValues(model_menu, XmNtopAttachment, XmATTACH_WIDGET, XmNtopWidget, cb_conf, XmNtopOffset, 6,
                   XmNleftAttachment, XmATTACH_FORM, XmNleftOffset, 40, NULL);
     XtManageChild(model_menu);
 
-    tf_kick = file_row(form, model_menu, "Kickstart");
+    tf_kick = file_row(form, model_menu, "Kickstart", D_KICK);
     last = tf_kick;
     for (i = 0; i < 4; i++) {
         char l[8];
 
         sprintf(l, "DF%d", i);
-        tf_df[i] = file_row(form, last, l);
+        tf_df[i] = file_row(form, last, l, D_FLOPPY);
         last = tf_df[i];
     }
-    tf_hdf = file_row(form, last, "Hard file");
+    tf_hdf = file_row(form, last, "Hard file", D_HDF);
 
     row = XtVaCreateManagedWidget("options", xmRowColumnWidgetClass, form, XmNorientation, XmHORIZONTAL,
         XmNtopAttachment, XmATTACH_WIDGET, XmNtopWidget, tf_hdf, XmNtopOffset, 8,
@@ -820,6 +1172,8 @@ int main(int argc, char **argv)
     XtAddEventHandler(emu_shell, StructureNotifyMask, False, shell_event, NULL);
 
     settings_load();
+    conf_list();
+    XmTextFieldSetString(conf_text(), conf_name);
     XtRealizeWidget(top);
     window_icon(top);
     window_icon(emu_shell);

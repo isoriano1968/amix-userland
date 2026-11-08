@@ -3,7 +3,7 @@
 # cde-apps/panel beside it) put Amiga (amixuae) in place: the program, its
 # CDE files and the control in the AMIX panel.  The emulator itself
 # (z3660ARM_Core_uae.bin, c1uae setuid root) comes from emulators/uae4arm.
-# .adf/.adz/.dms, .hdf and Kickstart .rom files get their icons and Open in
+# .adf/.adz/.dms, .hdf, Kickstart .rom and .amixuae files get their icons and Open in
 # the File Manager.  Then Restart Workspace Manager; the Application Manager entry comes with
 # the next login (or Application Manager, Reload Applications).
 set -e

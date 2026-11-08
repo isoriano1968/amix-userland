@@ -10,6 +10,8 @@
 #   hard files          .hdf: Open = boot it
 #   Kickstart ROMs      .rom (Amiga Kickstart names), .a500/.a1200 ...:
 #                       Open = take it as the Kickstart, no start
+#   configurations      .amixuae (~/Documents/AmixUAE/Configurations):
+#                       Open = load the whole setup and start it
 #
 ACTION AmixUAE
 {
@@ -111,4 +113,29 @@ ACTION Open
 	TYPE		MAP
 	MAP_ACTION	AmixUAE
 	LABEL		Use as Kickstart
+}
+
+# --- configurations -----------------------------------------------------------
+
+DATA_ATTRIBUTES AmigaConfig
+{
+	ACTIONS		Open,AmixUAE
+	ICON		AmixUAE
+	DESCRIPTION	An Amiga setup saved by the Amiga emulator \
+			(Kickstart, disks, model).  Open starts it.
+}
+
+DATA_CRITERIA AmigaConfig1
+{
+	DATA_ATTRIBUTES_NAME	AmigaConfig
+	MODE			f
+	NAME_PATTERN		*.amixuae
+}
+
+ACTION Open
+{
+	ARG_TYPE	AmigaConfig
+	TYPE		MAP
+	MAP_ACTION	AmixUAE
+	LABEL		Start this Amiga
 }
