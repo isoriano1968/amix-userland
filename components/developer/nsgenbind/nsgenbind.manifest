@@ -1,0 +1,7 @@
+# name, version and what building and running it needs
+# A tool of the build machine (in ~/opt/nsgenbind), for web/netsurf's
+# JavaScript bindings; it installs nothing on AMIX.
+name     developer/nsgenbind
+version  0.9
+summary  NetSurf's binding generator (WebIDL and .bnd to C), a build-machine tool
+require  developer/netsurf-buildsystem
