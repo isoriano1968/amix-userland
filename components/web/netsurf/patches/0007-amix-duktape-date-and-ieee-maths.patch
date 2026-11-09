@@ -1,0 +1,102 @@
+Duktape on AMIX: Date.now() from gettimeofday (milliseconds) in place of
+the generic port's time() (seconds); AMIX defines no __unix.  Its maths from
+library/libm99 (musl, IEEE 754): AMIX's floor()/ceil() send SIGFPE for a NaN
+(through modf), which killed NetSurf on the first page with scripts.
+
+--- a/content/handlers/javascript/duktape/duk_custom.h
++++ b/content/handlers/javascript/duktape/duk_custom.h
+@@ -28,6 +28,94 @@
+ #undef DUK_USE_DATE_PARSE_STRING
+ #endif
+ 
++/* AMIX (SVR4.0) defines no __unix, so Duktape takes its generic C89 port,
++ * whose Date.now() is time(): one second steps.  The link-time libc has the
++ * BSD gettimeofday (no prototype in <sys/time.h>): milliseconds. */
++#if defined(__amix__)
++#include <sys/time.h>
++extern int gettimeofday(struct timeval *, void *);
++#undef DUK_USE_DATE_NOW_TIME
++#define DUK_USE_DATE_NOW_GETTIMEOFDAY
++#endif
++
++/* AMIX's own maths (libc.a and libm.a, SVR4.0, 1991) is not IEEE 754:
++ * floor() and ceil() go through modf(), which sends the process SIGFPE for a
++ * NaN; fmod(x, 0) returns x; fmod, remainder, pow, log, sqrt ... print
++ * "DOMAIN error" (matherr) and return 0 or HUGE.  JavaScript feeds NaN and
++ * Infinity to them all the time (Math.floor(NaN), x % 0, invalid dates), so
++ * Duktape uses musl's long double functions from library/libm99 instead,
++ * rounded back to double (exact for floor/ceil/fmod/trunc, correctly rounded
++ * in practice for the rest).  Functions, not casts: the Math built-ins keep
++ * pointers to them. */
++#if defined(__amix__)
++/* under other C names (asm labels), or gcc folds (double) floorl((long double) x)
++ * straight back into AMIX's floor(x) */
++extern long double duk_m99_fabsl(long double) __asm__("fabsl");
++extern long double duk_m99_floorl(long double) __asm__("floorl");
++extern long double duk_m99_ceill(long double) __asm__("ceill");
++extern long double duk_m99_acosl(long double) __asm__("acosl");
++extern long double duk_m99_asinl(long double) __asm__("asinl");
++extern long double duk_m99_atanl(long double) __asm__("atanl");
++extern long double duk_m99_sinl(long double) __asm__("sinl");
++extern long double duk_m99_cosl(long double) __asm__("cosl");
++extern long double duk_m99_tanl(long double) __asm__("tanl");
++extern long double duk_m99_expl(long double) __asm__("expl");
++extern long double duk_m99_logl(long double) __asm__("logl");
++extern long double duk_m99_sqrtl(long double) __asm__("sqrtl");
++extern long double duk_m99_cbrtl(long double) __asm__("cbrtl");
++extern long double duk_m99_log2l(long double) __asm__("log2l");
++extern long double duk_m99_log10l(long double) __asm__("log10l");
++extern long double duk_m99_truncl(long double) __asm__("truncl");
++extern long double duk_m99_fmodl(long double, long double) __asm__("fmodl");
++extern long double duk_m99_powl(long double, long double) __asm__("powl");
++extern long double duk_m99_atan2l(long double, long double) __asm__("atan2l");
++#define DUK__AMIX_M1(f) static double duk_amix_##f(double x) { return (double) duk_m99_##f##l(x); }
++#define DUK__AMIX_M2(f) static double duk_amix_##f(double x, double y) { return (double) duk_m99_##f##l(x, y); }
++DUK__AMIX_M1(fabs) DUK__AMIX_M1(floor) DUK__AMIX_M1(ceil) DUK__AMIX_M2(fmod)
++DUK__AMIX_M2(pow) DUK__AMIX_M1(acos) DUK__AMIX_M1(asin) DUK__AMIX_M1(atan)
++DUK__AMIX_M2(atan2) DUK__AMIX_M1(sin) DUK__AMIX_M1(cos) DUK__AMIX_M1(tan)
++DUK__AMIX_M1(exp) DUK__AMIX_M1(log) DUK__AMIX_M1(sqrt) DUK__AMIX_M1(cbrt)
++DUK__AMIX_M1(log2) DUK__AMIX_M1(log10) DUK__AMIX_M1(trunc)
++#undef DUK_FABS
++#define DUK_FABS duk_amix_fabs
++#undef DUK_FLOOR
++#define DUK_FLOOR duk_amix_floor
++#undef DUK_CEIL
++#define DUK_CEIL duk_amix_ceil
++#undef DUK_FMOD
++#define DUK_FMOD duk_amix_fmod
++#undef DUK_POW
++#define DUK_POW duk_amix_pow
++#undef DUK_ACOS
++#define DUK_ACOS duk_amix_acos
++#undef DUK_ASIN
++#define DUK_ASIN duk_amix_asin
++#undef DUK_ATAN
++#define DUK_ATAN duk_amix_atan
++#undef DUK_ATAN2
++#define DUK_ATAN2 duk_amix_atan2
++#undef DUK_SIN
++#define DUK_SIN duk_amix_sin
++#undef DUK_COS
++#define DUK_COS duk_amix_cos
++#undef DUK_TAN
++#define DUK_TAN duk_amix_tan
++#undef DUK_EXP
++#define DUK_EXP duk_amix_exp
++#undef DUK_LOG
++#define DUK_LOG duk_amix_log
++#undef DUK_SQRT
++#define DUK_SQRT duk_amix_sqrt
++#undef DUK_CBRT
++#define DUK_CBRT duk_amix_cbrt
++#undef DUK_LOG2
++#define DUK_LOG2 duk_amix_log2
++#undef DUK_LOG10
++#define DUK_LOG10 duk_amix_log10
++#undef DUK_TRUNC
++#define DUK_TRUNC duk_amix_trunc
++#endif
++
+ #define DUK_USE_FASTINT
+ #define DUK_USE_REGEXP_CANON_WORKAROUND
+ 

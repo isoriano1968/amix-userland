@@ -4,7 +4,10 @@
 # the whole 46 MB framebuffer and its heap is brk, so the 16 MB defaults make
 # it fail with "Not enough space" or "Out of memory".  exec, so that dtlogin's
 # signals (reset, terminate) reach the server itself.  Mode: $RTG_MODE, else
-# the first word of /etc/dt/config/rtg-mode, else 1920x1080.
+# the first word of /etc/dt/config/rtg-mode, else 1920x1080.  -nomove16: on
+# the 528 MB kernel a move16 on some user pages never completes (the process
+# spins in a fault loop), which froze the server in PutImage (NetSurf,
+# 2026-11-09); plain long copies until the kernel is fixed.
 ulimit -v 131072 2> /dev/null || ulimit -m 131072 2> /dev/null
 ulimit -d 65536 2> /dev/null
 MODE=${RTG_MODE-}
@@ -12,6 +15,6 @@ MODE=${RTG_MODE-}
 MODE=${MODE:-1920x1080}
 LD_LIBRARY_PATH=/usr/lib:/usr/amiga/lib
 export LD_LIBRARY_PATH
-exec /opt/amix/bin/Xzz9000 "$@" -mode $MODE \
+exec /opt/amix/bin/Xzz9000 "$@" -mode $MODE -nomove16 \
 	-fp /usr/X/lib/fonts/misc/,/usr/X/lib/fonts/Xol/,/usr/X/lib/fonts/75dpi/,/usr/X/lib/fonts/100dpi/,/usr/dt/config/xfonts/C/ \
 	-co /usr/X/lib/rgb -kb >> /var/dt/Xzz9000.log 2>&1
