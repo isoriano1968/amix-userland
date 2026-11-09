@@ -218,21 +218,31 @@ log; the performance monitor is on from the start (as the gpu core).
 | cleared tiles packed once (amix-gate 78317e1) | 224.9 ms (Q3 does not clear) | **412.2 ms** (-5.7 %) |
 | texel prefetch (PLD 8 pixels ahead, both units) | 243.3 ms (+8 %) | 447.5 ms (+8.6 %): reverted |
 | reference again (the build with c1prof, = 78317e1) | 225.4 ms | 412.1 ms |
+| texture-miss bound: every texture row stride 0 (test build) | 222.4 ms vs 223.0 ms same build (-0.3 %) | - |
 
 Core 1's load latency through its heap (`c1mem`, a random pointer chase,
 board 2026-11-09): 16 KB 4.6 ns (L1), 64-512 KB 26-36 ns (the shared L2
 works for core 1), 1-16 MB 105-141 ns (DDR, ~120 cycles). A frame's textures
 are megabytes against a 512 KB L2 shared with core 0, so the ~1.3 refills a
-pixel go partly to DDR. Prefetch's address work per pixel cost more than it
-hid. What is left that keeps the picture: fewer misses a pixel, i.e. tiled
-(block-linear) copies of the textures for the spans, within the memory
-budget (RtCW has ~16 MB to spare, Quake III ~50 MB).
+pixel looked like texel misses. Prefetch's address work per pixel cost more
+than it hid.
+
+Tiled (block-linear) texture copies were then bounded before building them
+(2026-11-09): a test build set every texture level's row stride to 0, so
+all rows read one row (the same arithmetic, the picture streaks, almost no
+texel lines from memory; checked in qemu). Board, frozen q3dm1 view: 222.4
+ms against 223.0 ms for the same build with the switch off, and the L1
+refill count did not move (205 M both). Texel misses cost under 1 % of the
+frame; the refills come from elsewhere (colour/Z buffer, vertex and state
+data). No texture layout can gain more, so tiling was dropped. The spans'
+~150 cycles a pixel are arithmetic and per-pixel overhead, not texel
+memory.
 
 Profile of the frozen views (c1prof, 48 s each, 2026-11-09): spans ~75 % of
 the time in both games, ~150 (Q3) / ~135 (RtCW) cycles a pixel, **1.2-1.3 L1
 data refills a pixel**, 90-96 % of the pixels perspective-correct, ~1 M
-pixels a frame (3.2x overdraw at 640x480). The pixels wait on memory, mostly
-texels (two bilinear 2x2 footprints from row-major textures).
+pixels a frame (3.2x overdraw at 640x480). The texture-miss bound above
+shows the texels are not what the pixels wait on.
 
 c1q3 sets `r_texturemode GL_LINEAR_MIPMAP_NEAREST` (as the zzgl launchers
 did): with the engine's default trilinear, two-unit draws miss the fixed
