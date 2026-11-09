@@ -174,8 +174,52 @@ void QDECL Sys_Error(const char *error, ...)
     c1p_fail(text);
 }
 
+/* why softpipe's fast path refused draws (sp_fast.c in amix-gate's Mesa:
+   counts per reason, since the start) */
+extern unsigned sp_fast_why[16];
+
+static void why_f(void)
+{
+    char line[256];
+    int k, n = 0;
+
+    n += Com_sprintf(line + n, sizeof(line) - n, "sp_fast refused (reason:draws):");
+    for (k = 1; k < 16; k++)
+        if (sp_fast_why[k])
+            n += Com_sprintf(line + n, sizeof(line) - n, " %d:%u", k, sp_fast_why[k]);
+    Com_Printf("%s\n", line);
+}
+
+/* softpipe's own profile (sp_fast.h): cycles per part, spans, pixels, L1
+   refills; printed and cleared.  "c1prof on|off": the refill counts too */
+extern uint64_t sp_fast_prof[16];
+extern int sp_fast_evt_on;
+
+static void prof_f(void)
+{
+    static const char *const names[16] = { "fasttri_Mc", "spans_Mc", "prepare_Mc", "drawvbo_Mc", "spans",
+        "pixels", "swtris", "swtris_Mc", "l1refill", "px_affine", "px_persp", "px_other", "texsetup_Mc",
+        "segments", "evt1", "px_pairs" };
+    static const int mc[16] = { 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0 };
+    char line[512];
+    int k, n = 0;
+
+    if (Cmd_Argc() > 1) {
+        sp_fast_evt_on = !Q_stricmp(Cmd_Argv(1), "on");
+        return;
+    }
+    n += Com_sprintf(line + n, sizeof(line) - n, "sp_fast_prof:");
+    for (k = 0; k < 16; k++) {
+        n += Com_sprintf(line + n, sizeof(line) - n, " %s=%llu", names[k],
+                         (unsigned long long)(mc[k] ? sp_fast_prof[k] / 1000000u : sp_fast_prof[k]));
+        sp_fast_prof[k] = 0;
+    }
+    Com_Printf("%s\n", line);
+}
+
 void Sys_Quit(void)
 {
+    why_f();
     c1p_quit();
 }
 
@@ -210,6 +254,8 @@ static void Sys_In_Restart_f(void)
 void Sys_Init(void)
 {
     Cmd_AddCommand("in_restart", Sys_In_Restart_f);
+    Cmd_AddCommand("c1why", why_f);
+    Cmd_AddCommand("c1prof", prof_f);
     Cvar_Set("arch", OS_STRING " " ARCH_STRING);
     Cvar_Set("username", Sys_GetCurrentUser());
 }

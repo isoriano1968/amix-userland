@@ -779,7 +779,10 @@ int main(int argc, char **argv)
                   /* what fits core 1's ~224 MB with a 46 MB pak, whatever a q3config
                      of the 060 build says (hunk 256, sound 16 = 50 MB there); the
                      user's +set come after */
-                  "+set com_hunkmegs 64 +set com_zoneMegs 24 +set com_soundMegs 8",
+                  "+set com_hunkmegs 64 +set com_zoneMegs 24 +set com_soundMegs 8 "
+                  /* mipmaps without blending between levels: what the zzgl
+                     builds used; trilinear misses softpipe's fast spans */
+                  "+set r_texturemode GL_LINEAR_MIPMAP_NEAREST",
                   game, pic_w, pic_h);
     for (; i < argc; i++) {
         if (len + strlen(argv[i]) + 4 >= sizeof(cmdline)) {

@@ -946,6 +946,12 @@ int main(void)
     put(W_MAGIC, HB_MAGIC_READY);
     put(W_STAGE, 5);
     CORE0_ACK = 0;
+    /* the performance monitor, as the gpu core: the cycle counter and event
+       counter 0 = L1 data refills (softpipe's sp_fast_prof, `c1prof`) */
+    __asm__ volatile("mcr p15, 0, %0, c9, c12, 0" : : "r"(1u));            /* PMCR.E */
+    __asm__ volatile("mcr p15, 0, %0, c9, c12, 5" : : "r"(0u));            /* PMSELR = 0 */
+    __asm__ volatile("mcr p15, 0, %0, c9, c13, 1" : : "r"(0x03u));         /* PMXEVTYPER */
+    __asm__ volatile("mcr p15, 0, %0, c9, c12, 1" : : "r"((1u << 31) | 1u)); /* PMCNTENSET */
     samp_start();
 
     for (;;) {

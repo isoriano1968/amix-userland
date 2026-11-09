@@ -182,7 +182,8 @@ may name too); `wolf.sh` does that with RtCW's settings and `+spmap escape1`;
 the 198 MB pak stays on AMIX (by request), the 21 MB one goes in whole.
 
 Board, 2026-11-09 00:00 (escape1, 640x480, com_recommendedSet 1, fresh home;
-the user clicked past the briefing):
+the user clicked past the briefing). Verified interactively afterwards: the
+user played escape1 with mouse and keyboard, "noticeably faster":
 
 | | iortcw, engine on the 060 + zzgl | wolf image, all on core 1 |
 |---|---|---|
@@ -197,6 +198,34 @@ Profile (250 s in the level): span routines ~60 % (`nspan_1_2_0` 27 %,
 generic path softpipe takes for some of RtCW's draws: a target), tex_setup
 5 %, vertex shader 3.5 %, c1p_fetch 1.4 % (pak blocks during play), present
 1.2 %.
+
+## Speed work: how it is measured
+
+`files/tools/boxbench.sh q3|wolf LABEL` runs one benchmark on the board
+through amix-box: `devmap` (q3dm1; escape1 without the briefing), a fixed
+view (`setviewpos` for q3dm1), the world frozen (`timescale 0.001`), then
+the average of com_speeds over the last 150 frames, on core 1's own clock
+(from the PLL). Same scene every frame: the same build gives the same
+number to 0.1 ms. A fresh home each run (only the key), c1q3's defaults.
+Results go to `build/bench.txt`. In the image: `c1why` (why softpipe's fast
+path refused draws) and `c1prof [on]` (softpipe's sp_fast_prof: cycles per
+part, spans, pixels per path, L1 data refills with `on`), printed to the
+log; the performance monitor is on from the start (as the gpu core).
+
+| step | Quake III q3dm1 | RtCW escape1 |
+|---|---|---|
+| baseline 2026-11-09 (fresh config, GL_LINEAR_MIPMAP_NEAREST) | 224.9 ms | 437.3 ms |
+| cleared tiles packed once (amix-gate 78317e1) | 224.9 ms (Q3 does not clear) | **412.2 ms** (-5.7 %) |
+
+Profile of the frozen views (c1prof, 48 s each, 2026-11-09): spans ~75 % of
+the time in both games, ~150 (Q3) / ~135 (RtCW) cycles a pixel, **1.2-1.3 L1
+data refills a pixel**, 90-96 % of the pixels perspective-correct, ~1 M
+pixels a frame (3.2x overdraw at 640x480). The pixels wait on memory, mostly
+texels (two bilinear 2x2 footprints from row-major textures).
+
+c1q3 sets `r_texturemode GL_LINEAR_MIPMAP_NEAREST` (as the zzgl launchers
+did): with the engine's default trilinear, two-unit draws miss the fixed
+spans (`c1why` reason 13: 6662 draws on a q3dm1 run in qemu).
 
 ## Next
 
