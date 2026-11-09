@@ -217,6 +217,51 @@ static void prof_f(void)
     Com_Printf("%s\n", line);
 }
 
+/* "c1mem": load latency through core 1's heap: a random pointer chase over
+   16 KB .. 16 MB (L1 32 KB, the shared L2 512 KB, then DDR), ns and cycles
+   a load on core 1's clock */
+static void mem_f(void)
+{
+    static const unsigned sizes[] = { 16, 64, 128, 256, 512, 1024, 4096, 16384 };
+    unsigned k;
+
+    for (k = 0; k < ARRAY_LEN(sizes); k++) {
+        const unsigned n = sizes[k] * 1024 / 32;    /* one pointer per 32-byte line */
+        uint32_t *buf = malloc((size_t)n * 32 + 32), *p;
+        unsigned i, *perm;
+        uint64_t t0, t1;
+        const unsigned loads = 2000000;
+
+        perm = malloc(n * sizeof(*perm));
+        if (!buf || !perm) {
+            free(buf);
+            free(perm);
+            Com_Printf("c1mem: no memory for %u KB\n", sizes[k]);
+            continue;
+        }
+        for (i = 0; i < n; i++)
+            perm[i] = i;
+        for (i = n - 1; i > 0; i--) {               /* a random cycle through the lines */
+            const unsigned j = (unsigned)rand() % (i + 1), t = perm[i];
+
+            perm[i] = perm[j];
+            perm[j] = t;
+        }
+        for (i = 0; i < n; i++)
+            *(uint32_t **)(buf + perm[i] * 8) = buf + perm[(i + 1) % n] * 8;
+        p = buf + perm[0] * 8;
+        for (i = 0; i < n; i++)                     /* warm */
+            p = *(uint32_t **)p;
+        t0 = c1p_now_us();
+        for (i = 0; i < loads; i++)
+            p = *(uint32_t **)p;
+        t1 = c1p_now_us();
+        Com_Printf("c1mem %6u KB: %.1f ns a load (%p)\n", sizes[k], (double)(t1 - t0) * 1000.0 / loads, (void *)p);
+        free(perm);
+        free(buf);
+    }
+}
+
 void Sys_Quit(void)
 {
     why_f();
@@ -256,6 +301,7 @@ void Sys_Init(void)
     Cmd_AddCommand("in_restart", Sys_In_Restart_f);
     Cmd_AddCommand("c1why", why_f);
     Cmd_AddCommand("c1prof", prof_f);
+    Cmd_AddCommand("c1mem", mem_f);
     Cvar_Set("arch", OS_STRING " " ARCH_STRING);
     Cvar_Set("username", Sys_GetCurrentUser());
 }

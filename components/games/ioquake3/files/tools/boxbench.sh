@@ -19,10 +19,10 @@ K="-i $HOME/.ssh/id_ed25519_amix -o BatchMode=yes -o IdentitiesOnly=yes"
 R=root@192.168.0.133
 case $game in
 q3)	core=/root/z3660ARMCores/z3660ARM_Core_q3.bin base=/opt/ioq3 dir=demoq3 seed=/opt/ioq3/home/qkey
-	sched='-exec 30 "devmap q3dm1" -exec 110 "setviewpos 1052 1432 24 135" -exec 112 "timescale 0.001" -exec 150 "c1prof on" -exec 151 c1prof -exec 199 c1prof -exec 200 quit'
+	sched='-exec 30 "devmap q3dm1" -exec 110 "setviewpos 1052 1432 24 135" -exec 112 "timescale 0.001" -exec 151 c1prof -exec 199 c1prof -exec 200 quit'
 	args="" ;;
 wolf)	core=/root/z3660ARMCores/z3660ARM_Core_wolf.bin base=/opt/rtcw dir=main seed=
-	sched='-exec 30 "devmap escape1" -exec 170 "timescale 0.001" -exec 220 "c1prof on" -exec 221 c1prof -exec 269 c1prof -exec 270 quit'
+	sched='-exec 30 "devmap escape1" -exec 170 "timescale 0.001" -exec 221 c1prof -exec 269 c1prof -exec 270 quit'
 	args="+set com_zoneMegs 16 +set com_soundMegs 4 +set com_recommendedSet 1" ;;
 *)	echo "usage: boxbench.sh q3|wolf LABEL [engine args]"; exit 2 ;;
 esac

@@ -216,6 +216,17 @@ log; the performance monitor is on from the start (as the gpu core).
 |---|---|---|
 | baseline 2026-11-09 (fresh config, GL_LINEAR_MIPMAP_NEAREST) | 224.9 ms | 437.3 ms |
 | cleared tiles packed once (amix-gate 78317e1) | 224.9 ms (Q3 does not clear) | **412.2 ms** (-5.7 %) |
+| texel prefetch (PLD 8 pixels ahead, both units) | 243.3 ms (+8 %) | 447.5 ms (+8.6 %): reverted |
+| reference again (the build with c1prof, = 78317e1) | 225.4 ms | 412.1 ms |
+
+Core 1's load latency through its heap (`c1mem`, a random pointer chase,
+board 2026-11-09): 16 KB 4.6 ns (L1), 64-512 KB 26-36 ns (the shared L2
+works for core 1), 1-16 MB 105-141 ns (DDR, ~120 cycles). A frame's textures
+are megabytes against a 512 KB L2 shared with core 0, so the ~1.3 refills a
+pixel go partly to DDR. Prefetch's address work per pixel cost more than it
+hid. What is left that keeps the picture: fewer misses a pixel, i.e. tiled
+(block-linear) copies of the textures for the spans, within the memory
+budget (RtCW has ~16 MB to spare, Quake III ~50 MB).
 
 Profile of the frozen views (c1prof, 48 s each, 2026-11-09): spans ~75 % of
 the time in both games, ~150 (Q3) / ~135 (RtCW) cycles a pixel, **1.2-1.3 L1
