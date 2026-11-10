@@ -1,0 +1,731 @@
+Layout fixes found on XenForo forums (a1k.org), all general, none AMIX
+specific; meant for upstream NetSurf as well.
+
+ - layout.c: table-layout: fixed (CSS 2.1 17.5.2.1), which NetSurf parsed but
+   never used.  For a table of a set width the first row's cells give the
+   column widths (border box), the open columns share the rest equally, the
+   content never widens a column; layout_minmax_table reports the first
+   row's set lengths as the table's width, not its content.  XenForo lays
+   out every forum row and the page with its sidebar as such tables; with
+   the auto layout a one-line (nowrap) title widened its column and the
+   page.
+ - layout.c: a table with box-sizing: border-box takes its padding out of
+   its specified width, as blocks do (it was added on top).
+ - layout.c: an inline-flex box in a line is placed and gives the line its
+   height as an inline-block does (it was left out: a line holding only an
+   inline-flex button had height 0).
+ - box_construct.c: generated content.  ::before/::after made only an empty
+   block (the clearfix hack); now strings, attr() and quotes give text and
+   url() an image, in blocks, inline blocks, table cells and flex
+   containers, and in inline elements (after the element's box, before its
+   INLINE_END).  Characters of the Unicode private use areas are left out:
+   they are icon font glyphs that need the page's web font.  Counters are
+   not done.
+ - box_construct.c: a form control with no content of its own (text field,
+   check box...) with display: flex is laid out as a block, as browsers do;
+   and a flex container's child stays a blockified flex item after the
+   special element conversion (box_input_text set inline-block again, so
+   the field was wrapped in an anonymous block and lost its width: 100%).
+
+--- a/content/handlers/html/box_construct.c	2026-11-10 10:39:32.155456940 +0100
++++ b/content/handlers/html/box_construct.c	2026-11-10 11:01:26.413845685 +0100
+@@ -297,29 +297,257 @@
+ }
+ 
+ 
++static void box_text_transform(char *s, unsigned int len,
++		enum css_text_transform_e tt);
++
++/**
++ * Append UTF-8 text to a growing buffer, leaving out characters of the
++ * Unicode private use areas: those are icon font glyphs (Font Awesome and
++ * the like), which need the web font the page loads; without it they would
++ * show as empty glyph boxes.
++ */
++static bool box_generated_text_add(char **buf, size_t *len, size_t *cap,
++		const char *s, size_t n)
++{
++	size_t i = 0;
++
++	while (i < n) {
++		unsigned char c = (unsigned char) s[i];
++		size_t l = c < 0x80 ? 1 : (c >> 5) == 6 ? 2 : (c >> 4) == 14 ? 3 :
++				(c >> 3) == 30 ? 4 : 1;
++		uint32_t cp = c;
++
++		if (i + l > n)
++			l = n - i;
++		if (l == 2)
++			cp = ((c & 0x1f) << 6) | (s[i + 1] & 0x3f);
++		else if (l == 3)
++			cp = ((c & 0x0f) << 12) | ((s[i + 1] & 0x3f) << 6) |
++					(s[i + 2] & 0x3f);
++		else if (l == 4)
++			cp = ((c & 0x07) << 18) | ((s[i + 1] & 0x3f) << 12) |
++					((s[i + 2] & 0x3f) << 6) |
++					(s[i + 3] & 0x3f);
++		if ((cp >= 0xE000 && cp <= 0xF8FF) || cp >= 0xF0000) {
++			i += l;
++			continue;
++		}
++		if (*len + l + 1 > *cap) {
++			size_t ncap = (*cap ? *cap * 2 : 64) + l;
++			char *nb = realloc(*buf, ncap);
++			if (nb == NULL)
++				return false;
++			*buf = nb;
++			*cap = ncap;
++		}
++		memcpy(*buf + *len, s + i, l);
++		*len += l;
++		(*buf)[*len] = '\0';
++		i += l;
++	}
++	return true;
++}
++
++
++/**
++ * Add a text box of generated content to an inline container.
++ */
++static bool box_generated_text_box(html_content *content, struct box *ic,
++		struct box *parent, const css_computed_style *style,
++		const char *text, size_t len)
++{
++	struct box *box;
++
++	if (len == 0)
++		return true;
++	/** \todo Not wise to drop const from the computed style */
++	box = box_create(NULL, (css_computed_style *) style, false,
++			parent->href, parent->target, parent->title, NULL,
++			content->bctx);
++	if (box == NULL)
++		return false;
++	box->type = BOX_TEXT;
++	box->text = talloc_strndup(content->bctx, text, len);
++	if (box->text == NULL)
++		return false;
++	box->length = len;
++	/* a trailing space separates it from what follows */
++	if (box->length > 1 && box->text[box->length - 1] == ' ') {
++		box->space = UNKNOWN_WIDTH;
++		box->length--;
++	}
++	if (css_computed_text_transform(style) != CSS_TEXT_TRANSFORM_NONE)
++		box_text_transform(box->text, box->length,
++				css_computed_text_transform(style));
++	box_add_child(ic, box);
++	return true;
++}
++
++
++/**
++ * Add the boxes of a pseudo element's content to an inline container:
++ * text for strings, attr() and quotes, an image for url().
++ *
++ * \param n        the element the pseudo element belongs to
++ * \param content  the HTML content being built
++ * \param ic       inline container to add to
++ * \param parent   the element's box (for its link)
++ * \param style    the pseudo element's computed style
++ * \return false on memory exhaustion
++ */
++static bool box_generated_content(dom_node *n, html_content *content,
++		struct box *ic, struct box *parent,
++		const css_computed_style *style)
++{
++	const css_computed_content_item *item = NULL;
++	char *text = NULL;
++	size_t len = 0, cap = 0;
++	bool ok = true;
++
++	if (css_computed_content(style, &item) != CSS_CONTENT_SET ||
++			item == NULL)
++		return true;
++	for (; ok && item->type != CSS_COMPUTED_CONTENT_NONE; item++) {
++		switch (item->type) {
++		case CSS_COMPUTED_CONTENT_STRING:
++			ok = box_generated_text_add(&text, &len, &cap,
++					lwc_string_data(item->data.string),
++					lwc_string_length(item->data.string));
++			break;
++		case CSS_COMPUTED_CONTENT_ATTR: {
++			dom_string *name = NULL, *value = NULL;
++
++			if (dom_string_create((const uint8_t *)
++					lwc_string_data(item->data.attr),
++					lwc_string_length(item->data.attr),
++					&name) != DOM_NO_ERR)
++				break;
++			if (dom_element_get_attribute(n, name, &value) ==
++					DOM_NO_ERR && value != NULL) {
++				ok = box_generated_text_add(&text, &len, &cap,
++						dom_string_data(value),
++						dom_string_byte_length(value));
++				dom_string_unref(value);
++			}
++			dom_string_unref(name);
++			break;
++		}
++		case CSS_COMPUTED_CONTENT_OPEN_QUOTE:
++		case CSS_COMPUTED_CONTENT_CLOSE_QUOTE:
++			ok = box_generated_text_add(&text, &len, &cap, "\"", 1);
++			break;
++		case CSS_COMPUTED_CONTENT_URI: {
++			struct box *img;
++			nsurl *url;
++
++			/* the text so far comes first */
++			ok = box_generated_text_box(content, ic, parent, style,
++					text, len);
++			len = 0;
++			if (!ok || nsoption_bool(foreground_images) == false)
++				break;
++			if (nsurl_create(lwc_string_data(item->data.uri),
++					&url) != NSERROR_OK)
++				break;
++			img = box_create(NULL, (css_computed_style *) style,
++					false, parent->href, parent->target,
++					parent->title, NULL, content->bctx);
++			if (img == NULL) {
++				nsurl_unref(url);
++				ok = false;
++				break;
++			}
++			img->type = BOX_INLINE;
++			img->flags |= IS_REPLACED;
++			if (html_fetch_object(content, url, img, image_types,
++					false) == false)
++				ok = false;
++			nsurl_unref(url);
++			if (ok)
++				box_add_child(ic, img);
++			break;
++		}
++		default:
++			/* counters: not supported */
++			break;
++		}
++	}
++	if (ok)
++		ok = box_generated_text_box(content, ic, parent, style, text,
++				len);
++	free(text);
++	return ok;
++}
++
++
++/**
++ * Whether a pseudo element's content makes any box: an image, or text
++ * once the icon font characters are left out.
++ */
++static bool box_generated_has_content(dom_node *n,
++		const css_computed_style *style)
++{
++	const css_computed_content_item *item = NULL;
++	char *text = NULL;
++	size_t len = 0, cap = 0;
++	bool any = false;
++
++	if (css_computed_content(style, &item) != CSS_CONTENT_SET ||
++			item == NULL)
++		return false;
++	for (; !any && item->type != CSS_COMPUTED_CONTENT_NONE; item++) {
++		switch (item->type) {
++		case CSS_COMPUTED_CONTENT_URI:
++		case CSS_COMPUTED_CONTENT_ATTR:
++		case CSS_COMPUTED_CONTENT_OPEN_QUOTE:
++		case CSS_COMPUTED_CONTENT_CLOSE_QUOTE:
++			any = true;
++			break;
++		case CSS_COMPUTED_CONTENT_STRING:
++			box_generated_text_add(&text, &len, &cap,
++					lwc_string_data(item->data.string),
++					lwc_string_length(item->data.string));
++			any = len > 0;
++			break;
++		default:
++			break;
++		}
++	}
++	free(text);
++	return any;
++}
++
++
+ /**
+- * Construct the box required for a generated element.
++ * Construct the boxes of a ::before or ::after pseudo element of an element
++ * whose box holds blocks (a block, inline block, table cell or flex
++ * container).
++ *
++ * A pseudo element that is a block or table gets a box of its own, holding
++ * its content; an inline one puts its content in the box's first (before)
++ * or last (after) inline container, or in a block of its own in a flex
++ * container, where it is a flex item.
+  *
+  * \param n        XML node of type XML_ELEMENT_NODE
+  * \param content  Content of type CONTENT_HTML that is being processed
+  * \param box      Box which may have generated content
+  * \param style    Complete computed style for pseudo element, or NULL
+- *
+- * \todo This is currently incomplete. It just does enough to support
+- * the clearfix hack. (http://www.positioniseverything.net/easyclearing.html )
++ * \param after    true for ::after
+  */
+ static void
+ box_construct_generate(dom_node *n,
+ 		       html_content *content,
+ 		       struct box *box,
+-		       const css_computed_style *style)
++		       const css_computed_style *style,
++		       bool after)
+ {
+-	struct box *gen = NULL;
++	struct box *gen = NULL, *ic = NULL;
+ 	enum css_display_e computed_display;
+ 	const css_computed_content_item *c_item;
+ 
+-	/* Nothing to generate if the parent box is not a block */
+-	if (box->type != BOX_BLOCK)
++	if (box->type != BOX_BLOCK && box->type != BOX_INLINE_BLOCK &&
++			box->type != BOX_TABLE_CELL && box->type != BOX_FLEX &&
++			box->type != BOX_INLINE_FLEX)
+ 		return;
+ 
+ 	/* To determine if an element has a pseudo element, we select
+@@ -327,30 +555,92 @@
+ 	 * property is set to normal. */
+ 	if (style == NULL ||
+ 			css_computed_content(style, &c_item) ==
+-			CSS_CONTENT_NORMAL) {
++			CSS_CONTENT_NORMAL ||
++			css_computed_content(style, &c_item) ==
++			CSS_CONTENT_NONE) {
+ 		/* No pseudo element */
+ 		return;
+ 	}
+ 
+-	/* create box for this element */
+ 	computed_display = ns_computed_display(style, box_is_root(n));
++	if (computed_display == CSS_DISPLAY_NONE)
++		return;
+ 	if (computed_display == CSS_DISPLAY_BLOCK ||
+-			computed_display == CSS_DISPLAY_TABLE) {
+-		/* currently only support block level boxes */
+-
++			computed_display == CSS_DISPLAY_TABLE ||
++			box->type == BOX_FLEX || box->type == BOX_INLINE_FLEX) {
+ 		/** \todo Not wise to drop const from the computed style */
+ 		gen = box_create(NULL, (css_computed_style *) style,
+-				false, NULL, NULL, NULL, NULL, content->bctx);
+-		if (gen == NULL) {
++				false, box->href, box->target, box->title,
++				NULL, content->bctx);
++		if (gen == NULL)
+ 			return;
+-		}
+-
+-		/* set box type from computed display */
+-		gen->type = box_map[ns_computed_display(
+-				style, box_is_root(n))];
+-
++		/* set box type from computed display; in a flex container
++		 * an inline pseudo element is a block flex item */
++		gen->type = box_map[computed_display];
++		if (gen->type != BOX_BLOCK && gen->type != BOX_TABLE)
++			gen->type = BOX_BLOCK;
+ 		box_add_child(box, gen);
++		if (gen->type != BOX_BLOCK)
++			return;
++		/* its content, if any, in an inline container of its own */
++		if (!box_generated_has_content(n, style))
++			return;
++		ic = box_create(NULL, NULL, false, NULL, NULL, NULL, NULL,
++				content->bctx);
++		if (ic == NULL)
++			return;
++		ic->type = BOX_INLINE_CONTAINER;
++		box_add_child(gen, ic);
++		box_generated_content(n, content, ic, box, style);
++		return;
+ 	}
++
++	/* an inline pseudo element: the box's own inline container (never an
++	 * empty one: text construction relies on that) */
++	if (!box_generated_has_content(n, style))
++		return;
++	if (after && box->last != NULL &&
++			box->last->type == BOX_INLINE_CONTAINER) {
++		ic = box->last;
++	} else {
++		ic = box_create(NULL, NULL, false, NULL, NULL, NULL, NULL,
++				content->bctx);
++		if (ic == NULL)
++			return;
++		ic->type = BOX_INLINE_CONTAINER;
++		box_add_child(box, ic);
++	}
++	box_generated_content(n, content, ic, box, style);
++}
++
++
++/**
++ * Construct the boxes of a ::before or ::after pseudo element of an inline
++ * element: its content goes in the element's inline container, after the
++ * element's box (before) or before its INLINE_END (after).
++ */
++static void
++box_construct_generate_inline(dom_node *n,
++			      html_content *content,
++			      struct box *box,
++			      struct box *ic,
++			      const css_computed_style *style)
++{
++	const css_computed_content_item *c_item;
++	enum css_display_e computed_display;
++
++	if (style == NULL || ic == NULL ||
++			css_computed_content(style, &c_item) ==
++			CSS_CONTENT_NORMAL ||
++			css_computed_content(style, &c_item) ==
++			CSS_CONTENT_NONE)
++		return;
++	computed_display = ns_computed_display(style, box_is_root(n));
++	if (computed_display == CSS_DISPLAY_NONE)
++		return;
++	/* blocks inside inline elements are not split out here: their
++	 * content goes inline */
++	box_generated_content(n, content, ic, box, style);
+ }
+ 
+ 
+@@ -623,10 +913,35 @@
+ 		return false;
+ 	}
+ 
+-	/* Handle the :before pseudo element */
++	/* A form control with no content of its own (text fields, check
++	 * boxes, select menus...) is a replaced element: display: flex does
++	 * not make it a flex container, browsers lay it out as a block. */
++	if (box->gadget != NULL &&
++			box->gadget->type != GADGET_BUTTON &&
++			box->gadget->type != GADGET_SUBMIT &&
++			box->gadget->type != GADGET_RESET) {
++		if (box->type == BOX_FLEX)
++			box->type = BOX_BLOCK;
++		else if (box->type == BOX_INLINE_FLEX)
++			box->type = BOX_INLINE_BLOCK;
++	}
++
++	/* The special elements set their box type from display again (a
++	 * text field turns inline-block): a flex container's child is a flex
++	 * item all the same, blockified (CSS Flexbox 4) */
++	if (box__containing_block_is_flex(&props) && !props.node_is_root) {
++		if (box->type == BOX_INLINE_BLOCK)
++			box->type = BOX_BLOCK;
++		else if (box->type == BOX_INLINE_FLEX)
++			box->type = BOX_FLEX;
++	}
++
++	/* Handle the :before pseudo element (of an inline element: once
++	 * its box is in its inline container, below) */
+ 	if (!(box->flags & IS_REPLACED)) {
+ 		box_construct_generate(ctx->n, ctx->content, box,
+-				box->styles->styles[CSS_PSEUDO_ELEMENT_BEFORE]);
++				box->styles->styles[CSS_PSEUDO_ELEMENT_BEFORE],
++				false);
+ 	}
+ 
+ 	if (box->type == BOX_NONE || (ns_computed_display(box->style,
+@@ -723,6 +1038,14 @@
+ 		assert(props.inline_container != NULL);
+ 
+ 		box_add_child(props.inline_container, box);
++
++		if (box->type == BOX_INLINE && !(box->flags & IS_REPLACED) &&
++				*convert_children) {
++			box_construct_generate_inline(ctx->n, ctx->content,
++					box, props.inline_container,
++					box->styles->styles[
++						CSS_PSEUDO_ELEMENT_BEFORE]);
++		}
+ 	} else {
+ 		if (ns_computed_display(box->style, props.node_is_root) ==
+ 				CSS_DISPLAY_LIST_ITEM) {
+@@ -811,6 +1134,13 @@
+ 					props.inline_container);
+ 		}
+ 
++		/* Handle the :after pseudo element */
++		if (box->type == BOX_INLINE && !(box->flags & IS_REPLACED))
++			box_construct_generate_inline(n, content, box,
++					props.inline_container,
++					box->styles->styles[
++						CSS_PSEUDO_ELEMENT_AFTER]);
++
+ 		inline_end = box_create(NULL, box->style, false,
+ 				box->href, box->target, box->title,
+ 				box->id == NULL ? NULL :
+@@ -828,7 +1158,8 @@
+ 	} else if (!(box->flags & IS_REPLACED)) {
+ 		/* Handle the :after pseudo element */
+ 		box_construct_generate(n, content, box,
+-				box->styles->styles[CSS_PSEUDO_ELEMENT_AFTER]);
++				box->styles->styles[CSS_PSEUDO_ELEMENT_AFTER],
++				true);
+ 	}
+ }
+ 
+--- a/content/handlers/html/layout.c	2023-12-28 01:26:04.000000000 +0100
++++ b/content/handlers/html/layout.c	2026-11-10 11:02:34.281832619 +0100
+@@ -246,6 +246,178 @@
+ 
+ 
+ /**
++ * The first row of a table, or NULL.
++ */
++static struct box *layout_table_first_row(struct box *table)
++{
++	struct box *row_group;
++
++	for (row_group = table->children; row_group;
++			row_group = row_group->next) {
++		if (row_group->children != NULL)
++			return row_group->children;
++	}
++	return NULL;
++}
++
++
++/**
++ * The outer (border box) width a cell of a table-layout: fixed table's
++ * first row asks for.
++ *
++ * \param content      the HTML content being laid out
++ * \param cell         a cell of the first row
++ * \param table_width  the table's width, for percentages (or AUTO)
++ * \return  the width, or -1 when the cell gives none (auto)
++ */
++static int layout_table_fixed_cell_width(const html_content *content,
++		struct box *cell, int table_width)
++{
++	css_fixed value = 0;
++	css_unit unit = CSS_UNIT_PX;
++	int width, extra = 0;
++	float frac = 0;
++
++	if (css_computed_width(cell->style, &value, &unit) != CSS_WIDTH_SET)
++		return -1;
++	if (unit == CSS_UNIT_PCT) {
++		if (table_width == AUTO)
++			return -1;
++		width = FPCT_OF_INT_TOINT(value, table_width);
++	} else {
++		width = FIXTOINT(css_unit_len2device_px(cell->style,
++				&content->unit_len_ctx, value, unit));
++	}
++	if (css_computed_box_sizing(cell->style) != CSS_BOX_SIZING_BORDER_BOX) {
++		/* the column holds the cell's padding and borders too */
++		calculate_mbp_width(&content->unit_len_ctx, cell->style, LEFT,
++				false, true, true, &extra, &frac);
++		calculate_mbp_width(&content->unit_len_ctx, cell->style, RIGHT,
++				false, true, true, &extra, &frac);
++		width += extra;
++	}
++	return width < 0 ? 0 : width;
++}
++
++
++/**
++ * Column widths of a table with table-layout: fixed (CSS 2.1 17.5.2.1).
++ *
++ * The cells of the first row give the widths of their columns; the
++ * columns they leave open share what remains of the table's width
++ * equally.  The cells' content plays no part: what does not fit is
++ * clipped or overflows, as in other browsers.  A table narrower than its
++ * columns grows to hold them.
++ *
++ * \param content           the HTML content being laid out
++ * \param table             the table box
++ * \param col               the columns, their width set here
++ * \param columns           how many
++ * \param table_width       the table's width, updated
++ * \param border_spacing_h  horizontal border spacing
++ * \return  true when the widths are set, false to use the auto layout
++ */
++static bool layout_table_fixed_columns(const html_content *content,
++		struct box *table, struct column *col, unsigned int columns,
++		int *table_width, int border_spacing_h)
++{
++	struct box *row = layout_table_first_row(table);
++	struct box *c;
++	unsigned int i, j, open = 0, placed = 0;
++	int used = 0, share, rest;
++
++	if (row == NULL)
++		return false;
++	for (i = 0; i != columns; i++)
++		col[i].width = -1;
++	for (c = row->children; c; c = c->next) {
++		int w;
++
++		if (c->type != BOX_TABLE_CELL || c->style == NULL)
++			continue;
++		w = layout_table_fixed_cell_width(content, c, *table_width);
++		if (w < 0)
++			continue;
++		/* a cell over several columns shares its width out */
++		if (c->columns > 1)
++			w = (w - (int) (c->columns - 1) * border_spacing_h) /
++					(int) c->columns;
++		for (j = 0; j != c->columns; j++) {
++			i = c->start_column + j;
++			if (i < columns && col[i].width < 0)
++				col[i].width = w < 0 ? 0 : w;
++		}
++	}
++	for (i = 0; i != columns; i++) {
++		if (col[i].positioned)
++			continue;
++		placed++;
++		if (col[i].width < 0)
++			open++;
++		else
++			used += col[i].width;
++	}
++	used += (placed + 1) * border_spacing_h;
++	rest = *table_width - used;
++	if (rest < 0)
++		rest = 0;
++	if (open > 0) {
++		share = rest / open;
++		for (i = 0; i != columns; i++) {
++			if (!col[i].positioned && col[i].width < 0) {
++				col[i].width = share;
++				used += share;
++			}
++		}
++	} else if (rest > 0 && placed > 0) {
++		/* wider than its columns: the extra goes to all of them */
++		share = rest / placed;
++		for (i = 0; i != columns; i++) {
++			if (!col[i].positioned) {
++				col[i].width += share;
++				used += share;
++			}
++		}
++	}
++	for (i = 0; i != columns; i++) {
++		if (col[i].width < 0)
++			col[i].width = 0;
++		col[i].min = col[i].max = col[i].width;
++	}
++	if (*table_width < used)
++		*table_width = used;
++	return true;
++}
++
++
++/**
++ * Minimum width of a table with table-layout: fixed: its first row's
++ * cells of a set length (percentages and open columns give nothing).
++ */
++static int layout_table_fixed_min(const html_content *content,
++		struct box *table, int border_spacing_h)
++{
++	struct box *row = layout_table_first_row(table);
++	struct box *c;
++	int min = 0;
++
++	if (row == NULL)
++		return 0;
++	for (c = row->children; c; c = c->next) {
++		css_fixed value = 0;
++		css_unit unit = CSS_UNIT_PX;
++
++		if (c->type != BOX_TABLE_CELL || c->style == NULL)
++			continue;
++		if (css_computed_width(c->style, &value, &unit) ==
++				CSS_WIDTH_SET && unit != CSS_UNIT_PCT)
++			min += layout_table_fixed_cell_width(content, c, AUTO);
++	}
++	return min;
++}
++
++
++/**
+  * Calculate minimum and maximum width of a table.
+  *
+  * \param table box of type TABLE
+@@ -401,6 +573,14 @@
+ 		table_max += col[i].max;
+ 	}
+ 
++	/* table-layout: fixed: the first row's set widths, not the content */
++	if (css_computed_table_layout(table->style) == CSS_TABLE_LAYOUT_FIXED &&
++			css_computed_width(table->style, &value, &unit) ==
++			CSS_WIDTH_SET) {
++		table_min = table_max = layout_table_fixed_min(content, table,
++				border_spacing_h);
++	}
++
+ 	/* fixed width takes priority, unless it is too narrow */
+ 	wtype = css_computed_width(table->style, &value, &unit);
+ 	if (wtype == CSS_WIDTH_SET && unit != CSS_UNIT_PCT) {
+@@ -1718,9 +1898,14 @@
+ 						value, unit));
+ 		}
+ 
+-		/* specified width includes border */
++		/* specified width includes border, and with box-sizing:
++		 * border-box the padding too */
+ 		table_width -= table->border[LEFT].width +
+ 				table->border[RIGHT].width;
++		if (css_computed_box_sizing(style) ==
++				CSS_BOX_SIZING_BORDER_BOX)
++			table_width -= table->padding[LEFT] +
++					table->padding[RIGHT];
+ 		table_width = table_width < 0 ? 0 : table_width;
+ 
+ 		auto_width = table_width;
+@@ -1799,6 +1984,16 @@
+ 		}
+ 	}
+ 
++	/* table-layout: fixed (CSS 2.1 17.5.2.1) applies to tables of a set
++	 * width: the first row's cells give the columns, content does not */
++	if (table_width != AUTO &&
++			css_computed_table_layout(style) ==
++			CSS_TABLE_LAYOUT_FIXED &&
++			layout_table_fixed_columns(content, table, col, columns,
++					&table_width, border_spacing_h)) {
++		goto columns_done;
++	}
++
+ 	/* calculate width required by cells */
+ 	for (i = 0; i != columns; i++) {
+ 
+@@ -1965,6 +2160,7 @@
+ 		table_width = auto_width;
+ 	}
+ 
++columns_done:
+ 	xs[0] = x = border_spacing_h;
+ 	for (i = 0; i != columns; i++) {
+ 		if (!col[i].positioned)
+@@ -3389,8 +3585,11 @@
+ 				used_height = d->height;
+ 			}
+ 		} else if ((d->type == BOX_INLINE) ||
+-				d->type == BOX_INLINE_BLOCK) {
+-			/* replaced inlines and inline-blocks */
++				d->type == BOX_INLINE_BLOCK ||
++				d->type == BOX_INLINE_FLEX) {
++			/* replaced inlines, inline-blocks and inline-flexes:
++			 * an inline-flex is placed and gives the line its
++			 * height as an inline-block does */
+ 			d->x += x0;
+ 			d->y = *y + d->border[TOP].width + d->margin[TOP];
+ 			h = d->margin[TOP] + d->border[TOP].width +
