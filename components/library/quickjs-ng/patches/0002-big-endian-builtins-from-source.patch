@@ -1,0 +1,49 @@
+Big-endian machines (AMIX on the 68060): compile the three built-ins kept
+as bytecode (Array.fromAsync, Iterator.zip, Iterator.zipKeyed) from their
+JavaScript source.  builtin-*.h is bytecode from a little-endian qjsc, and
+QuickJS reads bytecode in the machine's own byte order only ("checksum
+error", then abort).  The build makes builtin-*.src.h (a C string of each
+builtin-*.js); the functions are the same, only their toString shows the
+source.
+
+--- a/quickjs.c
++++ b/quickjs.c
+@@ -8939,9 +8939,20 @@
+     return JS_OrdinaryIsInstanceOf(ctx, val, obj);
+ }
+ 
++/* The built-ins below are bytecode from a little-endian qjsc, and bytecode
++ * is read in the machine's own byte order only: a big-endian machine
++ * compiles their JavaScript source instead (the build makes the .src.h files
++ * from builtin-*.js); same functions, only toString shows the source. */
++#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
++#define JS_BUILTINS_FROM_SOURCE 1
++#include "builtin-array-fromasync.src.h"
++#include "builtin-iterator-zip-keyed.src.h"
++#include "builtin-iterator-zip.src.h"
++#else
+ #include "builtin-array-fromasync.h"
+ #include "builtin-iterator-zip-keyed.h"
+ #include "builtin-iterator-zip.h"
++#endif
+ 
+ // like Function.prototype.call but monkey patch-proof
+ static JSValue js_call_function(JSContext *ctx, JSValueConst this_val,
+@@ -8987,10 +8998,17 @@
+     JSValue obj, fun, result;
+     int i;
+ 
++#ifdef JS_BUILTINS_FROM_SOURCE
++    (void)obj;
++    /* the source string's size counts its NUL */
++    fun = JS_Eval(ctx, (const char *)bytecode, len - 1, "<builtin>",
++                  JS_EVAL_TYPE_GLOBAL);
++#else
+     obj = JS_ReadObject(ctx, bytecode, len, JS_READ_OBJ_BYTECODE);
+     if (JS_IsException(obj))
+         return JS_EXCEPTION;
+     fun = JS_EvalFunction(ctx, obj);
++#endif
+     if (JS_IsException(fun))
+         return JS_EXCEPTION;
+     assert(JS_IsFunction(ctx, fun));

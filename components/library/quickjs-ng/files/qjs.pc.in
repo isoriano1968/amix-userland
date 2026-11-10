@@ -1,0 +1,10 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: qjs
+Description: QuickJS-ng JavaScript engine (with the std and os modules)
+Version: @VERSION@
+Libs: -L${libdir} -lqjs
+Libs.private: -lm99 -lamixc99 -ldl -lsocket -lnsl -lgen -lm
+Cflags: -I${includedir}

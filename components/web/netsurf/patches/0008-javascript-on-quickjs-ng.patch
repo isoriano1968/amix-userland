@@ -1,0 +1,113 @@
+NetSurf's JavaScript on QuickJS-ng instead of the bundled Duktape 2.7 (ES5.1,
+which cannot parse what sites use today: classes, arrow functions, Map ...).
+
+The bindings (dukky.c and the nsgenbind-generated sources) stay as they are:
+files/quickjs/duk_qjs.c gives them the Duktape API calls they use, on
+QuickJS-ng, and is copied next to dukky.c at build time.
+
+ - Makefile.defaults: NETSURF_USE_QUICKJS (default NO, Duktape as before).
+ - duktape/Makefile: with it, duk_qjs.c instead of duktape.c, and qjs from
+   pkg-config.
+ - duktape.h: with it, only duk_qjs.h.
+ - dukky.c: each thread (browsing context) is a QuickJS context with its own
+   built-ins, so the prototypes are made per thread, in js_newthread, and not
+   once in the heap; the execution timeout check goes to QuickJS's interrupt
+   handler.
+
+diff -ru a/content/handlers/javascript/duktape/dukky.c b/content/handlers/javascript/duktape/dukky.c
+--- a/content/handlers/javascript/duktape/dukky.c	2023-12-28 01:26:04.000000000 +0100
++++ b/content/handlers/javascript/duktape/dukky.c	2026-11-10 08:01:19.552086974 +0100
+@@ -46,6 +46,10 @@
+ 
+ #include <dom/dom.h>
+ 
++#if defined(NETSURF_JS_QUICKJS)
++duk_bool_t dukky_check_timeout(void *udata);
++#endif
++
+ #define EVENT_MAGIC MAGIC(EVENT_MAP)
+ #define HANDLER_LISTENER_MAGIC MAGIC(HANDLER_LISTENER_MAP)
+ #define HANDLER_MAGIC MAGIC(HANDLER_MAP)
+@@ -609,6 +613,11 @@
+ 		ret,
+ 		NULL);
+ 	if (ret->ctx == NULL) { free(ret); return NSERROR_NOMEM; }
++#if defined(NETSURF_JS_QUICKJS)
++	/* Every thread is a QuickJS context with its own built-ins: the
++	 * prototypes are made per thread, in js_newthread */
++	duk_qjs_set_timeout_check(ctx, dukky_check_timeout);
++#else
+ 	/* Create the prototype stuffs */
+ 	duk_push_global_object(ctx);
+ 	duk_push_boolean(ctx, true);
+@@ -616,6 +625,7 @@
+ 	duk_put_global_string(ctx, PROTO_MAGIC);
+ 	/* Create prototypes here */
+ 	dukky_create_prototypes(ctx);
++#endif
+ 	/* Now create the thread map */
+ 	duk_push_object(ctx);
+ 	duk_put_global_string(ctx, THREAD_MAP);
+@@ -672,6 +682,14 @@
+ 	duk_put_prop_index(heap->ctx, -2, ret->thread_idx);
+ 	heap->live_threads++;
+ 	duk_pop(heap->ctx); /* ... */
++#if defined(NETSURF_JS_QUICKJS)
++	/* The prototypes, in this thread's context */
++	duk_push_global_object(CTX);
++	duk_push_boolean(CTX, true);
++	duk_put_prop_string(CTX, -2, "protos");
++	duk_put_global_string(CTX, PROTO_MAGIC);
++	dukky_create_prototypes(CTX);
++#endif
+ 	duk_push_int(CTX, 0);
+ 	duk_push_int(CTX, 1);
+ 	duk_push_int(CTX, 2);
+diff -ru a/content/handlers/javascript/duktape/duktape.h b/content/handlers/javascript/duktape/duktape.h
+--- a/content/handlers/javascript/duktape/duktape.h	2023-12-28 01:26:04.000000000 +0100
++++ b/content/handlers/javascript/duktape/duktape.h	2026-11-10 08:01:19.552086974 +0100
+@@ -1,3 +1,6 @@
++#if defined(NETSURF_JS_QUICKJS)
++#include "duk_qjs.h"
++#else
+ /*
+  *  Duktape public API for Duktape 2.7.0.
+  *
+@@ -1454,3 +1457,4 @@
+  */
+ 
+ #endif  /* DUKTAPE_H_INCLUDED */
++#endif  /* NETSURF_JS_QUICKJS */
+diff -ru a/content/handlers/javascript/duktape/Makefile b/content/handlers/javascript/duktape/Makefile
+--- a/content/handlers/javascript/duktape/Makefile	2023-12-28 01:26:04.000000000 +0100
++++ b/content/handlers/javascript/duktape/Makefile	2026-11-10 08:01:19.552086974 +0100
+@@ -55,6 +55,14 @@
+ 
+ $(S_JAVASCRIPT_BINDING): $(BINDINGS)
+ 
++ifeq ($(NETSURF_USE_QUICKJS),YES)
++# QuickJS-ng under the Duktape API (duk_qjs.c)
++S_JAVASCRIPT += content.c duktape/dukky.c duktape/duk_qjs.c
++
++CFLAGS += -DNETSURF_JS_QUICKJS $(shell $(PKG_CONFIG) --cflags qjs)
++LDFLAGS += $(shell $(PKG_CONFIG) --libs qjs)
++else
+ S_JAVASCRIPT += content.c duktape/dukky.c duktape/duktape.c
+ 
+ CFLAGS += -DDUK_OPT_HAVE_CUSTOM_H
++endif
+diff -ru a/Makefile.defaults b/Makefile.defaults
+--- a/Makefile.defaults	2023-12-28 01:26:04.000000000 +0100
++++ b/Makefile.defaults	2026-11-10 08:01:19.552086974 +0100
+@@ -71,6 +71,11 @@
+ # Valid options: YES, NO
+ NETSURF_USE_DUKTAPE := YES
+ 
++# Run the JavaScript bindings on QuickJS-ng (library qjs) instead of the
++# bundled Duktape: same bindings, through duk_qjs.c
++# Valid options: YES, NO
++NETSURF_USE_QUICKJS := NO
++
+ # Enable NetSurf's use of libharu for PDF export and GTK printing support.
+ # There is no auto-detection available for this, as it does not have a
+ # pkg-config file.

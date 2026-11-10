@@ -24,6 +24,7 @@ require  fonts/comic-neue
 require  fonts/anton
 require  library/libiconv
 require  library/libm99
+require  library/quickjs-ng
 require  library/libjpeg
 require  library/libpng
 require  library/zlib

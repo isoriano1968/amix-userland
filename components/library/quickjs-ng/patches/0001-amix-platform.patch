@@ -1,0 +1,182 @@
+AMIX (SVR4.0 on the 68060): no threads, no C11 atomics, gettimeofday for
+the clock (as DJGPP); localtime_r/gmtime_r from localtime/gmtime and no
+tm_gmtoff; in quickjs-libc (qjs's std and os modules) what POSIX added after
+1991, built from the calls AMIX has: setenv/unsetenv (putenv, environ),
+nanosleep (poll), getrusage (times), mkstemp/mkdtemp (mktemp), utimes
+(utime), sighandler_t, RTLD_LOCAL, struct timespec; os.exec without
+closefrom.
+
+--- a/cutils.h
++++ b/cutils.h
+@@ -61,7 +61,7 @@
+ #include <windows.h>
+ #include <process.h> // _beginthread
+ #endif
+-#if !defined(_WIN32) && !defined(EMSCRIPTEN) && !defined(__wasi__) && !defined(__DJGPP)
++#if !defined(_WIN32) && !defined(EMSCRIPTEN) && !defined(__wasi__) && !defined(__DJGPP) && !defined(__amix__)
+ #include <errno.h>
+ #include <pthread.h>
+ #endif
+@@ -638,7 +638,7 @@
+ 
+ /* Cross-platform threading APIs. */
+ 
+-#if defined(EMSCRIPTEN) || defined(__wasi__) || defined(__DJGPP)
++#if defined(EMSCRIPTEN) || defined(__wasi__) || defined(__DJGPP) || defined(__amix__)
+ 
+ #define JS_HAVE_THREADS 0
+ 
+@@ -1607,7 +1607,7 @@
+ }
+ #else
+ static inline uint64_t js__hrtime_ns(void) {
+-#ifdef __DJGPP
++#if defined(__DJGPP) || defined(__amix__)
+   struct timeval tv;
+   if (gettimeofday(&tv, NULL))
+     abort();
+--- a/quickjs.c
++++ b/quickjs.c
+@@ -72,7 +72,7 @@
+ // atomic_store etc. are completely busted in recent versions of tcc;
+ // somehow the compiler forgets to load |ptr| into %rdi when calling
+ // the __atomic_*() helpers in its lib/stdatomic.c and lib/atomic.S
+-#if !defined(__TINYC__) && !defined(EMSCRIPTEN) && !defined(__wasi__) && !__STDC_NO_ATOMICS__ && !defined(__DJGPP)
++#if !defined(__TINYC__) && !defined(EMSCRIPTEN) && !defined(__wasi__) && !__STDC_NO_ATOMICS__ && !defined(__DJGPP) && !defined(__amix__)
+ #include "quickjs-c-atomics.h"
+ #define CONFIG_ATOMICS
+ #endif
+@@ -49197,6 +49197,21 @@
+ 
+ /* OS dependent. d = argv[0] is in ms from 1970. Return the difference
+    between UTC time and local time 'd' in minutes */
++#if defined(__amix__)
++/* AMIX (SVR4.0) has no threads and no _r variants, and no tm_gmtoff */
++#define NO_TM_GMTOFF
++static struct tm *localtime_r(const time_t *t, struct tm *r)
++{
++    *r = *localtime(t);
++    return r;
++}
++static struct tm *gmtime_r(const time_t *t, struct tm *r)
++{
++    *r = *gmtime(t);
++    return r;
++}
++#endif
++
+ static int getTimezoneOffset(int64_t time) {
+ #if defined(_WIN32)
+     DWORD r;
+--- a/quickjs-libc.c
++++ b/quickjs-libc.c
+@@ -93,6 +93,91 @@
+ #include "list.h"
+ #include "quickjs-libc.h"
+ 
++#if defined(__amix__)
++/* AMIX (SVR4.0, 1991): what POSIX added later, from the calls it has */
++#include <utime.h>
++#include <sys/times.h>
++typedef void (*sighandler_t)(int);
++extern char **environ;
++#ifndef RTLD_LOCAL
++#define RTLD_LOCAL 0
++#endif
++struct timespec {
++    time_t tv_sec;
++    long tv_nsec;
++};
++static int nanosleep(const struct timespec *ts, struct timespec *rem)
++{
++    (void)rem;
++    return poll(NULL, 0, (int)(ts->tv_sec * 1000 + ts->tv_nsec / 1000000)) < 0 ? -1 : 0;
++}
++struct rusage {
++    struct timeval ru_utime, ru_stime;
++};
++#define RUSAGE_SELF 0
++static int getrusage(int who, struct rusage *ru)
++{
++    struct tms t;
++    long hz = sysconf(_SC_CLK_TCK);
++
++    (void)who;
++    if (times(&t) == (clock_t)-1 || hz <= 0)
++        return -1;
++    ru->ru_utime.tv_sec = t.tms_utime / hz;
++    ru->ru_utime.tv_usec = (t.tms_utime % hz) * (1000000 / hz);
++    ru->ru_stime.tv_sec = t.tms_stime / hz;
++    ru->ru_stime.tv_usec = (t.tms_stime % hz) * (1000000 / hz);
++    return 0;
++}
++static int setenv(const char *name, const char *value, int overwrite)
++{
++    char *s;
++
++    if (!overwrite && getenv(name))
++        return 0;
++    s = malloc(strlen(name) + strlen(value) + 2); /* putenv keeps it */
++    if (!s)
++        return -1;
++    sprintf(s, "%s=%s", name, value);
++    return putenv(s);
++}
++static int unsetenv(const char *name)
++{
++    size_t l = strlen(name);
++    char **e, **f;
++
++    for (e = environ; *e; ) {
++        if (!strncmp(*e, name, l) && (*e)[l] == '=') {
++            for (f = e; *f; f++)
++                f[0] = f[1];
++        } else {
++            e++;
++        }
++    }
++    return 0;
++}
++static int mkstemp(char *tmpl)
++{
++    if (!mktemp(tmpl) || !*tmpl)
++        return -1;
++    return open(tmpl, O_RDWR | O_CREAT | O_EXCL, 0600);
++}
++static char *mkdtemp(char *tmpl)
++{
++    if (!mktemp(tmpl) || !*tmpl)
++        return NULL;
++    return mkdir(tmpl, 0700) ? NULL : tmpl;
++}
++static int utimes(const char *path, const struct timeval tv[2])
++{
++    struct utimbuf u;
++
++    u.actime = tv[0].tv_sec;
++    u.modtime = tv[1].tv_sec;
++    return utime(path, &u);
++}
++#endif
++
+ #if JS_HAVE_THREADS
+ #include "quickjs-c-atomics.h"
+ #define USE_WORKER // enable os.Worker
+@@ -3582,7 +3667,7 @@
+ 
+ static void (*js_os_exec_closefrom)(int);
+ 
+-#if !defined(EMSCRIPTEN) && !defined(__wasi__)
++#if !defined(EMSCRIPTEN) && !defined(__wasi__) && !defined(__amix__)
+ 
+ static js_once_t js_os_exec_once = JS_ONCE_INIT;
+ 
+@@ -3748,7 +3833,7 @@
+ 
+     }
+ 
+-#if !defined(EMSCRIPTEN) && !defined(__wasi__)
++#if !defined(EMSCRIPTEN) && !defined(__wasi__) && !defined(__amix__)
+     // should happen pre-fork because it calls dlsym()
+     // and that's not an async-signal-safe function
+     js_once(&js_os_exec_once, js_os_exec_once_init);

@@ -1,0 +1,18 @@
+# name, version and what building and running it needs
+name     library/quickjs-ng
+version  0.18.0
+summary  QuickJS-ng JavaScript engine (ES2023+): libqjs, qjs, qjsc
+provide  qjs
+require  library/libm99
+require  library/amixc99
+file     /usr/local/lib/libqjs.so.0
+file     /usr/local/lib/libqjs.so
+file     /usr/local/lib/pkgconfig/qjs.pc
+file     /usr/local/include/quickjs.h
+file     /usr/local/include/quickjs-libc.h
+file     /usr/local/bin/qjs
+file     /usr/local/bin/qjsc
+file     /usr/local/share/man/man1/qjs.1
+file     /usr/local/share/man/man1/qjsc.1
+file     /usr/local/share/doc/quickjs-ng/LICENSE
+file     /usr/local/share/amix-stubs/quickjs-ng/LIST
