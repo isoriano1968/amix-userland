@@ -5,7 +5,7 @@
 set -e
 cd "$(dirname "$0")"
 P=../../../tools/amix-pkg-config
-for app in ${*:-amixcast ztopcde amixsysmon amixdisplay amixuae amixprinters amixq3}; do
+for app in ${*:-amixcast ztopcde amixsysmon amixdisplay amixuae amixprinters amixq3 amixsoftware}; do
 	pkgs=xm
 	[ $app = amixsysmon ] && pkgs="xm amixstat"	# library/amixstat
 	[ $app = amixdisplay ] && pkgs="xm xrandr"	# x11/libxrandr
@@ -19,6 +19,11 @@ for app in ${*:-amixcast ztopcde amixsysmon amixdisplay amixuae amixprinters ami
 		  -o amixdisplay/setlogin amixdisplay/setlogin.c
 		../../../tools/amix-fix-needed amixdisplay/setlogin > /dev/null
 		ls -l amixdisplay/setlogin
+	fi
+	if [ $app = amixsoftware ]; then	# the setuid apkg runner: libc only, no X
+		m68k-elf-gcc -O2 -m68060 -Wall -o amixsoftware/swrun amixsoftware/swrun.c
+		../../../tools/amix-fix-needed amixsoftware/swrun > /dev/null
+		ls -l amixsoftware/swrun
 	fi
 	if [ $app = amixprinters ]; then	# the search tool, the sender, the setuid lp helper: no X
 		for t in amixprfind prsend prset; do

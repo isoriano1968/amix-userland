@@ -1,0 +1,15 @@
+#
+# amixsoftware.dt -- the AMIX Software Center: find, install, upgrade and
+# remove Amix software through apkg.  Installed in /etc/dt/appconfig/types/C.
+#
+ACTION AmixSoftware
+{
+	LABEL		Software Center
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/opt/amix/bin/amixsoftware
+	ICON		AmixSoftware
+	DESCRIPTION	Find, install, upgrade and remove Amix software from the \
+			amigaux repository (apkg); Try shows what a change would \
+			do without making it.
+}

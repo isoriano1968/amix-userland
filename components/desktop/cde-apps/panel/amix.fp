@@ -1,7 +1,7 @@
 #
 # amix.fp -- the AMIX control in CDE's front panel, with the AMIX logo: its
 # subpanel holds AmixCast, the Z3660 window, the System Monitor, NEdit,
-# fsv, NetSurf, Grafx2, Display, PyDPainter, AmixUAE, Printers and Quake III.  Every CDE application of ours gets a control here.  Installed in
+# fsv, NetSurf, Grafx2, Display, PyDPainter, AmixUAE, Printers, Quake III and the Software Center.  Every CDE application of ours gets a control here.  Installed in
 # /etc/dt/appconfig/types/C in place of ztopcde.fp; dtwm reads it when the
 # workspace manager starts (Restart Workspace Manager).
 #
@@ -171,4 +171,16 @@ CONTROL AmixQ3Panel
 	LABEL		Quake III / RtCW
 	PUSH_ACTION	AmixQ3
 	HELP_STRING	Quake III Arena or Return to Castle Wolfenstein with the whole engine on the Z3660's ARM core 1 (games/ioquake3, games/iortcw): picture in the overlay, sound on HDMI, F10 quits
+}
+
+CONTROL AmixSoftwarePanel
+{
+	TYPE		icon
+	CONTAINER_NAME	AmixPanel
+	CONTAINER_TYPE	SUBPANEL
+	POSITION_HINTS	13
+	ICON		AmixSoftware
+	LABEL		Software Center
+	PUSH_ACTION	AmixSoftware
+	HELP_STRING	Find, install, upgrade and remove Amix software from the amigaux repository through apkg (amixsoftware); Try shows what a change would do
 }
