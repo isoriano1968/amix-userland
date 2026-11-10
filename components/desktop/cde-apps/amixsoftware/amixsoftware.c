@@ -824,12 +824,15 @@ static Widget pg_buttons;
 
 static void show_output(int on)
 {
+	/* the buttons stay at the bottom; the output, when shown, fills the
+	 * space between the toggle and them */
 	if (on) {
+		XtVaSetValues(pg_buttons, XmNtopAttachment, XmATTACH_NONE, NULL);
 		XtManageChild(pg_out);
-		XtVaSetValues(pg_buttons, XmNtopWidget, pg_out, NULL);
 	} else {
-		XtVaSetValues(pg_buttons, XmNtopWidget, pg_toggle, NULL);
 		XtUnmanageChild(pg_out);
+		XtVaSetValues(pg_buttons, XmNtopAttachment, XmATTACH_WIDGET,
+			      XmNtopWidget, pg_toggle, NULL);
 	}
 	XmToggleButtonSetState(pg_toggle, on, False);
 }
@@ -950,7 +953,8 @@ static void make_progress(void)
 	XtManageChild(pg_text);
 	pg_out = XtParent(pg_text);
 	XtVaSetValues(pg_out, XmNtopAttachment, XmATTACH_WIDGET, XmNtopWidget, pg_toggle, XmNtopOffset, 6,
-		      XmNleftAttachment, XmATTACH_FORM, XmNrightAttachment, XmATTACH_FORM, NULL);
+		      XmNleftAttachment, XmATTACH_FORM, XmNrightAttachment, XmATTACH_FORM,
+		      XmNbottomAttachment, XmATTACH_WIDGET, XmNbottomWidget, pg_buttons, XmNbottomOffset, 8, NULL);
 	XtUnmanageChild(pg_out);
 }
 
