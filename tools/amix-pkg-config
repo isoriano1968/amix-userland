@@ -6,6 +6,9 @@
 # box takes LD_RUN_PATH; here each -L also gives -Wl,-R with the path on AMIX.
 # AMIX_SYSROOT says where the sysroot is.
 S=${AMIX_SYSROOT:-$HOME/opt/m68k-amix-sysroot}
+# never the build machine's own / or /usr: that would hand a cross compile
+# the host's headers and libraries
+"`dirname "$0"`"/amix-sysroot-check "$S" || exit 1
 PKG_CONFIG_LIBDIR=$S/usr/local/lib/pkgconfig:$S/usr/local/gnu/lib/pkgconfig:$S/usr/gnu/lib/pkgconfig:$S/usr/dt/lib/pkgconfig:$S/usr/motif/lib/pkgconfig:$S/usr/x11r6/lib/pkgconfig:$S/usr/X/lib/pkgconfig:$S/usr/lib/pkgconfig
 PKG_CONFIG_SYSROOT_DIR=$S
 PKG_CONFIG_SYSTEM_INCLUDE_PATH=/usr/include

@@ -19,6 +19,8 @@ cd "$(dirname "$0")/.."
 [ -f config.sh ] || { echo "sync-sysroot.sh: no config.sh" >&2; exit 1; }
 . ./config.sh
 : "${AMIX_SYSROOT:?set AMIX_SYSROOT in config.sh}"
+# refuses the host's own directories and a directory that is not a sysroot
+../../../tools/amix-sysroot-check -w "$AMIX_SYSROOT" || exit 1
 
 IMG="$1"
 [ -n "$IMG" ] || { echo "usage: sync-sysroot.sh /path/to/mounted/amix/image" >&2; exit 1; }

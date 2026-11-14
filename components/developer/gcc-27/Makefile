@@ -249,6 +249,8 @@ install-binutils: binutils
 # stay writable so extra libraries can still be added.  Regenerating lifts the
 # write protection first, because cp cannot overwrite a read-only file.
 sysroot:
+	AMIX_SYSROOT_KIND=gcc-27-make-sysroot \
+		$(HERE)/../../../tools/amix-sysroot-check -w -c "$(SYSROOT)"
 	mkdir -p $(SYSROOT)/usr
 	chmod -R u+w $(SYSROOT)/usr
 	test -d "$(AMIX_ROOT)/usr/include"

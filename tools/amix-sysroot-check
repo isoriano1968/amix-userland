@@ -1,0 +1,95 @@
+#!/bin/sh
+# amix-sysroot-check -- refuse a sysroot that is the build machine itself.
+#
+#   amix-sysroot-check [-w] [-c] DIR
+#
+# Every tool that reads from or writes into the AMIX sysroot runs this first.
+# A cross build host keeps AMIX's headers and libraries in a directory of its
+# own (/opt/m68k-amix-sysroot when packaged, $HOME/opt/m68k-amix-sysroot on a
+# developer's machine).  An empty or wrong AMIX_SYSROOT must never turn
+# "copy into the sysroot" into "copy over the host's /usr/include and /usr/lib",
+# nor make a cross compile read the host's headers.
+#
+#   (no option)  reading: DIR must exist and must not be the host's / or one of
+#                its system directories
+#   -w           writing: in addition, DIR must hold the marker
+#                etc/amix-sysroot.release (or be empty or missing, see -c)
+#   -c           with -w: DIR may be missing or empty; it is created and gets
+#                the marker (the first fill of a new sysroot)
+#
+# On AMIX itself there is no sysroot: the system is the target.  The check
+# refuses there, so a cross recipe run on the box cannot write into /.
+# AMIX is recognised by its stock /usr/amiga and /etc/amiga.ap, which no cross
+# host has (a host's sysroot keeps them under the sysroot directory).
+#
+# Written for the Bourne shell (AMIX /bin/sh, illumos, Linux): no $( ).
+# Exit 0 = fine, 1 = refused (with the reason on stderr), 2 = usage.
+
+me=amix-sysroot-check
+write=0 create=0
+while [ $# -gt 0 ]; do
+	case $1 in
+	-w) write=1; shift ;;
+	-c) create=1; shift ;;
+	--) shift; break ;;
+	-*) echo "usage: $me [-w] [-c] DIR" >&2; exit 2 ;;
+	*) break ;;
+	esac
+done
+[ $# -eq 1 ] || { echo "usage: $me [-w] [-c] DIR" >&2; exit 2; }
+d=$1
+no() { echo "$me: $d: $*" >&2; exit 1; }
+
+if [ -d /usr/amiga ] && [ -f /etc/amiga.ap ]; then
+	no "this is AMIX: build and install natively, there is no sysroot here"
+fi
+
+[ -n "$d" ] || { d='(empty)'; no "AMIX_SYSROOT is empty"; }
+case $d in
+/*) ;;
+*) no "must be an absolute path" ;;
+esac
+
+# the directory as the file system resolves it (links followed)
+if [ -d "$d" ]; then
+	r=`cd "$d" 2>/dev/null && pwd -P` || no "cannot enter it"
+else
+	[ $write = 1 ] && [ $create = 1 ] || no "does not exist"
+	# not there yet: judge the nearest existing parent instead
+	p=$d
+	while [ ! -d "$p" ]; do p=`dirname "$p"`; done
+	r=`cd "$p" && pwd -P`/`basename "$d"`
+	r=`echo "$r" | sed 's|^//*|/|'`
+fi
+
+# the host's own system directories, and everything under the ones that hold
+# headers and libraries; a sysroot never lives there
+case $r in
+/ | /opt | /home | /export | /export/home | /tmp | /var/tmp) no "resolves to $r, a host directory" ;;
+/usr | /usr/* | /etc | /etc/* | /lib | /lib/* | /lib32 | /lib32/* | /lib64 | /lib64/* | \
+/bin | /bin/* | /sbin | /sbin/* | /var | /var/* | /boot | /boot/* | /dev | /dev/* | \
+/proc | /proc/* | /sys | /sys/* | /kernel | /kernel/* | /platform | /platform/* | \
+/system | /system/* | /devices | /devices/*)
+	no "resolves to $r, inside the host's system directories" ;;
+esac
+[ -n "$HOME" ] && [ -d "$HOME" ] && [ "$r" = "`cd "$HOME" && pwd -P`" ] &&
+	no "resolves to the home directory itself"
+
+marker=etc/amix-sysroot.release
+[ $write = 1 ] || exit 0
+
+if [ -f "$d/$marker" ]; then
+	grep '^amix-sysroot=1$' "$d/$marker" >/dev/null 2>&1 || no "$marker is not an AMIX sysroot marker"
+	exit 0
+fi
+[ $create = 1 ] || no "no $marker: not an AMIX sysroot (run the sysroot setup with -c first)"
+if [ -d "$d" ] && [ -n "`ls -A "$d" 2>/dev/null`" ]; then
+	no "not empty and has no $marker: refusing to make it a sysroot"
+fi
+mkdir -p "$d/etc" || no "cannot create it"
+{
+	echo "amix-sysroot=1"
+	echo "kind=${AMIX_SYSROOT_KIND:-local}"
+	echo "created=`date -u '+%Y-%m-%dT%H:%M:%SZ'`"
+} > "$d/$marker" || no "cannot write $marker"
+exit 0

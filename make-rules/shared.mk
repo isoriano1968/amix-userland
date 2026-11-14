@@ -4,7 +4,13 @@ AMIX_CC    ?= $(AMIX_TOOLS)/m68k-elf-gcc
 
 # libraries are found through pkg-config, in the sysroot, at their AMIX paths
 AMIX_SYSROOT ?= $(HOME)/opt/m68k-amix-sysroot
+# an exported but empty AMIX_SYSROOT counts as unset: "?=" keeps an empty
+# value, and sysroot-install would then copy the stage over the host's /
+ifeq ($(strip $(AMIX_SYSROOT)),)
+override AMIX_SYSROOT := $(HOME)/opt/m68k-amix-sysroot
+endif
 PKG_CONFIG    = $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../tools/amix-pkg-config)
+SYSROOT_CHECK = $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../tools/amix-sysroot-check)
 export AMIX_SYSROOT
 
 # out of the source tree, one per component; git ignores them
@@ -30,8 +36,11 @@ clean:
 	rm -rf build $(CLEAN_FILES)
 
 # a component's stage target fills $(STAGE_DIR) with what goes on AMIX
+# (the check refuses an AMIX_SYSROOT that is, or lies inside, the host's
+# system directories, one without the sysroot marker, and running on AMIX)
 sysroot-install: stage
-	cp -R $(STAGE_DIR)/. $(AMIX_SYSROOT)/
+	$(SYSROOT_CHECK) -w "$(AMIX_SYSROOT)"
+	cp -R $(STAGE_DIR)/. "$(AMIX_SYSROOT)"/
 
 .PHONY: clean sysroot-install requires
 
