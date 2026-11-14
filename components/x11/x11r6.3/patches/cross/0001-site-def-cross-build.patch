@@ -1,0 +1,29 @@
+Cross build: MIT-SHM on and host.def included
+
+Applied only by the component Makefile (the cross build), after
+0001-amix-port.patch.  A native build on AMIX does not use it.
+
+--- a/xc/config/cf/site.def	2026-11-14 20:16:19.544344973 +0100
++++ b/xc/config/cf/site.def	2026-11-14 20:16:19.560344943 +0100
+@@ -35,6 +35,12 @@
+ 
+ /* #include <host.def> */
+ 
++/*
++ * Cross build for the 68040/68060 port kernel: MIT-SHM on (amix.cf reads
++ * AmixHasShm; the port kernel's ISSUE-62/66 shm fixes make it safe).
++ */
++#define AmixHasShm YES
++
+ /* On systems where cpp doesn't expand correctly macros in include directives
+  * the two following macros need to be defined directly (where "X11" is
+  * really whatever the TopLevelProject macro is defined to be).
+@@ -124,6 +130,7 @@
+ #define XnestServer YES
+ #endif
+ 
+-/* #include <host.def> */
++/* the cross-build settings (host.def, written by the component Makefile) */
++#include <host.def>
+ 
+ #endif /* AfterVendorCF */

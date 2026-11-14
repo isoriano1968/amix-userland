@@ -44,6 +44,31 @@ The result is `/export/amix/x11r6.3/xc`. Copy or mount that tree as
 The installer downloads all three official source archives, verifies their
 SHA-256 hashes, extracts them into one `xc` tree, and applies the patch.
 
+## Cross build (the libraries the system uses)
+
+On a cross host (Linux, OpenIndiana) one make target builds the client
+libraries as `libX*.so.7`, their headers and `.pc` files and `xauth`, from
+the pinned sources alone:
+
+```sh
+gmake AMIX_SYSROOT=/opt/m68k-amix-sysroot stage
+```
+
+`AMIX_SYSROOT` must be a clean sysroot (developer/amix/sysroot on
+OpenIndiana, or the same tree made from amigaux/amix-system) without an
+`/usr/x11r6` of its own. Inputs: the three X11R6.3 archives
+(`SOURCES.sha256`), `patches/0001-amix-port.patch`, `patches/cross/` (MIT-SHM
+on, `host.def` included), and `x11/cross/host.def` from jusii/amix-z3660rtg at
+the commit in the Makefile. gcc-14 (`AMIX_TOOLS`) compiles and links every
+object, imake writes the Makefiles for gcc-27's tool names (`GCC27_TOOLS`), and
+the host compiler builds imake, makestrs and makekeys. `AMIX_CPU` (default
+`-m68060`) is the CPU option. Every file of the stage is in
+`x11r6.3.manifest`; the stage target checks that.
+
+Built this way on 2026-11-14, nine of the ten libraries are byte-identical to
+the ones in use on the A3000; libXext differs only in its object order
+(XShm.o now comes from the Makefile), with the same symbols.
+
 ## AMIX prerequisites
 
 - AMIX 2.1 / SVR4 on m68k

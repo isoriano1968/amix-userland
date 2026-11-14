@@ -117,3 +117,20 @@ return) comes after this and rebuilds all three with everything else.
   not have under that name: it must use the host compiler's cpp.
 - **-m68060** is hard-coded in build-shared.sh: it becomes the AMIX_CPU
   variable, so the later switch to the 68020-60 default is one setting.
+
+## x11r6.3: done in amix-userland (2026-11-14)
+
+One `gmake AMIX_SYSROOT=... stage` from the pinned inputs, 46 s on the P52,
+against a clean sysroot made from amigaux/amix-system
+(~/opt/m68k-amix-sysroot-base, kind=local). Result: nine of ten libX*.so.7
+byte-identical to the libraries in use, libXext different only in object
+order (same symbols); headers (287) and .pc files identical; xauth built.
+Two manual steps of the old build are now in the build: makestrs as a host
+program (Xt's generated headers), and the .pc files' Requires/extra libraries
+plus stripping (they had been edited by hand). The manifest lists all 331
+files, 320 of them marked devel. amix-requires now reads
+`require X >= VERSION` and `file PATH devel`.
+
+It requires library/amixc99 (x11.pc), which amix-requires built into the
+base sysroot: on OpenIndiana that means a developer/amix/amixc99 package
+before developer/amix/x11r6.3.

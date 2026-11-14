@@ -5,10 +5,14 @@ A manifest is NAME.manifest in the component.  Lines:
   name     area/component     as its place under components/
   version  1.2.3
   summary  one line
-  require  area/component     another component, which must have a manifest
+  require  area/component [>= VERSION]
+                              another component, which must have a manifest
+                              (and at least that version, when one is given)
   provide  PKG                a pkg-config name it installs
-  file     /path              a path on AMIX it installs that others rely on
-                              (checked in its stage by $(manifest_files))
+  file     /path [devel]      a path on AMIX it installs (checked in its stage
+                              by $(manifest_files)); "devel" marks a development
+                              file (headers, .so links, .pc, link stubs), which
+                              an IPS package tags facet.devel
 
 Every require must be a component, all the way down, without a cycle, and what
 it provides must be in the sysroot.  What is missing is built from its component
@@ -21,15 +25,36 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COMPONENTS = os.path.join(ROOT, "components")
 
 
+def vkey(v):
+    """1.10.2 -> (1, 10, 2); letters after a number ("2.2.4a") sort after it"""
+    out = []
+    for part in v.split("."):
+        num = "".join(c for c in part if c.isdigit())
+        out.append((int(num) if num else 0, part[len(num):]))
+    return tuple(out)
+
+
 def read(path):
-    m = {"require": [], "provide": [], "file": []}
+    m = {"require": [], "provide": [], "file": [], "minver": {}}
     for n, line in enumerate(open(path), 1):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         key, _, value = line.partition(" ")
         value = value.strip()
-        if key in ("require", "provide", "file"):
+        if key == "require":
+            w = value.split()
+            if len(w) == 3 and w[1] == ">=":
+                m["minver"][w[0]] = w[2]
+            elif len(w) != 1:
+                sys.exit("%s:%d: require takes a component and an optional >= VERSION: %s" % (path, n, line))
+            m["require"].append(w[0])
+        elif key == "file":
+            w = value.split()
+            if len(w) not in (1, 2) or (len(w) == 2 and w[1] != "devel"):
+                sys.exit("%s:%d: file takes a path and an optional devel: %s" % (path, n, line))
+            m["file"].append(w[0])
+        elif key == "provide":
             m[key].append(value)
         elif key in ("name", "version", "summary"):
             m[key] = value
@@ -64,6 +89,11 @@ def walk(comp, path, order, bad):
         bad.append("%s: no such component, or no manifest (needed by %s)" % (comp, path[-1] if path else "?"))
         return
     for r in m["require"]:
+        want = m["minver"].get(r)
+        if want:
+            rm = manifest(r)
+            if rm is not None and vkey(rm.get("version", "0")) < vkey(want):
+                bad.append("%s needs %s >= %s, the component is %s" % (comp, r, want, rm.get("version")))
         walk(r, path + [comp], order, bad)
     order.append(comp)
     if not path:

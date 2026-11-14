@@ -7,11 +7,20 @@
 # names what it needs, and the sonames are .so.7 so that they can sit beside
 # the gcc 2.7 libraries in /usr/x11r6/lib/r63 until those go.  Programs that
 # use them take what is left to the program from libc's stub (select, __iob).
+#
+# The toolchain, CPU and sysroot come from the environment (the component
+# Makefile sets them; the defaults are the P52's):
+#   AMIX_TOOLS    gcc-14's bin directory     ($HOME/opt/m68k-amix/bin)
+#   AMIX_CPU      the CPU option             (-m68060)
+#   AMIX_SYSROOT  passed as --sysroot, so gcc-14 sees only that sysroot and
+#                 not the one it was configured with (unset: its own)
 set -e
 XC=$1; STAGE=$2
 HERE=$(cd "$(dirname "$0")" && pwd)
 TOOLS=$(cd "$HERE/../../../.." && pwd)/tools
-export PATH=$HOME/opt/m68k-amix/bin:$PATH
+export PATH=${AMIX_TOOLS:-$HOME/opt/m68k-amix/bin}:$PATH
+CPU=${AMIX_CPU:--m68060}
+CC14="m68k-elf-gcc${AMIX_SYSROOT:+ --sysroot=$AMIX_SYSROOT}"
 L=$STAGE/usr/x11r6/lib
 mkdir -p "$L/pkgconfig" "$XC/log"
 PR=$XC/log/print.mk
@@ -30,23 +39,37 @@ lib() {
 	objs=$(make -s -f Makefile -f "$PR" print-objs)
 	[ "$l" = Xext ] && case " $objs " in *" XShm.o "*) ;; *) objs="$objs XShm.o";; esac
 	rm -f $objs
-	make -k CC=m68k-elf-gcc CDEBUGFLAGS="-O2 -m68060 -fPIC" \
+	make -k CC="$CC14" CDEBUGFLAGS="-O2 $CPU -fPIC" \
 		STD_DEFINES="-DAMIX -Dm68k -DSVR4 -D__amix__ -U__linux__ -Ulinux -ansi -w" \
 		SHLIBDEF= SHAREDCODEDEF= PICFLAGS= $objs > "$XC/log/$l.log" 2>&1 || true
 	for o in $objs; do [ -f "$o" ] || { echo "$l: no $o"; exit 1; }; done
 	"$TOOLS/amix-got-check" $objs
 	if [ "$l" = Xdmcp ]; then
-		m68k-elf-gcc -O2 -m68060 -fPIC -c "$HERE/rand48.c" -o rand48.o
+		$CC14 -O2 $CPU -fPIC -c "$HERE/rand48.c" -o rand48.o
 		objs="$objs rand48.o"
 	fi
 	deps=
 	for d in "$@"; do deps="$deps -l$d"; done
-	m68k-elf-gcc -shared -Wl,-h,lib$l.so.7 $objs -L"$L" $deps -o "$L/lib$l.so.7"
+	$CC14 -shared -Wl,-h,lib$l.so.7 $objs -L"$L" $deps -o "$L/lib$l.so.7"
 	"$TOOLS/amix-fix-data-relocs" "$L/lib$l.so.7"
 	"$TOOLS/amix-fix-needed" "$L/lib$l.so.7"
+	m68k-elf-strip "$L/lib$l.so.7"
 	ln -sf "lib$l.so.7" "$L/lib$l.so"
 	echo "$l: $(echo $objs | wc -w) objects, $(wc -c < "$L/lib$l.so.7") bytes"
 	pc=$(echo "$l" | tr 'A-Z' 'a-z')
+	# what a program linking -l$l needs as well: the other X libraries its
+	# headers use, X11's socket libraries on SVR4 (Xlib talks TLI/sockets)
+	# and libamixc99, Xt's libXtInherit.a (xtinherit.c says why)
+	pre= post= req=
+	case $l in
+	X11)	req=amixc99; post=" -lsocket -lnsl" ;;
+	ICE|Xext) req=x11 ;;
+	SM)	req="ice x11" ;;
+	Xi)	req="xext x11" ;;
+	Xt)	req="sm ice x11"; pre=" -lXtInherit" ;;
+	Xmu)	req="xt xext x11" ;;
+	Xaw)	req="xmu xt xext x11" ;;
+	esac
 	cat > "$L/pkgconfig/$pc.pc" <<P
 prefix=/usr/x11r6
 libdir=\${prefix}/lib
@@ -55,7 +78,8 @@ includedir=\${prefix}/include
 Name: $l
 Description: X11R6.3 lib$l
 Version: 6.3
-Libs: -L\${libdir} -l$l
+${req:+Requires: $req
+}Libs: -L\${libdir}$pre -l$l$post
 Cflags: -I\${includedir}
 P
 }
@@ -72,7 +96,7 @@ lib Xmu Xt Xext X11
 lib Xaw Xmu Xt Xext X11
 
 # a program's own _XtInherit: xtinherit.c says why
-m68k-elf-gcc -O2 -m68060 -I"$XC/exports/include" -D__amix__ -DSVR4 -w -c "$HERE/xtinherit.c" -o "$L/xtinherit.o"
+$CC14 -O2 $CPU -I"$XC/exports/include" -D__amix__ -DSVR4 -w -c "$HERE/xtinherit.c" -o "$L/xtinherit.o"
 rm -f "$L/libXtInherit.a"
 m68k-elf-ar rcs "$L/libXtInherit.a" "$L/xtinherit.o"
 rm -f "$L/xtinherit.o"
@@ -81,7 +105,7 @@ rm -f "$L/xtinherit.o"
 # (X11R5, /usr/X/bin) turns the hex letters of a cookie into digits, which
 # breaks ssh -X (network/openssh's sshrc and XAuthLocation use this one)
 mkdir -p "$STAGE/usr/x11r6/bin"
-m68k-elf-gcc -O2 -m68060 -w -Wno-error=implicit-function-declaration -Wno-error=int-conversion \
+$CC14 -O2 $CPU -w -Wno-error=implicit-function-declaration -Wno-error=int-conversion \
 	-Wno-error=incompatible-pointer-types -Wno-error=implicit-int -D__amix__ -DSVR4 \
 	-DTCPCONN -DUNIXCONN -DFUNCPROTO=15 -DNARROWPROTO -I"$XC" -I"$XC/exports/include" \
 	"$XC"/programs/xauth/xauth.c "$XC"/programs/xauth/gethost.c "$XC"/programs/xauth/process.c \
