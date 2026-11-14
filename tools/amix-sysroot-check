@@ -80,6 +80,12 @@ marker=etc/amix-sysroot.release
 
 if [ -f "$d/$marker" ]; then
 	grep '^amix-sysroot=1$' "$d/$marker" >/dev/null 2>&1 || no "$marker is not an AMIX sysroot marker"
+	# a sysroot a package manager installed (developer/amix/sysroot on
+	# OpenIndiana) takes files only through packages: files copied in by
+	# hand belong to no package, pkg verify cannot see them, and an update
+	# collides with them
+	grep '^kind=package$' "$d/$marker" >/dev/null 2>&1 &&
+		no "installed by a package (`grep '^package=' "$d/$marker" | cut -d= -f2`): add files through packages, not by copying"
 	exit 0
 fi
 [ $create = 1 ] || no "no $marker: not an AMIX sysroot (run the sysroot setup with -c first)"
