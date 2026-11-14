@@ -111,9 +111,14 @@ function cfg(which) {
     extraCFlags,
     kernelDefines: c.get('kernelDefines') || [],
     fixNeeded: toolchain === 'gcc14' && c.get('gcc14.fixNeeded') !== false,
-    makeCommand: c.get('makeCommand') || 'make',
+    makeCommand: c.get('makeCommand') || defaultMake(),
     makeArgs: c.get('makeArgs') || []
   };
+}
+
+// the AMIX Makefiles are GNU make; on illumos/Solaris "make" is Sun make
+function defaultMake() {
+  return process.platform === 'sunos' ? 'gmake' : 'make';
 }
 
 function selectedToolchain() {

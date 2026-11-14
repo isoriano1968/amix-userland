@@ -69,7 +69,7 @@ From this component directory (`components/developer/vscode` in
 amix-userland):
 
 ```sh
-make install      # make build only packages build/vscode-amix-0.3.2.vsix
+make install      # make build only packages build/vscode-amix-0.3.3.vsix
 ```
 
 `make build` runs `npx @vscode/vsce package` with the component's GitHub
@@ -142,6 +142,10 @@ AMIX: Run Make in AMIX Project
 The extension searches from the active file directory upward until it finds a
 `Makefile`. It then runs `make` in that directory with the cross-toolchain in
 `PATH` and the variables listed below set.
+
+The AMIX Makefiles are GNU make. On illumos and Solaris, where `make` is Sun
+make ("badly formed macro assignment"), the extension runs `gmake` instead;
+`amix.makeCommand` overrides the choice on any system.
 
 The generated `tasks.json` has build, object, nm, make and make clean tasks for
 both toolchains, labelled `(gcc 2.7.2.3)` and `(gcc 14)`; the selected

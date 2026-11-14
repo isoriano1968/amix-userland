@@ -13,7 +13,8 @@ make                    # gcc 14 (m68k-elf-gcc, -m68060)
 make TOOLCHAIN=gcc272   # gcc 2.7.2.3 (m68k-cbm-sysv4-gcc, -m68020)
 ```
 
-The toolchain's `bin` directory must be on `PATH`. From VS Code, run
+The Makefile needs GNU make: on OpenIndiana or Solaris type `gmake`. The
+toolchain's `bin` directory must be on `PATH`. From VS Code, run
 **AMIX: Run Make in AMIX Project**: it sets `PATH`, `AMIX_TOOLCHAIN` and the
 sysroots for the toolchain shown in the status bar.
 
