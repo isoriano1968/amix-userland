@@ -2,8 +2,9 @@
   "name": "vscode-amix",
   "displayName": "AMIX Development Tools",
   "description": "VS Code helpers for building AMIX m68k programs with gcc 2.7.2.3 (m68k-cbm-sysv4) or gcc 14 (gcc14-cross-amix).",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "isoriano1968",
+  "license": "MIT",
   "icon": "images/amix-logo.png",
   "repository": {
     "type": "git",
@@ -84,6 +85,10 @@
       {
         "command": "amix.newCdeHelloProject",
         "title": "AMIX: New CDE Hello World Project"
+      },
+      {
+        "command": "amix.fixNeededScript",
+        "title": "AMIX: Path of amix-fix-needed (for tasks)"
       }
     ],
     "configuration": {

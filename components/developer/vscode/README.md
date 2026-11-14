@@ -69,7 +69,7 @@ From this component directory (`components/developer/vscode` in
 amix-userland):
 
 ```sh
-make install      # make build only packages build/vscode-amix-0.3.1.vsix
+make install      # make build only packages build/vscode-amix-0.3.2.vsix
 ```
 
 `make build` runs `npx @vscode/vsce package` with the component's GitHub
