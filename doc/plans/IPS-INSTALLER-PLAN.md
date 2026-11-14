@@ -9,7 +9,8 @@ into `/` with GNU tar. What that cannot do:
 
 - no record of which package owns which file: no uninstall, no verify;
 - no conflict check: a package silently overwrites a stock AMIX file, an
-  apkg/SVR4 package's file, or another of ours (only `etc/` is protected);
+  apkg/SVR4 package's file, or another amix-userland package's file (only
+  `etc/` is protected);
 - files are replaced in place, not as `.new` + checksum + `mv`: an
   interrupted unpack leaves half-written libraries;
 - versions and dependencies are not checked at install time (`amix-requires`
@@ -39,8 +40,8 @@ https), curl (http/https to a depot).
 
 1. **Ownership database** `/var/pkg`: per installed package its manifest;
    a path index of every file, link and directory and who owns it.
-2. **Conflict check before anything is written**, against: our packages,
-   the SVR4 database `/var/sadm/install/contents` (stock AMIX packages and
+2. **Conflict check before anything is written**, against: the packages it
+   installed, the SVR4 database `/var/sadm/install/contents` (stock AMIX packages and
    everything apkg installed), and files present on disk that nobody owns.
    Any of these: refuse, name the path and the owner. No `--force` that
    silently overwrites; an explicit, logged `--take-over PATH` at most.
@@ -87,10 +88,10 @@ feeds both.
 
 ## Living next to apkg
 
-apkg (Jussi, heirloom pkgtools, SVR4 database) stays usable. Our client
+apkg (Jussi, heirloom pkgtools, SVR4 database) stays usable. My client
 reads the SVR4 database and never overwrites its files. The other direction
-needs agreement with Jussi: apkg must not overwrite our files either, e.g.
-our client registers its paths in `/var/sadm/install/contents` under one
+needs agreement with Jussi: apkg must not overwrite the client's files
+either, e.g. the client registers its paths in `/var/sadm/install/contents` under one
 pseudo package, or apkg reads `/var/pkg`. To be discussed before step 4.
 
 ## Order
@@ -103,9 +104,9 @@ pseudo package, or apkg reads `/var/pkg`. To be discussed before step 4.
 3. Write side: install/uninstall/update with conflict check, `.new` +
    sha256 + rename, journal; crash tests by killing it mid-install on the
    image copy.
-4. Talk to Jussi about the SVR4 side; bootstrap datastream.
-5. On the box (through amix-box, user present): install the client, then
-   migrate our installed packages: compare every file against the manifests
+4. I agree the SVR4 side with Jussi; bootstrap datastream.
+5. On the A3000, one step at a time: install the client, then migrate the
+   amix-userland packages already installed: compare every file against the manifests
    (`pkg verify` on a dry run) before the DB takes them over.
 6. Retire `amix-install` tar installs.
 7. GUI: amixsoftware gets an IPS backend next to apkg.
