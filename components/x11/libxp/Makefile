@@ -58,7 +58,7 @@ build: $(DISTFILES)/$(XC_ARCHIVE)
 	m68k-elf-ar rcs $(BUILD_DIR)/libXp.a $(BUILD_DIR)/*.o
 	$(mkshlibs)
 
-stage:
+stage: build
 	rm -rf $(STAGE_DIR)
 	mkdir -p $(STAGE_DIR)$(PREFIX)/lib/pkgconfig
 	sed 's|@VERSION@|$(COMPONENT_VERSION)|' xp.pc.in > $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/xp.pc
