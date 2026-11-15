@@ -160,10 +160,12 @@ def publish(repo, p5m, dirs, ts):
 
 
 def signed(obj):
-    """pkg5's catalog files: compact, sorted keys, then _SIGNATURE (sha1 of the rest)."""
-    body = json.dumps(obj, sort_keys=True, separators=(",", ":"))
+    """pkg5's catalog files (pkg/catalog.py _JSONWriter): compact JSON with
+    sorted keys and a newline; the SHA-1 of exactly that text is then put in
+    before the closing brace as "_SIGNATURE"."""
+    body = json.dumps(obj, sort_keys=True, separators=(",", ":")) + "\n"
     sig = sha1(body.encode())
-    return body[:-1] + ',"_SIGNATURE":{"sha-1":"%s"}}' % sig, sig
+    return body[:-2] + ',"_SIGNATURE":{"sha-1":"%s"}}\n' % sig, sig
 
 
 def rebuild_catalog(repo, now):

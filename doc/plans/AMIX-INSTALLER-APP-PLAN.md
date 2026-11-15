@@ -182,8 +182,18 @@ fetches and installs the packages.
   (RDB copied from the core disk, one UNIX_Data partition, sparse; AMIX
   makes the file system), the FS-UAE configuration and a README with the
   SCSI IDs. The 4 GB data disk is gone until AMIX is tested above 2 GB.
-- **0.4:** the network install (below), into FS-UAE and into an Amiga with
-  an A2065 alike; needs the IPS client (IPS-INSTALLER-PLAN.md steps 1-4).
+- **0.4 (built, not yet run on AMIX):** the network install (below), into
+  FS-UAE and into an Amiga with an A2065 alike, on the IPS client
+  (amix-pkg 0.2). `netinstall.py`: TFTP and HTTP servers, the bootstrap
+  datastream (`svr4.py`, checked with OI's pkginfo, pkgtrans and pkgchk;
+  AMIX's cpio knows 070701), the `go` and step scripts (Bourne shell,
+  `sh -n` checked); the network install page. `tools/amix-publish`
+  publishes on Linux (repositories pass OI's pkgrepo verify and pkg);
+  `make repo` publishes every component with a built stage (71 on
+  2026-11-15). FS-UAE check and the "AMIX Installer" configuration.
+  Open: the first run in FS-UAE; 11 components whose manifests no longer
+  match their stage (ncurses among them) are left out of the repository;
+  kernels and drivers are not packaged yet (amix-gate).
 - Tape image + root floppy source last: the stock installation from the
   user's tape in FS-UAE (the "AMIGA3000 UNIX" configuration already has the
   tape as a SCSI tape), then the same network install.
@@ -205,18 +215,26 @@ kernel). So there is one install path, a running AMIX with an A2065:
   network install fills it, and the user copies the files to the card.
 
 How it starts, without a password on the network: the user logs in as
-root at the Amiga's console (or FS-UAE's window) and types one command
-the installer shows, an `ftp` get of the bootstrap datastream from the PC
-followed by `pkgadd -d` (stock tools only). The installer serves that file
-from a small read-only anonymous FTP server of its own, only while the
-install runs (in FS-UAE the PC is 10.0.2.2). The bootstrap installs the
-package client (and its network libraries); from then on `pkg` fetches
-the packages over HTTP from the installer's repository: `mkfs -F ufs` for
+root at the Amiga's console (or FS-UAE's window) and types the lines the
+installer shows: `tftp HOST 1069`, `binary`, `get go`, `quit`, `sh go`
+(in FS-UAE the PC is 10.0.2.2). TFTP, not FTP as first planned: FS-UAE's
+slirp NAT passes UDP replies that come from the listening port, but an
+active FTP data connection only on port 21, which a user cannot open; and
+TFTP to the PC has worked from AMIX before. The installer's TFTP server
+(read-only, one socket, only while the install runs) gives `go`; `go`
+fetches the bootstrap datastream the same way and installs it with stock
+`pkgadd -n -a admin` into /opt/amixboot (pkg, curl and their libraries,
+taken from the repository), then fetches the step script over HTTP with
+that curl. The steps install the real package client through IPS
+(sysutils/amix-pkg), then fetch the packages over HTTP from the
+installer's repository: `mkfs -F ufs` for
 the data disk, the moves of /usr/local, /usr/gnu and /opt with `cpio -p`
 and a check before the links replace them, the packages, and the chosen
 kernel last (the stock kernel stays as a fallback boot entry, so FS-UAE,
-an 030, keeps booting until the end). A command on AMIX reports progress
-back to the installer, which shows it in its log.
+an 030, keeps booting until the end). Each step reports to the
+installer (`curl -T - http://HOST:8069/report/msg`), which shows it on its
+page; at the end `pkgrm` removes the bootstrap again, so nothing on the
+system belongs to two package systems.
 
 ## Packaging
 

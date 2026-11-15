@@ -365,6 +365,34 @@ NO_PKG = "AMIX does this with its package client (0.4)"
 NO_NET = "the network install comes in version 0.4"
 
 
+def default_repo():
+    """The package repository: $AMIX_REPO, else what "make repo" publishes
+    into the installer's build folder, else ~/.local/share/amix-installer/repo."""
+    env = os.environ.get("AMIX_REPO")
+    if env:
+        return env
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for d in (os.path.join(here, "build", "repo"),
+              os.path.expanduser("~/.local/share/amix-installer/repo")):
+        if os.path.isfile(os.path.join(d, "pkg5.repository")):
+            return d
+    return None
+
+
+class NetInstall(Action):
+    """AMIX installs itself over its A2065: on the network install page,
+    after the disks (or at once, for a running system)."""
+
+    def __init__(self, detail, repo, missing=None):
+        super(NetInstall, self).__init__(
+            "install", "Install over the network", detail, 1, [], missing)
+        self.repo = repo
+
+    def run(self, ctx):
+        ctx.log("the network install continues on the next page")
+        ctx.progress(1.0, "")
+
+
 # SCSI IDs, the same in FS-UAE and on a ZuluSCSI/BlueSCSI: the stock kernel
 # roots on ID 6; pvmk's boot disk 5; the data disk 1 (the host adapter is 7)
 SCSI_ID = {"core": 6, "pvmk": 5, "data": 1}
@@ -508,9 +536,12 @@ def make_plan(cfg, paths, fs=None):
     out = paths.get("out_dir")
     stem = os.path.splitext(os.path.basename(src))[0] if src else "amix"
 
+    repo = paths.get("repo") or default_repo()
+    no_repo = None if repo else ("no package repository: run \u201cmake repo\u201d in "
+                                 "components/desktop/amix-installer, or choose one")
     if sel["src"] == "run":
-        pl.problems.append("installing over the network into a running system comes in "
-                           "version 0.4")
+        pl.actions.append(NetInstall("the running system fetches the bootstrap with tftp; "
+                                     "its own pkgadd and pkg install the rest", repo, no_repo))
         return pl
     if sel["src"] == "tape":
         pl.problems.append("installing from a tape image comes later (in FS-UAE, from your "
@@ -585,11 +616,10 @@ def make_plan(cfg, paths, fs=None):
         inside.append("installs the %s kernel last, the stock kernel kept as a fallback"
                       % model.find_group("kern").option(sel["kern"]).title)
     if inside:
-        pl.actions.append(Later("install", "Install in FS-UAE over its A2065",
-                                "you start FS-UAE and type one command; AMIX then "
-                                + "; ".join(inside),
-                                NO_NET if fs.installed else
-                                "FS-UAE is not installed here (%s)" % fsuae.install_hint()))
+        why = no_repo if fs.installed else \
+            "FS-UAE is not installed here (%s)" % fsuae.install_hint()
+        pl.actions.append(NetInstall("next page: you start FS-UAE and type the commands shown; "
+                                     "AMIX then " + "; ".join(inside), repo, why))
     if sel["target"] == "sd":
         pl.actions.append(FragCheck([n for a in pl.runnable() for n in a.outputs
                                      if n.endswith(".hdf")]))

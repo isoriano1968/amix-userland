@@ -59,8 +59,24 @@ class MakePlan(Base):
     def test_problems(self):
         pl = plan.make_plan(self.cfg(), {"core_hdf": self.src})
         self.assertTrue(any("folder" in p for p in pl.problems))
-        pl = plan.make_plan(model.Config(sel={"src": "run"}), {})
-        self.assertTrue(pl.problems)
+        # a running system: only the network install, no disks
+        pl = plan.make_plan(model.Config(sel={"src": "run", "mach": "a2500", "accel": "gvp"}),
+                            {"repo": self.d})
+        self.assertEqual([a.id for a in pl.actions], ["install"])
+        self.assertTrue(pl.actions[0].available)
+        self.assertEqual(pl.problems, [])
+        old = os.environ.get("AMIX_REPO")
+        os.environ["AMIX_REPO"] = ""
+        try:
+            nr = plan.make_plan(model.Config(sel={"src": "run", "mach": "a2500", "accel": "gvp"}),
+                                {}, fsuae.FsUae())
+            if plan.default_repo() is None:
+                self.assertIn("make repo", nr.actions[0].missing)
+        finally:
+            if old is None:
+                del os.environ["AMIX_REPO"]
+            else:
+                os.environ["AMIX_REPO"] = old
         c = self.cfg()
         c.source = None
         self.assertTrue(any("not been read" in p for p in plan.make_plan(c, self.paths()).problems))

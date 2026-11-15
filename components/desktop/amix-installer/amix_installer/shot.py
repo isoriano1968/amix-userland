@@ -64,6 +64,10 @@ def run(win, outdir):
     os.makedirs(outdir, exist_ok=True)
     # with a source image only the scenes that show it
     scenes = list(SOURCE_SCENES if getattr(win, "source_state", None) else SCENES)
+    if os.environ.get("AMIX_SHOT_NET"):
+        from . import plan
+        if plan.default_repo():
+            scenes = [("n-net", {"src": "run"}, {}, 0)]
     out = os.environ.get("AMIX_SHOT_OUT")
     if out and getattr(win, "source_state", None):
         win.paths["out_dir"] = out
@@ -92,8 +96,18 @@ def run(win, outdir):
             from . import plan
             win._run_plan(plan.make_plan(win.cfg, win.paths))
             GLib.timeout_add(500, wait_run)
+        elif name.endswith("-net"):
+            # the network install page for a running system (servers start, then stop)
+            from . import plan
+            win._net_page(plan.NetInstall("", plan.default_repo()), real=True)
+            GLib.timeout_add(300, lambda: after_paint(net_grab) and False)
         else:
             after_paint(grab)
+        return False
+
+    def net_grab():
+        grab()
+        win._net_stop()
         return False
 
     def after_paint(then):

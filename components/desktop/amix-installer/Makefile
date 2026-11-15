@@ -9,7 +9,7 @@
 #                     never opens a window on a real display
 #   make run          start it from the source tree (on your own display)
 COMPONENT_NAME    = amix-installer
-COMPONENT_VERSION = 0.3.0
+COMPONENT_VERSION = 0.4.0
 
 include ../../../make-rules/shared.mk
 
@@ -52,4 +52,11 @@ screenshots: build
 run: build
 	./amix-installer
 
-.PHONY: build test host-stage install screenshots run
+# the package repository the network install serves (tools/mkrepo.sh):
+# every component with a built stage, as IPS packages
+REPO ?= $(BUILD_DIR)/repo
+STOCK_CONTENTS ?=
+repo:
+	sh tools/mkrepo.sh $(REPO) $(STOCK_CONTENTS)
+
+.PHONY: build test host-stage install screenshots run repo

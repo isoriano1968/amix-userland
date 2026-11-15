@@ -4,6 +4,7 @@ Targets libadwaita >= 1.4 and GTK >= 4.12 (OpenIndiana 2025: 1.6 / 4.16).
 """
 import math
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -189,7 +190,15 @@ class Window(Adw.ApplicationWindow):
         self.add_breakpoint(bp)
 
         self._actions()
+        self.net = None
+        self.connect("close-request", self._on_close)
         self.show_step(0)
+
+    def _on_close(self, _w):
+        if self.net is not None:          # the network install's servers end with the window
+            self.net.stop()
+            self.net = None
+        return False
 
     # -- frame -------------------------------------------------------------
     def _build_sidebar(self):
@@ -409,6 +418,11 @@ class Window(Adw.ApplicationWindow):
 
             def upd():
                 p = self.paths.get(key)
+                if not p and key == "repo":
+                    d = plan.default_repo()
+                    row.set_subtitle(d if d else "None yet: \u201cmake repo\u201d in "
+                                     "components/desktop/amix-installer publishes one")
+                    return
                 if not p and key == "kickstart" and plan.fs_uae().a3000_kickstarts():
                     row.set_subtitle("From FS-UAE\u2019s Kickstarts: %s" % os.path.basename(
                         plan.fs_uae().a3000_kickstarts()[0]))
@@ -422,9 +436,10 @@ class Window(Adw.ApplicationWindow):
         flop = file_row("floppy", "Root floppy", ["*.adf", "*.img", "*.ADF"])
         outd = file_row("out_dir", "Folder for the new HDF files", [], folder=True)
         kick = file_row("kickstart", "A3000 Kickstart ROM for FS-UAE", ["*.rom", "*.ROM"])
+        repo = file_row("repo", "Package repository", [], folder=True)
         host = Adw.EntryRow(title="Address of the AMIX system")
         host.connect("changed", lambda e: self.paths.__setitem__("host", e.get_text().strip()))
-        for r in (hdf, tape, flop, host, outd, kick):
+        for r in (hdf, tape, flop, host, outd, kick, repo):
             pg.add(r)
 
         def vis():
@@ -837,6 +852,13 @@ class Window(Adw.ApplicationWindow):
         if pl.problems:
             self._alert("Not ready to write", "\n".join("\u2022 " + p for p in pl.problems))
             return
+        if self.cfg.in_place():
+            net = [a for a in pl.actions if a.id == "install"][0]
+            if net.missing:
+                self._alert("Not ready", net.missing)
+            else:
+                self._net_page(net, real=True)
+            return
         out = self.paths["out_dir"]
         left = plan.leftover(out)
         if left:
@@ -965,11 +987,120 @@ class Window(Adw.ApplicationWindow):
             show.connect("clicked", lambda b: Gtk.FileLauncher.new(
                 Gio.File.new_for_path(out)).launch(self, None, None))
             self.run_btns.append(show)
+            net = [a for a in pl.actions if a.id == "install" and a.available]
+            if net:
+                go = Gtk.Button(label="Install over the Network")
+                go.add_css_class("suggested-action")
+                go.connect("clicked", lambda b: self._net_page(net[0], real=False, pl=pl))
+                self.run_btns.append(go)
         back = Gtk.Button(label="Back to Summary")
-        back.add_css_class("suggested-action")
+        if err or not [a for a in pl.actions if a.id == "install" and a.available]:
+            back.add_css_class("suggested-action")
         back.connect("clicked", lambda b: (self._busy(False), self.show_step(self.step)))
         self.run_btns.append(back)
         return False
+
+    # -- the network install ---------------------------------------------------
+    def _net_page(self, net, real, pl=None):
+        """Serve the bootstrap and the repository; show what to type; log AMIX."""
+        from . import netinstall
+        data_disk = None
+        if pl is not None and not real:
+            dd = [a for a in pl.actions if a.id == "data-disk"]
+            if dd:
+                f = os.path.join(pl.paths["out_dir"], dd[0].name)
+                try:
+                    with hdf.Image(f) as im:
+                        blocks = im.read_rdb()[0].blocks
+                    # FS-UAE: the data disk is SCSI ID 1, its first partition slice 1
+                    data_disk = ("/dev/rdsk/c%dd0s1" % plan.SCSI_ID["data"], blocks)
+                except (OSError, hdf.NotAnImage) as e:
+                    self._alert("The data disk cannot be read", str(e))
+                    return
+        host = netinstall.lan_address() if real else netinstall.FS_UAE_HOST
+        try:
+            self.net = netinstall.Session(self.cfg, net.repo, host=host, data_disk=data_disk,
+                                          log=lambda t: GLib.idle_add(self._run_logline, t))
+            self.net.start()
+        except OSError as e:
+            self._alert("The servers cannot start", "%s (UDP %d, TCP %d)" % (
+                e.strerror or e, netinstall.TFTP_PORT, netinstall.HTTP_PORT))
+            self.net = None
+            return
+        self._busy(True)
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+        for m in ("top", "bottom", "start", "end"):
+            getattr(page, "set_margin_" + m)(28 if m in ("top", "bottom") else 16)
+        page.append(label("Install over the network", ("title-1",)))
+        page.append(label(("On the Amiga" if real else "In FS-UAE (\u201c%s\u201d)"
+                           % fsuae.CONFIG_NAME) +
+                          ", log in as root at the console and type these lines. AMIX "
+                          "fetches a small bootstrap from this computer and installs "
+                          "everything with its own tools; its progress shows below.",
+                          ("dim-label",)))
+        cmd = Gtk.Label(label="\n".join(self.net.commands()), xalign=0, selectable=True)
+        cmd.add_css_class("monospace")
+        cmd.add_css_class("card")
+        cmd.add_css_class("amix-card-pad")
+        page.append(cmd)
+        info = Adw.PreferencesGroup()
+        info.add(Adw.ActionRow(title="Serving", subtitle="TFTP on UDP %d, HTTP on TCP %d, as %s"
+                               % (self.net.tftp.port, self.net.http_port, host)))
+        info.add(Adw.ActionRow(title="Package repository", subtitle=net.repo))
+        if data_disk:
+            info.add(Adw.ActionRow(title="Data disk",
+                                   subtitle="%s, %d sectors: AMIX makes its file system"
+                                   % data_disk))
+        if real:
+            info.add(Adw.ActionRow(title="The Amiga\u2019s network",
+                                   subtitle="Its A2065 must be up and reach %s (ping %s)"
+                                   % (host, host)))
+        page.append(info)
+        self.run_title = label("Waiting for AMIX\u2026", ("heading",))
+        page.append(self.run_title)
+        self.run_log = Gtk.TextView(editable=False, monospace=True, cursor_visible=False)
+        self.run_log.set_wrap_mode(Gtk.WrapMode.CHAR)
+        sw = Gtk.ScrolledWindow(min_content_height=200, vexpand=True)
+        sw.add_css_class("card")
+        sw.set_child(self.run_log)
+        page.append(sw)
+        btns = Gtk.Box(spacing=10, halign=Gtk.Align.END)
+        fs = plan.fs_uae()
+        cfgf = fs.config_path() if fs.has_config() else None
+        if pl is not None and not real:
+            own = os.path.join(pl.paths["out_dir"], plan.FSUAE_CONFIG)
+            cfgf = own if os.path.exists(own) else cfgf
+        if not real and fs.installed and cfgf:
+            start = Gtk.Button(label="Start FS-UAE")
+            start.connect("clicked", lambda b: subprocess.Popen(
+                [fs.binary, cfgf], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+            btns.append(start)
+        stop = Gtk.Button(label="Stop and Go Back")
+        stop.connect("clicked", lambda b: self._net_stop())
+        btns.append(stop)
+        page.append(btns)
+        self.clamp.set_child(page)
+        self.wtitle.set_title("Network install")
+        GLib.timeout_add(500, self._net_poll)
+
+    def _net_poll(self):
+        n = getattr(self, "net", None)
+        if n is None:
+            return False
+        if n.done:
+            self.run_title.set_text("Done: AMIX is installed")
+        elif n.failed:
+            self.run_title.set_text("Stopped on AMIX: see the log")
+        elif n.messages:
+            self.run_title.set_text(n.messages[-1][2])
+        return True
+
+    def _net_stop(self):
+        if getattr(self, "net", None):
+            self.net.stop()
+            self.net = None
+        self._busy(False)
+        self.show_step(self.step)
 
     def _about(self):
         a = Adw.AboutDialog(application_name="AMIX Installer", application_icon=APP_ID,
