@@ -10,7 +10,9 @@ amix-userland and amix-gate that fit the machine.
 
 It runs on the host, not on AMIX: OpenIndiana first, Linux too.
 
-**Version 0.2 writes nothing.** All eight steps work (Base system, Machine,
+**Version 0.3 writes the core copy and the pvmk boot disk** (HDF files,
+or a folder on the Z3660 SD card); the data disk, kernel and packages are
+in its plan and follow. All eight steps work (Base system, Machine,
 Disks, Kernel, Drivers, Desktop, Development, Summary), options a machine
 cannot use are greyed out, and the choices can be saved and loaded as a
 profile. A chosen core HDF is read, read-only: partitions, root file
@@ -34,6 +36,11 @@ and pycairo to make the icons.
     make screenshots    # every step, light and dark, under Xvfb, to build/shots
                         # (AMIX_SHOT_SOURCE=core.hdf: also with that image read)
     ./amix-installer --source core.hdf   # start with a core HDF read
+    ./amix-installer --source core.hdf --out DIR --plan    # print the plan
+    ./amix-installer --source core.hdf --out DIR --apply   # write what this version can
+
+pvmk's build is found in `~/Sources/usr-amix/pvmk/build` or `$AMIX_PVMK_DIR`
+(bootblock.bin, pvmk.bin, host/mkadf, host/mkhdf).
     make install DESTDIR=/tmp/root HOST_PREFIX=/usr
 
 ## Layout
@@ -44,6 +51,8 @@ and pycairo to make the icons.
       profile.py            profiles (JSON, choices only: no paths or hosts)
       safety.py             checks before anything is written
       hdf.py                reads an HDF (RDB, UFS, packages), read-only
+      plan.py               the plan, and running it (.part, read back, rename)
+      cli.py                --plan and --apply without a window
       app.py                the window
       shot.py               headless screenshots
     data/                   stylesheet, desktop entry

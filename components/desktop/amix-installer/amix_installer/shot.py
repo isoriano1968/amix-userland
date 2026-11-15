@@ -30,6 +30,12 @@ SOURCE_SCENES = [
     ("s-desktop", {}, {}, model.step_index("desktop")),
     ("s-summary", {}, {}, model.step_index("summary")),
 ]
+# with --source and AMIX_SHOT_OUT=DIR: the plan for HDF files, and a real run into DIR
+RUN_SCENES = [
+    ("r-summary", {"target": "file"}, {}, model.step_index("summary")),
+    ("r-summary-end", {"target": "file"}, {}, model.step_index("summary")),
+    ("r-done-run", {"target": "file"}, {}, model.step_index("summary")),
+]
 
 
 def save_png(widget, path):
@@ -58,6 +64,10 @@ def run(win, outdir):
     os.makedirs(outdir, exist_ok=True)
     # with a source image only the scenes that show it
     scenes = list(SOURCE_SCENES if getattr(win, "source_state", None) else SCENES)
+    out = os.environ.get("AMIX_SHOT_OUT")
+    if out and getattr(win, "source_state", None):
+        win.paths["out_dir"] = out
+        scenes += RUN_SCENES
     dark = os.environ.get("AMIX_SHOT_DARK") == "1"
     if dark:
         from gi.repository import Adw
@@ -77,15 +87,40 @@ def run(win, outdir):
         win.cfg = m.Config(sel=sel, on=on, source=source)
         win.show_step(step)
         if name.endswith("-end"):
-            GLib.timeout_add(400, to_end)
+            after_paint(to_end)
+        elif name.endswith("-run"):
+            from . import plan
+            win._run_plan(plan.make_plan(win.cfg, win.paths))
+            GLib.timeout_add(500, wait_run)
         else:
-            GLib.timeout_add(400, grab)
+            after_paint(grab)
+        return False
+
+    def after_paint(then):
+        """Call then() once the window has painted the new page (a fixed
+        delay is not enough: a big page can take longer to lay out)."""
+        clock = win.get_frame_clock()
+        state = {"id": None, "done": False}
+
+        def painted(*_a):
+            if state["done"]:
+                return
+            state["done"] = True
+            clock.disconnect(state["id"])
+            GLib.timeout_add(150, then)
+        state["id"] = clock.connect("after-paint", painted)
+        win.queue_draw()
+
+    def wait_run():
+        if win.run_title.get_text() not in ("Done", "Stopped"):
+            return True
+        after_paint(grab)
         return False
 
     def to_end():
         adj = win.scroller.get_vadjustment()
         adj.set_value(adj.get_upper() - adj.get_page_size())
-        GLib.timeout_add(300, grab)
+        after_paint(grab)
         return False
 
     def grab():

@@ -6,13 +6,14 @@ import math
 import os
 import sys
 import threading
+import time
 
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import APP_ID, __version__, hdf, model, profile  # noqa: E402
+from . import APP_ID, __version__, hdf, model, plan, profile, safety  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -389,8 +390,8 @@ class Window(Adw.ApplicationWindow):
         col.set_hexpand(True)
         col.append(label("A running system is changed in place", ("heading",)))
         col.append(label("The installer reads what is installed first and offers only changes; "
-                         "nothing is removed unless you switch it off. Reading a system over the "
-                         "network comes in a later version of the installer."))
+                         "nothing is removed unless you switch it off. Working over the network "
+                         "comes in version 0.4 of the installer."))
         box.append(col)
         self._extra.append(lambda: box.set_visible(self.cfg.in_place()))
         return box
@@ -431,8 +432,10 @@ class Window(Adw.ApplicationWindow):
             tape.set_visible(src == "tape")
             flop.set_visible(src == "tape")
             host.set_visible(src == "run")
-            outd.set_visible(tgt == "file")
-            dev.set_visible(tgt in ("sd", "scsi"))
+            outd.set_visible(tgt in ("file", "sd"))
+            outd.set_title("The hdf folder on the Z3660 SD card" if tgt == "sd" else
+                           "Folder for the new HDF files")
+            dev.set_visible(tgt == "scsi")
         self._extra.append(vis)
         return pg
 
@@ -598,23 +601,31 @@ class Window(Adw.ApplicationWindow):
 
         nxt = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         nxt.add_css_class("amix-next")
-        nxt.append(label("What happens next", ("heading",)))
-        if self.cfg.in_place():
-            steps = ["The running system is read first; only the differences are installed or removed.",
-                     "Free space is checked before anything is installed: at least %d MB stay free "
-                     "on the root disk." % model.ROOT_RESERVE_MB,
-                     "Every package comes from the AMIX package repository, each file written next "
-                     "to its target, checked by its checksum and then renamed."]
-        else:
-            steps = ["Your core image is copied; the original is never written.",
-                     "Free space is checked before anything is installed; with a data disk, "
-                     "/usr/local, /usr/gnu and /opt go there.",
-                     "The chosen kernel and drivers are installed and set as the default boot "
-                     "entry, with the stock kernel kept as fallback.",
-                     "Desktop, applications and development packages come from the AMIX package "
-                     "repository, each checked by its checksum."]
-        for n, t in enumerate(steps, 1):
-            nxt.append(label("%d.  %s" % (n, t)))
+        nxt.append(label("What happens", ("heading",)))
+        pl = plan.make_plan(self.cfg, self.paths)
+        for p in pl.problems:
+            r = Gtk.Box(spacing=8)
+            ic = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
+            ic.add_css_class("warning")
+            ic.set_valign(Gtk.Align.START)
+            r.append(ic)
+            r.append(label(p[0].upper() + p[1:] + "."))
+            nxt.append(r)
+        for n, a in enumerate(pl.actions, 1):
+            r = Gtk.Box(spacing=8)
+            num = label("%d." % n, ("numeric",), wrap=False)
+            num.set_valign(Gtk.Align.START)
+            r.append(num)
+            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
+            col.set_hexpand(True)
+            col.append(label(a.title, () if a.available else ("dim-label",)))
+            col.append(label(a.detail, ("caption", "dim-label")))
+            if a.missing:
+                col.append(label(a.missing[0].upper() + a.missing[1:], ("caption", "dim-label")))
+            r.append(col)
+            nxt.append(r)
+        if not pl.actions and not pl.problems:
+            nxt.append(label("Nothing to do."))
         btns = Gtk.Box(spacing=10, halign=Gtk.Align.END)
         btns.set_margin_top(4)
         sp = Gtk.Button(label="Save as Profile…")
@@ -781,20 +792,143 @@ class Window(Adw.ApplicationWindow):
             d.connect("response", answer)
             d.present(self)
             return
-        _, fits = self.cfg.space()
-        body = ("This first version plans the installation only; writing disks and installing "
-                "packages come in the next versions. Save your choices as a profile to use "
-                "them then.")
-        if not fits:
-            body = ("The selection does not fit with %d MB left free on the root disk. "
-                    % model.ROOT_RESERVE_MB) + body
-        d = Adw.AlertDialog(heading="Nothing is written yet", body=body)
-        d.add_response("close", "Close")
-        d.add_response("save", "Save Profile…")
-        d.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
-        d.set_default_response("save")
-        d.connect("response", lambda d, r: self._save_profile() if r == "save" else None)
+        pl = plan.make_plan(self.cfg, self.paths)
+        if pl.problems:
+            self._alert("Not ready to write", "\n".join("\u2022 " + p for p in pl.problems))
+            return
+        out = self.paths["out_dir"]
+        left = plan.leftover(out)
+        if left:
+            d = Adw.AlertDialog(
+                heading="An earlier run was interrupted",
+                body="It left these files in %s:\n%s\nRemove them? They are the earlier run\u2019s "
+                     "own, unfinished." % (out, "\n".join("\u2022 " + n for n in left)))
+            d.add_response("cancel", "Cancel")
+            d.add_response("remove", "Remove")
+            d.set_response_appearance("remove", Adw.ResponseAppearance.DESTRUCTIVE)
+
+            def answer(_d, r):
+                if r == "remove":
+                    plan.clean_leftover(out)
+                    self._apply()
+            d.connect("response", answer)
+            d.present(self)
+            return
+        runs = pl.runnable()
+        files = [n for a in runs for n in a.outputs]
+        body = "In %s, %d MB:\n%s" % (out, pl.write_bytes() >> 20,
+                                       "\n".join("\u2022 " + n for n in files))
+        if not pl.complete:
+            body += ("\n\nThis version does only part of the plan; not yet: %s."
+                     % ", ".join(a.title.lower() for a in pl.actions if not a.available))
+        d = Adw.AlertDialog(heading="Write the new disks?" if pl.complete else
+                            "Write the parts this version can?", body=body)
+        d.add_response("cancel", "Cancel")
+        d.add_response("write", "Write" if pl.complete else "Write Available Parts")
+        d.set_response_appearance("write", Adw.ResponseAppearance.SUGGESTED)
+        d.set_default_response("cancel")
+        d.connect("response", lambda _d, r: self._run_plan(pl) if r == "write" else None)
         d.present(self)
+
+    def _alert(self, heading, body):
+        d = Adw.AlertDialog(heading=heading, body=body)
+        d.add_response("close", "Close")
+        d.present(self)
+
+    # -- writing -----------------------------------------------------------
+    def _run_plan(self, pl):
+        self._cancel = False
+        self._busy(True)
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+        for m in ("top", "bottom", "start", "end"):
+            getattr(page, "set_margin_" + m)(28 if m in ("top", "bottom") else 16)
+        page.append(label("Writing the disks", ("title-1",)))
+        self.run_title = label("Starting\u2026", ("heading",))
+        page.append(self.run_title)
+        self.run_bar = Gtk.ProgressBar(show_text=True)
+        page.append(self.run_bar)
+        self.run_text = label("", ("caption", "dim-label"))
+        page.append(self.run_text)
+        self.run_log = Gtk.TextView(editable=False, monospace=True, cursor_visible=False)
+        self.run_log.set_wrap_mode(Gtk.WrapMode.CHAR)
+        sw = Gtk.ScrolledWindow(min_content_height=220, vexpand=True)
+        sw.add_css_class("card")
+        sw.set_child(self.run_log)
+        page.append(sw)
+        self.run_btns = Gtk.Box(spacing=10, halign=Gtk.Align.END)
+        cancel = Gtk.Button(label="Cancel")
+        cancel.add_css_class("destructive-action")
+        cancel.connect("clicked", lambda b: (setattr(self, "_cancel", True),
+                                             b.set_sensitive(False)))
+        self.run_btns.append(cancel)
+        page.append(self.run_btns)
+        self.clamp.set_child(page)
+        self.wtitle.set_title("Writing")
+        last = [0.0]
+
+        def progress(frac, title, text):
+            now = time.monotonic()
+            if now - last[0] > 0.1 or frac >= 1.0:
+                last[0] = now
+                GLib.idle_add(self._run_progress, frac, title, text)
+
+        def log(text):
+            GLib.idle_add(self._run_logline, text)
+
+        def work():
+            try:
+                res = plan.execute(pl, progress, log, lambda: self._cancel)
+                GLib.idle_add(self._run_done, pl, res, None)
+            except plan.Cancelled:
+                GLib.idle_add(self._run_done, pl, None, "Cancelled.")
+            except (OSError, IOError, safety.Refused) as e:
+                GLib.idle_add(self._run_done, pl, None, str(e))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _busy(self, on):
+        self.steplist.set_sensitive(not on)
+        self.back_btn.set_visible(not on)
+        self.next_btn.set_visible(False if on else self.step < len(model.STEPS) - 1)
+        for name in ("open-profile", "reset", "apply"):
+            self.lookup_action(name).set_enabled(not on)
+
+    def _run_progress(self, frac, title, text):
+        self.run_bar.set_fraction(min(1.0, frac))
+        self.run_title.set_text(title)
+        self.run_text.set_text(text)
+        return False
+
+    def _run_logline(self, text):
+        buf = self.run_log.get_buffer()
+        buf.insert(buf.get_end_iter(), text + "\n")
+        self.run_log.scroll_to_iter(buf.get_end_iter(), 0, False, 0, 0)
+        return False
+
+    def _run_done(self, pl, res, err):
+        c = self.run_btns.get_first_child()
+        while c is not None:
+            self.run_btns.remove(c)
+            c = self.run_btns.get_first_child()
+        out = pl.paths["out_dir"]
+        if err:
+            self.run_title.set_text("Stopped")
+            self.run_text.set_text(err + " Nothing this run wrote is left in %s." % out)
+            self.run_text.remove_css_class("dim-label")
+            self.run_text.add_css_class("error")
+        else:
+            self.run_bar.set_fraction(1.0)
+            self.run_title.set_text("Done")
+            self.run_text.set_text("%d files written and checked in %s; their checksums are in "
+                                   "SHA256SUMS." % (len(res), out))
+            show = Gtk.Button(label="Open Folder")
+            show.connect("clicked", lambda b: Gtk.FileLauncher.new(
+                Gio.File.new_for_path(out)).launch(self, None, None))
+            self.run_btns.append(show)
+        back = Gtk.Button(label="Back to Summary")
+        back.add_css_class("suggested-action")
+        back.connect("clicked", lambda b: (self._busy(False), self.show_step(self.step)))
+        self.run_btns.append(back)
+        return False
 
     def _about(self):
         a = Adw.AboutDialog(application_name="AMIX Installer", application_icon=APP_ID,
@@ -863,15 +997,7 @@ class App(Adw.Application):
             shot.run(self.win, self.args.screenshot)
 
 
-def main(argv=None):
-    import argparse
-    ap = argparse.ArgumentParser(prog="amix-installer")
-    ap.add_argument("--profile", help="load this profile at start")
-    ap.add_argument("--source", metavar="HDF", help="read this core HDF at start (read-only)")
-    ap.add_argument("--screenshot", metavar="DIR",
-                    help="render every step to DIR/*.png and quit (tests)")
-    ap.add_argument("--version", action="version", version="%(prog)s " + __version__)
-    args = ap.parse_args(argv)
+def main(args):
     Adw.init()
     app = App(args)
     return app.run([sys.argv[0]])

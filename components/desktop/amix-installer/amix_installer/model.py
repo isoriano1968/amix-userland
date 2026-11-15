@@ -110,6 +110,10 @@ STEPS = [
           G("accopt", "CPU card options", options=[
               O("bigram", "BigRAM on the A2630", "More fast RAM on the card, used by the kernel",
                 needs=("a2630",))]),
+          G("keymap", "Keyboard", radio=True, options=[
+              O("us", "US", "Amiga keyboard with the US layout"),
+              O("de", "German", "Amiga keyboard with the German layout"),
+              O("depc", "German PC keyboard", "In an emulator such as FS-UAE", needs=("uae",))]),
           G("cpu", "Code for added packages", radio=True, options=[
               O("m020", "68020–68060", "Runs on every machine above", badge="default"),
               O("m060", "68060 tuned", "Fastest on 68060 cards", needs=("060",))])]),
@@ -210,7 +214,8 @@ STEPS = [
 TAG_NAMES = {"060": "a 68060 card", "x11": "an X11 desktop"}
 
 DEFAULT_SEL = {"src": "hdf", "target": "sd", "mach": "a3000", "accel": "z3660", "cpu": "m020",
-               "layout": "split", "dsize": "d2g", "kern": "z3opt", "boot": "pvmk", "desk": "cde"}
+               "layout": "split", "dsize": "d2g", "kern": "z3opt", "boot": "pvmk", "desk": "cde",
+               "keymap": "us"}
 
 DEFAULT_ON = {"pkg": True, "bigram": True, "vt": True, "syslog": True, "dlm": False, "mem": True,
               "zen": True, "rtg": True, "paula": True, "a2065": False, "random": True,

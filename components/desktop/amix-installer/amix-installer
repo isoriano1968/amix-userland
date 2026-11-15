@@ -9,6 +9,6 @@ for d in (here, os.path.join(here, "..", "lib", "amix-installer")):
         sys.path.insert(0, os.path.normpath(d))
         break
 
-from amix_installer.app import main  # noqa: E402
+from amix_installer.cli import main  # noqa: E402
 
 sys.exit(main())

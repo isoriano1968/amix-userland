@@ -1,7 +1,8 @@
 # AMIX Installer: a GNOME desktop app
 
-Plan of 2026-11-15. Version 0.2 (UI, model, profiles, reading the source
-HDF) is in `components/desktop/amix-installer`; nothing writes disks yet.
+Plan of 2026-11-15. Version 0.3 (UI, model, profiles, reading the source
+HDF, the plan, writing the core copy and the pvmk boot disk) is in
+`components/desktop/amix-installer`.
 
 ## What it is
 
@@ -49,6 +50,8 @@ a small C helper called as a subprocess; the UI does not change.
       profile.py  save/load a selection as JSON
       safety.py   checks a source/target pair before anything is written
       hdf.py      reads an HDF read-only: RDB, UFS, packages, kernels
+      plan.py     Config + source -> ordered actions; runs them safely
+      cli.py      --plan / --apply without a window
       app.py      the GTK/libadwaita UI; reads the model, writes nothing
       shot.py     renders every step to PNG (tests, docs), no visible window
       backend/    (later) plan -> actions; HDF, partitions, packages
@@ -168,14 +171,41 @@ uploads and installs the packages.
   AMIGA_UNIX.hdf and the 2026-10-26 Z3660 backup (du of / equals the
   superblock's used blocks within a few fragments; sha256 unchanged).
   Package sizes from the built stages: with the IPS manifests (0.3).
-- **0.3:** plan and HDF-file targets: copy core, data disk HDF, install into
-  the copies with the IPS client's `-R`, boot entry, stock kernel kept.
-  Tested with FS-UAE.
-- **0.4:** device targets (SD card, SCSI via USB) with the disk checks and the
-  privileged helper.
-- **0.5:** running systems over ssh, after the IPS client is on the box.
+- **0.3 (done, part):** the plan (`plan.py`): every step in order with what
+  it writes, and the steps this version cannot do yet with the reason.
+  The Summary page shows it; `--plan` prints it. Running it (`--apply`, or
+  the window's progress page with log and Cancel) does the parts that need
+  no UFS writing: the core copy (sha256 of source and read-back compared),
+  the pvmk boot disk (`pvmk.hdf` from pvmk's bootblock.bin/pvmk.bin with
+  our `pvmk.conf`: AMIX entry, keymap, z3reloc; hole check; read back as a
+  PVMK partition), SHA256SUMS and a JSON record. Safety as below: `.part`,
+  read-back, rename, never overwrite, a journal; a stopped run removes all
+  it wrote. Targets: HDF files and a folder on the Z3660 SD card (with a
+  fragment check through `filefrag`, which illumos lacks).
+  The data disk, the moves, the package client, kernel and packages are
+  done by AMIX itself after the first boot (decided below), in 0.4.
+- **0.4:** finishing over the network, for a first boot and for a running
+  system alike: ssh to the machine, read what is installed, then newfs,
+  pkgadd of the client, pkg installs, each step logged; needs the IPS
+  client (IPS-INSTALLER-PLAN.md steps 1-4).
+- **0.5:** device targets (SCSI/BlueSCSI via USB) with the disk checks and
+  the privileged helper.
 - Tape image + root floppy source last: it needs the core package install
   done the way the stock installer does it, in an emulator.
+
+## Decided 2026-11-15: AMIX writes its own file system
+
+Everything after the core copy changes the copy's UFS or makes a new one
+(data disk). The installer does not write UFS on the host: it writes the
+core copy and the pvmk boot disk, the machine boots them, and the
+installer finishes over the network, the same path as changing a running
+system: AMIX's own `newfs` (or `mkfs -F ufs`) for the data disk, its
+`pkgadd` for the package client's bootstrap datastream, then `pkg` for
+the kernel and the packages; the moves of /usr/local, /usr/gnu and /opt
+with AMIX's `cpio -p` and a check before the links replace them. Only
+AMIX's tools touch AMIX's file system. On the A3000 every step goes
+through `tools/amix-box` (lock, no player running). A host UFS writer
+for offline images (FS-UAE) may follow later.
 
 ## Packaging
 
