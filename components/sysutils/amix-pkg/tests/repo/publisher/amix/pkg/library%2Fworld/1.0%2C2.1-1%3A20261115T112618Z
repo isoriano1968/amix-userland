@@ -1,0 +1,7 @@
+set name=pkg.fmri value=pkg://amix/library/world@1.0,2.1-1:20261115T112618Z
+set name=pkg.summary value="The world library"
+set name=variant.arch value=m68k
+dir group=bin mode=0755 owner=bin path=usr
+dir group=bin mode=0755 owner=bin path=usr/local
+dir group=bin mode=0755 owner=root path=usr/local/lib
+file 36c435da2f424bb9da8dbda25c595ac70ba64279 chash=55182e876aac9fe037bb4c09d67b400d20a27154 group=bin mode=0555 owner=root path=usr/local/lib/libworld.so.1 pkg.content-hash=file:sha512t_256:5e88da7ad644544a18afc929e11d6847e8c0149118d66026d80a054133a215f5 pkg.content-hash=gzip:sha512t_256:f4cd6b7a4b11eca7b6340ffef1445c4bf09b08b64ebef12572ec766def132a80 pkg.csize=29 pkg.size=9

@@ -1,0 +1,14 @@
+set name=pkg.fmri value=pkg://amix/demo/hello@1.0,2.1-1:20261115T112616Z
+set name=pkg.summary value="Says hello"
+set name=variant.arch value=m68k
+license 2401d19d442ce86c57040db01a0f89d7676245bb chash=9c15172ace8ea442d1d99914959757600c8fe6bb license=demo/hello pkg.content-hash=file:sha512t_256:292467a21225ae0c19464a22161b7d0badc4a299d1b21c921100a9e57057c4e6 pkg.content-hash=gzip:sha512t_256:27455fd8b6b5d7b825b828580309b43fa298de5972ecba9fdd1e6c5c1a26ac2e pkg.csize=37 pkg.size=17
+depend fmri=library/world@1 type=require
+dir group=bin mode=0755 owner=bin path=usr
+dir group=bin mode=0755 owner=bin path=usr/local
+dir group=bin mode=0755 owner=bin path=usr/local/bin
+dir group=bin mode=0755 owner=root path=usr/local/include
+dir group=root mode=0755 owner=root path=etc
+file 33df0a9729d3dc8d370a644ce4d149ff27238a7b chash=6533fb17ea7566576cc0029708db9e4e9df4b3b9 group=bin mode=0555 owner=root path=usr/local/bin/hello pkg.content-hash=file:sha512t_256:5a62b508473b3028cc3683ff75ad63209f41eac4b593511fd8833ac689e5770c pkg.content-hash=gzip:sha512t_256:5c9e32b244870ec8c806ee853c3a79db7d73af197cc1cdbf379c1f8f27007d72 pkg.csize=43 pkg.size=23
+file 10f73655e1e4c98eb4929181e2ee4cfe781ac1e9 chash=76109d8d5127cf6b99eac75d59c443df9a5dcd0d group=bin mode=0644 owner=root path=etc/hello.conf pkg.content-hash=file:sha512t_256:dd80c820ca7c7eb43edfde93241e51b6d5a9aa4c95babbb4aa8cb3fe13a781e9 pkg.content-hash=gzip:sha512t_256:f890f387dd749379097e2494c4106c1dfebe132f8726d1cfa2039abef81adfee pkg.csize=32 pkg.size=12 preserve=renamenew
+file e954839eb9e47f12754d630fc022cc345cb9e174 chash=a0a8c2562654ef868fdccb334be5d373645c0071 facet.devel=true group=bin mode=0444 owner=root path=usr/local/include/hello.h pkg.content-hash=file:sha512t_256:279714f8021731278aa467c3e344dffb66db21e60deeb77b929b13e87d9947ed pkg.content-hash=gzip:sha512t_256:f5d5bd4f8864d7e87bc81e29cf8a162afbe3d2d8bc1397a8e1ee925ba885a996 pkg.csize=37 pkg.size=17
+link path=usr/local/bin/hi target=hello

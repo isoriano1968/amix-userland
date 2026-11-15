@@ -1,0 +1,12 @@
+[publisher]
+prefix = amix
+
+[repository]
+version = 4
+trust-anchor-directory = /etc/certs/CA/
+signature-required-names = []
+check-certificate-revocation = False
+
+[CONFIGURATION]
+version = 4
+
