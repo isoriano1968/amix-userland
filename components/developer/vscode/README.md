@@ -18,7 +18,20 @@ VS Code helpers for AMIX C development with two cross toolchains: gcc 2.7.2.3
 
 ## Requirements
 
-Install and validate an AMIX cross toolchain first. For gcc 2.7.2.3:
+Install and validate an AMIX cross toolchain first.
+
+On OpenIndiana, from the amix publisher:
+
+```sh
+sudo pkg install metapackages/amix-cross-dev   # or pfexec with a pkg profile
+```
+
+That brings `developer/amix/sysroot` (`/opt/m68k-amix-sysroot`),
+`developer/amix/gcc-27` (`/opt/amix-cross/bin`) and `developer/amix/gcc-14`
+(`/opt/m68k-amix/bin`). X11R6.3, Motif and CDE are not packaged yet, so X and
+CDE programs (the CDE Hello World sample) do not link from the packages alone.
+
+On Linux, built by hand under `~/opt`. For gcc 2.7.2.3:
 
 ```sh
 make all AMIX_ROOT=/path/to/usr-amix
@@ -50,14 +63,32 @@ Each toolchain has its own path and tool prefix:
 
 | Setting | gcc 2.7.2.3 | gcc 14 |
 | --- | --- | --- |
-| tools directory | `amix.toolchainPath` (`~/opt/amix-cross/bin`) | `amix.gcc14.toolchainPath` (`~/opt/m68k-amix/bin`) |
+| tools directory | `amix.toolchainPath` | `amix.gcc14.toolchainPath` |
 | tool prefix | `amix.target` + `-` (`m68k-cbm-sysv4-`) | `amix.gcc14.toolPrefix` (`m68k-elf-`) |
-| sysroot | `amix.sysroot`, `amix.crtDir` | `amix.gcc14.sysroot` (`~/opt/m68k-amix-sysroot`) |
+| sysroot | `amix.sysroot`, `amix.crtDir` | `amix.gcc14.sysroot` |
 | CPU | `amix.cpu` (`68020`) | `amix.gcc14.cpu` (`68060`) |
 | C flags | `amix.extraCFlags` | `amix.gcc14.extraCFlags` |
 
-`amix.toolchainPath` keeps its meaning from earlier versions: the gcc 2.7.2.3
-tools directory.
+Left empty (the default), the paths are found: the OpenIndiana packages
+first, then the hand-built layout under `~/opt`:
+
+| | packaged | `~/opt` |
+| --- | --- | --- |
+| gcc 2.7.2.3 tools | `/opt/amix-cross/bin` | `~/opt/amix-cross/bin` |
+| gcc 2.7.2.3 sysroot | `/opt/m68k-amix-sysroot` | `~/opt/amix-cross/m68k-cbm-sysv4/sysroot` |
+| gcc 14 tools | `/opt/m68k-amix/bin` | `~/opt/m68k-amix/bin` |
+| gcc 14 sysroot | `/opt/m68k-amix-sysroot` | `~/opt/m68k-amix-sysroot` |
+
+A toolchain's sysroot follows its tools: the packaged gcc uses the packaged
+sysroot. `amix.crtDir` empty is `<sysroot>/usr/ccs/lib`. `amix.toolchainPath`
+keeps its meaning from earlier versions: the gcc 2.7.2.3 tools directory.
+
+The status bar shows the toolchain and the sysroot version from its marker
+`etc/amix-sysroot.release` (`AMIX gcc 14 · sysroot 2.1.2`, from
+`package=developer/amix/sysroot@2.1.2`; else `amix-release`, else `kind`); the tooltip has
+the paths. `AMIX: Check Development Setup` lists both toolchains, the
+sysroots, X11R6.3/Motif/CDE and the driver kit, with the `pkg install` line
+for what is missing.
 
 With gcc 14, `AMIX: Build Current C File as Executable` runs
 `amix-fix-needed` on the result (`amix.gcc14.fixNeeded`): AMIX's `ld.so.1`
@@ -69,7 +100,7 @@ From this component directory (`components/developer/vscode` in
 amix-userland):
 
 ```sh
-make install      # make build only packages build/vscode-amix-0.3.3.vsix
+make install      # make build only packages build/vscode-amix-0.4.0.vsix
 ```
 
 `make build` runs `npx @vscode/vsce package` with the component's GitHub
@@ -99,21 +130,9 @@ This writes:
 .vscode/tasks.json
 ```
 
-The default settings assume:
-
-```text
-~/opt/amix-cross/bin
-~/opt/amix-cross/m68k-cbm-sysv4/sysroot
-```
-
-for gcc 2.7.2.3, and for gcc 14:
-
-```text
-~/opt/m68k-amix/bin
-~/opt/m68k-amix-sysroot
-```
-
-Update the `amix.*` settings if your toolchains are elsewhere. After switching
+The toolchain paths are not written there: they are found as described under
+Toolchains. Set the `amix.*` path settings only if your toolchains are
+elsewhere. After switching
 toolchain, the extension offers to rewrite `.vscode/settings.json` and
 `tasks.json` (other settings in `settings.json` are kept).
 
@@ -121,6 +140,7 @@ toolchain, the extension offers to rewrite `.vscode/settings.json` and
 
 - `AMIX: Configure Workspace`
 - `AMIX: Select Toolchain (gcc 2.7.2.3 / gcc 14)`
+- `AMIX: Check Development Setup`
 - `AMIX: Build Current C File as Executable`
 - `AMIX: Compile Current C File to Object`
 - `AMIX: Compile Current C File as Kernel/Driver Object`

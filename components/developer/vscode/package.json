@@ -2,7 +2,7 @@
   "name": "vscode-amix",
   "displayName": "AMIX Development Tools",
   "description": "VS Code helpers for building AMIX m68k programs with gcc 2.7.2.3 (m68k-cbm-sysv4) or gcc 14 (gcc14-cross-amix).",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "publisher": "isoriano1968",
   "license": "MIT",
   "icon": "images/amix-logo.png",
@@ -33,7 +33,8 @@
     "onCommand:amix.makeGcc272",
     "onCommand:amix.makeGcc14",
     "onCommand:amix.makeCleanGcc272",
-    "onCommand:amix.makeCleanGcc14"
+    "onCommand:amix.makeCleanGcc14",
+    "onCommand:amix.checkSetup"
   ],
   "main": "./src/extension.js",
   "contributes": {
@@ -45,6 +46,10 @@
       {
         "command": "amix.selectToolchain",
         "title": "AMIX: Select Toolchain (gcc 2.7.2.3 / gcc 14)"
+      },
+      {
+        "command": "amix.checkSetup",
+        "title": "AMIX: Check Development Setup"
       },
       {
         "command": "amix.buildCurrentExecutable",
@@ -109,8 +114,8 @@
         },
         "amix.toolchainPath": {
           "type": "string",
-          "default": "${env:HOME}/opt/amix-cross/bin",
-          "description": "gcc 2.7.2.3: directory containing m68k-cbm-sysv4-gcc, as, ld, nm, and related tools."
+          "default": "",
+          "description": "gcc 2.7.2.3: directory containing m68k-cbm-sysv4-gcc, as, ld, nm, and related tools. Empty: /opt/amix-cross/bin (OpenIndiana package developer/amix/gcc-27) if installed, else ~/opt/amix-cross/bin."
         },
         "amix.target": {
           "type": "string",
@@ -119,13 +124,13 @@
         },
         "amix.sysroot": {
           "type": "string",
-          "default": "${env:HOME}/opt/amix-cross/m68k-cbm-sysv4/sysroot",
-          "description": "gcc 2.7.2.3: AMIX sysroot copied from a local AMIX installation."
+          "default": "",
+          "description": "gcc 2.7.2.3: AMIX sysroot. Empty: /opt/m68k-amix-sysroot (package developer/amix/sysroot) with the packaged gcc-27, else ~/opt/amix-cross/m68k-cbm-sysv4/sysroot."
         },
         "amix.crtDir": {
           "type": "string",
-          "default": "${config:amix.sysroot}/usr/ccs/lib",
-          "description": "gcc 2.7.2.3: directory containing crt1.o, crti.o, and crtn.o."
+          "default": "",
+          "description": "gcc 2.7.2.3: directory containing crt1.o, crti.o, and crtn.o. Empty: <sysroot>/usr/ccs/lib."
         },
         "amix.cpu": {
           "type": "string",
@@ -164,8 +169,8 @@
         },
         "amix.gcc14.toolchainPath": {
           "type": "string",
-          "default": "${env:HOME}/opt/m68k-amix/bin",
-          "description": "gcc 14: directory containing m68k-elf-gcc and its binutils (gcc14-cross-amix)."
+          "default": "",
+          "description": "gcc 14: directory containing m68k-elf-gcc and its binutils. Empty: /opt/m68k-amix/bin (package developer/amix/gcc-14) if installed, else ~/opt/m68k-amix/bin."
         },
         "amix.gcc14.toolPrefix": {
           "type": "string",
@@ -174,8 +179,8 @@
         },
         "amix.gcc14.sysroot": {
           "type": "string",
-          "default": "${env:HOME}/opt/m68k-amix-sysroot",
-          "description": "gcc 14: AMIX sysroot with the shared X11R6.3, Motif and CDE libraries (usr/x11r6, usr/motif, usr/dt, usr/local). Also used for Motif by the CDE sample with gcc 2.7.2.3."
+          "default": "",
+          "description": "gcc 14: AMIX sysroot with the shared X11R6.3, Motif and CDE libraries (usr/x11r6, usr/motif, usr/dt, usr/local). Empty: /opt/m68k-amix-sysroot with the packaged gcc-14, else ~/opt/m68k-amix-sysroot. Also used for Motif by the CDE sample with gcc 2.7.2.3."
         },
         "amix.gcc14.cpu": {
           "type": "string",

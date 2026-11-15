@@ -1,6 +1,7 @@
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 // The two AMIX cross toolchains.  gcc 2.7.2.3 is the native-compatible one and
 // the only one for kernel code; gcc 14 (gcc14-cross-amix) is for userland only.
@@ -15,7 +16,29 @@ const TOOLCHAINS = {
   }
 };
 
+// Where each toolchain may be installed, first found wins: the OpenIndiana
+// packages (developer/amix/gcc-27, gcc-14 and developer/amix/sysroot under
+// /opt), then the hand-built layout under ~/opt.  A setting overrides.
+const LAYOUTS = {
+  gcc272: [
+    { kind: 'package', bin: '/opt/amix-cross/bin', sysroot: '/opt/m68k-amix-sysroot' },
+    { kind: 'home', bin: '~/opt/amix-cross/bin', sysroot: '~/opt/amix-cross/m68k-cbm-sysv4/sysroot' }
+  ],
+  gcc14: [
+    { kind: 'package', bin: '/opt/m68k-amix/bin', sysroot: '/opt/m68k-amix-sysroot' },
+    { kind: 'home', bin: '~/opt/m68k-amix/bin', sysroot: '~/opt/m68k-amix-sysroot' }
+  ]
+};
+const PKG = {
+  gcc272: 'developer/amix/gcc-27',
+  gcc14: 'developer/amix/gcc-14',
+  sysroot: 'developer/amix/sysroot',
+  dlmkit: 'developer/amix/dlmkit',
+  all: 'metapackages/amix-cross-dev'
+};
+
 let extensionRoot = '';
+let output;
 let statusItem;
 
 function activate(context) {
@@ -33,6 +56,7 @@ function activate(context) {
     }),
     vscode.commands.registerCommand('amix.configureWorkspace', configureWorkspace),
     vscode.commands.registerCommand('amix.selectToolchain', selectToolchain),
+    vscode.commands.registerCommand('amix.checkSetup', checkSetup),
     vscode.commands.registerCommand('amix.buildCurrentExecutable', () => buildCurrent('exe')),
     vscode.commands.registerCommand('amix.compileCurrentObject', () => buildCurrent('object')),
     vscode.commands.registerCommand('amix.compileDriverObject', () => buildCurrent('driver')),
@@ -62,13 +86,16 @@ function workspaceRoot() {
 function cfg(which) {
   const c = vscode.workspace.getConfiguration('amix');
   const toolchain = which || selectedToolchain();
-  const gcc14Sysroot = expand(c.get('gcc14.sysroot'));
-  let toolchainPath, prefix, sysroot, crtDir, cpu, extraCFlags, includeDirs;
+  const g14prefix = c.get('gcc14.toolPrefix') || 'm68k-elf-';
+  const g14 = layout('gcc14', expand(c.get('gcc14.toolchainPath')), g14prefix);
+  const gcc14Sysroot = expand(c.get('gcc14.sysroot')) || g14.sysroot;
+  let toolchainPath, prefix, sysroot, crtDir, cpu, extraCFlags, includeDirs, where;
 
   if (toolchain === 'gcc14') {
-    toolchainPath = expand(c.get('gcc14.toolchainPath'));
-    prefix = c.get('gcc14.toolPrefix') || 'm68k-elf-';
+    toolchainPath = g14.bin;
+    prefix = g14prefix;
     sysroot = gcc14Sysroot;
+    where = g14.kind;
     crtDir = path.join(sysroot, 'usr/ccs/lib');
     cpu = c.get('gcc14.cpu') || '68060';
     extraCFlags = c.get('gcc14.extraCFlags') || [];
@@ -81,10 +108,13 @@ function cfg(which) {
     ].map((d) => path.join(sysroot, d));
   } else {
     const target = c.get('target') || 'm68k-cbm-sysv4';
-    toolchainPath = expand(c.get('toolchainPath'));
     prefix = `${target}-`;
-    sysroot = expand(c.get('sysroot'));
-    crtDir = expand(c.get('crtDir')).replace('${config:amix.sysroot}', sysroot);
+    const g27 = layout('gcc272', expand(c.get('toolchainPath')), prefix);
+    toolchainPath = g27.bin;
+    sysroot = expand(c.get('sysroot')) || g27.sysroot;
+    where = g27.kind;
+    crtDir = expand(c.get('crtDir')).replace('${config:amix.sysroot}', sysroot) ||
+      path.join(sysroot, 'usr/ccs/lib');
     cpu = c.get('cpu') || '68020';
     extraCFlags = c.get('extraCFlags') || [];
     includeDirs = [
@@ -101,6 +131,7 @@ function cfg(which) {
     target: prefix.replace(/-$/, ''),
     prefix,
     toolchainPath,
+    where,
     sysroot,
     crtDir,
     motifSysroot: gcc14Sysroot,
@@ -121,6 +152,41 @@ function defaultMake() {
   return process.platform === 'sunos' ? 'gmake' : 'make';
 }
 
+// The install place of a toolchain: the one whose bin holds <prefix>gcc, or
+// the one the toolchainPath setting names, else the packaged one.
+function layout(toolchain, explicitBin, prefix) {
+  const all = LAYOUTS[toolchain].map((l) => ({ ...l, bin: expand(l.bin), sysroot: expand(l.sysroot) }));
+  if (explicitBin) {
+    const same = all.find((l) => path.resolve(l.bin) === path.resolve(explicitBin));
+    return same || { kind: 'setting', bin: explicitBin, sysroot: all[all.length - 1].sysroot };
+  }
+  return all.find((l) => fs.existsSync(path.join(l.bin, `${prefix}gcc`))) || all[0];
+}
+
+// etc/amix-sysroot.release: key=value lines (version, kind, created, ...)
+function sysrootMarker(sysroot) {
+  try {
+    const text = fs.readFileSync(path.join(sysroot, 'etc/amix-sysroot.release'), 'utf8');
+    const m = {};
+    for (const line of text.split('\n')) {
+      const i = line.indexOf('=');
+      if (i > 0) m[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    }
+    return m;
+  } catch (e) {
+    return null;
+  }
+}
+
+function sysrootLabel(sysroot) {
+  const m = sysrootMarker(sysroot);
+  if (!m) return fs.existsSync(sysroot) ? 'sysroot (no marker)' : 'no sysroot';
+  // package=developer/amix/sysroot@2.1.2, else amix-release=2.1c ..., else kind=local
+  const pkg = m.package && m.package.includes('@') ? m.package.slice(m.package.lastIndexOf('@') + 1) : '';
+  const v = pkg || m.version || m['amix-release'] || (m.kind || '').split(' ')[0];
+  return v ? `sysroot ${v}` : 'sysroot';
+}
+
 function selectedToolchain() {
   const t = vscode.workspace.getConfiguration('amix').get('toolchain');
   return TOOLCHAINS[t] ? t : 'gcc272';
@@ -135,8 +201,14 @@ function expand(value) {
 function updateStatus() {
   if (!statusItem) return;
   const c = cfg();
-  statusItem.text = `$(tools) AMIX ${c.label}`;
-  statusItem.tooltip = `AMIX toolchain: ${c.label} (${c.gcc})\nClick to switch between gcc 2.7.2.3 and gcc 14.`;
+  const found = fs.existsSync(c.gcc);
+  const m = sysrootMarker(c.sysroot);
+  statusItem.text = `$(${found ? 'tools' : 'warning'}) AMIX ${c.label} · ${sysrootLabel(c.sysroot)}`;
+  statusItem.tooltip = [
+    `AMIX toolchain: ${c.label} (${c.gcc}${found ? '' : ', not found'})`,
+    `Sysroot: ${c.sysroot}${m ? ` (${Object.entries(m).map(([k, v]) => `${k}=${v}`).join(', ')})` : ''}`,
+    'Click to switch between gcc 2.7.2.3 and gcc 14.'
+  ].join('\n');
 }
 
 async function selectToolchain() {
@@ -185,10 +257,6 @@ async function configureWorkspace() {
   const k = cfg('gcc272'); // kernel and driver objects: gcc 2.7.2.3 only
   const settings = {
     'amix.toolchain': c.toolchain,
-    'amix.toolchainPath': k.toolchainPath,
-    'amix.target': k.target,
-    'amix.sysroot': k.sysroot,
-    'amix.crtDir': k.crtDir,
     'C_Cpp.default.compilerPath': c.gcc,
     'C_Cpp.default.intelliSenseMode': 'gcc-x64',
     'C_Cpp.default.includePath': [
@@ -449,6 +517,77 @@ async function newCdeHelloProject() {
   vscode.window.showInformationMessage(
     `CDE Hello World in ${name}: run "AMIX: Run Make in AMIX Project" (${cfg().label}), then copy hello to the A3000.`
   );
+}
+
+// AMIX: Check Development Setup: toolchains, sysroot, libraries, with the
+// pkg install line for what is missing (OpenIndiana packages).
+function checkSetup() {
+  if (!output) output = vscode.window.createOutputChannel('AMIX');
+  const lines = [];
+  const missingPkgs = [];
+  const ok = (b) => (b ? 'ok     ' : 'MISSING');
+  const version = (gcc) => {
+    try {
+      return execFileSync(gcc, ['-dumpversion'], { timeout: 5000, encoding: 'utf8' }).trim();
+    } catch (e) {
+      return '';
+    }
+  };
+
+  lines.push(`AMIX development setup (${new Date().toISOString()}), selected: ${cfg().label}`, '');
+  const sysroots = new Set();
+  for (const id of Object.keys(TOOLCHAINS)) {
+    const t = cfg(id);
+    const has = fs.existsSync(t.gcc);
+    // the gcc 2.7.2.3 wrapper has no -dumpversion (it would try a link)
+    const v = has && id === 'gcc14' ? version(t.gcc) : '';
+    lines.push(`${ok(has)} ${t.label}: ${t.gcc}${v ? ` (${v})` : ''} [${t.where}]`);
+    if (!has) missingPkgs.push(PKG[id]);
+    sysroots.add(t.sysroot);
+    if (id === 'gcc14') {
+      const pcs = ['m68k-amix-pkg-config', 'amix-pkg-config'].map((n) => path.join(t.toolchainPath, n));
+      const pc = pcs.find((f) => fs.existsSync(f));
+      lines.push(`${pc ? 'ok     ' : 'absent '}   pkg-config wrapper: ${pc || pcs[0]}`);
+    }
+  }
+  lines.push('');
+  for (const s of sysroots) {
+    const m = sysrootMarker(s);
+    const has = fs.existsSync(s);
+    lines.push(`${ok(has)} sysroot ${s}`);
+    if (m) lines.push(`          marker: ${Object.entries(m).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+    else if (has) lines.push('          no etc/amix-sysroot.release: amix-sysroot-check refuses it');
+    if (!has) missingPkgs.push(PKG.sysroot);
+  }
+
+  const lib = cfg('gcc14').sysroot;
+  const libs = [
+    ['X11R6.3', 'usr/x11r6/lib', 'libX11.so'],
+    ['Motif', 'usr/motif/lib', 'libXm.so'],
+    ['CDE', 'usr/dt/lib', 'libDtSvc.so']
+  ];
+  lines.push('', `Shared libraries for X/Motif/CDE programs (in ${lib}):`);
+  for (const [name, dir, so] of libs) {
+    let has = false;
+    try {
+      has = fs.readdirSync(path.join(lib, dir)).some((f) => f.startsWith(so));
+    } catch (e) { /* missing directory */ }
+    lines.push(`${ok(has)} ${name}: ${path.join(lib, dir)}/${so}*`);
+  }
+  const dlm = '/opt/amix-dlmkit';
+  lines.push(`${fs.existsSync(dlm) ? 'ok     ' : 'absent '} driver kit (dlmkit, optional): ${dlm}`);
+
+  const uniq = [...new Set(missingPkgs)];
+  if (uniq.length > 0) {
+    lines.push('', process.platform === 'sunos'
+      ? `To install the missing pieces (sudo, or pfexec with a pkg profile):\n  sudo pkg install ${uniq.join(' ')}\n  (or ${PKG.all} for everything)`
+      : 'Missing toolchain pieces: install gcc-cross-amix / gcc14-cross-amix, or set the amix.* paths.');
+  }
+  output.clear();
+  output.appendLine(lines.join('\n'));
+  output.show(true);
+  updateStatus();
+  return lines;
 }
 
 function fixNeededScript() {

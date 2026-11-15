@@ -6,7 +6,8 @@
 #
 # The VS Code AMIX extension sets AMIX_TOOLCHAIN, AMIX_SYSROOT,
 # AMIX_MOTIF_SYSROOT and the PATH for the toolchain chosen in "amix.toolchain".
-# By hand, put the toolchain's bin directory on PATH.
+# By hand, put the toolchain's bin directory on PATH (/opt/m68k-amix/bin or
+# /opt/amix-cross/bin from the OpenIndiana packages, else under ~/opt).
 #
 # Motif and X11R6.3 come from the gcc 14 sysroot (shared libraries only) for
 # both compilers: the gcc 2.7.2.3 sysroot has AMIX's own X11R5 but no Motif.
@@ -14,7 +15,11 @@
 # points there.
 
 TOOLCHAIN     ?= $(or $(AMIX_TOOLCHAIN),gcc14)
-MOTIF_SYSROOT ?= $(or $(AMIX_MOTIF_SYSROOT),$(HOME)/opt/m68k-amix-sysroot)
+
+# the OpenIndiana package developer/amix/sysroot (/opt/m68k-amix-sysroot, with
+# its marker) when installed, else the hand-built ~/opt layout
+PKG_SYSROOT   := $(patsubst %/etc/amix-sysroot.release,%,$(wildcard /opt/m68k-amix-sysroot/etc/amix-sysroot.release))
+MOTIF_SYSROOT ?= $(or $(AMIX_MOTIF_SYSROOT),$(PKG_SYSROOT),$(HOME)/opt/m68k-amix-sysroot)
 
 M = $(MOTIF_SYSROOT)/usr/motif
 X = $(MOTIF_SYSROOT)/usr/x11r6
@@ -48,7 +53,7 @@ else ifeq ($(TOOLCHAIN),gcc272)
 # own cc does it.
 GCC = m68k-cbm-sysv4-gcc
 LD272   ?= m68k-cbm-sysv4-ld
-SYSROOT ?= $(or $(AMIX_SYSROOT),$(HOME)/opt/amix-cross/m68k-cbm-sysv4/sysroot)
+SYSROOT ?= $(or $(AMIX_SYSROOT),$(PKG_SYSROOT),$(HOME)/opt/amix-cross/m68k-cbm-sysv4/sysroot)
 CRT_DIR ?= $(or $(AMIX_CRT_DIR),$(SYSROOT)/usr/ccs/lib)
 CFLAGS  ?= -O -m68020
 # libgcc.a beside the compiler (the wrapper has no -print-libgcc-file-name)

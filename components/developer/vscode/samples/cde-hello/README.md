@@ -18,8 +18,10 @@ toolchain's `bin` directory must be on `PATH`. From VS Code, run
 **AMIX: Run Make in AMIX Project**: it sets `PATH`, `AMIX_TOOLCHAIN` and the
 sysroots for the toolchain shown in the status bar.
 
-Motif and X11R6.3 come from the gcc 14 sysroot (`~/opt/m68k-amix-sysroot`,
-`MOTIF_SYSROOT=` to change it) for both compilers. The link line is the one
+Motif and X11R6.3 come from the gcc 14 sysroot for both compilers:
+`/opt/m68k-amix-sysroot` when the OpenIndiana package is installed, else
+`~/opt/m68k-amix-sysroot` (`MOTIF_SYSROOT=` to change it). X11R6.3, Motif and
+CDE are not packaged yet, so on OpenIndiana the sample does not link yet. The link line is the one
 of ztopcde:
 
 ```text
