@@ -5,6 +5,9 @@
 #   AMIX_TOOLS     gcc-14's bin directory
 #   AMIX_CPU       the CPU option every object is compiled with
 #   HOST_CC        the build host's C compiler, for Motif's own tools
+# C collation: globs such as clients/mwm/*.o (mwm's link order) sort the same
+# on every build host
+LC_ALL=C; export LC_ALL
 TOP=$(cd "$(dirname "$0")/.." && pwd)
 SYSROOT=${AMIX_SYSROOT:?AMIX_SYSROOT is not set}
 CPU=${AMIX_CPU:--m68060}
