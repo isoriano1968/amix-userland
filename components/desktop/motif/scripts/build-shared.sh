@@ -9,6 +9,8 @@
 # the answers (sprintf returns int, stack grows down, no X threads, ...).
 # GCC 14 turns several 1990s C idioms into errors that Motif and the X11R6.3
 # headers rely on; on AMIX they are safe as warnings (see gcc14-cross-amix).
+# --disable-printing: no X Print in Motif (as in use on AMIX), whether or not
+# the sysroot already holds x11/libxp; configure would otherwise follow it.
 set -e
 . "$(dirname "$0")/common.sh"
 STAGE=${1:?usage: build-shared.sh STAGE}
@@ -26,7 +28,7 @@ rm -rf "$MOTIF_PIC" "$ROOT"; mkdir -p "$MOTIF_PIC" "$ROOT/lib/pkgconfig" "$ROOT/
 cp "$S/motif-amix.cache" "$MOTIF_PIC/amix.cache"
 (cd "$MOTIF_PIC" && "$MOTIF_SRC/configure" --cache-file="$MOTIF_PIC/amix.cache" \
 	--host=m68k-elf --build="$($HOST_CC -dumpmachine)" --prefix=/usr/motif \
-	--disable-shared --enable-static --disable-xft --disable-jpeg --disable-png --disable-utf8 \
+	--disable-shared --enable-static --disable-xft --disable-jpeg --disable-png --disable-utf8 --disable-printing \
 	--x-includes="$XI" --x-libraries="$XL" CC="$CC14" \
 	CPPFLAGS="-I$XI" LDFLAGS="-L$XL" CFLAGS="$CF0" \
 	LIBS="-lXext -lSM -lICE -lX11 -lsocket -lnsl" > configure.log 2>&1) \
