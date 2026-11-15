@@ -1,7 +1,7 @@
 /*
- * pkg -- the AMIX IPS client.  This is the read side (IPS-INSTALLER-PLAN.md
- * step 2): set-publisher, publisher, refresh, list, info, contents, verify.
- * Install, update and uninstall follow in step 3.
+ * pkg -- the AMIX IPS client (IPS-INSTALLER-PLAN.md): set-publisher,
+ * publisher, refresh, list, info, contents, verify (step 2); install,
+ * update, uninstall, history (step 3, install.c).
  */
 #include <errno.h>
 #include <stdlib.h>
@@ -12,11 +12,7 @@
 
 #include "pkg.h"
 
-#ifndef S_ISLNK			/* AMIX's sys/stat.h has S_IFLNK only */
-#define S_ISLNK(m)	(((m) & S_IFMT) == S_IFLNK)
-#endif
-
-#define VERSION_STRING	"0.1"
+#define VERSION_STRING	"0.2"
 
 static struct image im;
 
@@ -32,7 +28,12 @@ usage(void)
 	    "  info [-r] name[@version]...      about a package (-r from the repository)\n"
 	    "  contents [-r] [-m] [-t type] name  its paths (-m the manifest)\n"
 	    "  verify [-q] [name...]           check installed files against their manifests\n"
-	    "  version\n", PUBLISHER);
+	    "  install [-n] name[@version]...  with what they require (-n: only show)\n"
+	    "  update [-n] [name...]           to the newest versions (all installed: no names)\n"
+	    "  uninstall [-n] name...          remove; changed files stay as .pkgsave\n"
+	    "  history                         what was changed, and when\n"
+	    "  version\n"
+	    "--min-free MB: space that must stay free on the root (default 200)\n", PUBLISHER);
 	exit(2);
 }
 
@@ -628,6 +629,30 @@ verify_pkg(const struct installed *in, int quiet)
 	return bad;
 }
 
+/* install, update, uninstall: options, then the names */
+static int
+cmd_change(int argc, char **argv, int what)
+{
+	int c;
+	char *arg;
+
+	while ((c = subopt(argc, argv, "n", &arg)) != -1)
+		dry_run = 1;
+#ifndef __amix__
+	if (!strcmp(im.root, "/")) {
+		warnx("pkg changes only AMIX itself; on another system use -R root");
+		return 1;
+	}
+#endif
+	argc -= optidx;
+	argv += optidx;
+	if (what == 2)
+		return cmd_uninstall(&im, argc, argv);
+	if (what == 0 && argc == 0)
+		usage();
+	return cmd_install(&im, argc, argv, what == 1);
+}
+
 static int
 cmd_verify(int argc, char **argv)
 {
@@ -668,6 +693,8 @@ main(int argc, char **argv)
 			root = argv[i] + 2;
 		else if (!strcmp(argv[i], "-v"))
 			verbose = 1;
+		else if (!strcmp(argv[i], "--min-free") && i + 1 < argc)
+			min_free_mb = strtoul(argv[++i], NULL, 10);
 		else
 			usage();
 	}
@@ -690,6 +717,14 @@ main(int argc, char **argv)
 		return cmd_contents(argc, argv);
 	if (!strcmp(argv[0], "verify"))
 		return cmd_verify(argc, argv);
+	if (!strcmp(argv[0], "install"))
+		return cmd_change(argc, argv, 0);
+	if (!strcmp(argv[0], "update"))
+		return cmd_change(argc, argv, 1);
+	if (!strcmp(argv[0], "uninstall"))
+		return cmd_change(argc, argv, 2);
+	if (!strcmp(argv[0], "history"))
+		return cmd_history(&im);
 	if (!strcmp(argv[0], "version")) {
 		printf("%s\n", VERSION_STRING);
 		return 0;

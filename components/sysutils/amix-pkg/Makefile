@@ -3,7 +3,7 @@
 #   make test    a host build, its unit tests and tests/run.sh against tests/repo
 #   make stage   build/stage/usr/bin/pkg
 COMPONENT_NAME    = amix-pkg
-COMPONENT_VERSION = 0.1
+COMPONENT_VERSION = 0.2
 
 include ../../../make-rules/shared.mk
 
@@ -11,7 +11,7 @@ export PATH := $(AMIX_TOOLS):$(PATH)
 SRC      = $(wildcard src/*.c)
 HDR      = src/pkg.h
 HOSTCC  ?= cc
-HOSTFLAGS = -O2 -g -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L -Isrc
+HOSTFLAGS = -O2 -g -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L -DPKG_TESTING -Isrc
 
 build: $(BUILD_DIR)/pkg
 

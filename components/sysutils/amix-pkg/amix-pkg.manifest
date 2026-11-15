@@ -1,7 +1,7 @@
 # name, version and what building and running it needs
 name     sysutils/amix-pkg
-version  0.1
-summary  pkg, the AMIX IPS client: catalog, list, info, contents, verify (install follows)
+version  0.2
+summary  pkg, the AMIX IPS client: install, update, uninstall, verify from an IPS repository
 require  network/curl
 require  library/zlib
 file     /usr/bin/pkg

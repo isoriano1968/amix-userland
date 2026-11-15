@@ -9,6 +9,12 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+
+#ifndef S_ISLNK			/* AMIX's sys/stat.h has S_IFLNK only */
+#define S_ISLNK(m)	(((m) & S_IFMT) == S_IFLNK)
+#endif
 
 #define PUBLISHER	"amix"
 
@@ -146,5 +152,13 @@ void installed_free(struct installed *p, size_t n);
 /* a manifest from the repository, checked against the catalog's SHA-1 */
 int remote_manifest(const struct image *im, const char *stem, const char *version,
     const char *sig, struct buf *out);
+
+/* --- install.c ------------------------------------------------------------- */
+extern int dry_run;
+extern unsigned long min_free_mb;
+int journal_recover(const struct image *im);
+int cmd_install(struct image *im, int argc, char **argv, int update);
+int cmd_uninstall(struct image *im, int argc, char **argv);
+int cmd_history(const struct image *im);
 
 #endif

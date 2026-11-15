@@ -108,6 +108,10 @@ pseudo package, or apkg reads `/var/pkg`. To be discussed before step 4.
 3. Write side: install/uninstall/update with conflict check, `.new` +
    sha256 + rename, journal; crash tests by killing it mid-install on the
    image copy.
+   Step 2 done 2026-11-15 (amix-pkg 0.1, 22d7eaf); step 3 done the same
+   day (amix-pkg 0.2): install with requires, update, uninstall, history,
+   `-n`; files as `.pkgtmp`, journal with a commit point, crashes in both
+   phases tested on the host (80 checks). Not yet run on AMIX.
 4. I agree the SVR4 side with Jussi; bootstrap datastream.
 5. On the A3000, one step at a time: install the client, then migrate the
    amix-userland packages already installed: compare every file against the manifests

@@ -98,6 +98,82 @@ out=$("$PKG" -R "$R" verify -q 2>&1)
 [ -z "$out" ] && ok "verify -q prints nothing" || bad "verify -q printed: $out"
 expect "verify: unknown"          1 "no installed packages match" "$PKG" -R "$R" verify nosuch
 
+
+# ---- step 3: install, update, uninstall ---------------------------------
+newroot() {	# newroot DIR: an empty image with passwd/group, publisher set, catalog fetched
+	mkdir -p "$1/etc"; chmod 0755 "$1/etc"
+	printf 'root:x:%s:%s::/:\nbin:x:%s:%s::/:\n' "$(id -u)" "$(id -g)" "$(id -u)" "$(id -g)" > "$1/etc/passwd"
+	printf 'root::%s:\nbin::%s:\n' "$(id -g)" "$(id -g)" > "$1/etc/group"
+	"$PKG" -R "$1" set-publisher -O "$here/repo" && "$PKG" -R "$1" refresh
+}
+P() { "$PKG" -R "$I" --min-free 0 "$@"; }
+I="$T/inst"; newroot "$I"
+expect "install: only AMIX without -R" 1 "only AMIX" env -u PKG_IMAGE "$PKG" install hello
+expect "install -n"               0 "install    library/world" P install -n hello@1.0
+expect "install -n changes nothing" 1 "" test -d "$I/var/pkg/installed"
+expect "install hello@1.0 (+ world)" 0 "install    demo/hello" P install hello@1.0
+expect "list: both"               0 "library/world" P list
+expect "hello runs"               0 "hello 1"       sh "$I/usr/local/bin/hello"
+expect "link made"                0 ""              test -L "$I/usr/local/bin/hi"
+expect "verify after install"     0 ""              P verify
+expect "no .pkgtmp left"          0 ""              sh -c "! find '$I' -name '*.pkgtmp*' | grep -q ."
+expect "no journal left"          1 ""              test -f "$I/var/pkg/journal"
+expect "paths written"            0 "usr/local/bin/hello	demo/hello" cat "$I/var/pkg/paths"
+expect "install again: nothing to do" 0 "nothing to do" P install hello@1.0
+echo "greeting=mine" > "$I/etc/hello.conf"
+expect "update"                   0 "update     demo/hello 1.0,2.1-1 -> 1.1,2.1-2" P update
+expect "update kept my conf"      0 "greeting=mine" cat "$I/etc/hello.conf"
+expect "update: package conf .new" 0 "greeting=hello" cat "$I/etc/hello.conf.new"
+expect "update: new hello"        0 "hello 2"       sh "$I/usr/local/bin/hello"
+expect "update: header gone"      1 ""              test -e "$I/usr/local/include/hello.h"
+expect "update: empty dir gone"   1 ""              test -d "$I/usr/local/include"
+expect "verify after update"      0 ""              P verify
+expect "update: nothing left"     0 "nothing to do" P update
+expect "history"                  0 "update	ok	demo/hello@1.1,2.1-2" P history
+expect "uninstall world: needed"  1 "demo/hello needs library/world" P uninstall world
+expect "uninstall hello"          0 "kept as /etc/hello.conf.pkgsave" P uninstall hello
+expect "uninstall: files gone"    1 ""              test -e "$I/usr/local/bin/hello"
+expect "uninstall: link gone"     1 ""              test -L "$I/usr/local/bin/hi"
+expect "uninstall: bin dir gone"  1 ""              test -d "$I/usr/local/bin"
+expect "uninstall: world stays"   0 ""              test -f "$I/usr/local/lib/libworld.so.1"
+expect "uninstall: list"          0 "library/world" P list
+expect "uninstall world"          0 "remove     library/world" P uninstall world
+expect "uninstall: lib gone"      1 ""              test -d "$I/usr/local/lib"
+expect "uninstall: etc stays"     0 ""              test -f "$I/etc/passwd"
+
+C="$T/conflict"; newroot "$C"
+mkdir -p "$C/usr/local/lib"; echo mine > "$C/usr/local/lib/libworld.so.1"
+expect "conflict: unowned file"   1 "libworld.so.1 (library/world) is there already" "$PKG" -R "$C" --min-free 0 install hello
+expect "conflict: nothing installed" 1 ""           test -d "$C/var/pkg/installed"
+expect "conflict: file untouched" 0 "mine"          cat "$C/usr/local/lib/libworld.so.1"
+expect "conflict: no .pkgtmp"     0 ""              sh -c "! find '$C' -name '*.pkgtmp*' | grep -q ."
+
+S="$T/svr4"; newroot "$S"; mkdir -p "$S/var/sadm/install"
+printf '/usr/local d none 0755 bin bin core\n/usr/local/bin/hello f none 0555 bin bin core\n' > "$S/var/sadm/install/contents"
+expect "conflict: SVR4 file"      1 "belongs to an AMIX (SVR4) package" "$PKG" -R "$S" --min-free 0 install hello
+printf '/usr d none 0755 bin bin core\n/usr/local d none 0755 bin bin core\n' > "$S/var/sadm/install/contents"
+expect "SVR4 directories are shared" 0 "install"    "$PKG" -R "$S" --min-free 0 install hello@1.0
+expect "uninstall keeps SVR4 dirs" 0 ""             sh -c "'$PKG' -R '$S' uninstall hello >/dev/null && '$PKG' -R '$S' uninstall world >/dev/null && test -d '$S/usr/local'"
+
+Q="$T/space"; newroot "$Q"
+expect "space limit"              1 "not enough space" "$PKG" -R "$Q" --min-free 100000000 install hello
+expect "space: nothing changed"   1 ""              test -d "$Q/usr/local"
+
+K="$T/crash"; newroot "$K"
+expect "crash while preparing"    99 "test crash at prepared" env PKG_TEST_CRASH=prepared "$PKG" -R "$K" --min-free 0 install hello@1.0
+expect "crash left .pkgtmp files" 0 ""              sh -c "find '$K' -name '*.pkgtmp' | grep -q ."
+expect "next run undoes it"       0 "undoing an interrupted change" "$PKG" -R "$K" --min-free 0 install hello@1.0
+expect "undone, then installed"   0 ""              sh -c "! find '$K' -name '*.pkgtmp*' | grep -q . && '$PKG' -R '$K' verify"
+expect "crash while committing"   99 "test crash at committing" env PKG_TEST_CRASH=committing "$PKG" -R "$K" --min-free 0 update
+expect "next run finishes it"     0 "finishing an interrupted change" "$PKG" -R "$K" --min-free 0 update
+expect "finished: 1.1 verifies"   0 "1.1,2.1-2"     sh -c "'$PKG' -R '$K' verify && '$PKG' -R '$K' list hello"
+
+L="$T/lock"; newroot "$L"; mkdir -p "$L/var/pkg"
+echo $$ > "$L/var/pkg/lock"
+expect "lock held"                1 "another pkg"   "$PKG" -R "$L" --min-free 0 install hello
+echo 999999 > "$L/var/pkg/lock"
+expect "stale lock taken over"    0 "install"       "$PKG" -R "$L" --min-free 0 install hello
+expect "lock released"            1 ""              test -f "$L/var/pkg/lock"
 echo
 [ $fails = 0 ] && echo "all passed" || echo "$fails failed"
 exit $fails

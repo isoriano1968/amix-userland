@@ -59,7 +59,7 @@ half a file.
     /var/pkg/publisher/amix/catalog/   catalog.attrs, catalog.base.C as fetched
     /var/pkg/installed/<stem>          the installed manifest (with its hashes)
     /var/pkg/paths                     every path the client owns, sorted:
-                                       path TAB type TAB stem TAB sha512t_256
+                                       path TAB stem (rewritten after each change)
     /var/pkg/journal                   the current transaction (see below)
     /var/pkg/history                   one line per change: time, command, result
     /var/pkg/lock                      one client at a time (O_EXCL)
@@ -67,12 +67,23 @@ half a file.
 `<stem>` is `category%2Fname`, as in the repository. `paths` is what the
 conflict check reads; it is rebuilt from `installed/*` by `pkg rebuild-index`.
 
-**Transaction** (install, update, uninstall): the client writes the whole
-list of renames and removals to `journal` before the first one, each file
-lands as `<path>.new` with its hash checked, then the renames run in order
-and the journal is removed. On the next start an existing journal is
-finished (all `.new` files present and good) or rolled back (they are
-removed); nothing else is touched.
+**Transaction** (install, update, uninstall), as built in 0.2:
+
+1. The journal starts as `state prepare`. Every new file, link and the
+   package's installed manifest is written as `<path>.pkgtmp` (its payload
+   checked: size and SHA-512/256), every new directory made; each is
+   appended to the journal and synced *before* it is made.
+2. The journal is rewritten (atomically) as `state commit` with every
+   rename, removal, `.pkgsave` and `rmdir`; that is the commit point.
+3. The operations run in order; the journal is removed; `paths` and
+   `history` are written.
+
+The next write command finds a journal: `prepare` is rolled back (its
+`.pkgtmp` files and new empty directories removed), `commit` is rolled
+forward (every operation can run twice). `.new` is left for the user:
+it is where a package's configuration goes when the user changed theirs
+(`preserve=renamenew`). A file the user changed is never removed: an
+update or uninstall renames it to `<path>.pkgsave`.
 
 ## Conflicts
 
@@ -81,6 +92,11 @@ Before anything is written, every path of the change is checked against:
 AMIX and SVR4/apkg packages; for directories the attributes only), and the
 disk (a file nobody owns). A conflict stops the change and names the path
 and its owner.
+
+**Free space**: before anything is written, the sizes of all files of the
+new versions must fit with `--min-free` MB (default 200) left on the root.
+**Lock**: `var/pkg/lock` holds the pid; a lock of a process that is gone
+is taken over. Without `-R` the client changes nothing but AMIX itself.
 
 ## Not decided yet
 

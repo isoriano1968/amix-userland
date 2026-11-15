@@ -6,8 +6,7 @@ server or read from a folder. The plan is in
 [IPS-INSTALLER-PLAN.md](../../../doc/plans/IPS-INSTALLER-PLAN.md), the
 formats in [IPS-CLIENT-DESIGN.md](../../../doc/plans/IPS-CLIENT-DESIGN.md).
 
-This is version 0.1, the read side (step 2): it changes nothing on the
-system except its own catalog copy in `/var/pkg`.
+Version 0.2: the read side (step 2) and the write side (step 3).
 
     pkg set-publisher -O http://192.168.0.10/amix amix   # or file:///path, or a folder
     pkg refresh                    # the catalog, its SHA-1 signatures checked
@@ -16,14 +15,29 @@ system except its own catalog copy in `/var/pkg`.
     pkg contents [-r] [-m] [-t file|dir|link] name
     pkg verify [-q] [name...]      # files, sizes, SHA-512/256, modes, owners, links
 
+    pkg install [-n] name[@version]...   # with what they require
+    pkg update [-n] [name...]            # all installed, without names
+    pkg uninstall [-n] name...           # refused while another package needs it
+    pkg history
+
+Every change is checked first: no path of another IPS package, of stock
+AMIX or an SVR4 package (`/var/sadm/install/contents`; directories may be
+shared), and no file nobody owns is overwritten, and 200 MB stay free on
+the root (`--min-free MB`). Files are written as `<path>.pkgtmp`, checked
+(size, SHA-512/256) and renamed after a journal's commit point; an
+interrupted change is undone or finished by the next one. A configuration
+file you changed stays; the package's goes beside it as `.new`. A file you
+changed is never removed: it is kept as `.pkgsave`.
+
 `-R root` works on an image below another root (tests, a mounted disk);
-`PKG_IMAGE` does the same. Install, update and uninstall follow in step 3.
+`PKG_IMAGE` does the same. Without it, pkg changes nothing but AMIX.
 
 ## Build and test
 
     make build    # the AMIX binary: gcc 14 cross, -m68020-60, libcurl, zlib
     make test     # host build, unit tests (FIPS hash vectors, JSON, actions,
-                  # versions) and tests/run.sh against tests/repo
+                  # versions) and tests/run.sh against tests/repo: 80 checks,
+                  # conflicts, preserved files, update, uninstall, crashes
     make stage
 
 `tests/repo` is a small repository published with OpenIndiana's `pkgsend`
