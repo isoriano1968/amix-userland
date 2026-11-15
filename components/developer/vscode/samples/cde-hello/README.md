@@ -32,10 +32,11 @@ with the runpath `/usr/motif/lib:/usr/x11r6/lib`. After linking,
 `amix-fix-needed` moves the NEEDED names to the front of `.dynstr`, where
 AMIX's `ld.so.1` looks for them.
 
-With gcc 2.7.2.3 the Makefile links with `m68k-cbm-sysv4-ld` itself: the gcc
-wrapper links only `libc.so.1`, while AMIX's `-lc` is the archive
-`usr/ccs/lib/libc.so` (libc.so.1 plus static members such as `select`,
-`syslog` and `gettimeofday`, which libsocket, libXt and libamixc99 need).
+Both compilers link through their driver. The gcc 2.7.2.3 wrapper
+(`m68k-cbm-sysv4-gcc`) needs gcc-cross-amix 83765c5 or later: older wrappers
+linked only `libc.so.1`, not AMIX's libc archive `usr/ccs/lib/libc.so`
+(`select`, `syslog`, `gettimeofday`, ... for libsocket, libXt and
+libamixc99), and dropped `-Wl,` options.
 
 ## Run on the A3000
 

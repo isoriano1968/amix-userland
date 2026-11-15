@@ -45,25 +45,17 @@ LINK = $(CC) -o $@ hello.o -L$(M)/lib -L$(X)/lib \
 	$(XLIBS)
 
 else ifeq ($(TOOLCHAIN),gcc272)
-# ---- gcc 2.7.2.3: ld links -------------------------------------------------
-# The m68k-cbm-sysv4-gcc wrapper links only libc.so.1, but AMIX's -lc is the
-# archive usr/ccs/lib/libc.so: libc.so.1 plus static members (select, syslog,
-# gettimeofday, ...) that libsocket, libXt and libamixc99 need.  So the link
-# is ld's, with crt1/crti/crtn, both halves of libc and libgcc.a, as AMIX's
-# own cc does it.
+# ---- gcc 2.7.2.3: the wrapper links ----------------------------------------
+# m68k-cbm-sysv4-gcc links crt1/crti/crtn, libc.so.1 plus AMIX's libc archive
+# usr/ccs/lib/libc.so (select, syslog, gettimeofday, ...) and libgcc.a itself,
+# and passes -Wl, options to ld (gcc-cross-amix 83765c5 or later).
+# ld 2.8.1 takes -R DIR only for a directory that exists on the build host,
+# so the runpath is given with -rpath.
 GCC = m68k-cbm-sysv4-gcc
-LD272   ?= m68k-cbm-sysv4-ld
-SYSROOT ?= $(or $(AMIX_SYSROOT),$(PKG_SYSROOT),$(HOME)/opt/amix-cross/m68k-cbm-sysv4/sysroot)
-CRT_DIR ?= $(or $(AMIX_CRT_DIR),$(SYSROOT)/usr/ccs/lib)
-CFLAGS  ?= -O -m68020
-# libgcc.a beside the compiler (the wrapper has no -print-libgcc-file-name)
-LIBGCC  ?= $(lastword $(sort $(wildcard $(dir $(shell command -v $(GCC)))../lib/gcc-lib/m68k-cbm-sysv4/*/libgcc.a)))
-LINK = $(LD272) -dynamic-linker /usr/lib/libc.so.1 -o $@ \
-	$(CRT_DIR)/crt1.o $(CRT_DIR)/crti.o hello.o \
-	-rpath /usr/motif/lib:/usr/x11r6/lib -rpath-link $(X)/lib \
-	-L$(M)/lib -L$(X)/lib -L$(SYSROOT)/usr/lib -L$(CRT_DIR) $(XLIBS) \
-	$(SYSROOT)/usr/lib/libc.so.1 $(CRT_DIR)/libc.so $(LIBGCC) \
-	$(CRT_DIR)/crtn.o
+CFLAGS ?= -O -m68020
+LINK = $(CC) -o $@ hello.o -L$(M)/lib -L$(X)/lib \
+	-Wl,-rpath,/usr/motif/lib:/usr/x11r6/lib -Wl,-rpath-link,$(X)/lib \
+	$(XLIBS)
 
 else
 $(error TOOLCHAIN must be gcc14 or gcc272, not '$(TOOLCHAIN)')
