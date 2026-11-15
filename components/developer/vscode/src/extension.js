@@ -66,7 +66,8 @@ function activate(context) {
     vscode.commands.registerCommand('amix.makeGcc14', () => runMake(false, 'gcc14')),
     vscode.commands.registerCommand('amix.makeCleanGcc272', () => runMake(true, 'gcc272')),
     vscode.commands.registerCommand('amix.makeCleanGcc14', () => runMake(true, 'gcc14')),
-    vscode.commands.registerCommand('amix.newCdeHelloProject', newCdeHelloProject),
+    vscode.commands.registerCommand('amix.newCdeHelloProject', () => newSampleProject('cde')),
+    vscode.commands.registerCommand('amix.newConsoleHelloProject', () => newSampleProject('console')),
     // for tasks.json: ${command:amix.fixNeededScript}
     vscode.commands.registerCommand('amix.fixNeededScript', fixNeededScript)
   );
@@ -474,7 +475,22 @@ async function runMake(clean, which) {
 }
 
 // Copy samples/cde-hello into the workspace (or a folder picked when none is open).
-async function newCdeHelloProject() {
+// the sample projects: folder under samples/, name, what to do after
+const SAMPLES = {
+  cde: {
+    dir: 'cde-hello',
+    title: 'CDE Hello World',
+    run: 'copy hello to the A3000 and start it in a dtterm'
+  },
+  console: {
+    dir: 'console-hello',
+    title: 'Console (curses) Hello World',
+    run: 'copy hello to the A3000 and start it in any terminal (needs library/ncurses there)'
+  }
+};
+
+async function newSampleProject(which) {
+  const sample = SAMPLES[which];
   const folders = vscode.workspace.workspaceFolders || [];
   let parent;
   if (folders.length > 0) {
@@ -483,15 +499,15 @@ async function newCdeHelloProject() {
     const picked = await vscode.window.showOpenDialog({
       canSelectFiles: false,
       canSelectFolders: true,
-      openLabel: 'Create CDE Hello World here'
+      openLabel: `Create ${sample.title} here`
     });
     if (!picked || picked.length === 0) return;
     parent = picked[0].fsPath;
   }
 
   const name = await vscode.window.showInputBox({
-    prompt: 'Folder for the CDE Hello World project',
-    value: 'cde-hello',
+    prompt: `Folder for the ${sample.title} project`,
+    value: sample.dir,
     validateInput: (v) => {
       if (!v || /[\\/]/.test(v) || v === '.' || v === '..') return 'A plain folder name';
       if (fs.existsSync(path.join(parent, v))) return `${v} already exists`;
@@ -500,7 +516,7 @@ async function newCdeHelloProject() {
   });
   if (!name) return;
 
-  const src = path.join(extensionRoot, 'samples', 'cde-hello');
+  const src = path.join(extensionRoot, 'samples', sample.dir);
   const dest = path.join(parent, name);
   fs.mkdirSync(dest);
   for (const f of ['hello.c', 'Makefile', 'amix-fix-needed', 'README.md']) {
@@ -515,7 +531,7 @@ async function newCdeHelloProject() {
   const doc = await vscode.workspace.openTextDocument(path.join(dest, 'hello.c'));
   await vscode.window.showTextDocument(doc);
   vscode.window.showInformationMessage(
-    `CDE Hello World in ${name}: run "AMIX: Run Make in AMIX Project" (${cfg().label}), then copy hello to the A3000.`
+    `${sample.title} in ${name}: run "AMIX: Run Make in AMIX Project" (${cfg().label}), then ${sample.run}.`
   );
 }
 

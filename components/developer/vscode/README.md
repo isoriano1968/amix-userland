@@ -100,7 +100,7 @@ From this component directory (`components/developer/vscode` in
 amix-userland):
 
 ```sh
-make install      # make build only packages build/vscode-amix-0.4.0.vsix
+make install      # make build only packages build/vscode-amix-0.5.0.vsix
 ```
 
 `make build` runs `npx @vscode/vsce package` with the component's GitHub
@@ -149,6 +149,7 @@ toolchain, the extension offers to rewrite `.vscode/settings.json` and
 - `AMIX: Run Make in AMIX Project with gcc 2.7.2.3` / `with gcc 14`
 - `AMIX: Run Make Clean in AMIX Project with gcc 2.7.2.3` / `with gcc 14`
 - `AMIX: New CDE Hello World Project`
+- `AMIX: New Console (curses) Hello World Project`
 
 ## Makefile Builds
 
@@ -250,6 +251,31 @@ console's X server:
 
 ```sh
 DISPLAY=:0 ./hello
+```
+
+## Console Hello World
+
+For a program without X, `AMIX: New Console (curses) Hello World Project`
+copies a curses terminal program (folder `console-hello`): a framed window
+with the system name, a ticking clock and a small menu (arrow keys, Enter,
+`q`). It runs on the console, in a dtterm or over ssh. The snippet
+`amix-curses-hello` gives the same program in any C file.
+
+It builds like the CDE sample (`make`, `make TOOLCHAIN=gcc272`, or
+`AMIX: Run Make in AMIX Project`). curses is ncurses 6.6 (amix-userland
+`library/ncurses`), shared from the gcc 14 sysroot's `usr/local` for both
+compilers:
+
+```text
+-I<sysroot>/usr/local/include  -L<sysroot>/usr/local/lib -lncurses -lamixc99
+```
+
+with the runpath `/usr/local/lib`. The A3000 needs the `library/ncurses`
+package (`/usr/local/lib/libncurses.so.6` and its terminfo); then, in any
+terminal:
+
+```sh
+TERM=vt100 ./hello
 ```
 
 ## Notes
