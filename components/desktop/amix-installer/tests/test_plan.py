@@ -5,7 +5,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from amix_installer import hdf, model, plan, safety  # noqa: E402
+from amix_installer import fsuae, hdf, model, plan, safety  # noqa: E402
 
 
 def fake_source(path, found=(), pvmk=None, movable=0):
@@ -22,6 +22,7 @@ def fake_source(path, found=(), pvmk=None, movable=0):
 
 class Base(unittest.TestCase):
     def setUp(self):
+        plan._fs_cache[:] = [fsuae.FsUae()]      # no FS-UAE: tests never see the host's
         self.tmp = tempfile.TemporaryDirectory()
         self.d = self.tmp.name
         self.src = os.path.join(self.d, "core.hdf")
@@ -122,6 +123,73 @@ class MakePlan(Base):
         conf = plan.pvmk_conf(c)
         self.assertIn("z3reloc=no", conf)
         self.assertIn("keymap=de-pc", conf)
+
+
+def fake_fs(base, installed=True, config=False, roms=()):
+    f = fsuae.FsUae()
+    f.binary = "/usr/bin/fs-uae" if installed else None
+    f.version = "3.2.35" if installed else None
+    f.base = base
+    os.makedirs(os.path.join(base, "Configurations"), exist_ok=True)
+    os.makedirs(os.path.join(base, "Kickstarts"), exist_ok=True)
+    for r in roms:
+        open(os.path.join(base, "Kickstarts", r), "w").close()
+    if config:
+        open(f.config_path(), "w").close()
+    return f
+
+
+class FsUae(Base):
+    def ids(self, fs, **paths):
+        p = dict(self.paths(), **paths)
+        return [a.id for a in plan.make_plan(self.cfg(), p, fs).actions]
+
+    def test_suggests_and_writes_the_config(self):
+        fs = fake_fs(os.path.join(self.d, "FS-UAE"), roms=("A3000.47.111.rom", "A3000.47.115.rom",
+                                                            "A1200.47.115.rom"))
+        self.assertEqual(fs.a3000_kickstarts()[0].endswith("A3000.47.115.rom"), True)
+        pl = plan.make_plan(self.cfg(), self.paths(), fs)
+        fa = [a for a in pl.actions if a.id == "fs-uae"][0]
+        self.assertTrue(fa.available)                       # Kickstart from FS-UAE's folder
+        self.assertIn("A3000.47.115.rom", fa.text())
+        self.assertEqual(pl.actions[-1].id, "fs-uae-list")  # the last step
+        pl.actions = [a for a in pl.actions if a.id in ("fs-uae", "fs-uae-list")]
+        plan.execute(pl)
+        with open(fs.config_path()) as f:
+            self.assertIn("network_card = a2065", f.read())
+        self.assertTrue(fs.has_config())
+
+    def test_existing_config_is_kept(self):
+        fs = fake_fs(os.path.join(self.d, "FS-UAE"), config=True, roms=("A3000.47.115.rom",))
+        self.assertNotIn("fs-uae-list", self.ids(fs))
+
+    def test_switched_off(self):
+        fs = fake_fs(os.path.join(self.d, "FS-UAE"), roms=("A3000.47.115.rom",))
+        self.assertNotIn("fs-uae-list", self.ids(fs, fsuae_add=False))
+
+    def test_not_installed(self):
+        fs = fake_fs(os.path.join(self.d, "FS-UAE"), installed=False, roms=("A3000.47.115.rom",))
+        pl = plan.make_plan(self.cfg(), self.paths(), fs)
+        self.assertNotIn("fs-uae-list", [a.id for a in pl.actions])
+        inst = [a for a in pl.actions if a.id == "install"][0]
+        self.assertIn("FS-UAE is not installed", inst.missing)
+
+    def test_no_kickstart_anywhere(self):
+        fs = fake_fs(os.path.join(self.d, "FS-UAE"))
+        pl = plan.make_plan(self.cfg(), self.paths(), fs)
+        self.assertFalse([a for a in pl.actions if a.id == "fs-uae"][0].available)
+        self.assertNotIn("fs-uae-list", [a.id for a in pl.actions])
+
+    def test_base_dir_from_environment(self):
+        old = os.environ.get("FS_UAE_BASE_DIR")
+        os.environ["FS_UAE_BASE_DIR"] = self.d
+        try:
+            self.assertEqual(fsuae.base_dir(), self.d)
+        finally:
+            if old is None:
+                del os.environ["FS_UAE_BASE_DIR"]
+            else:
+                os.environ["FS_UAE_BASE_DIR"] = old
 
 
 class Execute(Base):

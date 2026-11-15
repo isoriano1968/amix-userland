@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""amix-publish -s REPO [-d DIR]... FILE.p5m... -- publish IPS packages into a
+file repository, as pkgsend publish does, without pkg(5): on the PC (Linux).
+
+The repository is pkg5's own layout, version 4 (doc/plans/IPS-CLIENT-DESIGN.md):
+  pkg5.repository
+  publisher/amix/file/<xx>/<sha1>          payloads, gzipped
+  publisher/amix/pkg/<stem>/<version>       manifests with hashes and sizes
+  publisher/amix/catalog/catalog.{attrs,base.C,dependency.C,summary.C}
+A payload's path in the .p5m (file PATH ...) is looked up in the -d
+directories, in order. Each package gets the publish time as its timestamp;
+the catalog is rebuilt from all manifests in the repository.
+"""
+import argparse
+import datetime
+import gzip
+import hashlib
+import json
+import os
+import shlex
+import sys
+import urllib.parse
+
+PUBLISHER = "amix"
+TYPE_ORDER = ["set", "license", "depend", "dir", "file", "hardlink", "link"]
+
+REPO_CFG = """[publisher]
+prefix = %s
+
+[repository]
+version = 4
+trust-anchor-directory = /etc/certs/CA/
+signature-required-names = []
+check-certificate-revocation = False
+
+[CONFIGURATION]
+version = 4
+
+""" % PUBLISHER
+
+
+def q(v):
+    if v == "" or any(c in v for c in " \t\"'"):
+        return '"%s"' % v.replace("\\", "\\\\").replace('"', '\\"')
+    return v
+
+
+def parse_action(line):
+    """type [payload] key=value ...: a word without '=' is the payload"""
+    w = shlex.split(line, posix=True)
+    a = {"type": w[0], "payload": None, "attrs": []}
+    for t in w[1:]:
+        if "=" in t:
+            k, _, v = t.partition("=")
+            a["attrs"].append((k, v))
+        elif a["payload"] is None:
+            a["payload"] = t
+        else:
+            raise SystemExit("amix-publish: two payloads in: %s" % line)
+    return a
+
+
+def attr(a, k):
+    for kk, v in a["attrs"]:
+        if kk == k:
+            return v
+    return None
+
+
+def fmt_action(a):
+    attrs = sorted(a["attrs"], key=lambda kv: (kv[0], kv[1]))
+    s = a["type"]
+    if a["payload"]:
+        s += " " + a["payload"]
+    return s + "".join(" %s=%s" % (k, q(v)) for k, v in attrs)
+
+
+def sort_key(a):
+    t = a["type"]
+    order = TYPE_ORDER.index(t) if t in TYPE_ORDER else len(TYPE_ORDER)
+    if t == "set":
+        n = attr(a, "name") or ""
+        return (order, 0 if n == "pkg.fmri" else 1, n)
+    return (order, 0, attr(a, "path") or attr(a, "fmri") or attr(a, "license") or "")
+
+
+def sha1(b):
+    return hashlib.sha1(b).hexdigest()
+
+
+def sha512_256(b):
+    return hashlib.new("sha512_256", b).hexdigest()
+
+
+def find_payload(path, dirs):
+    for d in dirs:
+        p = os.path.join(d, path)
+        if os.path.isfile(p):
+            return p
+    raise SystemExit("amix-publish: %s: not in %s" % (path, ", ".join(dirs)))
+
+
+def store(repo, data):
+    h = sha1(data)
+    gz = gzip.compress(data, compresslevel=9, mtime=0)
+    d = os.path.join(repo, "publisher", PUBLISHER, "file", h[:2])
+    os.makedirs(d, exist_ok=True)
+    f = os.path.join(d, h)
+    if not os.path.exists(f):
+        with open(f + ".part", "wb") as o:
+            o.write(gz)
+        os.replace(f + ".part", f)
+    else:
+        with open(f, "rb") as i:
+            gz = i.read()
+    return h, gz
+
+
+def publish(repo, p5m, dirs, ts):
+    with open(p5m) as f:
+        lines = [ln.rstrip("\n") for ln in f if ln.strip() and not ln.lstrip().startswith("#")]
+    acts = [parse_action(ln) for ln in lines]
+    fmri = None
+    for a in acts:
+        if a["type"] == "set" and attr(a, "name") == "pkg.fmri":
+            fmri = attr(a, "value")
+    if not fmri:
+        raise SystemExit("amix-publish: %s: no pkg.fmri" % p5m)
+    if fmri.startswith("pkg://"):
+        fmri = fmri.split("/", 3)[3]
+    elif fmri.startswith("pkg:/"):
+        fmri = fmri[5:]
+    stem, _, version = fmri.partition("@")
+    version = version.split(":")[0] + ":" + ts
+    out = []
+    for a in acts:
+        if a["type"] == "set" and attr(a, "name") == "pkg.fmri":
+            a["attrs"] = [("name", "pkg.fmri"), ("value", "pkg://%s/%s@%s" % (PUBLISHER, stem, version))]
+        if a["type"] in ("file", "license"):
+            src = a["payload"] or attr(a, "path")
+            data = open(find_payload(src, dirs), "rb").read()
+            h, gz = store(repo, data)
+            a["payload"] = h
+            a["attrs"] = [kv for kv in a["attrs"] if kv[0] not in
+                          ("chash", "pkg.size", "pkg.csize", "pkg.content-hash")]
+            a["attrs"] += [("chash", sha1(gz)), ("pkg.size", str(len(data))),
+                           ("pkg.csize", str(len(gz))),
+                           ("pkg.content-hash", "file:sha512t_256:" + sha512_256(data)),
+                           ("pkg.content-hash", "gzip:sha512t_256:" + sha512_256(gz))]
+        out.append(a)
+    out.sort(key=sort_key)
+    text = "".join(fmt_action(a) + "\n" for a in out)
+    d = os.path.join(repo, "publisher", PUBLISHER, "pkg", urllib.parse.quote(stem, safe=""))
+    os.makedirs(d, exist_ok=True)
+    f = os.path.join(d, urllib.parse.quote(version, safe=""))
+    with open(f + ".part", "w") as o:
+        o.write(text)
+    os.replace(f + ".part", f)
+    return "pkg://%s/%s@%s" % (PUBLISHER, stem, version)
+
+
+def signed(obj):
+    """pkg5's catalog files: compact, sorted keys, then _SIGNATURE (sha1 of the rest)."""
+    body = json.dumps(obj, sort_keys=True, separators=(",", ":"))
+    sig = sha1(body.encode())
+    return body[:-1] + ',"_SIGNATURE":{"sha-1":"%s"}}' % sig, sig
+
+
+def rebuild_catalog(repo, now):
+    pkgdir = os.path.join(repo, "publisher", PUBLISHER, "pkg")
+    base, dep, summ = {}, {}, {}
+    versions = 0
+    for qs in sorted(os.listdir(pkgdir)) if os.path.isdir(pkgdir) else []:
+        stem = urllib.parse.unquote(qs)
+        for qv in sorted(os.listdir(os.path.join(pkgdir, qs))):
+            if qv.endswith(".part"):
+                continue
+            version = urllib.parse.unquote(qv)
+            raw = open(os.path.join(pkgdir, qs, qv), "rb").read()
+            base.setdefault(stem, []).append({"signature-sha-1": sha1(raw), "version": version})
+            deps, sets, sums = [], [], []
+            for ln in raw.decode().splitlines():
+                a = parse_action(ln)
+                if a["type"] == "depend":
+                    deps.append(fmt_action(a))
+                elif a["type"] == "set" and attr(a, "name") in ("variant.arch",):
+                    sets.append(fmt_action(a))
+                elif a["type"] == "set" and attr(a, "name") in ("pkg.summary", "pkg.description"):
+                    sums.append(fmt_action(a))
+            dep.setdefault(stem, []).append({"actions": deps + sets, "version": version})
+            summ.setdefault(stem, []).append({"actions": sums, "version": version})
+            versions += 1
+    cat = os.path.join(repo, "publisher", PUBLISHER, "catalog")
+    os.makedirs(cat, exist_ok=True)
+    parts = {}
+    for name, data in (("catalog.base.C", base), ("catalog.dependency.C", dep),
+                       ("catalog.summary.C", summ)):
+        text, sig = signed({PUBLISHER: data})
+        with open(os.path.join(cat, name + ".part"), "w") as o:
+            o.write(text)
+        parts[name] = {"last-modified": now, "signature-sha-1": sig}
+    attrs = {"created": now, "last-modified": now, "package-count": len(base),
+             "package-version-count": versions, "parts": parts, "updates": {}, "version": 1}
+    old = os.path.join(cat, "catalog.attrs")
+    if os.path.exists(old):
+        try:
+            attrs["created"] = json.load(open(old))["created"]
+        except (ValueError, KeyError):
+            pass
+    text, _ = signed(attrs)
+    # parts first, catalog.attrs last: a client reading meanwhile sees the old whole
+    for name in parts:
+        os.replace(os.path.join(cat, name + ".part"), os.path.join(cat, name))
+    for f in os.listdir(cat):
+        if f.startswith("update.") and f.endswith(".C"):
+            os.remove(os.path.join(cat, f))      # no update logs: clients fetch the parts
+    with open(old + ".part", "w") as o:
+        o.write(text)
+    os.replace(old + ".part", old)
+    return len(base), versions
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="amix-publish")
+    ap.add_argument("-s", "--repo", required=True)
+    ap.add_argument("-d", "--dir", action="append", default=[])
+    ap.add_argument("manifests", nargs="*")
+    a = ap.parse_args()
+    os.makedirs(a.repo, exist_ok=True)
+    cfg = os.path.join(a.repo, "pkg5.repository")
+    if not os.path.exists(cfg):
+        with open(cfg, "w") as f:
+            f.write(REPO_CFG)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    ts = now.strftime("%Y%m%dT%H%M%SZ")
+    for m in a.manifests:
+        print(publish(a.repo, m, a.dir or ["."], ts))
+    n, v = rebuild_catalog(a.repo, now.strftime("%Y%m%dT%H%M%S.%fZ"))
+    sys.stderr.write("amix-publish: %s: %d packages, %d versions\n" % (a.repo, n, v))
+
+
+if __name__ == "__main__":
+    main()

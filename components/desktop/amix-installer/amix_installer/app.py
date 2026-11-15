@@ -13,7 +13,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import APP_ID, __version__, hdf, model, plan, profile, safety  # noqa: E402
+from . import APP_ID, __version__, fsuae, hdf, model, plan, profile, safety  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -303,6 +303,7 @@ class Window(Adw.ApplicationWindow):
             page.append(self._group(g))
         if s.id == "base":
             page.append(self._source_group())
+            page.append(self._fsuae_group())
             page.append(self._source_view())
         if s.summary:
             page.append(self._summary())
@@ -408,6 +409,10 @@ class Window(Adw.ApplicationWindow):
 
             def upd():
                 p = self.paths.get(key)
+                if not p and key == "kickstart" and plan.fs_uae().a3000_kickstarts():
+                    row.set_subtitle("From FS-UAE\u2019s Kickstarts: %s" % os.path.basename(
+                        plan.fs_uae().a3000_kickstarts()[0]))
+                    return
                 row.set_subtitle(p if p else ("No folder chosen" if folder else "No file chosen"))
             self._extra.append(upd)
             return row
@@ -435,6 +440,44 @@ class Window(Adw.ApplicationWindow):
                                 tgt, "Folder for the new HDF files"))
             kick.set_visible(src in ("hdf", "tape"))
         self._extra.append(vis)
+        return pg
+
+    def _fsuae_group(self):
+        """FS-UAE on this host and the "AMIX Installer" configuration in its list."""
+        fs = plan.fs_uae()
+        pg = Adw.PreferencesGroup(title="FS-UAE",
+                                  description="The disks are filled in FS-UAE, over its A2065.")
+        st = Adw.ActionRow(title="FS-UAE")
+        if fs.installed:
+            st.set_subtitle("%s, %s" % (fs.version or "installed", fs.binary))
+            ic = Gtk.Image.new_from_icon_name("object-select-symbolic")
+            ic.add_css_class("success")
+        else:
+            st.set_subtitle("Not installed. Install it with: " + fsuae.install_hint())
+            ic = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
+            ic.add_css_class("warning")
+        st.add_prefix(ic)
+        pg.add(st)
+        cf = Adw.ActionRow(title="\u201c%s\u201d configuration" % fsuae.CONFIG_NAME)
+        if fs.has_config():
+            cf.set_subtitle("In FS-UAE\u2019s list: %s" % fs.config_path())
+            pg.add(cf)
+        elif fs.installed:
+            sw = Gtk.Switch(valign=Gtk.Align.CENTER, active=self.paths.get("fsuae_add", True))
+            sw.connect("notify::active",
+                       lambda w, _p: self.paths.__setitem__("fsuae_add", w.get_active()))
+            cf.set_subtitle("Not there yet: create it with the disks, so FS-UAE\u2019s launcher "
+                            "lists it (%s)" % os.path.join(os.path.basename(fs.folder(
+                                "Configurations")), fsuae.CONFIG_NAME + ".fs-uae"))
+            cf.add_suffix(sw)
+            cf.set_activatable_widget(sw)
+            pg.add(cf)
+        if fs.configurations():
+            pg.add(Adw.ActionRow(title="Configurations there",
+                                 subtitle=", ".join(fs.configurations())))
+        self._extra.append(lambda: pg.set_visible(
+            self.cfg.sel["src"] in ("hdf", "tape") and
+            self.cfg.sel["target"] in ("sd", "card", "file")))
         return pg
 
     # -- the source image ---------------------------------------------------

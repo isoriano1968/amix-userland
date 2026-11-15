@@ -13,6 +13,8 @@ def main(argv=None):
     ap.add_argument("--out", metavar="DIR", help="folder for the new disks (--plan, --apply)")
     ap.add_argument("--kickstart", metavar="ROM",
                     help="your A3000 Kickstart ROM, for the FS-UAE configuration")
+    ap.add_argument("--no-fs-uae-list", action="store_true",
+                    help="do not add \"AMIX Installer\" to FS-UAE's configurations")
     ap.add_argument("--plan", action="store_true", help="print the plan and exit (no window)")
     ap.add_argument("--apply", action="store_true",
                     help="write what this version can (no window); needs --source and --out")
@@ -50,6 +52,8 @@ def run_plan(args):
         paths["out_dir"] = os.path.abspath(args.out)
     if args.kickstart:
         paths["kickstart"] = os.path.abspath(args.kickstart)
+    if args.no_fs_uae_list:
+        paths["fsuae_add"] = False
     pl = plan.make_plan(cfg, paths)
     print(pl.text())
     if pl.problems:

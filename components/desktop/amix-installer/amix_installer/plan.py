@@ -20,7 +20,7 @@ import subprocess
 import tempfile
 import time
 
-from . import __version__, hdf, model, safety
+from . import __version__, fsuae, hdf, model, safety
 
 CHUNK = 4 << 20
 JOURNAL = ".amix-installer-journal"
@@ -441,6 +441,31 @@ class FsUaeConfig(Action):
         finish(ctx, FSUAE_CONFIG)
 
 
+class FsUaeRegister(Action):
+    """The configuration in FS-UAE's own list, as "AMIX Installer": the last
+    step, a new file only (an existing one is never replaced)."""
+
+    def __init__(self, fs, text_of):
+        super(FsUaeRegister, self).__init__(
+            "fs-uae-list", "Add “%s” to FS-UAE" % fsuae.CONFIG_NAME,
+            fs.config_path(), 4096, [])
+        self.fs = fs
+        self.text_of = text_of
+
+    def run(self, ctx):
+        dst = self.fs.config_path()
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if os.path.exists(dst):
+            raise safety.Refused("%s exists; not replaced" % dst)
+        with open(dst + ".part", "x") as f:
+            f.write(self.text_of())
+            f.flush()
+            os.fsync(f.fileno())
+        os.rename(dst + ".part", dst)
+        ctx.log("%s written" % dst)
+        ctx.progress(1.0, "done")
+
+
 def readme(cfg, names):
     sel = cfg.sel
     lines = ["Disks written by the AMIX Installer %s." % __version__, ""]
@@ -463,8 +488,20 @@ def readme(cfg, names):
     return "\n".join(lines) + "\n"
 
 
-def make_plan(cfg, paths):
-    """The ordered plan for cfg; paths: core_hdf, out_dir, kickstart, host."""
+_fs_cache = []
+
+
+def fs_uae():
+    """FS-UAE on this host, looked up once."""
+    if not _fs_cache:
+        _fs_cache.append(fsuae.detect())
+    return _fs_cache[0]
+
+
+def make_plan(cfg, paths, fs=None):
+    """The ordered plan for cfg; paths: core_hdf, out_dir, kickstart, host,
+    fsuae_add (default True: add "AMIX Installer" to FS-UAE's list)."""
+    fs = fs or fs_uae()
     pl = Plan(cfg, paths)
     sel = cfg.sel
     src = paths.get("core_hdf")
@@ -518,7 +555,11 @@ def make_plan(cfg, paths):
             pl.actions.append(PvmkDisk(cfg, find_pvmk(), names["pvmk"]))
     if "data" in names:
         pl.actions.append(DataDisk(src, names["data"], model.DATA_DISK_MB[sel["dsize"]] << 20))
-    pl.actions.append(FsUaeConfig(names, paths.get("kickstart"), out))
+    kick = paths.get("kickstart")
+    if not kick and fs.a3000_kickstarts():
+        kick = fs.a3000_kickstarts()[0]      # the newest A3000 ROM in FS-UAE's folder
+    fsc = FsUaeConfig(names, kick, out)
+    pl.actions.append(fsc)
 
     # what AMIX does in FS-UAE over the emulated A2065 (0.4)
     inside = []
@@ -546,11 +587,16 @@ def make_plan(cfg, paths):
     if inside:
         pl.actions.append(Later("install", "Install in FS-UAE over its A2065",
                                 "you start FS-UAE and type one command; AMIX then "
-                                + "; ".join(inside), NO_NET))
+                                + "; ".join(inside),
+                                NO_NET if fs.installed else
+                                "FS-UAE is not installed here (%s)" % fsuae.install_hint()))
     if sel["target"] == "sd":
         pl.actions.append(FragCheck([n for a in pl.runnable() for n in a.outputs
                                      if n.endswith(".hdf")]))
     pl.actions.append(Checksums(cfg, readme(cfg, names)))
+    if fs.installed and paths.get("fsuae_add", True) and fsc.available and \
+            not fs.has_config():
+        pl.actions.append(FsUaeRegister(fs, fsc.text))
 
     need = sum(a.size for a in pl.runnable())
     try:
