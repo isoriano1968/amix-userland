@@ -1,69 +1,38 @@
 #!/bin/sh
-# build-cde.sh -- CDE 2.2.4a for AMIX, cross-built with gcc14-cross-amix.
+# build-cde.sh -- CDE 2.2.4a for AMIX on shared libraries, cross-built with
+# gcc 14 in prep.sh's tree.
 #
 # CDE builds with imake.  The patches add an AMIX platform (config/cf/amix.cf,
 # host.def, config/amix/include for what SVR4.0 lacks) and the source changes
-# the port needed.  Three things are prepared here before the build:
-#   imports/            the X11R6.3 and Motif headers and static libraries
-#   amix-cxxfix/        C++-usable copies of AMIX's K&R system headers,
-#                       generated from your sysroot (amix-cxxfix.py)
-#   config/cf/amixpaths.def  this build's paths
-# CDE also runs tools of its own during the build (the help compiler,
-# lineToData, makestrs, ...): hostbuild.sh builds those for the host.
-# Everything is linked statically against X and Motif; AMIX's libc,
-# libsocket and libnsl stay shared.
+# the port needed; prep.sh put this build's paths into host.def.  CDE also
+# runs tools of its own during the build (the help compiler, lineToData,
+# makestrs, ...): hostbuild.sh builds those for the host.
+#
+# Everything is compiled -fPIC.  After the libraries, shared-cde-libs.sh makes
+# libDt*.so.2, libtt.so.2 and libcsa.so.2 from their archives in
+# build/shared/usr/dt/lib; the programs then link those, and X, libXp and
+# Motif from the sysroot.  AMIX's libc, libsocket and libnsl are shared.
 set -e
 . "$(dirname "$0")/common.sh"
-need gcc g++ make patch python3 bash cpp bdftopcf mkfontdir
-[ -f "$MOTIF_ROOT/usr/motif/lib/libXm.a" ] || { echo "build Motif first (desktop/motif: make build)"; exit 1; }
-[ -f "$LIBXP/libXp.a" ] || { echo "build libXp first (x11/libxp: make build)"; exit 1; }
-FIXED=$(ls -d "$TOOLCHAIN"/lib/gcc/m68k-elf/*/include-fixed | head -1)
-[ -d "$FIXED" ] || { echo "no include-fixed under $TOOLCHAIN/lib/gcc/m68k-elf"; exit 1; }
-export CDE
+need "$HOST_CC" "$HOST_CXX" make python3 bash cpp flex bison bdftopcf mkfontdir
+# CDE's Makefiles build serially, on their own: nothing of the outer make's
+# flags (jobs, variables) reaches them
+unset MAKEFLAGS MFLAGS MAKELEVEL MAKEOVERRIDES
 
-echo "== unpack and patch CDE"
-rm -rf "$CDE"
-tar -C "$WORK" -xzf "$DL/cde-src-$CDE_VER.tar.gz"
-for p in "$TOP"/patches/cde/*.patch; do patch -s -d "$CDE" -p1 < "$p"; done
-# CDE_SHARED=STAGE, from build-shared-cde.sh: position-independent, X and Motif
-# from STAGE, and programs that find the libraries at their AMIX paths.  ld reads
-# a library that only another .so names after the archives, so what those need
-# from libgen, libm and the C++ runtime is asked for again at the end of the line.
-if [ -n "$CDE_SHARED" ]; then
-	sed -i -e 's|bin/m68k-elf-gcc$|bin/m68k-elf-gcc -fPIC|' \
-		-e 's|bin/m68k-elf-g++ -fpermissive$|bin/m68k-elf-g++ -fpermissive -fPIC|' "$CDE/config/cf/host.def"
-	cat >> "$CDE/config/cf/host.def" <<D
-#define ExtraLoadFlags -Wl,-R,/usr/dt/lib:/usr/motif/lib:/usr/x11r6/lib -Wl,-rpath-link,$CDE_SHARED/usr/x11r6/lib -Wl,-rpath-link,$CDE_SHARED/usr/motif/lib -Wl,-rpath-link,$CDE_SHARED/usr/dt/lib -Wl,--as-needed -lXm -ltt -Wl,--no-as-needed -lgen -lm -lstdc++ -lsupc++ -lamixcde
-D
-fi
-cat > "$CDE/config/cf/amixpaths.def" <<E
-/* written by build-cde.sh */
-#define AmixCrossPrefix		$TOOLCHAIN
-#define AmixSysroot		$SYSROOT
-#define AmixBuildTop		$CDE
-E
-
-echo "== imports, amix-cxxfix"
-cd "$CDE/imports"
-mkdir -p x11/lib x11/bin motif/lib
-ln -s "$X11_EXPORTS/include" x11/include
-for a in "$X11_EXPORTS"/lib/*.a; do ln -s "$a" x11/lib/; done
-ln -sf "$LIBXP/libXp.a" x11/lib/libXp.a
-ln -s "$(command -v bdftopcf)" "$(command -v mkfontdir)" x11/bin/
-ln -s "$MOTIF_ROOT/usr/motif/include" motif/include
-ln -s "$MOTIF_ROOT/usr/motif/lib/libXm.a" "$MOTIF_ROOT/usr/motif/lib/libMrm.a" motif/lib/
-ln -s "$MOTIF_SRC/lib/Xm" motif/lib/Xm
-if [ -n "$CDE_SHARED" ]; then
-	ln -s "$CDE_SHARED"/usr/x11r6/lib/*.so "$CDE_SHARED"/usr/x11r6/lib/*.so.7 x11/lib/
-	ln -s "$CDE_SHARED"/usr/motif/lib/*.so "$CDE_SHARED"/usr/motif/lib/*.so.4 motif/lib/
-fi
-python3 -I "$S/amix-cxxfix.py" "$SYSROOT" "$FIXED" "$CDE/amix-cxxfix"
+echo "== libXtInherit.a"
+# a program's own _XtInherit (xtinherit.c says why), compiled as x11/x11r6.3's
+# build-shared.sh compiles it; it is not in the x11r6.3 package (the Amiga's
+# own gcc builds it there), so the programs get it from here
+rm -rf "$XTI"; mkdir -p "$XTI"
+$CC14 -O2 $CPU -I"$X11/include" -D__amix__ -DSVR4 -w -c "$TOP/../../x11/x11r6.3/files/xtinherit.c" -o "$XTI/xtinherit.o"
+m68k-elf-ar rcs "$XTI/libXtInherit.a" "$XTI/xtinherit.o"
+rm -f "$XTI/xtinherit.o"
 
 echo "== imake and the Makefiles"
 cd "$CDE"
 export IMAKECPP="$S/imakecpp.sh"
 (cd config/imake && make -f Makefile.ini BOOTSTRAPCFLAGS="-DAMIX -DSVR4 -Dm68k" \
-	CC="gcc -std=gnu89 -fcommon -w" > "$CDE/imake-bootstrap.log" 2>&1)
+	CC="$HOST_CC -std=gnu89 -fcommon -w" > "$CDE/imake-bootstrap.log" 2>&1)
 ./config/imake/imake -I./config/cf -s xmakefile -DTOPDIR=. -DCURDIR=. > xmakefile.log 2>&1
 make -f xmakefile Makefiles > make-Makefiles.log 2>&1
 
@@ -84,27 +53,26 @@ make -k -f xmakefile includes < /dev/null > make-includes.log 2>&1 || true
 sh "$H" programs/dthelp/parser all > hb-dthelp-parser.log 2>&1 || true
 echo "== libraries (make-lib.log)"
 (cd lib && make -k < /dev/null > ../make-lib.log 2>&1) || true
-[ -z "$CDE_SHARED" ] || sh "$S/shared-cde-libs.sh" "$CDE" "$CDE_SHARED"
+rm -rf "$OUT"
+sh "$S/shared-cde-libs.sh" "$CDE" "$OUT"
 echo "== programs (make-programs.log)"
 (cd programs && make -k < /dev/null > ../make-programs.log 2>&1) || true
-if [ -n "$CDE_SHARED" ]; then
-	# tools that get Motif and ToolTalk only through other libraries: named
-	# here, before the archives their needs come from
-	F=$(sed -n 's/^#define ExtraLoadFlags //p' config/cf/host.def | sed 's/-Wl,--as-needed.*//')
-	O=$(sed -n 's/^ *EXTRA_LIBRARIES = //p' programs/dtsr/Makefile | head -1)
-	rm -f programs/dtcm/dtcm/dtcm
-	for d in programs/dtcm/dtcm programs/dtlogin programs/dtsr; do
-		make -C "$d" -k EXTRA_LOAD_FLAGS="$F" < /dev/null \
-			EXTRA_LDOPTIONS="-Wl,-u,_XtInherit -L$CDE_SHARED/usr/x11r6/lib -lXtInherit" EXTRA_LIBRARIES="-lDtHelp -lDtSvc -lXm -ltt $O -lgen -lm -lstdc++ -lsupc++ -lamixcde -lamixc99" \
-			>> make-programs.log 2>&1 || true
-	done
-	# with widget classes of their own: one _XtInherit, in the program
-	for p in dtwm/dtwm dtfile/dtfile dtprintinfo/dtprintinfo; do
-		rm -f "programs/$p"
-		d=programs/${p%/*}
-		make -C "$d" -k EXTRA_LDOPTIONS="-Wl,-u,_XtInherit -L$CDE_SHARED/usr/x11r6/lib -lXtInherit" < /dev/null >> make-programs.log 2>&1 || true
-	done
-fi
+# tools that get Motif and ToolTalk only through other libraries: named
+# here, before the archives their needs come from
+F=$(sed -n 's/^#define ExtraLoadFlags //p' config/cf/host.def | sed 's/-Wl,--as-needed.*//')
+O=$(sed -n 's/^ *EXTRA_LIBRARIES = //p' programs/dtsr/Makefile | head -1)
+rm -f programs/dtcm/dtcm/dtcm
+for d in programs/dtcm/dtcm programs/dtlogin programs/dtsr; do
+	make -C "$d" -k EXTRA_LOAD_FLAGS="$F" < /dev/null \
+		EXTRA_LDOPTIONS="-Wl,-u,_XtInherit -L$XTI -lXtInherit" EXTRA_LIBRARIES="-lDtHelp -lDtSvc -lXm -ltt $O -lgen -lm -lstdc++ -lsupc++ -lamixcde -lamixc99" \
+		>> make-programs.log 2>&1 || true
+done
+# with widget classes of their own: one _XtInherit, in the program
+for p in dtwm/dtwm dtfile/dtfile dtprintinfo/dtprintinfo; do
+	rm -f "programs/$p"
+	d=programs/${p%/*}
+	make -C "$d" -k EXTRA_LDOPTIONS="-Wl,-u,_XtInherit -L$XTI -lXtInherit" < /dev/null >> make-programs.log 2>&1 || true
+done
 echo "== fonts (make-fonts.log)"
 make -C programs/fontaliases/linux/C FONTC=bdftopcf MKFONTDIR=mkfontdir < /dev/null > make-fonts.log 2>&1 || true
 echo "== help volumes (make-help.log)"
@@ -113,11 +81,13 @@ echo "== help volumes (make-help.log)"
 
 echo "== result"
 missing=0
-for f in lib/DtSvc/libDtSvc.a lib/tt/lib/libtt.a lib/DtWidget/libDtWidget.a lib/DtHelp/libDtHelp.a \
-	lib/DtTerm/libDtTerm.a lib/DtPrint/libDtPrint.a lib/DtMrm/libDtMrm.a lib/csa/libcsa.a \
+for f in lib/DtSvc/libDtSvc.so.2 lib/tt/lib/libtt.so.2 lib/DtWidget/libDtWidget.so.2 lib/DtHelp/libDtHelp.so.2 \
+	lib/DtTerm/libDtTerm.so.2 lib/DtPrint/libDtPrint.so.2 lib/DtMrm/libDtMrm.so.2 lib/DtSearch/libDtSearch.so.2 \
+	lib/csa/libcsa.so.2 \
 	programs/dtwm/dtwm programs/dtsession/dtsession programs/dtlogin/dtlogin programs/dtterm/dtterm \
 	programs/dtfile/dtfile programs/dtpad/dtpad programs/dtstyle/dtstyle programs/dtexec/dtexec \
 	programs/dtspcd/dtspcd programs/dthelp/dthelpview/dthelpview lib/tt/bin/ttsession/ttsession \
+	programs/dtcalc/dtcalc programs/dtcm/dtcm/dtcm programs/dtprintinfo/dtprintinfo \
 	programs/fontaliases/linux/C/dtinfo.pcf; do
 	if [ -f "$f" ]; then echo "  ok      $f"; else echo "  MISSING $f"; missing=1; fi
 done

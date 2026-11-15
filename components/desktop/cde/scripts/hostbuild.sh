@@ -1,14 +1,16 @@
 #!/bin/sh
-# hostbuild.sh DIR TARGET... -- build CDE build-time tools in $CDE/DIR with the host
-# compiler (they run on the build host during the build); the cross settings
-# from host.def are overridden on the make command line.  CLEAN="files" are
+# hostbuild.sh DIR TARGET... -- build CDE build-time tools in $CDE/DIR with the
+# host's compilers, HOST_CC and HOST_CXX (they run on the build host during the
+# build); the cross settings from host.def are overridden on the make command
+# line.  CLEAN="files" are
 # removed first (a directory that holds only host tools: CLEAN="*.o *.a").
 D=$1; shift
 cd "${CDE:?}/$D" || exit 1
 for t in "$@"; do rm -f "$t"; done
 [ -n "$CLEAN" ] && rm -f $CLEAN
-make CC="gcc -std=gnu89 -fcommon -w" CCLINK="gcc -std=gnu89 -fcommon -w" \
-	CXX="g++ -fpermissive -w" CXXLINK="g++ -fpermissive -w" \
+C=${HOST_CC:-gcc} X=${HOST_CXX:-g++}
+make CC="$C -std=gnu89 -fcommon -w" CCLINK="$C -std=gnu89 -fcommon -w" \
+	CXX="$X -fpermissive -w" CXXLINK="$X -fpermissive -w" \
 	CCOPTIONS= CXXOPTIONS= CDEBUGFLAGS=-O CXXDEBUGFLAGS=-O \
 	STD_DEFINES="-DANSICPP -DMULTIBYTE -DNLS16" \
 	EXTRA_LIBRARIES= EXTRA_LOAD_FLAGS= LDPRELIB= LDPRELIBS= LDPOSTLIB= \

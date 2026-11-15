@@ -90,7 +90,7 @@ def is_host_exec(p):
     return h[:4] == b"\x7fELF" and not h[18:20] == b"\x00\x04"
 
 
-fixed = []
+fixed, links = [], []
 missing, n = [], {"file": 0, "sym_link": 0, "directory": 0}
 for fs in filesets:
     udb = os.path.join(top, "databases", fs + ".udb")
@@ -111,7 +111,12 @@ for fs in filesets:
         elif kind == "sym_link":
             if os.path.lexists(dst):
                 os.remove(dst)
+            # the .udb names the target by its absolute AMIX path; relative,
+            # the link also resolves in an alternate root (stage, sysroot, image)
+            if src.startswith("/"):
+                src = os.path.relpath(src, os.path.dirname(tgt))
             os.symlink(src, dst)
+            links.append((fs, src, tgt, dst))
         else:
             sp = os.path.join(top, src)
             if not os.path.isfile(sp):
@@ -141,6 +146,14 @@ for fs in filesets:
             mode = rec.get("mode", "0444")
             os.chmod(dst, int(mode, 8) & 0o7777 if re.fullmatch(r"0?[0-7]+", mode) else 0o444)
         n[kind] = n.get(kind, 0) + 1
+
+# a link into a fileset that is not staged (CDE-HELP-RUN's SGML links into
+# CDE-INFO, dtinfo) would dangle on AMIX: left out, like its target
+for fs, src, tgt, dst in links:
+    if os.path.lexists(dst) and not os.path.exists(dst):
+        os.remove(dst)
+        n["sym_link"] -= 1
+        missing.append(f"{fs}\t{src}\t{tgt}\t(link to a file not staged)")
 
 open(os.path.join(out, "MISSING"), "w").write("\n".join(missing) + "\n")
 print(f"staged {n} into {out}; {len(fixed)} scripts with \"#!\" moved to line 1; "

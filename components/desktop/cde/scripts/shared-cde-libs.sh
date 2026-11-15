@@ -1,14 +1,15 @@
 #!/bin/sh
-# shared-cde-libs.sh CDE STAGE -- CDE's libraries as shared ones, from their
-# -fPIC archives, next to the archives so that -l finds them first (make still
-# wants the .a).  None has static constructors, so no .init is needed; what a
-# library needs, it names; libstdc++ and libc's stub stay with the program.
+# shared-cde-libs.sh CDE OUT -- CDE's libraries as shared ones, from their
+# -fPIC archives, into OUT/usr/dt/lib, with links next to the archives so that
+# -l finds them first (make still wants the .a).  None has static
+# constructors, so no .init is needed; what a library needs, it names;
+# libstdc++ and libc's stub stay with the program.  X and Motif come from the
+# sysroot.
 set -e
-CDE=$1; STAGE=$2
-TOOLS=$(cd "$(dirname "$0")/../../../.." && pwd)/tools
-L=$STAGE/usr/dt/lib
+. "$(dirname "$0")/common.sh"
+CDE=$1; L=$2/usr/dt/lib
 mkdir -p "$L"
-X="-L$STAGE/usr/motif/lib -L$STAGE/usr/x11r6/lib -Wl,-rpath-link,$STAGE/usr/motif/lib -Wl,-rpath-link,$STAGE/usr/x11r6/lib -Wl,-rpath-link,$L"
+X="-L$MOTIF/lib -L$X11/lib -Wl,-rpath-link,$MOTIF/lib -Wl,-rpath-link,$X11/lib -Wl,-rpath-link,$L"
 for a in tt/lib/libtt.a DtSvc/libDtSvc.a DtHelp/libDtHelp.a DtWidget/libDtWidget.a DtTerm/libDtTerm.a \
 	DtPrint/libDtPrint.a DtMrm/libDtMrm.a DtSearch/libDtSearch.a csa/libcsa.a; do
 	case $a in
@@ -28,7 +29,7 @@ for a in tt/lib/libtt.a DtSvc/libDtSvc.a DtHelp/libDtHelp.a DtWidget/libDtWidget
 		echo "$n: bad GOT relocations: $d/gotcheck.log"; rm -rf "$d/.x"; continue
 	fi
 	rm -rf "$d/.x"
-	m68k-elf-gcc -shared -Wl,-h,$n.so.2 -Wl,--whole-archive "$d/$n.a" -Wl,--no-whole-archive \
+	$CC14 -shared -Wl,-h,$n.so.2 -Wl,--whole-archive "$d/$n.a" -Wl,--no-whole-archive \
 		-L"$L" $X $deps -Wl,-R,/usr/dt/lib:/usr/motif/lib:/usr/x11r6/lib -o "$L/$n.so.2"
 	"$TOOLS/amix-fix-data-relocs" "$L/$n.so.2"
 	"$TOOLS/amix-fix-needed" "$L/$n.so.2"

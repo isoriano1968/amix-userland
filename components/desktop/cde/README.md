@@ -7,8 +7,12 @@ cross-built on a Linux host with
 
 The result is the full CDE desktop on an Amiga: dtlogin, dtsession, dtwm
 with the front panel, dtterm, the file manager, dtpad, the style manager,
-the help viewer, dtcalc, dtcm, dtmail and the rest of `/usr/dt/bin`. Motif and `mwm` are a component of their own,
-[desktop/motif](../motif): build that first (see `cde.manifest`).
+the help viewer, dtcalc, dtcm, dtmail and the rest of `/usr/dt/bin`, on
+shared libraries: `libDt*.so.2`, `libtt.so.2` and `libcsa.so.2` in
+`/usr/dt/lib`, with their headers and `.pc` files. X11R6.3, libXp and Motif
+are components of their own ([x11/x11r6.3](../../x11/x11r6.3),
+[x11/libxp](../../x11/libxp), [desktop/motif](../motif)); `cde.manifest`
+lists them and every file this one installs.
 
 This repository contains **no binaries and no AMIX material**. You build
 everything yourself from the original CDE release, the patches
@@ -23,8 +27,8 @@ here, and your own AMIX installation.
   The binaries do not run on a 68030 (an Amiga 3000's own CPU).
 - **AMIX 2.1 with a 68040/68060 kernel** (the
   [amix-040-060-port](https://github.com/asokero/amix-040-060-port)).
-- **X11R6.3 for AMIX** ([x11r6.3-amix](https://github.com/isoriano1968/amix-userland/tree/main/components/x11/x11r6.3)),
-  built and installed on the machine, and an X server for your display.
+- **X11R6.3, libXp and Motif** from their components, installed on the
+  machine, and an X server for your display.
 - About 200 MB of free disk space under `/usr/dt`.
 
 Developed and tested on an Amiga 3000 with a Z3660 (68060 at 80 MHz, 128 MB),
@@ -33,55 +37,41 @@ the Z3660's RTG output and the `Xzz9000` X server
 
 ### The build host
 
-- Linux with `gcc`, `g++`, `make`, `patch`, `flex`, `python3`, `bash`, `cpp`,
-  `curl` or `wget`, and `sha256sum`.
+- Linux (or illumos) with `gcc`, `g++`, GNU make, `patch`, `flex`, `bison`,
+  `python3`, `bash`, `cpp`, `curl` and `sha256sum`.
 - `bdftopcf` and `mkfontdir` (Debian/Ubuntu: `xfonts-utils`).
-- The X11 development files for the host (Debian/Ubuntu: `libx11-dev
-  libxt-dev libxext-dev`). Motif's build-time tools are compiled for the host
-  first.
-- **gcc14-cross-amix**, built and installed, with its AMIX sysroot. Follow its
-  README; the sysroot comes from your own AMIX installation.
-- **X11R6.3 for AMIX**:
-  - its `xc/exports` tree (`include/` and `lib/` with the static libraries and
-    the `.sa` stubs), copied from your AMIX machine into the sysroot, by
-    default `$SYSROOT/usr/x11r6/xc/exports`;
-  - its source tree (`xc/`): `XKeysymDB` and `XErrorDB` come from `xc/lib/X11`.
-- About 3 GB of disk space.
+- **gcc14-cross-amix**, built and installed (`AMIX_TOOLS`, its `bin/`).
+- **A clean AMIX sysroot** (`AMIX_SYSROOT`) that holds only packaged inputs:
+  the AMIX system (developer/amix/sysroot on OpenIndiana, made from
+  amigaux/amix-system elsewhere), library/amixc99, and this component's
+  requirements from `cde.manifest`: x11/x11r6.3, x11/libxp and desktop/motif.
+  `amix-requires` builds and installs a missing one into a local sysroot. It
+  must not hold a `/usr/dt` yet.
+- About 2 GB of disk space.
 
 ## Building
 
 ```sh
-cp config.sh.example config.sh     # your paths
-$EDITOR config.sh
-./build.sh
+gmake AMIX_SYSROOT=/path/to/sysroot stage
 ```
 
-`build.sh` runs these steps in order; each can also be run on its own:
+builds everything from pinned sources and writes `build/cde-amix.tar`:
 
 | Step | What it does |
 |---|---|
-| `fetch.sh` | Downloads `cde-src-2.2.4a.tar.gz` from SourceForge and checks its SHA-256. |
-| `scripts/build-cde.sh` | Unpacks and patches CDE, prepares the build (see below), and builds the libraries, the programs and the fonts. |
-| `scripts/package-cde.sh` | `work/cde-amix.tar`: the `/usr/dt` tree, laid out by CDE's own install databases. |
+| `prep` | Downloads `cde-src-2.2.4a.tar.gz` into `distfiles/` and checks its SHA-256; checks desktop/motif's `motif-2.3.8.tar.gz` and x11/x11r6.3's `xc-1.tar.gz` against their components' checksums. `scripts/prep.sh` unpacks and patches CDE and Motif (`../motif/patches`; CDE's build reads Motif's `lib/Xm` sources), links the sysroot's X11R6.3, libXp and Motif headers and shared libraries into `imports/`, generates `amix-cxxfix/` (C++-usable copies of AMIX's K&R system headers, `scripts/amix-cxxfix.py`) and writes this build's paths into `host.def` and `config/cf/amixpaths.def`. |
+| `build` | `scripts/build-cde.sh`: imake and the tools CDE runs during its own build, for the host (`scripts/hostbuild.sh`, `HOST_CC`/`HOST_CXX`); the libraries, made shared by `scripts/shared-cde-libs.sh` (`libDt*.so.2`, `libtt.so.2`, `libcsa.so.2`); the programs linked against them, with `libXtInherit.a` built here from `../../x11/x11r6.3/files/xtinherit.c`; the fonts. |
+| `stage` | `build/stage`: `/usr/dt` laid out by CDE's own install databases (`scripts/package-cde.sh`, `scripts/cde-udb-stage.py`), `XKeysymDB`/`XErrorDB` from `xc-1.tar.gz`, `xhold` and `startcde`; the shared libraries; the headers, the glue libraries `libamixcxx`/`libamixcde` and the `.pc` files (`scripts/stage-dev.sh`); the link stubs. Every file is in `cde.manifest`. |
 
-What `build-cde.sh` prepares:
-- `imports/`, with links to the X11R6.3 and Motif headers and static libraries;
-- `amix-cxxfix/`, C++-usable copies of AMIX's K&R system headers, generated
-  from your sysroot by `scripts/amix-cxxfix.py`;
-- `config/cf/amixpaths.def`, with the paths from `config.sh`;
-- the tools CDE runs during its own build, compiled for the host by
-  `scripts/hostbuild.sh`.
-
-`build.sh` links X, Motif and libstdc++ statically, about 166 MB in all.
-`scripts/build-shared-cde.sh STAGE` builds the same tree in `work-shared/`
-against shared X and Motif, with `libDt*.so.2` in `/usr/dt/lib`: about 38 MB,
-and what the system runs now. AMIX's `libc`, `libsocket` and `libnsl` are
-shared in both. Logs are in the build directories:
-`make-lib.log`, `make-programs.log` and the others in `work/cde-2.2.4a/`.
+Everything for AMIX is compiled by gcc 14 with `--sysroot=$AMIX_SYSROOT`,
+`AMIX_CPU` (default `-m68060`) and `-fPIC`. The programs find the libraries
+at `/usr/dt/lib`, `/usr/motif/lib` and `/usr/x11r6/lib`. AMIX's `libc`,
+`libsocket` and `libnsl` are shared. The logs are in `build/` and in
+`build/work/cde-2.2.4a/` (`make-lib.log`, `make-programs.log` and the others).
 
 ## Installing on AMIX
 
-Copy `work/cde-amix.tar` to the machine, then as root:
+Copy `build/cde-amix.tar` to the machine, then as root:
 
 ```sh
 cd / && tar xf /var/tmp/cde-amix.tar && sh /usr/dt/AMIX-INSTALL.sh
@@ -131,7 +121,7 @@ icons, message catalogues and fonts. In use on the A3000:
 - dtterm, the file manager and dtpad;
 - the style manager, the help viewer and dtcalc.
 
-Not built (`work/dtroot/MISSING` lists the files):
+Not built (`build/MISSING` lists the files):
 - **dtksh**: the ksh93 build needs a Korn shell on the host.
 - **dtbuilder, dtcodegen, ttsnoop**: they need Motif's `libUil`.
 - **dtinfo and dtinfogen**: their C++ (DtMmdb, nsgmls) does not build yet. The
@@ -144,8 +134,6 @@ Not built (`work/dtroot/MISSING` lists the files):
 
 - dtwm can report `Could not connect to ToolTalk: TT_ERR_AUTHORIZATION` right
   after login. ToolTalk works afterwards; it looks like a start-up race.
-- The static build's binaries are large, about 5 MB each. The shared build
-  does not have this.
 - The patches favour working on AMIX over generality. Some areas are untested
   on the A3000: dtmail, dtcm and printing.
 

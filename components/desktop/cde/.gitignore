@@ -1,3 +1,6 @@
+/distfiles/
+# the old static and shared build trees and their settings, from before the
+# Makefile; nothing reads them now
 config.sh
 dl/
 work/
