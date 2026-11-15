@@ -10,7 +10,10 @@ ld="$bindir/$target-ld"
 sysroot="${AMIX_SYSROOT:-$prefix/$target/sysroot}"
 crt_dir="${AMIX_CRT_DIR:-$sysroot/usr/ccs/lib}"
 
-common_cflags=(-I"$sysroot/usr/include")
+# the target headers come after every -I of the command line, as with AMIX's
+# cc (user -I directories, then /usr/include): with -I here they came first,
+# and AMIX's own X11R5 in usr/include/X11 hid X11R6.3's from -I.../x11r6/include
+common_cflags=(-idirafter "$sysroot/usr/include")
 # fix (linking): AMIX's cc searches /usr/ccs/lib as well as /usr/lib, and
 # several stock libraries live only there: libm.a, libgen.a, libcurses.a,
 # libelf.a, libl.a, liby.a...  With /usr/lib alone, "-lm" stopped with "cannot
