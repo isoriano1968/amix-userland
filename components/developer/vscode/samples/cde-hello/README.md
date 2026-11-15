@@ -20,12 +20,12 @@ sysroots for the toolchain shown in the status bar.
 
 Motif and X11R6.3 come from the gcc 14 sysroot for both compilers:
 `/opt/m68k-amix-sysroot` when the OpenIndiana package is installed, else
-`~/opt/m68k-amix-sysroot` (`MOTIF_SYSROOT=` to change it). X11R6.3, Motif and
-CDE are not packaged yet, so on OpenIndiana the sample does not link yet. The link line is the one
-of ztopcde:
+`~/opt/m68k-amix-sysroot` (`MOTIF_SYSROOT=` to change it): on OpenIndiana the
+packages developer/amix/x11r6.3 and developer/amix/motif. Only shared
+libraries are linked; the link line is the one of ztopcde:
 
 ```text
--lXm -lXmu -lXtInherit -lXt -lSM -lICE -lXext -lX11 -lsocket -lnsl -lamixc99 -lgen -lm
+-lXm -lXmu -lXt -lSM -lICE -lXext -lX11 -lsocket -lnsl -lamixc99 -lgen -lm
 ```
 
 with the runpath `/usr/motif/lib:/usr/x11r6/lib`. After linking,

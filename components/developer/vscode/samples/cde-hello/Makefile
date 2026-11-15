@@ -28,7 +28,7 @@ CPPFLAGS += -DFUNCPROTO=15 -I$(M)/include -I$(X)/include
 
 # the libraries of ztopcde (amix-userland components/desktop/cde-apps);
 # libamixc99.a gives libXm its snprintf
-XLIBS = -lXm -lXmu -lXtInherit -lXt -lSM -lICE -lXext -lX11 \
+XLIBS = -lXm -lXmu -lXt -lSM -lICE -lXext -lX11 \
 	-lsocket -lnsl -L$(MOTIF_SYSROOT)/usr/local/lib -lamixc99 -lgen -lm
 
 PYTHON ?= python3
