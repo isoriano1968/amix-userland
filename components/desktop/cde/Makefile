@@ -93,6 +93,17 @@ build: $(BUILD_DIR)/.built
 #    with AMIX's plain ustar and numeric owners (AMIX-INSTALL.sh sets the real
 #    ones)
 DL = $(STAGE_DIR)/usr/dt/lib
+# CDE_CATALOGS=no: leave out the message catalogues (/usr/dt/lib/nls/msg/*.cat,
+# made by the build host's gencat).  OpenIndiana's gencat rejects CDE's
+# message sources, and the catalogues belong in AMIX's own catalogue format
+# anyway, which no host gencat writes yet; CDE's programs fall back to their
+# built-in English texts without them.  The development files do not need them.
+CDE_CATALOGS ?= yes
+ifeq ($(CDE_CATALOGS),no)
+MANIFEST_FILES = awk '$$1 == "file" && $$2 !~ /\.cat$$/ { print $$2 }' cde.manifest
+else
+MANIFEST_FILES = awk '$$1 == "file" { print $$2 }' cde.manifest
+endif
 stage: build
 	rm -rf "$(STAGE_DIR)"
 	sh scripts/package-cde.sh $(STAGE_DIR) > $(BUILD_DIR)/stage.log 2>&1 || { tail -20 $(BUILD_DIR)/stage.log; exit 1; }
@@ -101,8 +112,10 @@ stage: build
 	sh scripts/stage-dev.sh $(STAGE_DIR) >> $(BUILD_DIR)/stage.log 2>&1 || { tail -20 $(BUILD_DIR)/stage.log; exit 1; }
 	$(call link_stubs,$(DL)/lib*.so.[12],/usr/dt/lib,$(DL)/lib*.so.[12] $(AMIX_SYSROOT)/usr/motif/lib/lib*.so.4 $(AMIX_SYSROOT)/usr/x11r6/lib/lib*.so.7)
 	chmod -R go-w $(STAGE_DIR)
-	@$(manifest_files)
-	@test "`cd $(STAGE_DIR) && find . -type f -o -type l | wc -l`" = "`grep -c '^file ' cde.manifest`" || \
+	$(if $(filter no,$(CDE_CATALOGS)),find $(STAGE_DIR)/usr/dt/lib/nls/msg -name '*.cat' -exec rm -f {} +)
+	@$(MANIFEST_FILES) | while read f; do [ -e "$(STAGE_DIR)$$f" ] || [ -L "$(STAGE_DIR)$$f" ] || \
+		{ echo "manifest: $$f not in the stage"; exit 1; }; done
+	@test "`cd $(STAGE_DIR) && find . -type f -o -type l | wc -l`" = "`$(MANIFEST_FILES) | wc -l`" || \
 		{ echo "the stage and cde.manifest list different files"; exit 1; }
 	tar --format=ustar --numeric-owner --owner=2 --group=2 -C $(STAGE_DIR) \
 		-cf build/$(COMPONENT_NAME)-amix.tar usr
