@@ -98,6 +98,10 @@ pseudo package, or apkg reads `/var/pkg`. To be discussed before step 4.
 
 1. Format and DB design note; manifest generator (`.manifest` -> `.p5m`),
    pkglint on OI. P52 only.
+   Done 2026-11-15: IPS-CLIENT-DESIGN.md, `tools/amix-p5m`,
+   `tools/amix-pkglintrc`; eight components published into a test
+   repository on OI (pkgsend, pkgrepo verify: only the dependencies that
+   were not in it).
 2. Client read side: refresh, list, info, contents, verify — tested against
    a repo of a few packages with a mounted image copy (`-R`), on the P52
    (qemu or the PC test rig), not on the box.

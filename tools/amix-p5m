@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""amix-p5m COMPONENT_DIR [-c CONTENTS] [-o FILE] -- an IPS manifest (.p5m)
+for a component, from its .manifest and its stage (build/stage).
+
+The format is fixed in doc/plans/IPS-CLIENT-DESIGN.md: FMRI
+pkg://amix/<category>/<name>@<version>,2.1-<rev>, files root:bin 0555/0444,
+etc/ preserved, stock AMIX directories with their own attributes (from
+the SVR4 contents file, -c), devel facet, require dependencies, licence.
+Publish with:  pkgsend publish -s REPO -d STAGE -d COMPONENT_DIR FILE.p5m
+Exit 1 if the stage and the manifest's file list disagree.
+"""
+import argparse
+import os
+import re
+import stat
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PUBLISHER = "amix"
+BUILD_RELEASE = "2.1"
+
+
+def read_manifest(path):
+    m = {"require": [], "file": {}, "version": None, "summary": "", "name": None}
+    with open(path) as f:
+        for n, line in enumerate(f, 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            key, _, value = line.partition(" ")
+            value = value.strip()
+            if key == "require":
+                w = value.split()
+                m["require"].append((w[0], w[2] if len(w) == 3 and w[1] == ">=" else None))
+            elif key == "file":
+                w = value.split()
+                m["file"][w[0]] = "devel" in w[1:]
+            elif key in ("name", "version", "summary"):
+                m[key] = value
+    return m
+
+
+def ips_version(v):
+    """IPS versions are dot-separated integers: 2.2.4a -> 2.2.4.1, 1.0.2k -> 1.0.2.11."""
+    if not v:
+        return "0"
+    out = []
+    for part in re.split(r"[.\-_]", v):
+        num = re.match(r"\d*", part).group(0)
+        rest = part[len(num):]
+        out.append(str(int(num)) if num else "0")
+        if rest:
+            letter = rest[0].lower()
+            out.append(str(ord(letter) - ord("a") + 1) if letter.isalpha() else "0")
+    return ".".join(out)
+
+
+def revision(comp_dir):
+    rel = os.path.relpath(comp_dir, ROOT)
+    try:
+        n = subprocess.check_output(["git", "-C", ROOT, "rev-list", "--count", "HEAD", "--", rel],
+                                    universal_newlines=True).strip()
+        dirty = subprocess.call(["git", "-C", ROOT, "diff", "--quiet", "HEAD", "--", rel]) != 0
+    except (OSError, subprocess.CalledProcessError):
+        return "0.1"
+    return n + (".1" if dirty else "")
+
+
+def stock_dirs(contents):
+    """path -> (owner, group, mode) of the directories stock AMIX has."""
+    d = {}
+    if not contents:
+        return d
+    with open(contents, encoding="latin-1") as f:
+        for line in f:
+            w = line.split()
+            # /usr/local d none 0755 bin bin core
+            if len(w) >= 6 and w[0].startswith("/") and w[1] == "d":
+                d[w[0].lstrip("/")] = (w[4], w[5], w[3])
+    return d
+
+
+DEVEL = re.compile(r"(^|/)include/|\.pc$|(^|/)lib[^/]*\.so$|(^|/)amix-stubs/")
+
+
+def q(v):
+    return '"%s"' % v.replace('"', '\\"') if (" " in v or not v) else v
+
+
+def generate(comp_dir, contents=None, rev=None):
+    comp_dir = os.path.abspath(comp_dir)
+    rel = os.path.relpath(comp_dir, os.path.join(ROOT, "components"))
+    mans = [f for f in os.listdir(comp_dir) if f.endswith(".manifest")]
+    if len(mans) != 1:
+        raise SystemExit("%s: needs exactly one .manifest" % comp_dir)
+    m = read_manifest(os.path.join(comp_dir, mans[0]))
+    name = m["name"] or rel
+    if name != rel:
+        raise SystemExit("%s: manifest name %s is not its place %s" % (comp_dir, name, rel))
+    stage = os.path.join(comp_dir, "build", "stage")
+    if name.startswith("meta/"):
+        stage = None            # a meta package is its requires: its members bring the files
+    problems = []
+    lines = ["set name=pkg.fmri value=pkg://%s/%s@%s,%s-%s"
+             % (PUBLISHER, name, ips_version(m["version"]), BUILD_RELEASE, rev or revision(comp_dir)),
+             "set name=pkg.summary value=%s" % q(m["summary"] or name),
+             "set name=variant.arch value=m68k",
+             "set name=org.amix.component value=%s" % name]
+    lic = os.path.splitext(mans[0])[0] + ".license"
+    if os.path.exists(os.path.join(comp_dir, lic)):
+        lines.append("license %s license=%s" % (lic, name))
+    for comp, minv in m["require"]:
+        lines.append("depend type=require fmri=%s%s" % (comp, "@" + ips_version(minv) if minv else ""))
+
+    stock = stock_dirs(contents)
+    seen_ino = {}
+    paths = set()
+    body = []
+    if stage and os.path.isdir(stage):
+        for top, dirs, files in os.walk(stage):
+            dirs.sort()
+            relt = os.path.relpath(top, stage)
+            for dname in list(dirs):
+                p = os.path.normpath(os.path.join(relt, dname))
+                full = os.path.join(stage, p)
+                if os.path.islink(full):
+                    dirs.remove(dname)        # a link to a directory is a link
+                    files.append(dname)
+                    continue
+                o, g, mode = stock.get(p, ("root", "bin", "0755"))
+                body.append("dir path=%s owner=%s group=%s mode=%s" % (p, o, g, mode))
+            for fname in sorted(files):
+                p = os.path.normpath(os.path.join(relt, fname))
+                full = os.path.join(stage, p)
+                st = os.lstat(full)
+                devel = m["file"].get("/" + p, False) or bool(DEVEL.search(p))
+                facet = " facet.devel=true" if devel else ""
+                paths.add("/" + p)
+                if stat.S_ISLNK(st.st_mode):
+                    body.append("link path=%s target=%s%s" % (p, q(os.readlink(full)), facet))
+                    continue
+                if not stat.S_ISREG(st.st_mode):
+                    problems.append("/%s: not a file, directory or link" % p)
+                    continue
+                key = (st.st_dev, st.st_ino)
+                if st.st_nlink > 1 and key in seen_ino:
+                    body.append("hardlink path=%s target=/%s%s" % (p, seen_ino[key], facet))
+                    continue
+                seen_ino[key] = p
+                if p.startswith("etc/"):
+                    mode, extra = "0644", " preserve=renamenew"
+                else:
+                    mode = "0555" if st.st_mode & 0o111 else "0444"
+                    extra = ""
+                body.append("file %s path=%s owner=root group=bin mode=%s%s%s"
+                            % (p, p, mode, extra, facet))
+    if m["file"]:
+        listed = set(m["file"])
+        for p in sorted(listed - paths):
+            problems.append("%s: in the manifest, not in the stage" % p)
+        for p in sorted(paths - listed):
+            problems.append("%s: in the stage, not in the manifest" % p)
+    elif paths:
+        sys.stderr.write("amix-p5m: %s lists no files; the stage is taken as it is (%d)\n"
+                         % (name, len(paths)))
+    return "\n".join(lines + body) + "\n", problems
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="amix-p5m")
+    ap.add_argument("component")
+    ap.add_argument("-c", "--contents", help="AMIX's /var/sadm/install/contents (stock directories)")
+    ap.add_argument("-o", "--output")
+    ap.add_argument("--rev", help="revision instead of the git count")
+    a = ap.parse_args()
+    text, problems = generate(a.component, a.contents, a.rev)
+    for p in problems:
+        sys.stderr.write("amix-p5m: %s\n" % p)
+    if problems:
+        return 1
+    if a.output:
+        with open(a.output + ".part", "w") as f:
+            f.write(text)
+        os.replace(a.output + ".part", a.output)
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

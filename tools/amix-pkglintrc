@@ -1,0 +1,5 @@
+# pkglint configuration for AMIX packages:  pkglint -f tools/amix-pkglintrc FILE.p5m
+# The OpenSolaris checks want attributes AMIX packages do not have
+# (org.opensolaris.consolidation, info.classification).
+[pkglint]
+pkglint.exclude = pkg.lint.opensolaris
