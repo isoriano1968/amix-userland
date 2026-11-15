@@ -1,0 +1,8 @@
+# name, version and what building and running it needs
+# Runs on the host (OpenIndiana, Linux), not on AMIX: no AMIX files.
+# Host needs: Python >= 3.9, PyGObject, GTK >= 4.12, libadwaita >= 1.4,
+# pycairo (icons at build time).  OpenIndiana: library/desktop/gtk4,
+# library/desktop/libadwaita, library/python/pygobject-39.
+name     desktop/amix-installer
+version  0.1.0
+summary  Makes an AMIX disk for one machine from the user's own core system

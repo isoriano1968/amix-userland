@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""Start the AMIX Installer from the source tree or an installed prefix."""
+import os
+import sys
+
+here = os.path.dirname(os.path.realpath(__file__))
+for d in (here, os.path.join(here, "..", "lib", "amix-installer")):
+    if os.path.isdir(os.path.join(d, "amix_installer")):
+        sys.path.insert(0, os.path.normpath(d))
+        break
+
+from amix_installer.app import main  # noqa: E402
+
+sys.exit(main())

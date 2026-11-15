@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=AMIX Installer
+Comment=Create an Amiga UNIX disk for your machine
+Exec=amix-installer
+Icon=org.amix.Installer
+Categories=System;Emulator;
+Keywords=Amiga;UNIX;AMIX;HDF;installer;
+Terminal=false
+StartupNotify=true

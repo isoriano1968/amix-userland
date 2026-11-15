@@ -1,0 +1,699 @@
+"""The GTK 4 / libadwaita UI.  It reads the model and writes nothing to disks.
+
+Targets libadwaita >= 1.4 and GTK >= 4.12 (OpenIndiana 2025: 1.6 / 4.16).
+"""
+import math
+import os
+import sys
+
+import gi
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
+
+from . import APP_ID, __version__, model, profile  # noqa: E402
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def data_dirs():
+    env = os.environ.get("AMIX_INSTALLER_DATADIR")
+    dirs = [env] if env else []
+    comp = os.path.dirname(HERE)
+    prefix = os.path.dirname(os.path.dirname(comp))   # installed: <prefix>/lib/amix-installer
+    dirs += [os.path.join(prefix, "share", "amix-installer"),
+             os.path.join(sys.prefix, "share", "amix-installer"),
+             os.path.join(comp, "data"), os.path.join(comp, "build", "data")]
+    return [d for d in dirs if d and os.path.isdir(d)]
+
+
+def find_data(name):
+    for d in data_dirs():
+        p = os.path.join(d, name)
+        if os.path.exists(p):
+            return p
+    # source tree: the logo lives in amix-userland's doc/assets
+    if name == "amix-logo.png":
+        p = os.path.join(os.path.dirname(HERE), "..", "..", "..", "doc", "assets", name)
+        if os.path.exists(p):
+            return os.path.normpath(p)
+    return None
+
+
+def label(text, css=(), xalign=0.0, wrap=True):
+    lb = Gtk.Label(label=text, xalign=xalign)
+    lb.set_wrap(wrap)
+    if wrap:
+        lb.set_natural_wrap_mode(Gtk.NaturalWrapMode.WORD)
+    for c in css:
+        lb.add_css_class(c)
+    return lb
+
+
+def needs_text(cfg, opt):
+    parts = []
+    for alt in cfg.missing(opt):
+        names = [model.tag_title(t) for t in alt]
+        parts.append(" or ".join(names))
+    return "Needs " + ", and ".join(parts) if parts else ""
+
+
+class SpaceBar(Gtk.DrawingArea):
+    """Core system in grey, the selection in the accent colour, orange if it does not fit."""
+
+    def __init__(self):
+        super().__init__()
+        self.set_content_height(14)
+        self.set_hexpand(True)
+        self.disk = None
+        self.set_draw_func(self._draw)
+
+    def set_disk(self, disk):
+        self.disk = disk
+        self.queue_draw()
+
+    def _draw(self, area, cr, w, h):
+        if not self.disk:
+            return
+        d = self.disk
+        r = h / 2.0
+        cr.new_sub_path()
+        cr.arc(r, r, r, math.pi / 2, 3 * math.pi / 2)
+        cr.arc(w - r, r, r, -math.pi / 2, math.pi / 2)
+        cr.close_path()
+        cr.clip_preserve()
+        dark = Adw.StyleManager.get_default().get_dark()
+        cr.set_source_rgba(1, 1, 1, 0.10) if dark else cr.set_source_rgba(0, 0, 0, 0.07)
+        cr.fill()
+        x = 0.0
+        for mb, rgb in ((d["used"], (0.604, 0.600, 0.588)),
+                        (d["add"], (0.208, 0.518, 0.894) if d["fits"] else (0.902, 0.380, 0.0))):
+            ww = min(w - x, w * mb / float(d["total"]))
+            if ww > 0:
+                cr.set_source_rgb(*rgb)
+                cr.rectangle(x, 0, ww, h)
+                cr.fill()
+                x += ww
+
+
+class Window(Adw.ApplicationWindow):
+    def __init__(self, app, cfg=None):
+        super().__init__(application=app, title="AMIX Installer")
+        self.set_default_size(1132, 772)
+        self.set_size_request(360, 480)
+        self.cfg = cfg or model.Config()
+        self.paths = {}
+        self.step = 0
+        self._syncing = False
+        self._rows = []        # (group, option, ActionRow, control)
+        self._extra = []       # callables run by _sync()
+
+        self.split = Adw.NavigationSplitView()
+        self.split.set_min_sidebar_width(240)
+        self.split.set_max_sidebar_width(300)
+        self.split.set_sidebar(Adw.NavigationPage.new(self._build_sidebar(), "AMIX Installer"))
+        self.content_page = Adw.NavigationPage.new(self._build_content(), "Base system")
+        self.split.set_content(self.content_page)
+
+        self.toasts = Adw.ToastOverlay()
+        self.toasts.set_child(self.split)
+        self.set_content(self.toasts)
+
+        bp = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 640sp"))
+        bp.add_setter(self.split, "collapsed", True)
+        self.add_breakpoint(bp)
+
+        self._actions()
+        self.show_step(0)
+
+    # -- frame -------------------------------------------------------------
+    def _build_sidebar(self):
+        tv = Adw.ToolbarView()
+        hb = Adw.HeaderBar()
+        tbox = Gtk.Box(spacing=10)
+        icon = Gtk.Image.new_from_icon_name(APP_ID)
+        icon.set_pixel_size(28)
+        tbox.append(icon)
+        tbox.append(label("AMIX Installer", ("heading",), wrap=False))
+        hb.set_title_widget(tbox)
+        tv.add_top_bar(hb)
+
+        self.steplist = Gtk.ListBox()
+        self.steplist.add_css_class("navigation-sidebar")
+        self.steplist.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self.step_nums = []
+        for i, s in enumerate(model.STEPS):
+            row = Gtk.Box(spacing=12)
+            row.set_margin_top(4)
+            row.set_margin_bottom(4)
+            num = label(str(i + 1), ("step-num",), xalign=0.5, wrap=False)
+            num.set_size_request(24, 24)
+            num.set_valign(Gtk.Align.CENTER)
+            self.step_nums.append(num)
+            row.append(num)
+            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
+            col.append(label(s.title, ("step-title",), wrap=False))
+            col.append(label(s.hint, ("caption", "dim-label"), wrap=False))
+            row.append(col)
+            self.steplist.append(row)
+        self.steplist.connect("row-activated", lambda lb, r: self.show_step(r.get_index()))
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        sw = Gtk.ScrolledWindow(vexpand=True)
+        sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        sw.set_child(self.steplist)
+        box.append(sw)
+        foot = label("The AMIX system files stay Commodore’s: the installer starts from "
+                     "your own core image and adds only open packages.", ("caption", "dim-label"))
+        foot.set_margin_start(16)
+        foot.set_margin_end(16)
+        foot.set_margin_bottom(16)
+        foot.set_margin_top(8)
+        box.append(foot)
+        tv.set_content(box)
+        return tv
+
+    def _build_content(self):
+        tv = Adw.ToolbarView()
+        hb = Adw.HeaderBar()
+        self.back_btn = Gtk.Button(label="Back")
+        self.back_btn.connect("clicked", lambda b: self.show_step(self.step - 1))
+        hb.pack_start(self.back_btn)
+        menu = Gio.Menu()
+        menu.append("Open Profile…", "win.open-profile")
+        menu.append("Save Profile…", "win.save-profile")
+        menu.append("Start Over", "win.reset")
+        menu.append("About AMIX Installer", "win.about")
+        mb = Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu)
+        mb.set_tooltip_text("Main Menu")
+        hb.pack_end(mb)
+        self.next_btn = Gtk.Button(label="Next")
+        self.next_btn.add_css_class("suggested-action")
+        self.next_btn.connect("clicked", self._on_next)
+        hb.pack_end(self.next_btn)
+        self.wtitle = Adw.WindowTitle(title="", subtitle="")
+        hb.set_title_widget(self.wtitle)
+        tv.add_top_bar(hb)
+
+        self.scroller = Gtk.ScrolledWindow(vexpand=True)
+        self.scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.clamp = Adw.Clamp(maximum_size=680, tightening_threshold=520)
+        self.scroller.set_child(self.clamp)
+        tv.set_content(self.scroller)
+        return tv
+
+    def _actions(self):
+        for name, cb in (("open-profile", self._open_profile), ("save-profile", self._save_profile),
+                         ("reset", self._reset), ("about", self._about), ("apply", self._apply)):
+            a = Gio.SimpleAction.new(name, None)
+            a.connect("activate", lambda a, p, cb=cb: cb())
+            self.add_action(a)
+
+    # -- pages -------------------------------------------------------------
+    def show_step(self, i):
+        i = max(0, min(len(model.STEPS) - 1, i))
+        self.step = i
+        s = model.STEPS[i]
+        self._rows = []
+        self._extra = []
+
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=26)
+        page.set_margin_top(28)
+        page.set_margin_bottom(32)
+        page.set_margin_start(16)
+        page.set_margin_end(16)
+
+        if i == 0:
+            page.append(self._hero())
+        head = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        head.append(label(s.title, ("title-1",)))
+        head.append(label(s.intro, ("dim-label",)))
+        page.append(head)
+
+        if s.id == "base":
+            page.append(self._running_note())
+        if s.id == "disks":
+            page.append(self._space_card())
+        for g in s.groups:
+            page.append(self._group(g))
+        if s.id == "base":
+            page.append(self._source_group())
+        if s.summary:
+            page.append(self._summary())
+
+        self.clamp.set_child(page)
+        self.scroller.get_vadjustment().set_value(0)
+        self.content_page.set_title(s.title)
+        self.wtitle.set_title(s.title)
+        self.wtitle.set_subtitle("Step %d of %d" % (i + 1, len(model.STEPS)))
+        self.steplist.select_row(self.steplist.get_row_at_index(i))
+        self.split.set_show_content(True)
+        self._sync()
+
+    def _hero(self):
+        box = Gtk.Box(spacing=22)
+        box.add_css_class("amix-hero")
+        logo = find_data("amix-logo.png")
+        if logo:
+            pic = Gtk.Picture.new_for_filename(logo)
+            pic.set_size_request(112, 112)
+            pic.set_can_shrink(True)
+            pic.set_content_fit(Gtk.ContentFit.COVER)
+            pic.add_css_class("amix-hero-logo")
+            pic.set_overflow(Gtk.Overflow.HIDDEN)
+            pic.set_valign(Gtk.Align.CENTER)
+            box.append(pic)
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, valign=Gtk.Align.CENTER)
+        col.set_hexpand(True)
+        col.append(label("Amiga UNIX, made to measure", ("title-2",)))
+        col.append(label("Start from your own AMIX 2.1c core system and add the kernel, drivers, "
+                         "desktop and tools that fit your machine."))
+        box.append(col)
+        return box
+
+    def _group(self, g):
+        pg = Adw.PreferencesGroup(title=g.title)
+        if g.radio:
+            hs = label("Choose one", ("caption", "dim-label"), wrap=False)
+            pg.set_header_suffix(hs)
+        first = None
+        for o in g.options:
+            row = Adw.ActionRow(title=o.title, subtitle=o.sub)
+            row.set_title_lines(1)
+            if g.radio:
+                ctl = Gtk.CheckButton(valign=Gtk.Align.CENTER)
+                if first is None:
+                    first = ctl
+                else:
+                    ctl.set_group(first)
+                row.add_prefix(ctl)
+                ctl.connect("toggled", self._on_radio, g, o)
+            else:
+                ctl = Gtk.Switch(valign=Gtk.Align.CENTER)
+                ctl.connect("notify::active", self._on_switch, o)
+            if o.badge:
+                b = label(o.badge, ("amix-badge",), wrap=False)
+                b.set_valign(Gtk.Align.CENTER)
+                row.add_suffix(b)
+            size = None
+            if o.mb:
+                size = label("≈ %d MB" % o.mb, ("caption", "dim-label", "numeric"), wrap=False)
+                size.set_valign(Gtk.Align.CENTER)
+                row.add_suffix(size)
+            if not g.radio:
+                row.add_suffix(ctl)
+            row.set_activatable_widget(ctl)
+            pg.add(row)
+            self._rows.append((g, o, row, ctl, size))
+        return pg
+
+    def _running_note(self):
+        box = Gtk.Box(spacing=14)
+        box.add_css_class("amix-info")
+        img = Gtk.Image.new_from_icon_name("network-server-symbolic")
+        img.set_pixel_size(22)
+        img.set_valign(Gtk.Align.START)
+        box.append(img)
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        col.set_hexpand(True)
+        col.append(label("A running system is changed in place", ("heading",)))
+        col.append(label("The installer reads what is installed first and offers only changes; "
+                         "nothing is removed unless you switch it off. Reading a system over the "
+                         "network comes in a later version of the installer."))
+        box.append(col)
+        self._extra.append(lambda: box.set_visible(self.cfg.in_place()))
+        return box
+
+    def _source_group(self):
+        pg = Adw.PreferencesGroup(title="Files", description="Chosen paths are not saved in profiles.")
+
+        def file_row(key, title, patterns, folder=False):
+            row = Adw.ActionRow(title=title)
+            btn = Gtk.Button(label="Choose…", valign=Gtk.Align.CENTER)
+            row.add_suffix(btn)
+            row.set_activatable_widget(btn)
+            btn.connect("clicked", lambda b: self._choose(key, title, patterns, folder))
+
+            def upd():
+                p = self.paths.get(key)
+                row.set_subtitle(p if p else ("No folder chosen" if folder else "No file chosen"))
+            self._extra.append(upd)
+            return row
+
+        hdf = file_row("core_hdf", "Core HDF", ["*.hdf", "*.HDF"])
+        tape = file_row("tape", "Tape image", ["*.tap", "*.img", "*.tar", "*.bin"])
+        flop = file_row("floppy", "Root floppy", ["*.adf", "*.img", "*.ADF"])
+        outd = file_row("out_dir", "Folder for the new HDF files", [], folder=True)
+        host = Adw.EntryRow(title="Address of the AMIX system")
+        host.connect("changed", lambda e: self.paths.__setitem__("host", e.get_text().strip()))
+        dev = Adw.ActionRow(title="Disk",
+                            subtitle="Chosen from the disks the installer finds; this comes with "
+                                     "disk writing")
+        dev.set_sensitive(False)
+        for r in (hdf, tape, flop, host, outd, dev):
+            pg.add(r)
+
+        def vis():
+            src = self.cfg.sel["src"]
+            tgt = self.cfg.sel["target"]
+            hdf.set_visible(src == "hdf")
+            tape.set_visible(src == "tape")
+            flop.set_visible(src == "tape")
+            host.set_visible(src == "run")
+            outd.set_visible(tgt == "file")
+            dev.set_visible(tgt in ("sd", "scsi"))
+        self._extra.append(vis)
+        return pg
+
+    def _space_card(self):
+        pg = Adw.PreferencesGroup(title="Space")
+        pg.set_header_suffix(label("example sizes", ("caption", "dim-label"), wrap=False))
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        card.add_css_class("card")
+        card.add_css_class("amix-card-pad")
+        bars = []
+        for _ in range(2):
+            b = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            top = Gtk.Box()
+            name = label("", ("heading",), wrap=False)
+            name.set_hexpand(True)
+            text = label("", ("caption", "dim-label", "numeric"), xalign=1.0, wrap=False)
+            top.append(name)
+            top.append(text)
+            bar = SpaceBar()
+            b.append(top)
+            b.append(bar)
+            card.append(b)
+            bars.append((b, name, text, bar))
+        legend = Gtk.Box(spacing=16)
+        for css, t in (("amix-key-core", "Core system"), ("amix-key-sel", "Your selection"),
+                       ("amix-key-bad", "Does not fit")):
+            k = Gtk.Box(spacing=6)
+            sw = Gtk.Box(valign=Gtk.Align.CENTER)
+            sw.set_size_request(10, 10)
+            sw.add_css_class("amix-key")
+            sw.add_css_class(css)
+            k.append(sw)
+            k.append(label(t, ("caption", "dim-label"), wrap=False))
+            legend.append(k)
+        card.append(legend)
+        warn = label("Your selection does not fit on the core disk with %d MB left free. Add a "
+                     "data disk, or let the installer copy the core system to a larger disk."
+                     % model.ROOT_RESERVE_MB, ("amix-warning",))
+        card.append(warn)
+        pg.add(card)
+
+        def upd():
+            disks, fits = self.cfg.space()
+            for i, (b, name, text, bar) in enumerate(bars):
+                b.set_visible(i < len(disks))
+                if i < len(disks):
+                    d = disks[i]
+                    used = d["used"] + d["add"]
+                    name.set_text(d["name"])
+                    text.set_text("%d MB used, %d MB free" % (used, max(0, d["total"] - used)))
+                    bar.set_disk(d)
+            warn.set_visible(not fits)
+        self._extra.append(upd)
+        return pg
+
+    def _summary(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        grid = Gtk.Grid(column_spacing=14, row_spacing=14, column_homogeneous=True)
+        for n, (s, items) in enumerate(self.cfg.summary()):
+            card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            card.add_css_class("card")
+            card.add_css_class("amix-card-pad")
+            top = Gtk.Box()
+            t = label(s.title, ("heading",), wrap=False)
+            t.set_hexpand(True)
+            top.append(t)
+            ch = Gtk.Button(label="Change")
+            ch.add_css_class("flat")
+            ch.add_css_class("amix-link")
+            ch.set_tooltip_text("Back to %s" % s.title)
+            idx = model.step_index(s.id)
+            ch.connect("clicked", lambda b, idx=idx: self.show_step(idx))
+            top.append(ch)
+            card.append(top)
+            for it in items:
+                r = Gtk.Box(spacing=8)
+                ic = Gtk.Image.new_from_icon_name("object-select-symbolic")
+                ic.add_css_class("success")
+                ic.set_valign(Gtk.Align.START)
+                r.append(ic)
+                r.append(label(it))
+                card.append(r)
+            card.set_valign(Gtk.Align.FILL)
+            grid.attach(card, n % 2, n // 2, 1, 1)
+        box.append(grid)
+
+        nxt = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        nxt.add_css_class("amix-next")
+        nxt.append(label("What happens next", ("heading",)))
+        if self.cfg.in_place():
+            steps = ["The running system is read first; only the differences are installed or removed.",
+                     "Free space is checked before anything is installed: at least %d MB stay free "
+                     "on the root disk." % model.ROOT_RESERVE_MB,
+                     "Every package comes from the AMIX package repository, each file written next "
+                     "to its target, checked by its checksum and then renamed."]
+        else:
+            steps = ["Your core image is copied; the original is never written.",
+                     "Free space is checked before anything is installed; with a data disk, "
+                     "/usr/local, /usr/gnu and /opt go there.",
+                     "The chosen kernel and drivers are installed and set as the default boot "
+                     "entry, with the stock kernel kept as fallback.",
+                     "Desktop, applications and development packages come from the AMIX package "
+                     "repository, each checked by its checksum."]
+        for n, t in enumerate(steps, 1):
+            nxt.append(label("%d.  %s" % (n, t)))
+        btns = Gtk.Box(spacing=10, halign=Gtk.Align.END)
+        btns.set_margin_top(4)
+        sp = Gtk.Button(label="Save as Profile…")
+        sp.set_action_name("win.save-profile")
+        btns.append(sp)
+        ap = Gtk.Button(label=self.cfg.apply_label())
+        ap.add_css_class("suggested-action")
+        ap.set_action_name("win.apply")
+        btns.append(ap)
+        nxt.append(btns)
+        box.append(nxt)
+        return box
+
+    # -- state -------------------------------------------------------------
+    def _sync(self):
+        self._syncing = True
+        try:
+            for g, o, row, ctl, size in self._rows:
+                ok = self.cfg.available(o)
+                row.set_sensitive(ok)
+                row.set_subtitle(o.sub if ok else model.NOT_AVAILABLE)
+                row.set_tooltip_text(None if ok else needs_text(self.cfg, o))
+                if size is not None:
+                    size.set_visible(ok)
+                on = self.cfg.chosen(g, o)
+                if ctl.get_active() != on:
+                    ctl.set_active(on)
+            for f in self._extra:
+                f()
+        finally:
+            self._syncing = False
+        for i, num in enumerate(self.step_nums):
+            for c in ("done", "current"):
+                num.remove_css_class(c)
+            if i < self.step:
+                num.add_css_class("done")
+            elif i == self.step:
+                num.add_css_class("current")
+        last = len(model.STEPS) - 1
+        self.back_btn.set_sensitive(self.step > 0)
+        self.next_btn.set_visible(self.step < last)
+        self.next_btn.set_label("Review" if self.step == last - 1 else "Next")
+
+    def _on_radio(self, btn, g, o):
+        if self._syncing or not btn.get_active():
+            return
+        self.cfg.select(g.id, o.id)
+        self._sync()
+
+    def _on_switch(self, sw, _pspec, o):
+        if self._syncing:
+            return
+        self.cfg.set_on(o.id, sw.get_active())
+        self._sync()
+
+    def _on_next(self, _b):
+        self.show_step(self.step + 1)
+
+    # -- dialogs -----------------------------------------------------------
+    def toast(self, text):
+        self.toasts.add_toast(Adw.Toast.new(text))
+
+    def _filters(self, name, patterns):
+        store = Gio.ListStore.new(Gtk.FileFilter)
+        f = Gtk.FileFilter()
+        f.set_name(name)
+        for p in patterns:
+            f.add_pattern(p)
+        store.append(f)
+        a = Gtk.FileFilter()
+        a.set_name("All files")
+        a.add_pattern("*")
+        store.append(a)
+        return store
+
+    def _choose(self, key, title, patterns, folder):
+        dlg = Gtk.FileDialog(title=title, modal=True)
+        if patterns:
+            dlg.set_filters(self._filters(title, patterns))
+
+        def done(d, res):
+            try:
+                f = d.select_folder_finish(res) if folder else d.open_finish(res)
+            except GLib.Error:
+                return
+            self.paths[key] = f.get_path()
+            self._sync()
+        if folder:
+            dlg.select_folder(self, None, done)
+        else:
+            dlg.open(self, None, done)
+
+    def _save_profile(self):
+        dlg = Gtk.FileDialog(title="Save Profile", modal=True, initial_name="amix-profile.json")
+        dlg.set_filters(self._filters("AMIX Installer profiles", ["*.json"]))
+
+        def done(d, res):
+            try:
+                f = d.save_finish(res)
+            except GLib.Error:
+                return
+            try:
+                profile.save(self.cfg, f.get_path())
+            except OSError as e:
+                self.toast("Could not save the profile: %s" % e.strerror)
+                return
+            self.toast("Profile saved")
+        dlg.save(self, None, done)
+
+    def _open_profile(self):
+        dlg = Gtk.FileDialog(title="Open Profile", modal=True)
+        dlg.set_filters(self._filters("AMIX Installer profiles", ["*.json"]))
+
+        def done(d, res):
+            try:
+                f = d.open_finish(res)
+            except GLib.Error:
+                return
+            self.load_profile(f.get_path())
+        dlg.open(self, None, done)
+
+    def load_profile(self, path):
+        try:
+            cfg, msgs = profile.load(path)
+        except (OSError, ValueError) as e:
+            self.toast("Not a profile: %s" % e)
+            return False
+        self.cfg = cfg
+        self.show_step(self.step)
+        self.toast("Profile loaded" + (" with %d notes" % len(msgs) if msgs else ""))
+        for m in msgs:
+            print("profile: %s" % m, file=sys.stderr)
+        return True
+
+    def _reset(self):
+        self.cfg = model.Config()
+        self.paths = {}
+        self.show_step(0)
+
+    def _apply(self):
+        _, fits = self.cfg.space()
+        body = ("This first version plans the installation only; writing disks and installing "
+                "packages come in the next versions. Save your choices as a profile to use "
+                "them then.")
+        if not fits:
+            body = ("The selection does not fit with %d MB left free on the root disk. "
+                    % model.ROOT_RESERVE_MB) + body
+        d = Adw.AlertDialog(heading="Nothing is written yet", body=body)
+        d.add_response("close", "Close")
+        d.add_response("save", "Save Profile…")
+        d.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
+        d.set_default_response("save")
+        d.connect("response", lambda d, r: self._save_profile() if r == "save" else None)
+        d.present(self)
+
+    def _about(self):
+        a = Adw.AboutDialog(application_name="AMIX Installer", application_icon=APP_ID,
+                            version=__version__, developer_name="isoriano1968",
+                            license_type=Gtk.License.MIT_X11,
+                            website="https://github.com/isoriano1968/amix-userland",
+                            comments="Makes an Amiga UNIX disk for your machine from your own "
+                                     "AMIX 2.1c core system.")
+        a.present(self)
+
+
+class App(Adw.Application):
+    def __init__(self, args):
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
+        self.args = args
+        self.win = None
+        self.connect("activate", self._activate)
+        self.connect("startup", self._startup)
+
+    def _startup(self, _app):
+        display = Gdk.Display.get_default()
+        theme = Gtk.IconTheme.get_for_display(display)
+        comp = os.path.dirname(HERE)
+        for d in [os.path.join(d, "..", "icons") for d in data_dirs()] + [
+                os.path.join(comp, "build", "icons")]:
+            d = os.path.normpath(d)
+            if os.path.isdir(os.path.join(d, "hicolor")):
+                theme.add_search_path(d)
+        css = find_data("style.css")
+        if css:
+            prov = Gtk.CssProvider()
+            prov.load_from_path(css)
+            Gtk.StyleContext.add_provider_for_display(display, prov,
+                                                      Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        # GTK < 4.20 has no @media in CSS: the dark additions are their own file
+        dark = find_data("style-dark.css")
+        if dark:
+            dprov = Gtk.CssProvider()
+            dprov.load_from_path(dark)
+            sm = Adw.StyleManager.get_default()
+
+            def follow(*_a):
+                if sm.get_dark():
+                    Gtk.StyleContext.add_provider_for_display(
+                        display, dprov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+                else:
+                    Gtk.StyleContext.remove_provider_for_display(display, dprov)
+            sm.connect("notify::dark", follow)
+            follow()
+        q = Gio.SimpleAction.new("quit", None)
+        q.connect("activate", lambda a, p: self.quit())
+        self.add_action(q)
+        self.set_accels_for_action("app.quit", ["<Control>q"])
+
+    def _activate(self, _app):
+        if self.win is None:
+            self.win = Window(self)
+            if self.args.profile:
+                self.win.load_profile(self.args.profile)
+        self.win.present()
+        if self.args.screenshot:
+            from . import shot
+            shot.run(self.win, self.args.screenshot)
+
+
+def main(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(prog="amix-installer")
+    ap.add_argument("--profile", help="load this profile at start")
+    ap.add_argument("--screenshot", metavar="DIR",
+                    help="render every step to DIR/*.png and quit (tests)")
+    ap.add_argument("--version", action="version", version="%(prog)s " + __version__)
+    args = ap.parse_args(argv)
+    Adw.init()
+    app = App(args)
+    return app.run([sys.argv[0]])
