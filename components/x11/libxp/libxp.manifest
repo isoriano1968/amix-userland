@@ -1,6 +1,12 @@
 # name, version and what building and running it needs
 name     x11/libxp
 version  6.3
-summary  X Print client library
-require  x11/x11r6.3
+summary  X Print client library (libXp.so.7) with xp.pc
+require  x11/x11r6.3 >= 6.3
 provide  xp
+# every file the stage installs; "devel": .so link, .pc, link stubs
+file     /usr/local/share/amix-stubs/libxp/LIST devel
+file     /usr/local/share/amix-stubs/libxp/libXp.so.7.s devel
+file     /usr/x11r6/lib/libXp.so devel
+file     /usr/x11r6/lib/libXp.so.7
+file     /usr/x11r6/lib/pkgconfig/xp.pc devel
