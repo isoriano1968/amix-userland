@@ -51,18 +51,46 @@ class MakePlan(Base):
         self.assertEqual(ids[-1], "sums")
         self.assertIn("data-disk", ids)
         self.assertFalse(pl.complete)
-        self.assertTrue(all(a.missing for a in pl.actions if a.id in ("data-disk", "packages")))
+        byid = dict((a.id, a) for a in pl.actions)
+        self.assertTrue(byid["data-disk"].available)
+        self.assertTrue(byid["install"].missing)
 
     def test_problems(self):
         pl = plan.make_plan(self.cfg(), {"core_hdf": self.src})
         self.assertTrue(any("folder" in p for p in pl.problems))
-        pl = plan.make_plan(self.cfg(target="scsi", mach="a3000", accel="gvp"), self.paths())
-        self.assertTrue(any("0.5" in p for p in pl.problems))
         pl = plan.make_plan(model.Config(sel={"src": "run"}), {})
         self.assertTrue(pl.problems)
         c = self.cfg()
         c.source = None
         self.assertTrue(any("not been read" in p for p in plan.make_plan(c, self.paths()).problems))
+
+    def test_card_names_and_ids(self):
+        pl = plan.make_plan(self.cfg(target="card", mach="a2500", accel="gvp"), self.paths())
+        self.assertEqual(pl.problems, [])
+        outs = [n for a in pl.actions for n in a.outputs]
+        for n in ("HD60_512.hda", "HD50_512.hda", "HD10_512.hda"):
+            self.assertIn(n, outs)
+
+    def test_fs_uae_config(self):
+        pl = plan.make_plan(self.cfg(), dict(self.paths(), kickstart="/k/A3000.rom"))
+        fa = [a for a in pl.actions if a.id == "fs-uae"][0]
+        self.assertTrue(fa.available)
+        t = fa.text()
+        self.assertIn("network_card = a2065", t)
+        self.assertIn("kickstart_file = /k/A3000.rom", t)
+        self.assertIn("hard_drive_1 = %s" % os.path.join(self.out, "core-core.hdf"), t)
+        self.assertIn("hard_drive_1_controller = scsi6", t)
+        self.assertIn("hard_drive_0_controller = scsi5", t)
+        self.assertIn("hard_drive_2_controller = scsi1", t)
+        nokick = plan.make_plan(self.cfg(), self.paths())
+        self.assertFalse([a for a in nokick.actions if a.id == "fs-uae"][0].available)
+
+    def test_install_step_lists_what_amix_does(self):
+        pl = plan.make_plan(self.cfg(), self.paths())
+        inst = [a for a in pl.actions if a.id == "install"][0]
+        self.assertIn("package client", inst.detail)
+        self.assertIn("kernel last", inst.detail)
+        self.assertFalse(inst.available)
 
     def test_existing_output_refused(self):
         open(os.path.join(self.out, "core-core.hdf"), "w").close()
@@ -109,7 +137,8 @@ class Execute(Base):
         self.assertEqual(plan.sha256_file(os.path.join(self.out, "core-core.hdf")), before)
         self.assertEqual(plan.sha256_file(self.src), before)
         names = sorted(os.listdir(self.out))
-        self.assertEqual(names, ["SHA256SUMS", "amix-installer.json", "core-core.hdf"])
+        self.assertEqual(names, ["README-amix-installer.txt", "SHA256SUMS", "amix-installer.json",
+                                 "core-core.hdf"])
 
     def test_failure_removes_everything_of_the_run(self):
         pl = self.only(plan.make_plan(self.cfg(), self.paths()), "copy-core", "sums")
@@ -138,6 +167,21 @@ class Execute(Base):
         self.assertEqual(plan.leftover(self.out), ["core-core.hdf.part", "core-core.hdf"])
         plan.clean_leftover(self.out)
         self.assertEqual(os.listdir(self.out), [])
+
+    @unittest.skipUnless(os.path.exists(os.path.expanduser(
+        "~/Documents/FS-UAE/Hard Drives/AMIGA_UNIX.hdf")), "no AMIX core HDF here")
+    def test_data_disk_from_core_rdb(self):
+        core = os.path.expanduser("~/Documents/FS-UAE/Hard Drives/AMIGA_UNIX.hdf")
+        a = plan.DataDisk(core, "data.hdf", 1000 << 20)
+        pl = plan.Plan(self.cfg(), self.paths())
+        pl.actions = [a]
+        plan.execute(pl)
+        with hdf.Image(os.path.join(self.out, "data.hdf")) as im:
+            parts = im.read_rdb()
+            self.assertEqual(im.rdb_block, 2)
+        self.assertEqual([(p.name, p.kind, p.bootable) for p in parts],
+                         [("UNIX_Data", "amix-root", False)])
+        self.assertGreater(parts[0].size, 990 << 20)
 
     @unittest.skipUnless(plan.find_pvmk(), "no pvmk build here")
     def test_pvmk_disk(self):

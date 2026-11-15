@@ -10,7 +10,7 @@ Tags are the chosen options of the radio groups in TAG_GROUPS, plus the
 derived tags of derived_tags().
 """
 
-TAG_GROUPS = ("src", "target", "mach", "accel", "layout", "kern", "boot", "desk")
+TAG_GROUPS = ("src", "target", "mach", "accel", "net", "layout", "kern", "boot", "desk")
 
 NOT_AVAILABLE = "Not for this machine or layout"
 
@@ -76,12 +76,13 @@ STEPS = [
              O("tape", "AMIX 2.1c tape image",
                "Installs the core packages first, from your tape and root floppy"),
              O("run", "Running AMIX system",
-               "Reads what is installed, then adds, updates or removes packages in place",
-               badge="no copy needed")]),
+               "Over its network: adds, updates or removes packages in place",
+               badge="no copy needed", needs=("net2065", "netzen"))]),
           G("target", "Write to", radio=True, options=[
-              O("sd", "Z3660 SD card", "New HDF files on the board’s SD card",
+              O("sd", "Z3660 SD card", "HDF files for the board’s SD card",
                 needs=(("z3660",), ("hdf", "tape"))),
-              O("scsi", "SCSI or BlueSCSI disk", "A3000 internal SCSI, A2091, GVP",
+              O("card", "ZuluSCSI or BlueSCSI SD card",
+                "Disk images named by SCSI ID (HD60_512.hda …) to copy onto the card",
                 needs=(("a3000", "a2500"), ("hdf", "tape"))),
               O("file", "HDF files only", "For FS-UAE, or to copy later",
                 needs=("hdf", "tape")),
@@ -110,6 +111,12 @@ STEPS = [
           G("accopt", "CPU card options", options=[
               O("bigram", "BigRAM on the A2630", "More fast RAM on the card, used by the kernel",
                 needs=("a2630",))]),
+          G("net", "Network", radio=True, options=[
+              O("net2065", "A2065", "Commodore’s Ethernet card: the only network a stock "
+                "AMIX has", needs=("none", "gvp", "a2630", "a2620", "mercury", "uae")),
+              O("netzen", "Z3660 Ethernet",
+                "Only once a kernel from this installer runs", needs=("z3660",)),
+              O("nonet", "None", "Install from HDF files prepared in FS-UAE")]),
           G("keymap", "Keyboard", radio=True, options=[
               O("us", "US", "Amiga keyboard with the US layout"),
               O("de", "German", "Amiga keyboard with the German layout"),
@@ -128,8 +135,7 @@ STEPS = [
                "For a core disk that was made too small", needs=("hdf", "tape"))]),
           G("dsize", "Data disk size", radio=True, options=[
               O("d1g", "1 GB", "Desktop and a few applications", needs=("split",)),
-              O("d2g", "2 GB", "Room for development tools and games", needs=("split",)),
-              O("d4g", "4 GB", "Everything, with space to grow", needs=("split",))])]),
+              O("d2g", "2 GB", "Room for development tools and games", needs=("split",))])]),
     Step("kernel", "Kernel", "Optimised or stock",
          "Kernels are built from the published AMIX kernel sources with my patches. The stock "
          "kernel always stays on the disk as a fallback boot entry.",
@@ -162,7 +168,7 @@ STEPS = [
              O("rtg", "Z3660 graphics", "16-bit RTG modes for X", needs=("z3660",), mb=2),
              O("paula", "Paula audio", "/dev/paula for players and games", mb=1),
              O("a2065", "A2065 Ethernet", "Commodore’s card, and FS-UAE’s network",
-               needs=("none", "gvp", "a2630", "a2620", "mercury", "uae"), mb=1),
+               needs=("net2065",), mb=1),
              O("random", "Random numbers", "/dev/random and /dev/urandom, needed by ssh", mb=1)]),
           G("core1", "Services on the ARM core", options=[
               O("gpu", "3D graphics", "OpenGL on the second ARM core", needs=("z3660",), mb=30),
@@ -215,7 +221,7 @@ TAG_NAMES = {"060": "a 68060 card", "x11": "an X11 desktop"}
 
 DEFAULT_SEL = {"src": "hdf", "target": "sd", "mach": "a3000", "accel": "z3660", "cpu": "m020",
                "layout": "split", "dsize": "d2g", "kern": "z3opt", "boot": "pvmk", "desk": "cde",
-               "keymap": "us"}
+               "keymap": "us", "net": "netzen"}
 
 DEFAULT_ON = {"pkg": True, "bigram": True, "vt": True, "syslog": True, "dlm": False, "mem": True,
               "zen": True, "rtg": True, "paula": True, "a2065": False, "random": True,
@@ -228,7 +234,8 @@ CORE_DISK_MB = 600
 CORE_USED_MB = 310
 GROWN_CORE_MB = 2000
 ROOT_RESERVE_MB = 200
-DATA_DISK_MB = {"d1g": 1000, "d2g": 2000, "d4g": 4000}
+# AMIX is not tested with disks above 2 GB (the core disks stop just below 2^31 bytes)
+DATA_DISK_MB = {"d1g": 1000, "d2g": 2000}
 
 
 def all_probes():

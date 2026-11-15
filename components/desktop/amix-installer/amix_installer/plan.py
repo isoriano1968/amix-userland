@@ -283,20 +283,25 @@ def run(args, ctx):
 
 
 class Checksums(Action):
-    def __init__(self, cfg):
+    def __init__(self, cfg, readme_text=None):
+        names = ["SHA256SUMS", "amix-installer.json"] + (["README-amix-installer.txt"]
+                                                         if readme_text else [])
         super(Checksums, self).__init__(
-            "sums", "Write checksums and the record of this run",
-            "SHA256SUMS and amix-installer.json next to the disks", 4096,
-            ["SHA256SUMS", "amix-installer.json"])
+            "sums", "Write checksums, a README and the record of this run",
+            "%s next to the disks" % ", ".join(names), 4096, names)
         self.cfg = cfg
+        self.readme = readme_text
 
     def run(self, ctx):
         from . import profile
         sums = "".join("%s  %s\n" % (h, n) for n, h in sorted(ctx.results.items()))
         rec = {"installer": __version__, "time": time.strftime("%Y-%m-%dT%H:%M:%S"),
                "profile": profile.dump(self.cfg), "files": ctx.results}
-        for name, text in (("SHA256SUMS", sums),
-                           ("amix-installer.json", json.dumps(rec, indent=2, sort_keys=True) + "\n")):
+        files = [("SHA256SUMS", sums),
+                 ("amix-installer.json", json.dumps(rec, indent=2, sort_keys=True) + "\n")]
+        if self.readme:
+            files.append(("README-amix-installer.txt", self.readme))
+        for name, text in files:
             with open(ctx.part(name), "x") as f:
                 f.write(text)
                 f.flush()
@@ -353,14 +358,113 @@ class Later(Action):
         super(Later, self).__init__(id, title, detail, size, [], why)
 
 
-# AMIX writes its own file system: these steps run on the machine after its
-# first boot, over the network (version 0.4)
-NO_UFS = "AMIX does this itself after the first boot, over the network (0.4)"
-NO_PKG = "AMIX does this with its package client after the first boot (0.4)"
+# AMIX writes its own file system: what changes UFS runs on AMIX, in FS-UAE
+# with an emulated A2065 or on an Amiga with an A2065 (version 0.4)
+NO_UFS = "AMIX does this itself in FS-UAE, over the network (0.4)"
+NO_PKG = "AMIX does this with its package client (0.4)"
+NO_NET = "the network install comes in version 0.4"
+
+
+# SCSI IDs, the same in FS-UAE and on a ZuluSCSI/BlueSCSI: the stock kernel
+# roots on ID 6; pvmk's boot disk 5; the data disk 1 (the host adapter is 7)
+SCSI_ID = {"core": 6, "pvmk": 5, "data": 1}
+FSUAE_CONFIG = "amix-install.fs-uae"
+README = "README-amix-installer.txt"
+
+
+def disk_names(sel, stem):
+    """File names of the disks for the target."""
+    if sel["target"] == "card":
+        return dict((k, "HD%d0_512.hda" % v) for k, v in SCSI_ID.items())
+    return {"core": "%s-core.hdf" % stem, "pvmk": "pvmk.hdf", "data": "%s-data.hdf" % stem}
+
+
+class DataDisk(Action):
+    """An empty data disk: RDB from the core disk, one UNIX partition; AMIX
+    makes the file system (mkfs -F ufs) when it installs."""
+
+    def __init__(self, src, name, size):
+        super(DataDisk, self).__init__(
+            "data-disk", "Create the data disk",
+            "%s, %d MB: an empty UNIX_Data partition; AMIX makes its file system"
+            % (name, size >> 20), 1 << 20, [name])
+        self.src = src
+        self.name = name
+        self.bytes = size
+
+    def run(self, ctx):
+        from . import rdb
+        ctx.progress(0.2, "partition table")
+        rdb.make_data_disk(self.src, ctx.part(self.name), self.bytes)
+        with hdf.Image(ctx.part(self.name)) as im:
+            parts = im.read_rdb()
+        if [p.kind for p in parts] != ["amix-root"]:
+            raise IOError("the new data disk does not read back as one UNIX partition")
+        finish(ctx, self.name)
+
+
+class FsUaeConfig(Action):
+    """An FS-UAE A3000 with an A2065 and the new disks: the machine the
+    network install fills (0.4).  The Kickstart is the user's own file."""
+
+    def __init__(self, names, kickstart, out):
+        disks = [n for n in (names.get("pvmk"), names.get("core"), names.get("data")) if n]
+        missing = None if kickstart else "choose your A3000 Kickstart ROM on the Base system page"
+        super(FsUaeConfig, self).__init__(
+            "fs-uae", "Write the FS-UAE configuration",
+            "%s: A3000, A2065 network, %s" % (FSUAE_CONFIG, ", ".join(disks)), 4096,
+            [FSUAE_CONFIG], missing)
+        self.names = names
+        self.kickstart = kickstart
+        self.out = out
+
+    def text(self):
+        out = ["# AMIX installation machine, written by amix-installer %s" % __version__,
+               "# An A3000 with an A2065: the installer fills the disks over its network.",
+               "[fs-uae]", "amiga_model = A3000", "chip_memory = 2048",
+               "motherboard_ram = 16384", "kickstart_file = %s" % self.kickstart,
+               "network_card = a2065"]
+        n = 0
+        for role in ("pvmk", "core", "data"):
+            name = self.names.get(role)
+            if not name:
+                continue
+            out += ["hard_drive_%d = %s" % (n, os.path.join(self.out, name)),
+                    "hard_drive_%d_controller = scsi%d" % (n, SCSI_ID[role]),
+                    "hard_drive_%d_type = rdb" % n]
+            n += 1
+        return "\n".join(out) + "\n"
+
+    def run(self, ctx):
+        with open(ctx.part(FSUAE_CONFIG), "x") as f:
+            f.write(self.text())
+        finish(ctx, FSUAE_CONFIG)
+
+
+def readme(cfg, names):
+    sel = cfg.sel
+    lines = ["Disks written by the AMIX Installer %s." % __version__, ""]
+    for role, what in (("core", "the core system (root, swap, boot)"),
+                       ("pvmk", "pvmk, the boot loader (boots first)"),
+                       ("data", "/usr/local, /usr/gnu and /opt")):
+        if role in names:
+            lines.append("  SCSI ID %d  %-22s %s" % (SCSI_ID[role], names[role], what))
+    lines.append("")
+    if sel["target"] == "card":
+        lines += ["Copy the .hda files to the root of the ZuluSCSI/BlueSCSI SD card;",
+                  "their names give the SCSI IDs. Keep ID 7 free for the host adapter."]
+    elif sel["target"] == "sd":
+        lines += ["Copy the .hdf files to the hdf folder of the Z3660 SD card and give",
+                  "each its SCSI unit in z3660cfg.txt as listed above. Write them to an",
+                  "empty card: the firmware cannot use files in 32 or more pieces."]
+    else:
+        lines += ["%s starts them in FS-UAE." % FSUAE_CONFIG]
+    lines += ["", "SHA256SUMS lists the checksum of every file."]
+    return "\n".join(lines) + "\n"
 
 
 def make_plan(cfg, paths):
-    """The ordered plan for cfg; paths: core_hdf, out_dir, host."""
+    """The ordered plan for cfg; paths: core_hdf, out_dir, kickstart, host."""
     pl = Plan(cfg, paths)
     sel = cfg.sel
     src = paths.get("core_hdf")
@@ -368,14 +472,13 @@ def make_plan(cfg, paths):
     stem = os.path.splitext(os.path.basename(src))[0] if src else "amix"
 
     if sel["src"] == "run":
-        pl.problems.append("changing a running system comes in version 0.4")
+        pl.problems.append("installing over the network into a running system comes in "
+                           "version 0.4")
         return pl
     if sel["src"] == "tape":
-        pl.problems.append("installing from a tape image comes last (it needs an emulator)")
+        pl.problems.append("installing from a tape image comes later (in FS-UAE, from your "
+                           "tape and root floppy)")
         return pl
-    if sel["target"] == "scsi":
-        pl.problems.append("writing a SCSI or BlueSCSI disk comes in version 0.5; "
-                           "choose HDF files or the Z3660 SD card")
     if not src:
         pl.problems.append("choose the core HDF on the Base system page")
     elif cfg.source is None or cfg.source.path != src:
@@ -393,56 +496,63 @@ def make_plan(cfg, paths):
     if pl.problems:
         return pl
 
-    core_name = "%s-core.hdf" % stem
+    names = disk_names(sel, stem)
+    if sel["layout"] != "split":
+        names.pop("data")
+    if sel["boot"] != "pvmk":
+        names.pop("pvmk")
+
     if sel["layout"] == "grow":
         pl.actions.append(Later("grow-core", "Copy the core system to a larger disk",
-                                "a new %s with the core copied into a larger UNIX_Root"
-                                % core_name, NO_UFS))
+                                "a larger %s; AMIX copies the core into it in FS-UAE"
+                                % names["core"], NO_UFS))
     else:
-        pl.actions.append(CopyCore(src, core_name))
-    if sel["boot"] == "pvmk":
+        pl.actions.append(CopyCore(src, names["core"]))
+    if "pvmk" in names:
         if cfg.source is not None and cfg.source.pvmk is not None:
             pl.actions.append(Later("pvmk", "Update the pvmk boot partition",
-                                    "the core disk has one (%s); updating it in the copy"
-                                    % cfg.source.pvmk.name, "pvmk's own \u201cupdate\u201d does "
-                                    "it after the first boot (0.4)"))
+                                    "the core disk has one (%s)" % cfg.source.pvmk.name,
+                                    "pvmk’s own “update” does it (0.4)"))
+            names.pop("pvmk")
         else:
-            pl.actions.append(PvmkDisk(cfg, find_pvmk()))
-    if sel["layout"] == "split":
-        mb = model.DATA_DISK_MB[sel["dsize"]]
-        pl.actions.append(Later("data-disk", "Create the data disk",
-                                "%s-data.hdf, %d MB: RDB and an empty UFS for /usr/local, "
-                                "/usr/gnu and /opt" % (stem, mb), NO_UFS, mb << 20))
+            pl.actions.append(PvmkDisk(cfg, find_pvmk(), names["pvmk"]))
+    if "data" in names:
+        pl.actions.append(DataDisk(src, names["data"], model.DATA_DISK_MB[sel["dsize"]] << 20))
+    pl.actions.append(FsUaeConfig(names, paths.get("kickstart"), out))
+
+    # what AMIX does in FS-UAE over the emulated A2065 (0.4)
+    inside = []
+    if "data" in names:
+        inside.append("makes the data disk’s file system")
         if cfg.source is not None and cfg.source.movable_bytes():
-            pl.actions.append(Later("move", "Move /usr/local, /usr/gnu and /opt to the data disk",
-                                    "%d MB, links left in their place"
-                                    % (cfg.source.movable_bytes() >> 20), NO_UFS))
+            inside.append("moves /usr/local, /usr/gnu and /opt (%d MB) there"
+                          % (cfg.source.movable_bytes() >> 20))
     if not cfg.installed(model.find_group("pkgclient").option("pkg")):
-        pl.actions.append(Later("pkg-client", "Install the package client",
-                                "pkg and /var/pkg in the copy, from its SVR4 datastream", NO_PKG))
-    if sel["kern"] != "stock":
-        k = model.find_group("kern").option(sel["kern"])
-        pl.actions.append(Later("kernel", "Install the kernel",
-                                "%s as /stand/unix; the stock kernel stays as a fallback boot entry" % k.title,
-                                NO_PKG))
+        inside.append("installs the package client")
     pkgs = []
     for s in model.STEPS:
         for g in s.groups:
             if g.id in ("pkgclient", "kern", "boot", "src", "target", "mach", "accel", "cpu",
-                        "layout", "dsize"):
+                        "layout", "dsize", "net", "keymap"):
                 continue
             for o in g.options:
                 if cfg.chosen(g, o) and o.mb and not cfg.installed(o):
                     pkgs.append(o.title)
     if pkgs:
-        pl.actions.append(Later("packages", "Install %d packages" % len(pkgs), ", ".join(pkgs),
-                                NO_PKG))
+        inside.append("installs %d packages (%s)" % (len(pkgs), ", ".join(pkgs)))
+    if sel["kern"] != "stock":
+        inside.append("installs the %s kernel last, the stock kernel kept as a fallback"
+                      % model.find_group("kern").option(sel["kern"]).title)
+    if inside:
+        pl.actions.append(Later("install", "Install in FS-UAE over its A2065",
+                                "you start FS-UAE and type one command; AMIX then "
+                                + "; ".join(inside), NO_NET))
     if sel["target"] == "sd":
         pl.actions.append(FragCheck([n for a in pl.runnable() for n in a.outputs
                                      if n.endswith(".hdf")]))
-    pl.actions.append(Checksums(cfg))
+    pl.actions.append(Checksums(cfg, readme(cfg, names)))
 
-    need = pl.write_bytes()
+    need = sum(a.size for a in pl.runnable())
     try:
         st = os.statvfs(out)
         free = st.f_bavail * st.f_frsize

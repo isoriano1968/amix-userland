@@ -11,6 +11,8 @@ def main(argv=None):
     ap.add_argument("--profile", help="load this profile at start")
     ap.add_argument("--source", metavar="HDF", help="read this core HDF at start (read-only)")
     ap.add_argument("--out", metavar="DIR", help="folder for the new disks (--plan, --apply)")
+    ap.add_argument("--kickstart", metavar="ROM",
+                    help="your A3000 Kickstart ROM, for the FS-UAE configuration")
     ap.add_argument("--plan", action="store_true", help="print the plan and exit (no window)")
     ap.add_argument("--apply", action="store_true",
                     help="write what this version can (no window); needs --source and --out")
@@ -46,6 +48,8 @@ def run_plan(args):
         cfg.normalize()
     if args.out:
         paths["out_dir"] = os.path.abspath(args.out)
+    if args.kickstart:
+        paths["kickstart"] = os.path.abspath(args.kickstart)
     pl = plan.make_plan(cfg, paths)
     print(pl.text())
     if pl.problems:

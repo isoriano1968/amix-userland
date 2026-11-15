@@ -10,9 +10,12 @@ amix-userland and amix-gate that fit the machine.
 
 It runs on the host, not on AMIX: OpenIndiana first, Linux too.
 
-**Version 0.3 writes the core copy and the pvmk boot disk** (HDF files,
-or a folder on the Z3660 SD card); the data disk, kernel and packages are
-in its plan and follow. All eight steps work (Base system, Machine,
+**Version 0.3 prepares the disks**: the core copy, the pvmk boot disk, an
+empty data disk and an FS-UAE configuration (an A3000 with an A2065), as
+HDF files, for the Z3660 SD card, or as ZuluSCSI/BlueSCSI images named by
+SCSI ID. AMIX itself then installs the kernel and packages over the A2065,
+in FS-UAE or on an Amiga that has one (version 0.4); the PC never writes
+AMIX's file system. All eight steps work (Base system, Machine,
 Disks, Kernel, Drivers, Desktop, Development, Summary), options a machine
 cannot use are greyed out, and the choices can be saved and loaded as a
 profile. A chosen core HDF is read, read-only: partitions, root file
@@ -37,7 +40,10 @@ and pycairo to make the icons.
                         # (AMIX_SHOT_SOURCE=core.hdf: also with that image read)
     ./amix-installer --source core.hdf   # start with a core HDF read
     ./amix-installer --source core.hdf --out DIR --plan    # print the plan
-    ./amix-installer --source core.hdf --out DIR --apply   # write what this version can
+    ./amix-installer --source core.hdf --out DIR --kickstart A3000.rom --apply
+
+Your Kickstart ROM is only referred to by its path in the FS-UAE
+configuration, never copied.
 
 pvmk's build is found in `~/Sources/usr-amix/pvmk/build` or `$AMIX_PVMK_DIR`
 (bootblock.bin, pvmk.bin, host/mkadf, host/mkhdf).
@@ -52,6 +58,7 @@ pvmk's build is found in `~/Sources/usr-amix/pvmk/build` or `$AMIX_PVMK_DIR`
       safety.py             checks before anything is written
       hdf.py                reads an HDF (RDB, UFS, packages), read-only
       plan.py               the plan, and running it (.part, read back, rename)
+      rdb.py                the empty data disk, RDB copied from the core disk
       cli.py                --plan and --apply without a window
       app.py                the window
       shot.py               headless screenshots

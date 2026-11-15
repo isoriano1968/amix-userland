@@ -48,7 +48,8 @@ class Rules(unittest.TestCase):
         c.select("mach", "a2500")
         self.assertEqual(c.sel["accel"], "gvp")
         self.assertEqual(c.sel["kern"], "k040")
-        self.assertEqual(c.sel["target"], "scsi")     # no Z3660 SD card
+        self.assertEqual(c.sel["target"], "card")     # no Z3660 SD card: ZuluSCSI/BlueSCSI
+        self.assertEqual(c.sel["net"], "net2065")
         c.select("accel", "a2630")
         self.assertEqual(c.sel["kern"], "stock")
         self.assertTrue(c.chosen(*opt("accopt", "bigram")))
@@ -86,6 +87,17 @@ class Rules(unittest.TestCase):
         c.select("desk", "mwm")
         self.assertTrue(c.chosen(*opt("apps", "netsurf")))
         self.assertFalse(c.chosen(*opt("apps", "sysmon")))
+
+    def test_running_system_needs_a_network(self):
+        c = model.Config(sel={"mach": "a2500", "accel": "a2630", "net": "nonet"})
+        self.assertFalse(c.select("src", "run"))
+        c.select("net", "net2065")
+        self.assertTrue(c.select("src", "run"))
+        self.assertEqual(c.sel["target"], "inplace")
+        c = model.Config(sel={"mach": "uae"})
+        self.assertEqual(c.sel["net"], "net2065")      # FS-UAE emulates an A2065
+        self.assertTrue(c.chosen(*opt("drv", "a2065")) or not c.on["a2065"])
+        self.assertTrue(c.available(opt("drv", "a2065")[1]))
 
     def test_missing_text(self):
         c = model.Config(sel={"mach": "a2500"})

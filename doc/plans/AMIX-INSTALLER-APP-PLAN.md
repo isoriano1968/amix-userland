@@ -72,10 +72,9 @@ front end (`amix-installer --profile x.json --apply`) share it.
 ordered, printable plan: copy core image, create data disk, install kernel
 packages, set boot entry, install packages by name and version. The Summary
 page shows that plan, the "Apply" button runs it with a progress page and a
-log, and `--dry-run` prints it. Package installs go through the IPS client
-(`pkg -R <mounted image>` on a host-mounted copy, or `pkg` over ssh on a
-running system), so the conflict check, `.new` + sha256 + rename and the
-journal are not written twice.
+log, and `--plan` prints it. Package installs go through the IPS client
+on AMIX itself (see "One way to install"), so the conflict check, `.new` +
+sha256 + rename and the journal are not written twice.
 
 **Profiles.** JSON with a format name and version, the radio choices and
 the switches, by id; never paths, hosts or device names (a profile is for
@@ -86,9 +85,10 @@ change.
 **Running systems.** In place mode reads the system first (uname, `pkg list`,
 SVR4 `/var/sadm/install/contents`, free space, kernel), preselects what is
 installed and offers only differences; switching something off is a removal
-and is listed as such in the Summary. On the A3000 this goes through
-`tools/amix-box` like every other box access, and refuses while a player
-runs.
+and is listed as such in the Summary. It needs the machine's network: an
+A2065 on a stock system (the Network choice on the Machine page; "Running
+AMIX system" is greyed out without one). On the A3000 the installer's own
+tests go through `tools/amix-box` like every other box access.
 
 ## Boot: the pvmk partition
 
@@ -99,12 +99,13 @@ and 040/060 kernels can also boot from Commodore's `UNIX_Boot`, which is
 kept). The Kernel step offers it as the default ("pvmk boot partition");
 "AMIX boot partition only" is greyed out for the Z3660 kernel.
 
-- On a SCSI/BlueSCSI disk: a PVMK partition (DOS\1, about 900 KB) before
-  UNIX_Root, made as `mkhdf -p PVMK,image=pvmk.adf,pvbb` does it (boot block
-  pointed at the partition's absolute block, medium hard disk, checksum).
-  Never the raw .adf (red screen, AmigaOS boots).
-- On the Z3660 SD card: its own `pvmk.hdf` (SCSI unit 5 in z3660cfg.txt),
-  as on the A3000 now.
+- Always its own disk image, SCSI ID 5: `pvmk.hdf` (Z3660 SD card, FS-UAE)
+  or `HD50_512.hda` (ZuluSCSI/BlueSCSI), made as `mkhdf -p
+  PVMK,image=pvmk.adf,pri=4,bootblocks=2,pvbb` does it (boot block pointed
+  at the partition's absolute block, medium hard disk, checksum). Never the
+  raw .adf (red screen, AmigaOS boots).
+- The same image boots FS-UAE and the real machine: without a Z3660,
+  `z3reloc` reports "no Z3660 board" and changes nothing.
 - `pvmk.conf` on the volume gets `entry=AMIX,UNIX_Root:/stand/unix,native`
   for the chosen kernel.
 - The pvmk image must pass `make check` (the 320 KB hole) before it is
@@ -117,12 +118,12 @@ kept). The Kernel step offers it as the default ("pvmk boot partition");
 Every package install goes through the IPS client (`pkg`, `/var/pkg`, see
 IPS-INSTALLER-PLAN.md). The installer checks the destination for it
 (`/var/pkg`, `/usr/bin/pkg`): on a source HDF when it reads it, on a
-running system over ssh. The Base system step has a "Package client"
+running system when the bootstrap reports back. The Base system step has a "Package client"
 switch, on by default and marked "installed" when found; if it is
 switched off on a destination without it, Apply asks whether to install it
 first, because nothing else can be added without it. It goes on first, from
-its bootstrap SVR4 datastream (`pkgadd`, so even it is recorded), then
-uploads and installs the packages.
+its bootstrap SVR4 datastream (`pkgadd`, so even it is recorded); then it
+fetches and installs the packages.
 
 ## Disk writing stays safe
 
@@ -133,23 +134,17 @@ uploads and installs the packages.
 2. **New files, then rename.** HDFs are written as `<name>.hdf.part` and
    renamed when complete and checked; nothing existing is overwritten
    without an explicit confirmation that names the file and its size.
-3. **Never the host's disks.** A device target (SD card, SCSI disk via a USB
-   reader) is offered only if it is removable or not in use: the installer
-   lists disks itself (Linux: `/sys/block`, `lsblk -J`; illumos: `diskinfo`,
-   `rmformat`), and refuses any disk that holds a mounted filesystem, swap,
-   a ZFS pool member (`zpool status`), an LVM/MD member, or the host's
-   root/boot disk. The check runs again right before writing.
-4. **Privileges only for the write.** The app runs as the user. Writing a
-   device needs root: one small helper (pkexec on Linux, pfexec with a
-   profile on illumos) takes the plan's device and image path, repeats
-   check 3 itself and writes nothing else.
-5. **Space.** Before anything is copied: room on the host for the copies;
+3. **Never a raw disk.** The installer writes files only: HDFs and card
+   images in a folder (the SD card's own folder at most). It never opens a
+   block device for writing, so it needs no root and cannot hit the host's
+   disks. A real SCSI disk gets an image with the user's own tool.
+4. **Space.** Before anything is copied: room on the host for the copies;
    on the AMIX root, at least 200 MB free after the selection (the same rule
    the box has); a selection that does not fit is shown on the Disks page and
    blocks Apply.
-6. **Verify.** Written images are read back and hashed; the Summary of the
+5. **Verify.** Written images are read back and hashed; the Summary of the
    result lists the files with sha256.
-7. **Z3660 SD card.** HDFs on the card must not be fragmented (firmware beta
+6. **Z3660 SD card.** HDFs on the card must not be fragmented (firmware beta
    21 misdirects files with 32 or more fragments): files are preallocated
    in one piece and checked with `filefrag`/`fiemap` where available, or
    written to an empty card.
@@ -182,30 +177,46 @@ uploads and installs the packages.
   read-back, rename, never overwrite, a journal; a stopped run removes all
   it wrote. Targets: HDF files and a folder on the Z3660 SD card (with a
   fragment check through `filefrag`, which illumos lacks).
-  The data disk, the moves, the package client, kernel and packages are
-  done by AMIX itself after the first boot (decided below), in 0.4.
-- **0.4:** finishing over the network, for a first boot and for a running
-  system alike: ssh to the machine, read what is installed, then newfs,
-  pkgadd of the client, pkg installs, each step logged; needs the IPS
-  client (IPS-INSTALLER-PLAN.md steps 1-4).
-- **0.5:** device targets (SCSI/BlueSCSI via USB) with the disk checks and
-  the privileged helper.
-- Tape image + root floppy source last: it needs the core package install
-  done the way the stock installer does it, in an emulator.
+  Then (same day): the Network choice (A2065, Z3660 Ethernet, none), the
+  ZuluSCSI/BlueSCSI target (images `HD<ID>0_512.hda`), the empty data disk
+  (RDB copied from the core disk, one UNIX_Data partition, sparse; AMIX
+  makes the file system), the FS-UAE configuration and a README with the
+  SCSI IDs. The 4 GB data disk is gone until AMIX is tested above 2 GB.
+- **0.4:** the network install (below), into FS-UAE and into an Amiga with
+  an A2065 alike; needs the IPS client (IPS-INSTALLER-PLAN.md steps 1-4).
+- Tape image + root floppy source last: the stock installation from the
+  user's tape in FS-UAE (the "AMIGA3000 UNIX" configuration already has the
+  tape as a SCSI tape), then the same network install.
 
-## Decided 2026-11-15: AMIX writes its own file system
+## One way to install: over the A2065 (decided 2026-11-15)
 
-Everything after the core copy changes the copy's UFS or makes a new one
-(data disk). The installer does not write UFS on the host: it writes the
-core copy and the pvmk boot disk, the machine boots them, and the
-installer finishes over the network, the same path as changing a running
-system: AMIX's own `newfs` (or `mkfs -F ufs`) for the data disk, its
-`pkgadd` for the package client's bootstrap datastream, then `pkg` for
-the kernel and the packages; the moves of /usr/local, /usr/gnu and /opt
-with AMIX's `cpio -p` and a check before the links replace them. Only
-AMIX's tools touch AMIX's file system. On the A3000 every step goes
-through `tools/amix-box` (lock, no player running). A host UFS writer
-for offline images (FS-UAE) may follow later.
+AMIX writes its own file system; the host never writes UFS. A stock AMIX
+2.1c has no ssh: its network is telnet, ftp and rsh over an A2065, the
+only network card the stock kernel drives (the Z3660 Ethernet needs our
+kernel). So there is one install path, a running AMIX with an A2065:
+
+- **A real Amiga with an A2065** and enough free disk space: installed in
+  place.
+- **Everyone else** (Z3660, ZuluSCSI, BlueSCSI: machines whose disks are
+  files on an SD card, and that cannot make HDFs themselves): the
+  installer writes the core copy, `pvmk.hdf` and an empty data disk plus an
+  FS-UAE configuration (A3000, A2065, the disks at their SCSI IDs: core 6,
+  where the stock kernel roots; pvmk 5; data 1). FS-UAE boots it, the same
+  network install fills it, and the user copies the files to the card.
+
+How it starts, without a password on the network: the user logs in as
+root at the Amiga's console (or FS-UAE's window) and types one command
+the installer shows, an `ftp` get of the bootstrap datastream from the PC
+followed by `pkgadd -d` (stock tools only). The installer serves that file
+from a small read-only anonymous FTP server of its own, only while the
+install runs (in FS-UAE the PC is 10.0.2.2). The bootstrap installs the
+package client (and its network libraries); from then on `pkg` fetches
+the packages over HTTP from the installer's repository: `mkfs -F ufs` for
+the data disk, the moves of /usr/local, /usr/gnu and /opt with `cpio -p`
+and a check before the links replace them, the packages, and the chosen
+kernel last (the stock kernel stays as a fallback boot entry, so FS-UAE,
+an 030, keeps booting until the end). A command on AMIX reports progress
+back to the installer, which shows it in its log.
 
 ## Packaging
 

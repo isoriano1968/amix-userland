@@ -416,13 +416,10 @@ class Window(Adw.ApplicationWindow):
         tape = file_row("tape", "Tape image", ["*.tap", "*.img", "*.tar", "*.bin"])
         flop = file_row("floppy", "Root floppy", ["*.adf", "*.img", "*.ADF"])
         outd = file_row("out_dir", "Folder for the new HDF files", [], folder=True)
+        kick = file_row("kickstart", "A3000 Kickstart ROM for FS-UAE", ["*.rom", "*.ROM"])
         host = Adw.EntryRow(title="Address of the AMIX system")
         host.connect("changed", lambda e: self.paths.__setitem__("host", e.get_text().strip()))
-        dev = Adw.ActionRow(title="Disk",
-                            subtitle="Chosen from the disks the installer finds; this comes with "
-                                     "disk writing")
-        dev.set_sensitive(False)
-        for r in (hdf, tape, flop, host, outd, dev):
+        for r in (hdf, tape, flop, host, outd, kick):
             pg.add(r)
 
         def vis():
@@ -432,10 +429,11 @@ class Window(Adw.ApplicationWindow):
             tape.set_visible(src == "tape")
             flop.set_visible(src == "tape")
             host.set_visible(src == "run")
-            outd.set_visible(tgt in ("file", "sd"))
-            outd.set_title("The hdf folder on the Z3660 SD card" if tgt == "sd" else
-                           "Folder for the new HDF files")
-            dev.set_visible(tgt == "scsi")
+            outd.set_visible(tgt in ("file", "sd", "card"))
+            outd.set_title({"sd": "The hdf folder on the Z3660 SD card",
+                            "card": "Folder for the card images (or the card itself)"}.get(
+                                tgt, "Folder for the new HDF files"))
+            kick.set_visible(src in ("hdf", "tape"))
         self._extra.append(vis)
         return pg
 
