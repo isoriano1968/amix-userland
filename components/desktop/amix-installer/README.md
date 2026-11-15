@@ -10,10 +10,12 @@ amix-userland and amix-gate that fit the machine.
 
 It runs on the host, not on AMIX: OpenIndiana first, Linux too.
 
-**Version 0.1 writes nothing.** All eight steps work (Base system, Machine,
+**Version 0.2 writes nothing.** All eight steps work (Base system, Machine,
 Disks, Kernel, Drivers, Desktop, Development, Summary), options a machine
 cannot use are greyed out, and the choices can be saved and loaded as a
-profile. Disk writing and package installs come next; see
+profile. A chosen core HDF is read, read-only: partitions, root file
+system use, AMIX packages, kernels, what is installed already, a pvmk boot
+partition and the package client; the Disks page then shows its real sizes. Disk writing and package installs come next; see
 [the plan](../../../doc/plans/AMIX-INSTALLER-APP-PLAN.md).
 
 ## Needs
@@ -30,6 +32,8 @@ and pycairo to make the icons.
     make test           # model, profiles, safety checks
     make run            # from the source tree
     make screenshots    # every step, light and dark, under Xvfb, to build/shots
+                        # (AMIX_SHOT_SOURCE=core.hdf: also with that image read)
+    ./amix-installer --source core.hdf   # start with a core HDF read
     make install DESTDIR=/tmp/root HOST_PREFIX=/usr
 
 ## Layout
@@ -39,6 +43,7 @@ and pycairo to make the icons.
       model.py              steps, options and what each one needs, as data
       profile.py            profiles (JSON, choices only: no paths or hosts)
       safety.py             checks before anything is written
+      hdf.py                reads an HDF (RDB, UFS, packages), read-only
       app.py                the window
       shot.py               headless screenshots
     data/                   stylesheet, desktop entry

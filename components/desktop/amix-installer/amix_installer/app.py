@@ -5,13 +5,14 @@ Targets libadwaita >= 1.4 and GTK >= 4.12 (OpenIndiana 2025: 1.6 / 4.16).
 import math
 import os
 import sys
+import threading
 
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import APP_ID, __version__, model, profile  # noqa: E402
+from . import APP_ID, __version__, hdf, model, profile  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -56,6 +57,69 @@ def needs_text(cfg, opt):
         names = [model.tag_title(t) for t in alt]
         parts.append(" or ".join(names))
     return "Needs " + ", and ".join(parts) if parts else ""
+
+
+def _mb(b):
+    return "%d MB" % int(round(b / 1048576.0))
+
+
+def source_rows(info):
+    """Rows that show what the source image holds."""
+    rows = []
+    cyl, heads, secs = info.geometry
+    r = Adw.ActionRow(title=os.path.basename(info.path),
+                      subtitle="%s, %d partitions; opened read-only, never written"
+                      % (_mb(info.size), len(info.partitions)))
+    r.add_prefix(Gtk.Image.new_from_icon_name("drive-harddisk-symbolic"))
+    rows.append(r)
+
+    parts = Adw.ExpanderRow(title="Partitions",
+                            subtitle=", ".join(p.name for p in info.partitions))
+    for p in info.partitions:
+        pr = Adw.ActionRow(title=p.name, subtitle=p.describe() + (", bootable" if p.bootable else ""))
+        pr.add_suffix(label(_mb(p.size), ("caption", "dim-label", "numeric"), wrap=False))
+        parts.add_row(pr)
+    rows.append(parts)
+
+    root = Adw.ActionRow(title="Root file system",
+                         subtitle="%s used, %s free on %s" % (_mb(info.root_used), _mb(info.root_avail),
+                                                              info.root.name))
+    if info.root_avail < model.ROOT_RESERVE_MB * 1048576:
+        root.add_suffix(label("below %d MB free" % model.ROOT_RESERVE_MB, ("caption", "warning"),
+                              wrap=False))
+    rows.append(root)
+
+    pk = Adw.ExpanderRow(title="AMIX packages",
+                         subtitle="%d SVR4 packages%s" % (len(info.packages),
+                                                         "" if info.has_core() else ", no core package"))
+    for name, desc, ver in info.packages:
+        pk.add_row(Adw.ActionRow(title=name, subtitle=(desc + ("  " + ver if ver else "")).strip()))
+    rows.append(pk)
+
+    kern = Adw.ExpanderRow(title="Kernels in /stand",
+                           subtitle="/unix \u2192 %s, %d kernels" % (info.unix_link or "?", len(info.kernels)))
+    for name, size in info.kernels:
+        kern.add_row(Adw.ActionRow(title=name, subtitle=_mb(size)))
+    rows.append(kern)
+
+    mv = Adw.ActionRow(title="Added software",
+                       subtitle=", ".join("%s %s" % (d, _mb(b)) for d, b in sorted(info.movable.items())))
+    rows.append(mv)
+
+    pc = [p for p in model.PKG_CLIENT_PROBES if p in info.found]
+    rows.append(Adw.ActionRow(title="AMIX package client",
+                              subtitle=("Installed (%s)" % ", ".join(pc)) if pc else
+                              "Not installed; it is needed to add packages"))
+
+    pv = Adw.ActionRow(title="pvmk boot partition",
+                       subtitle=("%s on this disk; it is kept" % info.pvmk.name) if info.pvmk else
+                       "Not on this disk; the installer writes one")
+    rows.append(pv)
+    for n in info.notes:
+        w = Adw.ActionRow(title="Note", subtitle=n)
+        w.add_prefix(Gtk.Image.new_from_icon_name("dialog-warning-symbolic"))
+        rows.append(w)
+    return rows
 
 
 class SpaceBar(Gtk.DrawingArea):
@@ -238,6 +302,7 @@ class Window(Adw.ApplicationWindow):
             page.append(self._group(g))
         if s.id == "base":
             page.append(self._source_group())
+            page.append(self._source_view())
         if s.summary:
             page.append(self._summary())
 
@@ -300,11 +365,17 @@ class Window(Adw.ApplicationWindow):
                 size = label("≈ %d MB" % o.mb, ("caption", "dim-label", "numeric"), wrap=False)
                 size.set_valign(Gtk.Align.CENTER)
                 row.add_suffix(size)
+            inst = None
+            if o.probe:
+                inst = label("installed", ("caption", "success"), wrap=False)
+                inst.set_valign(Gtk.Align.CENTER)
+                inst.set_tooltip_text("Found on the source disk: kept, not counted again")
+                row.add_suffix(inst)
             if not g.radio:
                 row.add_suffix(ctl)
             row.set_activatable_widget(ctl)
             pg.add(row)
-            self._rows.append((g, o, row, ctl, size))
+            self._rows.append((g, o, row, ctl, size, inst))
         return pg
 
     def _running_note(self):
@@ -340,7 +411,7 @@ class Window(Adw.ApplicationWindow):
             self._extra.append(upd)
             return row
 
-        hdf = file_row("core_hdf", "Core HDF", ["*.hdf", "*.HDF"])
+        hdf = file_row("core_hdf", "Core HDF", ["*.hdf", "*.HDF", "*.img"])
         tape = file_row("tape", "Tape image", ["*.tap", "*.img", "*.tar", "*.bin"])
         flop = file_row("floppy", "Root floppy", ["*.adf", "*.img", "*.ADF"])
         outd = file_row("out_dir", "Folder for the new HDF files", [], folder=True)
@@ -365,9 +436,77 @@ class Window(Adw.ApplicationWindow):
         self._extra.append(vis)
         return pg
 
+    # -- the source image ---------------------------------------------------
+    def read_source(self, path):
+        """Read the core HDF in a thread; the image is opened read-only."""
+        self.cfg.source = None
+        self.source_state = ("reading", path)
+        self._sync()
+
+        def work():
+            try:
+                info = hdf.inspect(path, probes=model.all_probes())
+                GLib.idle_add(self._source_done, path, info, None)
+            except (OSError, IOError, hdf.NotAnImage, hdf.UfsError) as e:
+                GLib.idle_add(self._source_done, path, None, str(e))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _source_done(self, path, info, err):
+        if self.paths.get("core_hdf") != path:
+            return False                    # another file was chosen meanwhile
+        if err:
+            self.source_state = ("error", err)
+        else:
+            self.cfg.source = info
+            self.source_state = ("done", info)
+            self.cfg.normalize()
+        if self.step == 0:
+            self._rebuild_source_view()     # keep the scroll position
+            self._sync()
+        else:
+            self.show_step(self.step)
+        return False
+
+    def _source_view(self):
+        self.source_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self._rebuild_source_view()
+        self._extra.append(lambda: self.source_box.set_visible(self.cfg.sel["src"] == "hdf"))
+        return self.source_box
+
+    def _rebuild_source_view(self):
+        box = getattr(self, "source_box", None)
+        if box is None:
+            return
+        c = box.get_first_child()
+        while c is not None:
+            box.remove(c)
+            c = box.get_first_child()
+        state = getattr(self, "source_state", None)
+        if state is None:
+            box.set_visible(False)
+            return
+        pg = Adw.PreferencesGroup(title="On this disk")
+        box.append(pg)
+        kind, what = state
+        if kind == "reading":
+            row = Adw.ActionRow(title="Reading the disk\u2026", subtitle=os.path.basename(what))
+            sp = Gtk.Spinner(spinning=True, valign=Gtk.Align.CENTER)
+            row.add_prefix(sp)
+            pg.add(row)
+        elif kind == "error":
+            row = Adw.ActionRow(title="Not a disk the installer can use", subtitle=what)
+            row.add_prefix(Gtk.Image.new_from_icon_name("dialog-warning-symbolic"))
+            pg.add(row)
+        else:
+            for r in source_rows(what):
+                pg.add(r)
+
     def _space_card(self):
         pg = Adw.PreferencesGroup(title="Space")
-        pg.set_header_suffix(label("example sizes", ("caption", "dim-label"), wrap=False))
+        src = self.cfg.source
+        pg.set_header_suffix(label("from %s" % os.path.basename(src.path) if src else
+                                   "example sizes, until a core HDF is read",
+                                   ("caption", "dim-label"), wrap=False))
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         card.add_css_class("card")
         card.add_css_class("amix-card-pad")
@@ -386,7 +525,7 @@ class Window(Adw.ApplicationWindow):
             card.append(b)
             bars.append((b, name, text, bar))
         legend = Gtk.Box(spacing=16)
-        for css, t in (("amix-key-core", "Core system"), ("amix-key-sel", "Your selection"),
+        for css, t in (("amix-key-core", "Already on the disk"), ("amix-key-sel", "Your selection"),
                        ("amix-key-bad", "Does not fit")):
             k = Gtk.Box(spacing=6)
             sw = Gtk.Box(valign=Gtk.Align.CENTER)
@@ -397,9 +536,7 @@ class Window(Adw.ApplicationWindow):
             k.append(label(t, ("caption", "dim-label"), wrap=False))
             legend.append(k)
         card.append(legend)
-        warn = label("Your selection does not fit on the core disk with %d MB left free. Add a "
-                     "data disk, or let the installer copy the core system to a larger disk."
-                     % model.ROOT_RESERVE_MB, ("amix-warning",))
+        warn = label("", ("amix-warning",))
         card.append(warn)
         pg.add(card)
 
@@ -414,6 +551,17 @@ class Window(Adw.ApplicationWindow):
                     text.set_text("%d MB used, %d MB free" % (used, max(0, d["total"] - used)))
                     bar.set_disk(d)
             warn.set_visible(not fits)
+            core = disks[0]
+            if not core["fits"] and core["add"] == 0:
+                warn.set_text("The core disk keeps less than %d MB free even without what you add "
+                              "(%d MB free). Let the installer copy the core system to a larger "
+                              "disk." % (model.ROOT_RESERVE_MB, max(0, core["total"] - core["used"])))
+            elif not core["fits"]:
+                warn.set_text("Your selection does not fit on the core disk with %d MB left free. "
+                              "Add a data disk, or let the installer copy the core system to a "
+                              "larger disk." % model.ROOT_RESERVE_MB)
+            elif not fits:
+                warn.set_text("Your selection does not fit on the data disk. Choose a larger one.")
         self._extra.append(upd)
         return pg
 
@@ -484,13 +632,16 @@ class Window(Adw.ApplicationWindow):
     def _sync(self):
         self._syncing = True
         try:
-            for g, o, row, ctl, size in self._rows:
+            for g, o, row, ctl, size, inst in self._rows:
                 ok = self.cfg.available(o)
+                have = self.cfg.installed(o)
                 row.set_sensitive(ok)
                 row.set_subtitle(o.sub if ok else model.NOT_AVAILABLE)
                 row.set_tooltip_text(None if ok else needs_text(self.cfg, o))
                 if size is not None:
-                    size.set_visible(ok)
+                    size.set_visible(ok and not have)
+                if inst is not None:
+                    inst.set_visible(ok and have)
                 on = self.cfg.chosen(g, o)
                 if ctl.get_active() != on:
                     ctl.set_active(on)
@@ -553,6 +704,8 @@ class Window(Adw.ApplicationWindow):
             except GLib.Error:
                 return
             self.paths[key] = f.get_path()
+            if key == "core_hdf":
+                self.read_source(f.get_path())
             self._sync()
         if folder:
             dlg.select_folder(self, None, done)
@@ -594,6 +747,8 @@ class Window(Adw.ApplicationWindow):
         except (OSError, ValueError) as e:
             self.toast("Not a profile: %s" % e)
             return False
+        cfg.source = self.cfg.source
+        cfg.normalize()
         self.cfg = cfg
         self.show_step(self.step)
         self.toast("Profile loaded" + (" with %d notes" % len(msgs) if msgs else ""))
@@ -604,9 +759,28 @@ class Window(Adw.ApplicationWindow):
     def _reset(self):
         self.cfg = model.Config()
         self.paths = {}
+        self.source_state = None
         self.show_step(0)
 
     def _apply(self):
+        if self.cfg.pkg_client_missing():
+            d = Adw.AlertDialog(
+                heading="Install the package client?",
+                body="The AMIX package client (pkg, /var/pkg) is not on the destination system. "
+                     "Without it the installer cannot add, update or remove packages there.")
+            d.add_response("cancel", "Cancel")
+            d.add_response("install", "Install It")
+            d.set_response_appearance("install", Adw.ResponseAppearance.SUGGESTED)
+            d.set_default_response("install")
+
+            def answer(_d, r):
+                if r == "install":
+                    self.cfg.set_on("pkg", True)
+                    self._sync()
+                    self._apply()
+            d.connect("response", answer)
+            d.present(self)
+            return
         _, fits = self.cfg.space()
         body = ("This first version plans the installation only; writing disks and installing "
                 "packages come in the next versions. Save your choices as a profile to use "
@@ -680,6 +854,9 @@ class App(Adw.Application):
             self.win = Window(self)
             if self.args.profile:
                 self.win.load_profile(self.args.profile)
+            if self.args.source:
+                self.win.paths["core_hdf"] = os.path.abspath(self.args.source)
+                self.win.read_source(self.win.paths["core_hdf"])
         self.win.present()
         if self.args.screenshot:
             from . import shot
@@ -690,6 +867,7 @@ def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(prog="amix-installer")
     ap.add_argument("--profile", help="load this profile at start")
+    ap.add_argument("--source", metavar="HDF", help="read this core HDF at start (read-only)")
     ap.add_argument("--screenshot", metavar="DIR",
                     help="render every step to DIR/*.png and quit (tests)")
     ap.add_argument("--version", action="version", version="%(prog)s " + __version__)

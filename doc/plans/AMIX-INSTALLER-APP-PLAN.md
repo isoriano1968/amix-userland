@@ -1,7 +1,7 @@
 # AMIX Installer: a GNOME desktop app
 
-Plan of 2026-11-15. Version 0.1 (UI, model, profiles) is in
-`components/desktop/amix-installer`; nothing writes disks yet.
+Plan of 2026-11-15. Version 0.2 (UI, model, profiles, reading the source
+HDF) is in `components/desktop/amix-installer`; nothing writes disks yet.
 
 ## What it is
 
@@ -48,6 +48,7 @@ a small C helper called as a subprocess; the UI does not change.
                   sizes; the Config (selection) and its rules
       profile.py  save/load a selection as JSON
       safety.py   checks a source/target pair before anything is written
+      hdf.py      reads an HDF read-only: RDB, UFS, packages, kernels
       app.py      the GTK/libadwaita UI; reads the model, writes nothing
       shot.py     renders every step to PNG (tests, docs), no visible window
       backend/    (later) plan -> actions; HDF, partitions, packages
@@ -86,6 +87,40 @@ and is listed as such in the Summary. On the A3000 this goes through
 `tools/amix-box` like every other box access, and refuses while a player
 runs.
 
+## Boot: the pvmk partition
+
+Every disk the installer makes gets a pvmk boot partition, so there is a
+boot loader: the boot menu, the serial console, and the kernel loaded from
+`UNIX_Root:/stand/unix` (the Z3660 kernel needs pvmk's `z3reloc`; the stock
+and 040/060 kernels can also boot from Commodore's `UNIX_Boot`, which is
+kept). The Kernel step offers it as the default ("pvmk boot partition");
+"AMIX boot partition only" is greyed out for the Z3660 kernel.
+
+- On a SCSI/BlueSCSI disk: a PVMK partition (DOS\1, about 900 KB) before
+  UNIX_Root, made as `mkhdf -p PVMK,image=pvmk.adf,pvbb` does it (boot block
+  pointed at the partition's absolute block, medium hard disk, checksum).
+  Never the raw .adf (red screen, AmigaOS boots).
+- On the Z3660 SD card: its own `pvmk.hdf` (SCSI unit 5 in z3660cfg.txt),
+  as on the A3000 now.
+- `pvmk.conf` on the volume gets `entry=AMIX,UNIX_Root:/stand/unix,native`
+  for the chosen kernel.
+- The pvmk image must pass `make check` (the 320 KB hole) before it is
+  written, and the written volume is read back and compared.
+- The reader recognises a PVMK partition on a source disk (DOS\1 with the
+  PVBB magic at 0x3c0 of the boot block) and keeps it.
+
+## The package client on the destination
+
+Every package install goes through the IPS client (`pkg`, `/var/pkg`, see
+IPS-INSTALLER-PLAN.md). The installer checks the destination for it
+(`/var/pkg`, `/usr/bin/pkg`): on a source HDF when it reads it, on a
+running system over ssh. The Base system step has a "Package client"
+switch, on by default and marked "installed" when found; if it is
+switched off on a destination without it, Apply asks whether to install it
+first, because nothing else can be added without it. It goes on first, from
+its bootstrap SVR4 datastream (`pkgadd`, so even it is recorded), then
+uploads and installs the packages.
+
 ## Disk writing stays safe
 
 1. **The source is never written.** A source HDF or tape image is opened
@@ -122,9 +157,17 @@ runs.
   rules and example sizes, profile save/load, icons and desktop entry,
   headless screenshots, unit tests. Source/target choosers record paths
   only. "Create disks" says that disk writing is not in this version.
-- **0.2:** read the source: HDF partition table and UFS superblock (sizes,
-  free space, installed SVR4 packages) with the `ufsget.py` code; real sizes
-  on the Disks page; the package sizes from the built stages.
+- **0.2 (done):** read the source HDF, read-only, in pure Python
+  (`hdf.py`, the same layout as pvmk's `svc/ufs.c`): RDB partitions, UFS
+  superblock (size, used, free after minfree), SVR4 packages from
+  `/var/sadm/pkg/*/pkginfo`, kernels in `/stand`, the `/unix` link, du of
+  `/usr/local`, `/usr/gnu`, `/opt`, a PVMK partition, the package client,
+  and what of the offered software is there already (probe paths). The
+  Disks page uses the real sizes (what moves to the data disk included);
+  installed options are marked and not counted again. Tested on the stock
+  AMIGA_UNIX.hdf and the 2026-10-26 Z3660 backup (du of / equals the
+  superblock's used blocks within a few fragments; sha256 unchanged).
+  Package sizes from the built stages: with the IPS manifests (0.3).
 - **0.3:** plan and HDF-file targets: copy core, data disk HDF, install into
   the copies with the IPS client's `-R`, boot entry, stock kernel kept.
   Tested with FS-UAE.

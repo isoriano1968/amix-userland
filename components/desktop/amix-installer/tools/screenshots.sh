@@ -1,5 +1,6 @@
 #!/bin/sh
 # screenshots.sh DIR [PROGRAM] -- render every step, light and dark, under Xvfb
+# (AMIX_SHOT_SOURCE=core.hdf: also the steps with that image read, read-only)
 # (PROGRAM: an installed amix-installer; default the source tree).
 # Starts its own Xvfb on a free display and stops it (by pid) afterwards;
 # never uses $DISPLAY.
@@ -21,3 +22,7 @@ env DISPLAY=:$n GDK_BACKEND=x11 GSK_RENDERER=cairo \
     NO_AT_BRIDGE=1 GTK_A11Y=none "$prog" --screenshot "$out" || exit 1
 env DISPLAY=:$n GDK_BACKEND=x11 GSK_RENDERER=cairo \
     NO_AT_BRIDGE=1 GTK_A11Y=none AMIX_SHOT_DARK=1 "$prog" --screenshot "$out"
+if [ -n "$AMIX_SHOT_SOURCE" ]; then
+    env DISPLAY=:$n GDK_BACKEND=x11 GSK_RENDERER=cairo NO_AT_BRIDGE=1 GTK_A11Y=none \
+        "$prog" --source "$AMIX_SHOT_SOURCE" --screenshot "$out" || exit 1
+fi

@@ -20,6 +20,16 @@ SCENES = [("%d-%s" % (i + 1, s.id), {}, {}, i) for i, s in enumerate(model.STEPS
     ("x-single-disk-full", {"layout": "single"}, {}, model.step_index("disks")),
     ("x-running-summary", {"src": "run"}, {}, model.step_index("summary")),
 ]
+# with --source: what the image holds, real sizes, installed marks
+SOURCE_SCENES = [
+    ("s-base", {}, {}, 0),
+    ("s-base-end", {}, {}, 0),
+    ("s-disks", {}, {}, model.step_index("disks")),
+    ("s-disks-single", {"layout": "single"}, {}, model.step_index("disks")),
+    ("s-kernel", {}, {}, model.step_index("kernel")),
+    ("s-desktop", {}, {}, model.step_index("desktop")),
+    ("s-summary", {}, {}, model.step_index("summary")),
+]
 
 
 def save_png(widget, path):
@@ -46,7 +56,8 @@ def save_png(widget, path):
 
 def run(win, outdir):
     os.makedirs(outdir, exist_ok=True)
-    scenes = list(SCENES)
+    # with a source image only the scenes that show it
+    scenes = list(SOURCE_SCENES if getattr(win, "source_state", None) else SCENES)
     dark = os.environ.get("AMIX_SHOT_DARK") == "1"
     if dark:
         from gi.repository import Adw
@@ -56,11 +67,25 @@ def run(win, outdir):
         if not scenes:
             win.get_application().quit()
             return False
+        st = getattr(win, "source_state", None)
+        if st and st[0] == "reading":
+            GLib.timeout_add(200, setup)        # wait for the source image
+            return False
         name, sel, on, step = scenes[0]
         from . import model as m
-        win.cfg = m.Config(sel=sel, on=on)
+        source = st[1] if st and st[0] == "done" else None
+        win.cfg = m.Config(sel=sel, on=on, source=source)
         win.show_step(step)
-        GLib.timeout_add(400, grab)
+        if name.endswith("-end"):
+            GLib.timeout_add(400, to_end)
+        else:
+            GLib.timeout_add(400, grab)
+        return False
+
+    def to_end():
+        adj = win.scroller.get_vadjustment()
+        adj.set_value(adj.get_upper() - adj.get_page_size())
+        GLib.timeout_add(300, grab)
         return False
 
     def grab():

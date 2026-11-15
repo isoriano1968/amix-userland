@@ -10,14 +10,18 @@ Tags are the chosen options of the radio groups in TAG_GROUPS, plus the
 derived tags of derived_tags().
 """
 
-TAG_GROUPS = ("src", "target", "mach", "accel", "layout", "kern", "desk")
+TAG_GROUPS = ("src", "target", "mach", "accel", "layout", "kern", "boot", "desk")
 
 NOT_AVAILABLE = "Not for this machine or layout"
 
+# where the IPS client of doc/plans/IPS-INSTALLER-PLAN.md shows itself
+PKG_CLIENT_PROBES = ("/var/pkg", "/usr/bin/pkg")
+
 
 class Option(object):
-    def __init__(self, id, title, sub, needs=None, badge=None, mb=0, default=False):
+    def __init__(self, id, title, sub, needs=None, badge=None, mb=0, default=False, probe=()):
         self.id = id
+        self.probe = tuple(probe)   # paths that show it is installed on a source disk
         self.title = title
         self.sub = sub
         self.needs = _norm_needs(needs)
@@ -82,7 +86,11 @@ STEPS = [
               O("file", "HDF files only", "For FS-UAE, or to copy later",
                 needs=("hdf", "tape")),
               O("inplace", "The running system", "Its own disks, after a check of free space",
-                needs=("run",))])]),
+                needs=("run",))]),
+          G("pkgclient", "Package client", options=[
+              O("pkg", "AMIX package client",
+                "pkg and /var/pkg: installs, updates and removes packages, each file checked; "
+                "every package below needs it", mb=2, probe=PKG_CLIENT_PROBES)])]),
     Step("machine", "Machine", "Amiga and accelerator",
          "Kernel, drivers and memory layout follow the Amiga and its CPU card. Options a "
          "machine cannot use are greyed out on the next pages.",
@@ -127,6 +135,13 @@ STEPS = [
              O("k040", "68040/060 port", "For 68040 and 68060 cards",
                needs=("z3660", "mercury", "gvp", "uae")),
              O("stock", "Stock AMIX 2.1c", "Commodore’s 68030 kernel, unchanged")]),
+          G("boot", "Boot", radio=True, options=[
+              O("pvmk", "pvmk boot partition",
+                "Boot menu and serial console; loads the kernel from UNIX_Root",
+                badge="recommended", mb=1),
+              O("amixboot", "AMIX boot partition only",
+                "Commodore\u2019s boot, for the stock and 040/060 kernels",
+                needs=("stock", "k040"))]),
           G("kopt", "Kernel options", options=[
               O("vt", "Virtual consoles", "Alt+F keys switch between consoles and X",
                 needs=("z3opt", "k040")),
@@ -154,30 +169,38 @@ STEPS = [
          "X11R6.3 with Motif comes with every desktop choice except OPEN LOOK and the console.",
          [G("desk", "Desktop", radio=True, options=[
              O("cde", "CDE", "Front panel, file manager, terminal, App Manager",
-               badge="recommended", mb=140),
-             O("mwm", "Motif window manager", "mwm only, light and quick", mb=45),
+               badge="recommended", mb=140, probe=("/usr/dt/bin/dtwm",)),
+             O("mwm", "Motif window manager", "mwm only, light and quick", mb=45,
+               probe=("/opt/motif/bin/mwm", "/usr/motif/bin/mwm")),
              O("ol", "OPEN LOOK", "AMIX’s own desktop, as shipped"),
              O("console", "Console only", "No X server")]),
           G("apps", "Applications", options=[
-              O("netsurf", "NetSurf", "Web browser", needs=("x11",), mb=25),
-              O("media", "AmigaCast", "Movies and DLNA streams", needs=(("z3660",), ("x11",)), mb=30),
-              O("grafx2", "Grafx2", "Paint program", needs=("x11",), mb=6),
+              O("netsurf", "NetSurf", "Web browser", needs=("x11",), mb=25,
+                probe=("/usr/local/bin/netsurf-fb", "/usr/local/bin/netsurf")),
+              O("media", "AmigaCast", "Movies and DLNA streams", needs=(("z3660",), ("x11",)), mb=30,
+                probe=("/opt/amix/bin/amixcast", "/opt/vplay/amixcast")),
+              O("grafx2", "Grafx2", "Paint program", needs=("x11",), mb=6,
+                probe=("/usr/local/bin/grafx2",)),
               O("sysmon", "System monitor", "CPU, memory and network in the front panel",
-                needs=("cde",), mb=1),
+                needs=("cde",), mb=1, probe=("/opt/amix/bin/amixsysmon",)),
               O("games", "Games", "Quake, Quake III and more on the ARM core",
-                needs=(("z3660",), ("x11",)), mb=600)])]),
+                needs=(("z3660",), ("x11",)), mb=600, probe=("/opt/amix/bin/c1q3", "/opt/quake"))])]),
     Step("dev", "Development", "Compilers and tools",
          "Development files of every installed package come with the toolchains, so programs "
          "build on the Amiga itself.",
          [G("tc", "Toolchains", options=[
              O("gcc14", "GCC 14", "C and C++, current standards", mb=180),
-             O("gcc27", "GCC 2.7.2.3", "The compiler generation AMIX was built with", mb=25),
+             O("gcc27", "GCC 2.7.2.3", "The compiler generation AMIX was built with", mb=25,
+               probe=("/usr/local/gcc-2.7.2.3",)),
              O("headers", "Development files", "Headers, pkg-config files and link stubs", mb=40),
-             O("pkgconf", "pkg-config", "Finds installed libraries for builds", mb=1)]),
+             O("pkgconf", "pkg-config", "Finds installed libraries for builds", mb=1,
+               probe=("/usr/local/bin/pkg-config",))]),
           G("tools", "Tools", options=[
-              O("gnu", "GNU tools", "bash, grep, sed, gawk, find and tar", mb=30),
-              O("python", "Python 3", "With pip for user installs", mb=90),
-              O("vim", "vim", "Editor", mb=10)])]),
+              O("gnu", "GNU tools", "bash, grep, sed, gawk, find and tar", mb=30,
+               probe=("/usr/gnu/bin/bash",)),
+              O("python", "Python 3", "With pip for user installs", mb=90,
+               probe=("/usr/local/bin/python3",)),
+              O("vim", "vim", "Editor", mb=10, probe=("/usr/local/bin/vim",))])]),
     Step("summary", "Summary", "Check and create",
          "Check your choices, then create the disks. A profile keeps them for the next machine.",
          summary=True),
@@ -187,9 +210,9 @@ STEPS = [
 TAG_NAMES = {"060": "a 68060 card", "x11": "an X11 desktop"}
 
 DEFAULT_SEL = {"src": "hdf", "target": "sd", "mach": "a3000", "accel": "z3660", "cpu": "m020",
-               "layout": "split", "dsize": "d2g", "kern": "z3opt", "desk": "cde"}
+               "layout": "split", "dsize": "d2g", "kern": "z3opt", "boot": "pvmk", "desk": "cde"}
 
-DEFAULT_ON = {"bigram": True, "vt": True, "syslog": True, "dlm": False, "mem": True,
+DEFAULT_ON = {"pkg": True, "bigram": True, "vt": True, "syslog": True, "dlm": False, "mem": True,
               "zen": True, "rtg": True, "paula": True, "a2065": False, "random": True,
               "gpu": True, "video": True, "crypto": True, "netsurf": True, "media": True,
               "grafx2": False, "sysmon": True, "games": False, "gcc14": True, "gcc27": False,
@@ -201,6 +224,14 @@ CORE_USED_MB = 310
 GROWN_CORE_MB = 2000
 ROOT_RESERVE_MB = 200
 DATA_DISK_MB = {"d1g": 1000, "d2g": 2000, "d4g": 4000}
+
+
+def all_probes():
+    out = []
+    for _, g in all_groups():
+        for o in g.options:
+            out.extend(o.probe)
+    return out
 
 
 def all_groups():
@@ -236,7 +267,8 @@ def tag_title(tag):
 class Config(object):
     """A selection: one id per radio group, on/off per switch."""
 
-    def __init__(self, sel=None, on=None):
+    def __init__(self, sel=None, on=None, source=None):
+        self.source = source        # hdf.SourceInfo of the core image, or None
         self.sel = dict(DEFAULT_SEL)
         self.on = dict(DEFAULT_ON)
         if sel:
@@ -324,33 +356,53 @@ class Config(object):
                     out.append(o)
         return out
 
+    def installed(self, opt):
+        """True if the source disk already has it (a probe path exists)."""
+        return bool(self.source is not None and opt.probe and
+                    any(p in self.source.found for p in opt.probe))
+
+    def pkg_client_missing(self):
+        """The destination has no package client and it is switched off."""
+        return not self.on.get("pkg") and not self.installed(find_group("pkgclient").option("pkg"))
+
     def added_mb(self):
-        return sum(o.mb for s in STEPS for o in self.chosen_options(s))
+        return sum(o.mb for s in STEPS for o in self.chosen_options(s) if not self.installed(o))
 
     def in_place(self):
         return self.sel["src"] == "run"
 
     def space(self):
-        """Example disk use: a list of dicts, and whether it fits."""
+        """Disk use in MB: a list of dicts, and whether it fits.  From the
+        source image when it has been read, else example sizes."""
         add = self.added_mb()
         layout = self.sel["layout"]
-        core_total = GROWN_CORE_MB if layout == "grow" else CORE_DISK_MB
+        src = self.source
+        mb = lambda b: int(round(b / 1048576.0))  # noqa: E731
+        if src is not None:
+            core_cap, core_used, movable = mb(src.root_used + src.root_avail), mb(src.root_used), \
+                mb(src.movable_bytes())
+        else:
+            core_cap, core_used, movable = CORE_DISK_MB, CORE_USED_MB, 0
+        if layout == "grow":
+            core_total = max(GROWN_CORE_MB, core_cap)
+            name = "Core disk (new, %s)" % _size_text(core_total)
+        else:
+            core_total = core_cap
+            name = "Core disk (%s)" % _size_text(core_total)
         split = layout == "split"
+        if split:
+            core_used -= movable
         core_add = 0 if split else add
-        core_fits = CORE_USED_MB + core_add + ROOT_RESERVE_MB <= core_total
-        disks = [{
-            "name": "Core disk (new, %d GB)" % (core_total // 1000) if layout == "grow"
-                    else "Core disk (%d MB)" % core_total,
-            "total": core_total, "used": CORE_USED_MB, "add": core_add,
-            "reserve": ROOT_RESERVE_MB, "fits": core_fits,
-        }]
+        core_fits = core_used + core_add + ROOT_RESERVE_MB <= core_total
+        disks = [{"name": name, "total": core_total, "used": core_used, "add": core_add,
+                  "reserve": ROOT_RESERVE_MB, "fits": core_fits}]
         fits = core_fits
         if split:
             data_total = DATA_DISK_MB[self.sel["dsize"]]
-            data_fits = add <= data_total
+            data_fits = movable + add <= data_total
             fits = fits and data_fits
             disks.append({"name": "Data disk (%d GB)" % (data_total // 1000),
-                          "total": data_total, "used": 0, "add": add, "reserve": 0,
+                          "total": data_total, "used": movable, "add": add, "reserve": 0,
                           "fits": data_fits})
         return disks, fits
 
@@ -365,6 +417,10 @@ class Config(object):
             items = [o.title for o in self.chosen_options(s)]
             out.append((s, items or ["Nothing selected"]))
         return out
+
+
+def _size_text(mb):
+    return "%.1f GB" % (mb / 1000.0) if mb >= 1000 else "%d MB" % mb
 
 
 def derived_tags(sel):
