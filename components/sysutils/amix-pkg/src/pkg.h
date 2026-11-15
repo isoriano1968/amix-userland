@@ -1,6 +1,6 @@
 /*
  * pkg -- the AMIX IPS client (doc/plans/IPS-CLIENT-DESIGN.md).
- * Portable C99: AMIX (gcc 14 cross, libamixc99, libcurl, zlib) and the
+ * Portable C99: AMIX (gcc 14 cross, libamixc99, zlib; own HTTP, no TLS) and the
  * host, for tests.
  */
 #ifndef AMIX_PKG_H
@@ -38,6 +38,7 @@ void buf_str(struct buf *b, const char *s);
 void buf_free(struct buf *b);
 
 int read_file(const char *path, struct buf *out);	/* 0 or -1 (errno) */
+int link_to_dir(const char *path, const struct stat *lst);
 int write_atomic(const char *path, const void *p, size_t n);	/* .new, fsync, rename */
 int mkdirs(const char *path, int mode);
 char *root_path(const char *root, const char *path);	/* root + path */
@@ -105,8 +106,14 @@ char *version_short(const char *v);
 int version_at_least(const char *v, const char *min);
 
 /* --- fetch.c ------------------------------------------------------------- */
-/* origin: file:///path, /path, or http(s)://host/path (libcurl builds) */
+/* origin: file:///path, /path, or http://host[:port]/path */
 int fetch(const char *origin, const char *relpath, struct buf *out);
+
+/* --- http.c -------------------------------------------------------------- */
+int http_split(const char *url, char *host, size_t hlen, int *port, const char **path);
+/* the HTTP status (redirects followed), or -1 with errno; the body into out */
+int http_request(const char *method, const char *url, const void *body, size_t blen,
+    struct buf *out);
 int gunzip(const struct buf *in, struct buf *out);
 
 /* --- image.c: the client's state under the root -------------------------- */

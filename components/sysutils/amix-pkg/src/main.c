@@ -12,7 +12,7 @@
 
 #include "pkg.h"
 
-#define VERSION_STRING	"0.2"
+#define VERSION_STRING	"0.3"
 
 static struct image im;
 
@@ -32,6 +32,7 @@ usage(void)
 	    "  update [-n] [name...]           to the newest versions (all installed: no names)\n"
 	    "  uninstall [-n] name...          remove; changed files stay as .pkgsave\n"
 	    "  history                         what was changed, and when\n"
+	    "  http get URL [FILE] | put URL   plain HTTP (the installer's bootstrap)\n"
 	    "  version\n"
 	    "--min-free MB: space that must stay free on the root (default 200)\n", PUBLISHER);
 	exit(2);
@@ -561,7 +562,9 @@ verify_pkg(const struct installed *in, int quiet)
 			continue;
 		}
 		if (!strcmp(a->type, "dir")) {
-			if (!S_ISDIR(st.st_mode))
+			if (link_to_dir(full, &st))
+				;		/* moved to another disk, e.g. /usr/local */
+			else if (!S_ISDIR(st.st_mode))
 				REPORT("not a directory");
 			else
 				bad |= check_attrs(p, a, &st, quiet, stem, shown);
@@ -680,6 +683,56 @@ cmd_verify(int argc, char **argv)
 	return bad;
 }
 
+/*
+ * pkg http get URL [FILE]   the body to FILE (or stdout); fails unless 200
+ * pkg http put URL          stdin as the body; fails unless 2xx
+ * For the AMIX Installer's bootstrap, which has no curl.
+ */
+static int
+cmd_http(int argc, char **argv)
+{
+	struct buf in = { 0 }, out = { 0 };
+	int status;
+
+	if (argc < 3 || (strcmp(argv[1], "get") && strcmp(argv[1], "put")) ||
+	    argc > (strcmp(argv[1], "get") ? 3 : 4))
+		usage();
+	if (!strcmp(argv[1], "put")) {
+		char tmp[8192];
+		size_t n;
+
+		while ((n = fread(tmp, 1, sizeof(tmp), stdin)) > 0)
+			buf_add(&in, tmp, n);
+		status = http_request("PUT", argv[2], in.data, in.len, &out);
+		buf_free(&in);
+		buf_free(&out);
+		if (status < 200 || status > 299) {
+			warnx("%s: %s", argv[2], status < 0 ? strerror(errno) : "refused");
+			return 1;
+		}
+		return 0;
+	}
+	status = http_request("GET", argv[2], NULL, 0, &out);
+	if (status != 200) {
+		if (status < 0)
+			warnx("%s: %s", argv[2], strerror(errno));
+		else
+			warnx("%s: HTTP %d", argv[2], status);
+		buf_free(&out);
+		return 1;
+	}
+	if (argc == 4) {
+		if (write_atomic(argv[3], out.data, out.len) < 0) {
+			warnx("%s: %s", argv[3], strerror(errno));
+			buf_free(&out);
+			return 1;
+		}
+	} else
+		fwrite(out.data, 1, out.len, stdout);
+	buf_free(&out);
+	return 0;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -700,6 +753,8 @@ main(int argc, char **argv)
 	}
 	if (i >= argc)
 		usage();
+	if (!strcmp(argv[i], "http"))
+		return cmd_http(argc - i, argv + i);
 	image_open(&im, root);
 	argc -= i;
 	argv += i;

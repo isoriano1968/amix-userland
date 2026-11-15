@@ -1,9 +1,9 @@
 # pkg, the AMIX IPS client (doc/plans/IPS-CLIENT-DESIGN.md).
-#   make build   the AMIX binary (gcc 14 cross, libcurl, zlib)
+#   make build   the AMIX binary (gcc 14 cross, zlib; its own HTTP, no TLS)
 #   make test    a host build, its unit tests and tests/run.sh against tests/repo
 #   make stage   build/stage/usr/bin/pkg
 COMPONENT_NAME    = amix-pkg
-COMPONENT_VERSION = 0.2
+COMPONENT_VERSION = 0.3
 
 include ../../../make-rules/shared.mk
 
@@ -16,16 +16,16 @@ HOSTFLAGS = -O2 -g -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L -DPKG_TESTIN
 build: $(BUILD_DIR)/pkg
 
 # 68020 to 68060: pkg runs on every AMIX machine, an A3000 with its 030 too
-CFLAGS68 = -O2 -m68020-60 -D__amix__ -D__svr4__ -DSVR4 -DHAVE_CURL -Wall -Isrc
+CFLAGS68 = -O2 -m68020-60 -D__amix__ -D__svr4__ -DSVR4 -Wall -Isrc
 OBJ68    = $(patsubst src/%.c,$(BUILD_DIR)/obj/%.o,$(SRC))
 
 $(BUILD_DIR)/obj/%.o: src/%.c $(HDR)
 	mkdir -p $(BUILD_DIR)/obj
-	m68k-elf-gcc $(CFLAGS68) `$(PKG_CONFIG) --cflags libcurl zlib` -c $< -o $@
+	m68k-elf-gcc $(CFLAGS68) `$(PKG_CONFIG) --cflags zlib` -c $< -o $@
 
 $(BUILD_DIR)/pkg: $(OBJ68)
 	../../../tools/amix-fpu-scan -q $(OBJ68)
-	m68k-elf-gcc -m68020-60 $(OBJ68) `$(PKG_CONFIG) --libs libcurl zlib` -lsocket -lnsl -lgen \
+	m68k-elf-gcc -m68020-60 $(OBJ68) `$(PKG_CONFIG) --libs zlib` -lsocket -lnsl -lgen \
 		-Wl,-rpath-link,$(AMIX_SYSROOT)/usr/lib -Wl,-rpath-link,$(AMIX_SYSROOT)/usr/local/lib \
 		-o $@
 	m68k-elf-strip $@

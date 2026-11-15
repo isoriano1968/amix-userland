@@ -109,7 +109,21 @@ class Space(unittest.TestCase):
         disks, fits = model.Config().space()
         self.assertTrue(fits)
         self.assertEqual(len(disks), 2)
-        self.assertEqual(disks[0]["add"], 0)
+        self.assertEqual(disks[0]["add"], model.CORE_TOOLS_MB)
+        self.assertEqual(disks[0]["reserve"], model.SPLIT_RESERVE_MB)
+
+    def test_stock_core_with_data_disk(self):
+        # the stock 469 MB root, 300 MB used: fits with a data disk, not alone
+        class Src(object):
+            root_used, root_avail = 300 << 20, 159 << 20
+            found = set()
+
+            def movable_bytes(self):
+                return 0
+        _, fits = model.Config(source=Src()).space()
+        self.assertTrue(fits)
+        _, fits = model.Config(sel={"layout": "single"}, on={}, source=Src()).space()
+        self.assertFalse(fits)
 
     def test_single_does_not_fit(self):
         c = model.Config(sel={"layout": "single"})

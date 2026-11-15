@@ -234,6 +234,10 @@ CORE_DISK_MB = 600
 CORE_USED_MB = 310
 GROWN_CORE_MB = 2000
 ROOT_RESERVE_MB = 200
+# with a data disk the new packages go there: the core only gets the package
+# client, /var/pkg and the bootstrap, and keeps this much free
+SPLIT_RESERVE_MB = 100
+CORE_TOOLS_MB = 5
 # AMIX is not tested with disks above 2 GB (the core disks stop just below 2^31 bytes)
 DATA_DISK_MB = {"d1g": 1000, "d2g": 2000}
 
@@ -404,10 +408,11 @@ class Config(object):
         split = layout == "split"
         if split:
             core_used -= movable
-        core_add = 0 if split else add
-        core_fits = core_used + core_add + ROOT_RESERVE_MB <= core_total
+        core_add = CORE_TOOLS_MB if split else add
+        reserve = SPLIT_RESERVE_MB if split else ROOT_RESERVE_MB
+        core_fits = core_used + core_add + reserve <= core_total
         disks = [{"name": name, "total": core_total, "used": core_used, "add": core_add,
-                  "reserve": ROOT_RESERVE_MB, "fits": core_fits}]
+                  "reserve": reserve, "fits": core_fits}]
         fits = core_fits
         if split:
             data_total = DATA_DISK_MB[self.sel["dsize"]]

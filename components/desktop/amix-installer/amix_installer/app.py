@@ -87,8 +87,8 @@ def source_rows(info):
                          subtitle="%s used, %s free on %s" % (_mb(info.root_used), _mb(info.root_avail),
                                                               info.root.name))
     if info.root_avail < model.ROOT_RESERVE_MB * 1048576:
-        root.add_suffix(label("below %d MB free" % model.ROOT_RESERVE_MB, ("caption", "warning"),
-                              wrap=False))
+        root.add_suffix(label("below %d MB free: needs a data disk" % model.ROOT_RESERVE_MB,
+                              ("caption", "warning"), wrap=False))
     rows.append(root)
 
     pk = Adw.ExpanderRow(title="AMIX packages",
@@ -611,14 +611,14 @@ class Window(Adw.ApplicationWindow):
                     bar.set_disk(d)
             warn.set_visible(not fits)
             core = disks[0]
-            if not core["fits"] and core["add"] == 0:
-                warn.set_text("The core disk keeps less than %d MB free even without what you add "
+            if not core["fits"] and self.cfg.sel["layout"] == "split":
+                warn.set_text("The core disk keeps less than %d MB free even with a data disk "
                               "(%d MB free). Let the installer copy the core system to a larger "
-                              "disk." % (model.ROOT_RESERVE_MB, max(0, core["total"] - core["used"])))
+                              "disk." % (core["reserve"], max(0, core["total"] - core["used"])))
             elif not core["fits"]:
                 warn.set_text("Your selection does not fit on the core disk with %d MB left free. "
                               "Add a data disk, or let the installer copy the core system to a "
-                              "larger disk." % model.ROOT_RESERVE_MB)
+                              "larger disk." % core["reserve"])
             elif not fits:
                 warn.set_text("Your selection does not fit on the data disk. Choose a larger one.")
         self._extra.append(upd)
@@ -849,6 +849,8 @@ class Window(Adw.ApplicationWindow):
             d.present(self)
             return
         pl = plan.make_plan(self.cfg, self.paths)
+        if pl.problems and self._offer_written():
+            return
         if pl.problems:
             self._alert("Not ready to write", "\n".join("\u2022 " + p for p in pl.problems))
             return
@@ -1000,23 +1002,39 @@ class Window(Adw.ApplicationWindow):
         self.run_btns.append(back)
         return False
 
+    def _offer_written(self):
+        """The out folder already holds the disks of this plan (an earlier run):
+        offer the network install with them instead of writing them again."""
+        if self.cfg.in_place():
+            return False
+        pl = plan.make_plan(self.cfg, self.paths, written=True)
+        net = [a for a in pl.actions if a.id == "install" and a.available]
+        if pl.problems or not net:
+            return False
+        d = Adw.AlertDialog(
+            heading="The disks are already there",
+            body="%s holds the disks of this selection from an earlier run. Install over the "
+                 "network with them? To write new ones, choose another folder."
+                 % self.paths["out_dir"])
+        d.add_response("cancel", "Cancel")
+        d.add_response("net", "Install over the Network")
+        d.set_response_appearance("net", Adw.ResponseAppearance.SUGGESTED)
+        d.set_default_response("net")
+        d.connect("response", lambda _d, r: r == "net" and self._net_page(net[0], False, pl))
+        d.present(self)
+        return True
+
     # -- the network install ---------------------------------------------------
     def _net_page(self, net, real, pl=None):
         """Serve the bootstrap and the repository; show what to type; log AMIX."""
         from . import netinstall
         data_disk = None
         if pl is not None and not real:
-            dd = [a for a in pl.actions if a.id == "data-disk"]
-            if dd:
-                f = os.path.join(pl.paths["out_dir"], dd[0].name)
-                try:
-                    with hdf.Image(f) as im:
-                        blocks = im.read_rdb()[0].blocks
-                    # FS-UAE: the data disk is SCSI ID 1, its first partition slice 1
-                    data_disk = ("/dev/rdsk/c%dd0s1" % plan.SCSI_ID["data"], blocks)
-                except (OSError, hdf.NotAnImage) as e:
-                    self._alert("The data disk cannot be read", str(e))
-                    return
+            try:
+                data_disk = netinstall.fs_uae_data_disk(pl)
+            except (OSError, hdf.NotAnImage) as e:
+                self._alert("The data disk cannot be read", str(e))
+                return
         host = netinstall.lan_address() if real else netinstall.FS_UAE_HOST
         try:
             self.net = netinstall.Session(self.cfg, net.repo, host=host, data_disk=data_disk,
@@ -1160,6 +1178,8 @@ class App(Adw.Application):
             self.win = Window(self)
             if self.args.profile:
                 self.win.load_profile(self.args.profile)
+            if self.args.out:
+                self.win.paths["out_dir"] = os.path.abspath(self.args.out)
             if self.args.source:
                 self.win.paths["core_hdf"] = os.path.abspath(self.args.source)
                 self.win.read_source(self.win.paths["core_hdf"])

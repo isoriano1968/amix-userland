@@ -34,7 +34,7 @@ changed is never removed: it is kept as `.pkgsave`.
 
 ## Build and test
 
-    make build    # the AMIX binary: gcc 14 cross, -m68020-60, libcurl, zlib
+    make build    # the AMIX binary: gcc 14 cross, -m68020-60, zlib
     make test     # host build, unit tests (FIPS hash vectors, JSON, actions,
                   # versions) and tests/run.sh against tests/repo: 80 checks,
                   # conflicts, preserved files, update, uninstall, crashes
@@ -43,4 +43,11 @@ changed is never removed: it is kept as `.pkgsave`.
 `tests/repo` is a small repository published with OpenIndiana's `pkgsend`
 (demo/hello 1.0 and 1.1, library/world): the catalog format and the
 signatures come from the real tool. The SHA-1 and SHA-512/256 code is
-built in, without OpenSSL; libcurl is only needed for http(s) origins.
+built in, without OpenSSL.
+
+HTTP is `src/http.c`, plain HTTP/1.0 without TLS: stock AMIX has no
+`/dev/urandom`, so OpenSSL (and libcurl with it) cannot start there.
+Every payload is checked against the hash in its manifest. `pkg http get
+URL [FILE]` and `pkg http put URL` are what the AMIX Installer's bootstrap
+uses instead of curl. Free space is checked on every file system a change
+writes to, so `/usr/local` on a data disk (a symlink) counts there.

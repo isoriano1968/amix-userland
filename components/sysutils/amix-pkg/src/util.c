@@ -266,3 +266,13 @@ parse_ull(const char *s)
 		n = n * 10 + (unsigned long long)(*s++ - '0');
 	return n;
 }
+
+/* a symlink to a directory (lst from lstat): a directory moved to another
+ * disk, such as /usr/local -> /amixdata/usr-local, still counts as one */
+int
+link_to_dir(const char *path, const struct stat *lst)
+{
+	struct stat st;
+
+	return S_ISLNK(lst->st_mode) && stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}

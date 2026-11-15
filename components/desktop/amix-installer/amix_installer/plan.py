@@ -526,7 +526,7 @@ def fs_uae():
     return _fs_cache[0]
 
 
-def make_plan(cfg, paths, fs=None):
+def make_plan(cfg, paths, fs=None, written=False):
     """The ordered plan for cfg; paths: core_hdf, out_dir, kickstart, host,
     fsuae_add (default True: add "AMIX Installer" to FS-UAE's list)."""
     fs = fs or fs_uae()
@@ -629,6 +629,14 @@ def make_plan(cfg, paths, fs=None):
         pl.actions.append(FsUaeRegister(fs, fsc.text))
 
     need = sum(a.size for a in pl.runnable())
+    if written:
+        # the disks of an earlier run, for the network install: they must be there
+        for a in pl.runnable():
+            for name in a.outputs:
+                if not os.path.exists(os.path.join(out, name)):
+                    pl.problems.append("%s is missing: write the disks first"
+                                       % os.path.join(out, name))
+        return pl
     try:
         st = os.statvfs(out)
         free = st.f_bavail * st.f_frsize

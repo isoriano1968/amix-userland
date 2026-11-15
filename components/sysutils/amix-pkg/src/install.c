@@ -735,7 +735,7 @@ prepare(const struct image *im, struct change *c, struct txn *t,
 				} else
 					set_attrs(im, full, a);	/* new: the package's; old: kept */
 			}
-		} else if (!S_ISDIR(st.st_mode)) {
+		} else if (!S_ISDIR(st.st_mode) && !link_to_dir(full, &st)) {
 			warnx("%s: should be a directory", p);
 			bad = 1;
 		}
@@ -995,21 +995,78 @@ conflicts(const struct image *im, const struct plan *p, const struct owners *w)
 	return bad ? -1 : 0;
 }
 
-static int
-space_ok(const struct image *im, unsigned long long bytes)
-{
-	struct statvfs sv;
-	unsigned long long avail, need = bytes + (unsigned long long)min_free_mb * 1024 * 1024;
+/*
+ * Space per file system: each file counts where it lands (its nearest existing
+ * directory, symlinks followed: /usr/local may live on a data disk), and every
+ * file system it touches keeps min_free_mb free.
+ */
+struct fsuse {
+	dev_t dev;
+	char *where;			/* an existing directory on it */
+	unsigned long long bytes;
+};
 
-	if (statvfs(im->root, &sv) < 0)
-		return 1;		/* cannot tell: say so, but do not stop */
-	avail = (unsigned long long)sv.f_bavail * (sv.f_frsize ? sv.f_frsize : sv.f_bsize);
-	if (avail < need) {
-		warnx("not enough space: %lu MB free, %lu MB needed (%lu MB must stay free)",
-		    (unsigned long)(avail >> 20), (unsigned long)(bytes >> 20), min_free_mb);
-		return 0;
+static void
+fs_add(struct fsuse **u, size_t *n, const struct image *im, const char *path,
+    unsigned long long bytes)
+{
+	char *d = root_path(im->root, path), *s;
+	struct stat st;
+	size_t i;
+
+	for (;;) {
+		if ((s = strrchr(d, '/')) == NULL || s == d) {
+			strcpy(d, "/");
+			break;
+		}
+		*s = 0;
+		if (stat(d, &st) == 0 && S_ISDIR(st.st_mode))
+			break;
 	}
-	return 1;
+	if (stat(d, &st) < 0) {
+		free(d);
+		return;
+	}
+	for (i = 0; i < *n; i++)
+		if ((*u)[i].dev == st.st_dev) {
+			(*u)[i].bytes += bytes;
+			free(d);
+			return;
+		}
+	*u = xrealloc(*u, (*n + 1) * sizeof(**u));
+	(*u)[*n].dev = st.st_dev;
+	(*u)[*n].where = d;
+	(*u)[*n].bytes = bytes;
+	(*n)++;
+}
+
+static int
+space_ok(const struct image *im, struct fsuse *u, size_t n)
+{
+	size_t i;
+	int ok = 1;
+
+	if (n == 0)
+		fs_add(&u, &n, im, "/.", 0);	/* nothing to add: still the root's rule */
+	for (i = 0; i < n; i++) {
+		struct statvfs sv;
+		unsigned long long avail, need;
+
+		need = u[i].bytes + (unsigned long long)min_free_mb * 1024 * 1024;
+		if (statvfs(u[i].where, &sv) < 0)
+			continue;	/* cannot tell: do not stop */
+		avail = (unsigned long long)sv.f_bavail * (sv.f_frsize ? sv.f_frsize : sv.f_bsize);
+		if (avail < need) {
+			warnx("not enough space on the file system of %s: %lu MB free, %lu MB "
+			    "needed (%lu MB must stay free)", u[i].where, (unsigned long)(avail >> 20),
+			    (unsigned long)(u[i].bytes >> 20), min_free_mb);
+			ok = 0;
+		}
+	}
+	for (i = 0; i < n; i++)
+		free(u[i].where);
+	free(u);
+	return ok;
 }
 
 static void
@@ -1098,17 +1155,18 @@ run(struct image *im, const char *cmd, struct plan *p, const struct installed *i
 		free(ov);
 	}
 	if (!removing) {		/* an upper bound: every file of the new versions */
-		size_t k;
+		struct fsuse *u = NULL;
+		size_t k, nu = 0;
 
 		for (i = 0; i < p->n; i++)
 			for (k = 0; k < p->c[i].m.n; k++) {
-				const char *sz = action_get(&p->c[i].m.act[k], "pkg.size");
+				const struct action *a = &p->c[i].m.act[k];
+				const char *sz = action_get(a, "pkg.size"), *path = action_get(a, "path");
 
-				if (!strcmp(p->c[i].m.act[k].type, "file") && sz &&
-				    wanted(im, &p->c[i].m.act[k]))
-					bytes += parse_ull(sz);
+				if (!strcmp(a->type, "file") && sz && path && wanted(im, a))
+					fs_add(&u, &nu, im, path, parse_ull(sz));
 			}
-		if (!space_ok(im, bytes)) {
+		if (!space_ok(im, u, nu)) {
 			warnx("nothing was changed");
 			goto out;
 		}

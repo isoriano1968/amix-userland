@@ -174,6 +174,37 @@ expect "lock held"                1 "another pkg"   "$PKG" -R "$L" --min-free 0 
 echo 999999 > "$L/var/pkg/lock"
 expect "stale lock taken over"    0 "install"       "$PKG" -R "$L" --min-free 0 install hello
 expect "lock released"            1 ""              test -f "$L/var/pkg/lock"
+# a directory moved to another disk: /usr/local as a symlink to a directory
+M="$T/moved"; newroot "$M"; mkdir -p "$M/data/usr-local" "$M/usr"; chmod 0755 "$M/usr"; ln -s ../data/usr-local "$M/usr/local"
+expect "dir as symlink: install"  0 ""              "$PKG" -R "$M" --min-free 0 install hello
+expect "dir as symlink: verify"   0 ""              "$PKG" -R "$M" verify
+expect "files on the other disk"  0 ""              test -f "$M/data/usr-local/bin/hi"
+
+# plain HTTP (http.c): the repository and the installer's get/put
+if command -v python3 >/dev/null 2>&1; then
+	W="$T/web"; cp -R "$here/repo" "$W"
+	python3 "$here/httpd.py" "$W" "$T/port" & HP=$!
+	i=0; while [ ! -f "$T/port" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+	U="http://127.0.0.1:$(cat "$T/port")"
+	H="$T/http"; newroot "$H"
+	expect "http: set-publisher"  0 ""              "$PKG" -R "$H" set-publisher -O "$U" amix
+	expect "http: refresh"        0 ""              "$PKG" -R "$H" refresh
+	expect "http: install"        0 ""              "$PKG" -R "$H" --min-free 0 install hello
+	expect "http: verify"         0 ""              "$PKG" -R "$H" verify
+	expect "http get to file"     0 ""              "$PKG" http get "$U/publisher/amix/catalog/catalog.attrs" "$T/attrs"
+	expect "http get same bytes"  0 ""              cmp "$T/attrs" "$W/publisher/amix/catalog/catalog.attrs"
+	expect "http get redirect"    0 "catalog"       "$PKG" http get "$U/moved"
+	expect "http get 404"         1 "HTTP 404"      "$PKG" http get "$U/nosuch"
+	expect "http put"             0 ""              sh -c "echo step 1 | '$PKG' http put '$U/report/msg'"
+	expect "http put body"        0 "step 1"        cat "$W/put.out"
+	S="$T/https"; mkdir -p "$S"; "$PKG" -R "$S" set-publisher -O https://example.org amix >/dev/null 2>&1
+	expect "https refused"        1 "no https"      "$PKG" -R "$S" refresh
+	kill $HP 2>/dev/null; wait $HP 2>/dev/null
+	expect "no server"            1 ""              "$PKG" http get "$U/x"
+else
+	echo "skip http (no python3)"
+fi
+
 echo
 [ $fails = 0 ] && echo "all passed" || echo "$fails failed"
 exit $fails

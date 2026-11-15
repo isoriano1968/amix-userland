@@ -8,8 +8,8 @@ The installer serves, while the install runs:
                   /report/...  AMIX posts its progress here (PUT/POST)
 At the AMIX console the user types (as root):
   tftp HOST 1069     binary     get go     quit     sh go
-"go" installs the bootstrap (pkg, curl and their libraries, an SVR4
-datastream) with stock pkgadd into /opt/amixboot, fetches /steps and runs
+"go" installs the bootstrap (pkg with its own plain HTTP, and libz: an SVR4
+datastream; no curl, no TLS: stock AMIX has no /dev/urandom for OpenSSL) with stock pkgadd into /opt/amixboot, fetches /steps and runs
 it: the real package client through IPS, the data disk (AMIX's mkfs),
 the packages, the kernel last; at the end the bootstrap is removed (pkgrm).
 Only AMIX's own tools touch AMIX's file system.
@@ -46,9 +46,6 @@ PACKAGES = {
 # what the bootstrap carries, from these packages of the repository
 BOOT_FILES = {
     "sysutils/amix-pkg": {"usr/bin/pkg": "bin/pkg"},
-    "network/curl": {"usr/local/bin/curl": "bin/curl", "usr/local/lib/libcurl.so.4": "lib/libcurl.so.4"},
-    "library/openssl": {"usr/local/lib/libssl.so.3": "lib/libssl.so.3",
-                        "usr/local/lib/libcrypto.so.3": "lib/libcrypto.so.3"},
     "library/zlib": {"usr/local/lib/libz.so.1": "lib/libz.so.1"},
 }
 
@@ -116,8 +113,11 @@ def bootstrap(repo):
 
 # --- the scripts AMIX runs ----------------------------------------------------
 
-ADMIN = """mail=
-instance=overwrite
+# mail= (no mail) must be the LAST line: AMIX 2.1's pkginstall stops reading
+# the admin file at the first empty value (it skips the line without clearing
+# the parameter name it looks for, so nothing after it is found), and then
+# asks for the base directory, which pkgadd -n cannot answer.
+ADMIN = """instance=overwrite
 partial=nocheck
 runlevel=nocheck
 idepend=nocheck
@@ -126,8 +126,9 @@ space=nocheck
 setuid=nocheck
 conflict=nocheck
 action=nocheck
-basedir=default
-"""
+basedir=%s
+mail=
+""" % BOOT_DIR
 
 
 def go_script(host, tftp_port=TFTP_PORT, http_port=HTTP_PORT):
@@ -149,10 +150,14 @@ EOF
 cat > /tmp/amixboot.admin <<EOF
 %(admin)sEOF
 echo "go: installing it with pkgadd into $B"
+# pkgadd -n does not create a missing base directory: it stops with
+# "Installation of this package requires a base directory"
+# (AMIX's mkdir -p fails with "File exists" on a directory that is there)
+[ -d $B ] || /usr/bin/mkdir -p $B || { echo "go: cannot make $B"; exit 1; }
 /usr/sbin/pkgadd -n -a /tmp/amixboot.admin -d /tmp/amixboot.pkg %(pkg)s || { echo "go: pkgadd failed"; exit 1; }
 rm -f /tmp/amixboot.pkg
 LD_LIBRARY_PATH=$B/lib; export LD_LIBRARY_PATH
-$B/bin/curl -s -f -o /tmp/amix-steps $W/steps || { echo "go: cannot reach $W"; exit 1; }
+$B/bin/pkg http get $W/steps /tmp/amix-steps || { echo "go: cannot reach $W"; exit 1; }
 exec /bin/sh /tmp/amix-steps
 """ % {"host": host, "http": http_port, "tftp": tftp_port, "boot": BOOT_DIR,
        "admin": ADMIN, "pkg": BOOT_PKG}
@@ -179,18 +184,63 @@ def packages_for(cfg):
     return pkgs, missing
 
 
-def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None):
+def fs_uae_data_disk(pl):
+    """(raw slice, sectors) of the data disk a plan wrote, as AMIX sees it in
+    FS-UAE (SCSI ID 1, first partition = slice 1), or None without one.
+    Raises OSError or hdf.NotAnImage when the disk cannot be read."""
+    from . import hdf, plan
+    dd = [a for a in pl.actions if a.id == "data-disk"]
+    if not dd:
+        return None
+    with hdf.Image(os.path.join(pl.paths["out_dir"], dd[0].name)) as im:
+        blocks = im.read_rdb()[0].blocks
+    return ("/dev/rdsk/c%dd0s1" % plan.SCSI_ID["data"], blocks)
+
+
+def missing_in_repo(repo, stem, _seen=None):
+    """The first package down stem's requirements the repository lacks, or None."""
+    seen = _seen if _seen is not None else set()
+    if stem in seen:
+        return None
+    seen.add(stem)
+    try:
+        _, man = _newest(repo, stem)
+    except KeyError:
+        return stem
+    for line in man.splitlines():
+        w = line.split()
+        if w and w[0] == "depend" and "type=require" in w:
+            fmri = [x[5:] for x in w if x.startswith("fmri=")]
+            if fmri:
+                dep = fmri[0].replace("pkg://amix/", "").replace("pkg:/", "").split("@")[0]
+                m = missing_in_repo(repo, dep, seen)
+                if m:
+                    return m
+    return None
+
+
+def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None):
     """The steps AMIX runs after the bootstrap. data_disk: (raw slice, sectors)
-    of the empty data disk partition to make a file system on, or None."""
+    of the empty data disk partition to make a file system on, or None.
+    With repo, packages it does not hold are left out and reported."""
     pkgs, missing = packages_for(cfg)
+    reserve = model.SPLIT_RESERVE_MB if data_disk else model.ROOT_RESERVE_MB
+    if repo:
+        gone = [(p, missing_in_repo(repo, p)) for p in pkgs]
+        missing = missing + [("%s (not in the repository)" % p) if m == p else
+                             ("%s (needs %s, not in the repository)" % (p, m))
+                             for p, m in gone if m]
+        pkgs = [p for p, m in gone if not m]
     W = "http://%s:%d" % (host, http_port)
     lines = ["#!/bin/sh",
              "# AMIX Installer: the install steps, fetched from %s/steps" % W,
              "W=%s" % W, "B=%s" % BOOT_DIR,
              "LD_LIBRARY_PATH=$B/lib; export LD_LIBRARY_PATH",
+             "# MB pkg keeps free on each file system (the installer's core reserve)",
+             "M=%d" % reserve,
              "LOG=/tmp/amix-install.log; : > $LOG",
-             "report() { echo \"$*\"; echo \"$*\" | $B/bin/curl -s -T - \"$W/report/msg\" >/dev/null; }",
-             "fail() { report \"FAILED: $*\"; tail -20 $LOG | $B/bin/curl -s -T - \"$W/report/log\" >/dev/null; exit 1; }",
+             "report() { echo \"$*\"; echo \"$*\" | $B/bin/pkg http put \"$W/report/msg\" >/dev/null; }",
+             "fail() { report \"FAILED: $*\"; tail -20 $LOG | $B/bin/pkg http put \"$W/report/log\" >/dev/null; exit 1; }",
              "step() { n=$1; shift; report \"step $n: $*\"; }",
              "",
              "step 1 \"the system: `uname -a`\"",
@@ -199,7 +249,8 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None):
              "step 2 \"the package client\"",
              "$B/bin/pkg set-publisher -O $W/repo amix >>$LOG 2>&1 || fail set-publisher",
              "$B/bin/pkg refresh >>$LOG 2>&1 || fail refresh",
-             "$B/bin/pkg install sysutils/amix-pkg >>$LOG 2>&1 || fail 'installing the package client'",
+             "$B/bin/pkg --min-free $M install sysutils/amix-pkg >>$LOG 2>&1 || fail 'installing the package client'",
+             "$B/bin/pkg --min-free $M update sysutils/amix-pkg >>$LOG 2>&1 || fail 'updating the package client'",
              "PKG=/usr/bin/pkg",
              "LD_LIBRARY_PATH=; export LD_LIBRARY_PATH",
              "$PKG refresh >>$LOG 2>&1 || fail 'the installed client'"]
@@ -210,13 +261,14 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None):
                   "D=%s" % slice_,
                   "if /usr/sbin/mount | /usr/bin/grep /amixdata >/dev/null; then report 'data disk mounted already'; else",
                   "  /usr/sbin/mkfs -F ufs $D %d >>$LOG 2>&1 || fail mkfs" % sectors,
-                  "  /usr/bin/mkdir -p /amixdata && /usr/sbin/mount -F ufs `echo $D | /usr/bin/sed s/rdsk/dsk/` /amixdata >>$LOG 2>&1 || fail mount",
+                  "  { [ -d /amixdata ] || /usr/bin/mkdir -p /amixdata; } && /usr/sbin/mount -F ufs `echo $D | /usr/bin/sed s/rdsk/dsk/` /amixdata >>$LOG 2>&1 || fail mount",
                   "  echo \"`echo $D | /usr/bin/sed s/rdsk/dsk/` $D /amixdata ufs 2 yes -\" >> /etc/vfstab",
                   "fi",
                   "for d in usr/local usr/gnu opt; do",
                   "  [ -d /$d ] && [ ! -h /$d ] || continue",
                   "  n=`echo $d | /usr/bin/sed 's|/|-|g'`",
                   "  report \"moving /$d to /amixdata/$n\"",
+                  "  [ -d /amixdata/$n ] || /usr/bin/mkdir /amixdata/$n || fail \"mkdir /amixdata/$n\"",
                   "  (cd /$d && /usr/bin/find . -print | /usr/bin/cpio -pdm /amixdata/$n) >>$LOG 2>&1 || fail \"copy /$d\"",
                   "  a=`cd /$d && /usr/bin/find . -print | /usr/bin/wc -l`; b=`cd /amixdata/$n && /usr/bin/find . -print | /usr/bin/wc -l`",
                   "  [ $a -eq $b ] || fail \"/$d: $a entries, copy has $b\"",
@@ -224,7 +276,8 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None):
                   "done"]
     lines += ["", "step 4 \"packages: %s\"" % (" ".join(pkgs) or "none")]
     if pkgs:
-        lines += ["$PKG install %s >>$LOG 2>&1 || fail 'installing packages'" % " ".join(pkgs)]
+        lines += ["$PKG --min-free $M install %s >>$LOG 2>&1 || fail 'installing packages'"
+                  % " ".join(pkgs)]
     if missing:
         lines += ["report 'not packaged yet, left out: %s'" % ", ".join(missing).replace("'", "")]
     if cfg.sel.get("kern") not in (None, "stock"):
@@ -254,6 +307,7 @@ class TftpServer(threading.Thread):
         self.port = self.sock.getsockname()[1]
         self.sock.settimeout(0.5)
         self.sessions = {}
+        self.progress = {}
         self.stopped = False
 
     def stop(self):
@@ -264,6 +318,26 @@ class TftpServer(threading.Thread):
         data = self.sessions[addr]
         chunk = data[(block - 1) * 512: block * 512]
         self.sock.sendto(struct.pack("!HH", 3, block & 0xffff) + chunk, addr)
+
+    def _progress(self, addr, blk, total, size):
+        """A log line every 10 % of a transfer, and one at its end: an emulated
+        A2065 can take minutes for the bootstrap."""
+        p = self.progress.get(addr)
+        if p is None:
+            return
+        name, t0, nxt = p
+        pct = 100 * blk // total
+        if pct < nxt and blk < total:
+            return
+        done = min(blk * 512, size)
+        dt = max(time.time() - t0, 0.001)
+        if blk >= total:
+            self.log("tftp: %s sent in %d s (%d KB/s)" % (name, dt, done / 1024 / dt))
+            del self.progress[addr]
+        else:
+            self.log("tftp: %s %d%% (%.1f of %.1f MB, %d KB/s)"
+                     % (name, pct, done / 1048576.0, size / 1048576.0, done / 1024 / dt))
+            p[2] = pct // 10 * 10 + 10
 
     def run(self):
         while not self.stopped:
@@ -284,6 +358,7 @@ class TftpServer(threading.Thread):
                     self.log("tftp: %s asked for %s: not here" % (addr[0], name))
                     continue
                 self.sessions[addr] = data() if callable(data) else data
+                self.progress[addr] = [name, time.time(), 10]
                 self.log("tftp: sending %s to %s (%d bytes)" % (name, addr[0],
                                                                len(self.sessions[addr])))
                 self._send(addr, 1)
@@ -291,6 +366,7 @@ class TftpServer(threading.Thread):
                 blk = struct.unpack("!H", pkt[2:4])[0]
                 data = self.sessions[addr]
                 total = len(data) // 512 + 1
+                self._progress(addr, blk, total, len(data))
                 if blk >= total:
                     del self.sessions[addr]
                     continue
@@ -388,7 +464,7 @@ class Session(object):
         return self._boot
 
     def steps(self):
-        return steps_script(self.cfg, self.host, self.http_port, self.data_disk)
+        return steps_script(self.cfg, self.host, self.http_port, self.data_disk, self.repo)
 
     def commands(self):
         """What to type at the AMIX console, as root."""

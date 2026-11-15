@@ -15,7 +15,7 @@ from amix_installer import model, netinstall  # noqa: E402
 from test_svr4 import archives  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", "..", ".."))
-BOOT_STAGES = ["sysutils/amix-pkg", "network/curl", "library/openssl", "library/zlib"]
+BOOT_STAGES = ["sysutils/amix-pkg", "library/zlib"]
 
 
 def tftp_get(port, name, host="127.0.0.1"):
@@ -116,6 +116,8 @@ class Scripts(unittest.TestCase):
         self.sh_ok(t)
         self.assertNotIn("$(", t)
         self.assertIn("mkfs -F ufs $D 4093952", t)
+        self.assertIn("M=%d" % model.SPLIT_RESERVE_MB, t)
+        self.assertIn("$PKG --min-free $M install", t)
         self.assertIn("editor/vim", t)
         self.assertIn("desktop/cde", t)
         self.assertIn("not packaged yet", t)            # the ARM core services
@@ -123,6 +125,21 @@ class Scripts(unittest.TestCase):
         self.assertLess(t.index("sysutils/amix-pkg"), t.index("step 4"))
         self.assertIn("pkgrm -n -a /tmp/amixboot.admin AMIXboot", t)
         self.assertNotIn("step 3", netinstall.steps_script(cfg, "10.0.2.2"))
+
+    def test_admin_empty_values_last(self):
+        # AMIX's pkginstall stops reading the admin file at an empty value
+        lines = netinstall.ADMIN.strip().splitlines()
+        empty = [i for i, l in enumerate(lines) if l.endswith("=")]
+        self.assertTrue(all(i >= len(lines) - len(empty) for i in empty))
+        self.assertIn("basedir=%s" % netinstall.BOOT_DIR, lines)
+
+    def test_steps_only_what_the_repo_has(self):
+        cfg = model.Config(sel={"desk": "cde"}, on={"vim": True})
+        with tempfile.TemporaryDirectory() as repo:
+            t = netinstall.steps_script(cfg, "10.0.2.2", repo=repo)
+        self.sh_ok(t)
+        self.assertNotIn("$PKG install", t)
+        self.assertIn("editor/vim (not in the repository)", t)
 
     def test_installed_not_again(self):
         cfg = model.Config(on={"vim": True})
@@ -146,9 +163,9 @@ class Bootstrap(unittest.TestCase):
             ds = netinstall.bootstrap(repo)
         a1, a2 = archives(ds)
         names = [n for n, _, _ in a2]
-        for n in ("reloc/bin/pkg", "reloc/bin/curl", "reloc/lib/libcurl.so.4",
-                  "reloc/lib/libssl.so.3", "reloc/lib/libcrypto.so.3", "reloc/lib/libz.so.1"):
+        for n in ("reloc/bin/pkg", "reloc/lib/libz.so.1"):
             self.assertIn(n, names)
+        self.assertFalse([n for n in names if "curl" in n or "ssl" in n or "crypto" in n])
         files = dict((n, data) for n, _, data in a2)
         self.assertEqual(files["reloc/bin/pkg"][:4], b"\x7fELF")
         with open(os.path.join(ROOT, "components/sysutils/amix-pkg/build/stage/usr/bin/pkg"), "rb") as f:
