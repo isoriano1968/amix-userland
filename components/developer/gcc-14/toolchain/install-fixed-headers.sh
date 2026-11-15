@@ -59,4 +59,11 @@ if [ -d compat/include/fixed-additions ]; then
 		fi
 	done < <(cd compat/include/fixed-additions && find . -name '*.h' -printf '%P\n' | sort)
 fi
+# AMIX has no <stdint.h> at all.  GCC's own one for this target, and the
+# C++ wrapper make-cxx-wrappers.sh writes for it, #include_next the C
+# library's header, which does not exist; so the compiler carries the whole
+# file here (compat/include/stdint.h, ours).  The sysroot stays the AMIX
+# system as it is (developer/amix/sysroot on OpenIndiana does the same).
+cp compat/include/stdint.h "$FIXED/stdint.h"
+echo "install-fixed-headers.sh: stdint.h (compat/include, whole)"
 echo "install-fixed-headers.sh: -> $FIXED"

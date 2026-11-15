@@ -56,15 +56,8 @@ if [ -f "$IMG/usr/ccs/lib/libm.a" ]; then
 	chmod u+w "$AMIX_SYSROOT/usr/ccs/lib/libm.a"
 fi
 
-echo "== our own headers: what SVR4.0 predates"
-# stdint.h is not a convenience.  GCC's <stdint.h> for this target is a wrapper
-# that #include_next's the C library's real one, so without this even
-# libstdc++ will not build.  The file is ours (see compat/include/stdint.h);
-# nothing licensed goes the other way.
-mkdir -p "$AMIX_SYSROOT/usr/include"
-rm -f "$AMIX_SYSROOT/usr/include/stdint.h"
-cp compat/include/stdint.h "$AMIX_SYSROOT/usr/include/stdint.h"
-chmod u+w "$AMIX_SYSROOT/usr/include/stdint.h"
+# stdint.h: not in the sysroot; toolchain/install-fixed-headers.sh puts
+# compat/include/stdint.h into the compiler's include-fixed.
 
 echo "== relative X11 include link"
 rm -f "$AMIX_SYSROOT/usr/include/X11"
@@ -72,6 +65,6 @@ ln -s ../X/include "$AMIX_SYSROOT/usr/include/X11"
 
 echo "== verify"
 for f in usr/include/X11/Xlib.h usr/include/X11/extensions/XShm.h usr/include/sys/screen.h \
-         usr/include/stdint.h usr/X/lib/libX11.a usr/X/lib/libXext.a usr/lib/libsocket.a; do
+         usr/X/lib/libX11.a usr/X/lib/libXext.a usr/lib/libsocket.a; do
 	if [ -e "$AMIX_SYSROOT/$f" ]; then echo "  ok   $f"; else echo "  MISSING $f"; fi
 done
