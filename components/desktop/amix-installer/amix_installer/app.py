@@ -1055,13 +1055,13 @@ class Window(Adw.ApplicationWindow):
             p = paths[row.get_selected()]
             card = fs.network_of(p)
             if card == "a2065":
-                row.set_subtitle("%s \u2014 A2065: AMIX must be 10.0.2.15 (the amigaunix line of "
-                                 "/etc/inet/hosts)" % p)
+                row.set_subtitle("With an A2065: AMIX must be 10.0.2.15 (the amigaunix line of "
+                                 "/etc/inet/hosts)")
                 start.set_sensitive(True)
             else:
-                row.set_subtitle("%s has no A2065 (network_card = %s): AMIX cannot reach this "
+                row.set_subtitle("No A2065 (network_card = %s): AMIX cannot reach this "
                                  "computer. Add network_card = a2065 in FS-UAE\u2019s launcher."
-                                 % (p, card or "none"))
+                                 % (card or "none"))
                 start.set_sensitive(False)
         start = Gtk.Button(label="Start FS-UAE")
         start.add_css_class("suggested-action")
