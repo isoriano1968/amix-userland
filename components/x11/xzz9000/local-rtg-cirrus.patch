@@ -1,0 +1,1018 @@
+diff --git a/programs/Xserver/Imakefile b/programs/Xserver/Imakefile
+index c5ce198..86b55ba 100644
+--- a/programs/Xserver/Imakefile
++++ b/programs/Xserver/Imakefile
+@@ -198,6 +198,7 @@ AMIXOBJS = hw/amix/amixInit.o
+ AMIXLIBS = hw/amix/LibraryTargetName(amix) \
+            hw/amix/rtg/LibraryTargetName(rtg) \
+            hw/amix/rtg/zz9000/LibraryTargetName(zz9000) \
++           hw/amix/rtg/cirrus/LibraryTargetName(cirrus) \
+            cfb32/LibraryTargetName(cfb) CFB16Libs
+ ServerTarget(Xzz9000,$(AMIXDIRS),$(AMIXOBJS),$(AMIXLIBS),$(SYSLIBS))
+ #ifndef ServerToInstall
+diff --git a/programs/Xserver/hw/amix/rtg/Imakefile b/programs/Xserver/hw/amix/rtg/Imakefile
+index 5e251b4..924f2c5 100644
+--- a/programs/Xserver/hw/amix/rtg/Imakefile
++++ b/programs/Xserver/hw/amix/rtg/Imakefile
+@@ -12,7 +12,7 @@ SRCS = rtgInit.c rtgRandR.c rtgscreen.c rtgdraw.c rtgwin.c rtgcmap.c \
+ OBJS = rtgInit.o rtgRandR.o rtgscreen.o rtgdraw.o rtgwin.o rtgcmap.o \
+        rtgpix.o rtgcfb8.o rtgcfb32.o rtgcursor.o rtgcpu.o
+ 
+-SUBDIRS = zz9000
++SUBDIRS = zz9000 cirrus
+ 
+ STD_DEFINES = ServerDefines -DRTG
+ CDEBUGFLAGS = -g -O
+diff --git a/programs/Xserver/hw/amix/rtg/cirrus/Imakefile b/programs/Xserver/hw/amix/rtg/cirrus/Imakefile
+new file mode 100644
+index 0000000..d4e958f
+--- /dev/null
++++ b/programs/Xserver/hw/amix/rtg/cirrus/Imakefile
+@@ -0,0 +1,19 @@
++#include <Server.tmpl>
++
++/*
++ * The Cirrus Logic GD542x card (Village Tronic Picasso II/II+) for the RTG
++ * core: probe, modes, colour table, BitBLT.  Reaches the server only
++ * through rtgCoreFuncsRec (../rtg.h); the board through /dev/rtgfb.
++ */
++SRCS = cirrushw.c cirrusaccel.c
++
++OBJS = cirrushw.o cirrusaccel.o
++
++STD_DEFINES = ServerDefines -DRTG
++CDEBUGFLAGS = -g -O
++   INCLUDES = -I. -I.. -I../.. -I../../../../include -I$(XINCLUDESRC) -I../../../../mi -I../../../../mfb -I$(FONTINCSRC) -I/usr/amiga/include
++
++NormalLibraryObjectRule()
++NormalLibraryTarget(cirrus, $(OBJS))
++
++DependTarget()
+diff --git a/programs/Xserver/hw/amix/rtg/cirrus/cirrus.h b/programs/Xserver/hw/amix/rtg/cirrus/cirrus.h
+new file mode 100644
+index 0000000..8f26cd6
+--- /dev/null
++++ b/programs/Xserver/hw/amix/rtg/cirrus/cirrus.h
+@@ -0,0 +1,140 @@
++#ifndef CIRRUS_H
++#define CIRRUS_H
++/*
++** cirrus.h - the Cirrus Logic GD542x card for the RTG core: the Village
++** Tronic Picasso II and II+ (CL-GD5426 / GD5428, Zorro II, 1 or 2 MB).
++**
++** The kernel side is the generic rtgfb driver (amix-gate
++** usr/src/uts/amiga/io/rtgfb, /dev/rtgfb, major 54): it finds the board,
++** maps its register and memory boards for mmap and switches the monitor.
++** Mode setting, the colour table and the BitBLT engine are programmed here,
++** through the mapped register board.  The rtgfb definitions below are a copy
++** of the driver's rtgfb.h (RTGFB_VERSION 1).
++**
++** Register sources: the VGA register set as XFree86 3.3 programs it
++** (vgaHW.c, cirrus/cir_driver.c, cirBlitter.h, common_hw/CirrusClk.c; MIT/X
++** licence), the Picasso II's board specifics -- the monitor switch and the
++** DAC data port at 0x13c8 instead of 0x3c9 -- from NetBSD's grf_cl.c /
++** grf_clreg.h and FS-UAE 3.2.35's gfxboard.cpp (read as references only).
++*/
++
++#include "../rtg.h"
++
++/* ------------------------------------------------------------------ */
++/* rtgfb (copy of amix-gate io/rtgfb/port/src/rtgfb.h, version 1)      */
++
++#define RTGFB_DEV               "/dev/rtgfb"
++#define RTGFB_VERSION           1
++#define RTGFB_BOARD_PICASSO2    1
++#define RTGFB_F_MONSW           0x0001
++#define RTGFB_NAMELEN           32
++
++struct rtgfb_info {
++    unsigned long   version;
++    unsigned long   board;
++    unsigned long   flags;
++    unsigned short  manufacturer;
++    unsigned char   reg_product;
++    unsigned char   mem_product;
++    unsigned long   reg_phys;
++    unsigned long   reg_size;
++    unsigned long   mem_phys;
++    unsigned long   mem_size;
++    unsigned long   mmap_reg;
++    unsigned long   mmap_mem;
++    int             monitor;
++    char            name[RTGFB_NAMELEN];
++};
++
++#define RTGFBIOC                (('r' << 8))
++#define RTGFBIOC_GETINFO        (RTGFBIOC | 1)
++
++/* ------------------------------------------------------------------ */
++/* The register board: VGA ports at their PC port numbers              */
++
++#define CL_ATTR         0x3c0           /* attribute index/data (write)     */
++#define CL_MISC_W       0x3c2
++#define CL_VSE          0x3c3           /* video subsystem enable           */
++#define CL_SEQ          0x3c4
++#define CL_DAC_MASK     0x3c6           /* also the hidden DAC register     */
++#define CL_DAC_WIDX     0x3c8
++#define CL_MISC_R       0x3cc
++#define CL_GFX          0x3ce
++#define CL_CRT          0x3d4
++#define CL_STAT1        0x3da
++#define CL_WAKE_46E8    0x46e8
++#define CL_POS_102      0x102
++/* Picasso II: the DAC data port (0x3c9) is reached at 0x3c9 + 0xfff */
++#define CL_P2_DAC_DATA  0x13c8
++
++/* CR27 >> 2: the chip */
++#define CL_ID_5426      0x24
++#define CL_ID_5428      0x26
++#define CL_ID_5429      0x27
++
++/* BitBLT (graphics controller extensions, GR20-GR32) */
++#define CL_BLT_BACKWARDS    0x01
++#define CL_BLT_PATTERN      0x40
++#define CL_BLT_COLOREXPAND  0x80
++#define CL_BLT_BUSY         0x01        /* GR31 read */
++#define CL_BLT_START        0x02        /* GR31 write */
++#define CL_BLT_RESET        0x04
++#define CL_ROP_SRC          0x0d        /* destination = source */
++#define CL_BLT_MAXW         2048        /* bytes, GD5426 */
++#define CL_BLT_MAXH         1024
++
++/* ------------------------------------------------------------------ */
++/* Modes                                                               */
++
++typedef struct _cirrusModeRec {
++    int     w, h;                   /* visible pixels                      */
++    int     hz;                     /* refresh, whole Hz (RandR)           */
++    long    clock;                  /* pixel clock, kHz                    */
++    int     hss, hse, ht;           /* horizontal sync start/end, total    */
++    int     vss, vse, vt;           /* vertical                            */
++    int     flags;                  /* CL_NHSYNC, CL_NVSYNC                */
++} cirrusModeRec, *cirrusModePtr;
++
++#define CL_NHSYNC   0x01
++#define CL_NVSYNC   0x02
++
++/* 8 bpp pixel clock limit of the GD542x (XFree86 cirrusClockLimit) */
++#define CL_MAXCLOCK_8   85500L
++
++/* ------------------------------------------------------------------ */
++/* The card's state                                                    */
++
++typedef struct _cirrusRec {
++    int             fd;                 /* /dev/rtgfb                       */
++    struct rtgfb_info info;
++    volatile unsigned char *regs;       /* the register board               */
++    unsigned char  *mem;                /* the memory board (framebuffer)   */
++    unsigned long   vram;               /* video memory found: 1 or 2 MB    */
++    unsigned long   patAddr;            /* 8 bytes of 0xff for solid fills  */
++    int             chip;               /* CL_ID_*                          */
++    int             dacData;            /* the DAC data port's offset       */
++    int             fgSet;              /* GR1 holds a fill colour          */
++    cirrusModePtr   mode;               /* the timing shown                 */
++} cirrusRec, *cirrusPtr;
++
++#define CirrusOf(pRTG)  ((cirrusPtr)(pRTG)->cardPrivate)
++
++/* register access through the mapped register board, byte by byte (the
++   Picasso II takes no word access to its VGA ports) */
++#define CL_IN(c, p)         ((c)->regs[p])
++#define CL_OUT(c, p, v)     ((c)->regs[p] = (unsigned char)(v))
++#define CL_SEQ_W(c, i, v)   (CL_OUT(c, CL_SEQ, i), CL_OUT(c, CL_SEQ + 1, v))
++#define CL_CRT_W(c, i, v)   (CL_OUT(c, CL_CRT, i), CL_OUT(c, CL_CRT + 1, v))
++#define CL_GFX_W(c, i, v)   (CL_OUT(c, CL_GFX, i), CL_OUT(c, CL_GFX + 1, v))
++
++extern rtgCoreFuncsPtr cirrusCore;
++
++/* cirrusaccel.c */
++extern Bool cirrusSolidFill();
++extern Bool cirrusCopyRect();
++extern void cirrusWaitIdle();
++extern void cirrusBlitReset();
++
++#define CLErr   (*cirrusCore->errorF)
++
++#endif /* CIRRUS_H */
+diff --git a/programs/Xserver/hw/amix/rtg/cirrus/cirrusaccel.c b/programs/Xserver/hw/amix/rtg/cirrus/cirrusaccel.c
+new file mode 100644
+index 0000000..bd99819
+--- /dev/null
++++ b/programs/Xserver/hw/amix/rtg/cirrus/cirrusaccel.c
+@@ -0,0 +1,141 @@
++/*
++** cirrusaccel.c - the GD542x BitBLT engine for the RTG core: solidFill,
++** copyRect, waitIdle.
++**
++** The engine takes one operation at a time and runs it from video memory
++** to video memory while the CPU goes on; a new operation, and any CPU
++** access to the frame, waits until GR31 says it is done (the core calls
++** waitIdle before it touches the frame).  Solid fills are 8x8 pattern
++** copies with colour expansion of a pattern of ones (the GD5426 has no
++** solid-fill mode): the foreground colour is GR1, which outside the BitBLT
++** is the VGA Enable Set/Reset register, so waitIdle clears it again once
++** the fills are done -- else CPU writes to the frame would be replaced by
++** the set/reset value (XFree86 3.3 cir_blitter.c, the same rule).
++** Register usage after XFree86 3.3's cirBlitter.h (MIT/X licence, see
++** cirrushw.c).
++*/
++
++#include "../../amix.h"
++#include "../rtg.h"
++#include "cirrus.h"
++
++/* give up on an engine that does not finish (a blit of the whole frame is
++   well under a second): reset it and leave the drawing to the CPU */
++#define CL_BUSY_SPINS   2000000L
++
++void
++cirrusBlitReset(pCl)
++cirrusPtr pCl;
++{
++    CL_GFX_W(pCl, 0x31, CL_BLT_RESET);
++    CL_GFX_W(pCl, 0x31, 0x00);
++    CL_GFX_W(pCl, 0x01, 0x00);
++    pCl->fgSet = 0;
++}
++
++/* wait for the engine; FALSE if it hung (it is reset and switched off) */
++static Bool
++cirrusWaitBlt(pRTG, pCl)
++rtgScreenPtr pRTG;
++cirrusPtr    pCl;
++{
++    long n;
++
++    CL_OUT(pCl, CL_GFX, 0x31);
++    for (n = 0; n < CL_BUSY_SPINS; n++)
++        if (!(CL_IN(pCl, CL_GFX + 1) & CL_BLT_BUSY))
++            return TRUE;
++    CLErr("cirrus: the BitBLT engine does not finish; blitter off\n");
++    cirrusBlitReset(pCl);
++    pRTG->accelMin = 0;
++    return FALSE;
++}
++
++/* the operation's geometry: destination and source address, size, pitch */
++static void
++cirrusBltSetup(pCl, dst, src, wbytes, h, pitch, mode)
++cirrusPtr     pCl;
++unsigned long dst, src;
++int           wbytes, h, pitch, mode;
++{
++    CL_GFX_W(pCl, 0x20, (wbytes - 1) & 0xff);
++    CL_GFX_W(pCl, 0x21, ((wbytes - 1) >> 8) & 0x1f);
++    CL_GFX_W(pCl, 0x22, (h - 1) & 0xff);
++    CL_GFX_W(pCl, 0x23, ((h - 1) >> 8) & 0x07);
++    CL_GFX_W(pCl, 0x24, pitch & 0xff);
++    CL_GFX_W(pCl, 0x25, (pitch >> 8) & 0x1f);
++    CL_GFX_W(pCl, 0x26, pitch & 0xff);
++    CL_GFX_W(pCl, 0x27, (pitch >> 8) & 0x1f);
++    CL_GFX_W(pCl, 0x28, dst & 0xff);
++    CL_GFX_W(pCl, 0x29, (dst >> 8) & 0xff);
++    CL_GFX_W(pCl, 0x2a, (dst >> 16) & 0x1f);
++    CL_GFX_W(pCl, 0x2c, src & 0xff);
++    CL_GFX_W(pCl, 0x2d, (src >> 8) & 0xff);
++    CL_GFX_W(pCl, 0x2e, (src >> 16) & 0x1f);
++    CL_GFX_W(pCl, 0x30, mode);
++    CL_GFX_W(pCl, 0x32, CL_ROP_SRC);
++}
++
++/* fill w x h at (x, y) with pixel */
++Bool
++cirrusSolidFill(pRTG, x, y, w, h, pixel)
++rtgScreenPtr  pRTG;
++int           x, y, w, h;
++unsigned long pixel;
++{
++    cirrusPtr pCl = CirrusOf(pRTG);
++
++    if (!pCl || w > CL_BLT_MAXW || h > CL_BLT_MAXH || !cirrusWaitBlt(pRTG, pCl))
++        return FALSE;
++    cirrusBltSetup(pCl, (unsigned long)y * pRTG->pitch + x, pCl->patAddr,
++                   w, h, pRTG->pitch, CL_BLT_PATTERN | CL_BLT_COLOREXPAND);
++    CL_GFX_W(pCl, 0x01, pixel & 0xff);  /* foreground */
++    pCl->fgSet = 1;
++    CL_GFX_W(pCl, 0x31, CL_BLT_START);
++    return TRUE;
++}
++
++/* copy w x h from (sx, sy) to (dx, dy); the boxes may overlap */
++Bool
++cirrusCopyRect(pRTG, sx, sy, dx, dy, w, h)
++rtgScreenPtr pRTG;
++int          sx, sy, dx, dy, w, h;
++{
++    cirrusPtr     pCl = CirrusOf(pRTG);
++    unsigned long src, dst;
++    int           mode = 0;
++
++    if (!pCl || w > CL_BLT_MAXW || h > CL_BLT_MAXH || !cirrusWaitBlt(pRTG, pCl))
++        return FALSE;
++    src = (unsigned long)sy * pRTG->pitch + sx;
++    dst = (unsigned long)dy * pRTG->pitch + dx;
++    if (dst > src) {
++        /* the far end first: both addresses at the last byte of the box */
++        src += (unsigned long)(h - 1) * pRTG->pitch + w - 1;
++        dst += (unsigned long)(h - 1) * pRTG->pitch + w - 1;
++        mode = CL_BLT_BACKWARDS;
++    }
++    if (pCl->fgSet) {                   /* no set/reset left behind */
++        CL_GFX_W(pCl, 0x01, 0x00);
++        pCl->fgSet = 0;
++    }
++    cirrusBltSetup(pCl, dst, src, w, h, pRTG->pitch, mode);
++    CL_GFX_W(pCl, 0x31, CL_BLT_START);
++    return TRUE;
++}
++
++/* the engine idle and GR1 back to 0: the CPU may use the frame */
++void
++cirrusWaitIdle(pRTG)
++rtgScreenPtr pRTG;
++{
++    cirrusPtr pCl = CirrusOf(pRTG);
++
++    if (!pCl)
++        return;
++    (void) cirrusWaitBlt(pRTG, pCl);
++    if (pCl->fgSet) {
++        CL_GFX_W(pCl, 0x01, 0x00);
++        pCl->fgSet = 0;
++    }
++}
+diff --git a/programs/Xserver/hw/amix/rtg/cirrus/cirrushw.c b/programs/Xserver/hw/amix/rtg/cirrus/cirrushw.c
+new file mode 100644
+index 0000000..e759966
+--- /dev/null
++++ b/programs/Xserver/hw/amix/rtg/cirrus/cirrushw.c
+@@ -0,0 +1,653 @@
++/*
++** cirrushw.c - the Cirrus Logic GD542x card (Village Tronic Picasso II /
++** II+) for the RTG core: probe, mode setting, the colour table, the RandR
++** mode list, and the card's record (CirrusCardEntry).
++**
++** The board is reached through /dev/rtgfb (amix-gate io/rtgfb): GETINFO
++** says what the kernel found, mmap gives the register board (64 KB, the
++** VGA ports at their PC port numbers) and the memory board (the linear
++** framebuffer, 1 or 2 MB).  The monitor switch is the rtgfb driver's
++** SVGAIOC contract, which the core sends on the device (monitorSwitch op
++** NULL); the driver also switches back on its last close.
++**
++** Depth 8 (PseudoColor, 6-bit DAC) only.  The GD5426 has the clock for
++** 640x480 and 800x600 at 16 bits, but its 16-bit pixels are little-endian
++** in video memory and the Picasso II has no byte-swapping window, while
++** the core's 16-bit layer writes big-endian RGB565: 16 bit needs a
++** byte-swapped 16-bit path in the core first.
++**
++** No hardware cursor yet: FS-UAE, where this card is tested, does not
++** draw the GD542x cursor, so the core's software cursor is used.
++**
++** The VGA programming follows XFree86 3.3 (vgaHW.c vgaHWInit, cirrus
++** cir_driver.c, CirrusClk.c CirrusFindClock), MIT/X licence:
++**   Copyright 1990,91 by Thomas Roell, Dinkelscherben, Germany.
++**   Copyright 1993 by Bill Reynolds, Santa Fe, New Mexico.
++**   Permission to use, copy, modify, distribute, and sell this software and
++**   its documentation for any purpose is hereby granted without fee,
++**   provided that the above copyright notice appear in all copies and that
++**   both that copyright notice and this permission notice appear in
++**   supporting documentation.  The authors make no representations about
++**   the suitability of this software for any purpose.  It is provided "as
++**   is" without express or implied warranty.
++** The Picasso II's initial register values (SR7 0x21, SR0F 0xb0/0x30, the
++** memory size test) are those NetBSD's grf_cl.c uses on that board.
++*/
++
++#include <sys/types.h>
++#include <sys/mman.h>
++#include <fcntl.h>
++#include <errno.h>
++#include <string.h>
++#include "../../amix.h"
++#include "../rtg.h"
++#include "cirrus.h"
++
++rtgCoreFuncsPtr cirrusCore;
++static rtgCardRec cirrusCard;
++
++/*
++** The timings (VESA DMT, plus the 72/75 Hz rows the GD542x clock allows).
++** RandR offers a size at every rate whose clock fits; -mode WxH starts at
++** its first row.
++*/
++static cirrusModeRec cirrusModes[] = {
++    /*  w     h   hz   clock   hss   hse    ht   vss  vse   vt  sync */
++    {  640,  480, 60,  25175,  656,  752,  800, 490, 492, 525, CL_NHSYNC|CL_NVSYNC },
++    {  640,  480, 72,  31500,  664,  704,  832, 489, 492, 520, CL_NHSYNC|CL_NVSYNC },
++    {  640,  480, 75,  31500,  656,  720,  840, 481, 484, 500, CL_NHSYNC|CL_NVSYNC },
++    {  800,  600, 60,  40000,  840,  968, 1056, 601, 605, 628, 0 },
++    {  800,  600, 56,  36000,  824,  896, 1024, 601, 603, 625, 0 },
++    {  800,  600, 72,  50000,  856,  976, 1040, 637, 643, 666, 0 },
++    {  800,  600, 75,  49500,  816,  896, 1056, 601, 604, 625, 0 },
++    { 1024,  768, 60,  65000, 1048, 1184, 1344, 771, 777, 806, CL_NHSYNC|CL_NVSYNC },
++    { 1024,  768, 70,  75000, 1048, 1184, 1328, 771, 777, 806, CL_NHSYNC|CL_NVSYNC },
++    { 1024,  768, 75,  78750, 1040, 1136, 1312, 769, 772, 800, 0 },
++    { 0 }
++};
++
++#define CL_DEFAULT_W    1024
++#define CL_DEFAULT_H    768
++
++/* bytes kept free at the end of video memory: the fill pattern */
++#define CL_RESERVE      64
++
++/* the frame of a w x h mode at 8 bpp fits next to the pattern */
++static Bool
++cirrusFits(pCl, w, h)
++cirrusPtr pCl;
++int w, h;
++{
++    return (unsigned long)w * h <= pCl->vram - CL_RESERVE;
++}
++
++static Bool
++cirrusUsable(pCl, m)
++cirrusPtr pCl;
++cirrusModePtr m;
++{
++    return m->clock <= CL_MAXCLOCK_8 && cirrusFits(pCl, m->w, m->h);
++}
++
++/* the row for w x h at rate hz (0: the size's first usable row) */
++static cirrusModePtr
++cirrusFindMode(pCl, w, h, hz)
++cirrusPtr pCl;
++int w, h, hz;
++{
++    cirrusModePtr m;
++
++    for (m = cirrusModes; m->w; m++)
++        if (m->w == w && m->h == h && (!hz || m->hz == hz) &&
++            cirrusUsable(pCl, m))
++            return m;
++    return (cirrusModePtr)0;
++}
++
++/* ------------------------------------------------------------------ */
++/* Clock                                                               */
++
++/* the reference: 14.31818 MHz; VCO = n * ref / d, clock = VCO >> postscale */
++#define CL_REF2     28636           /* twice the reference, kHz */
++#define CL_MINVCO   CL_REF2
++#define CL_MAXVCO   111000
++
++/*
++** VCLK3 numerator and denominator for freq kHz: the nearest clock whose
++** VCO stays in the stable range (CirrusFindClock's search, without its
++** table of tested values and without MCLK as VCLK).  SR1E bit 0 is the
++** divide-by-2 postscaler, bits 5:1 the denominator.
++*/
++static void
++cirrusFindClock(freq, pn, pd)
++long freq;
++int *pn, *pd;
++{
++    int  n, d, bn = 0x4a, bd = 0x2b;    /* 25.2 MHz if nothing fits */
++    long vco, c, diff, best = freq;
++
++    for (n = 0x10; n < 0x7f; n++)
++        for (d = 0x14; d < 0x3f; d++) {
++            vco = (long)n * CL_REF2 / (d & 0x3e);
++            if (vco < CL_MINVCO || vco > CL_MAXVCO)
++                continue;
++            c = vco >> (d & 1);
++            diff = c > freq ? c - freq : freq - c;
++            if (diff < best) {
++                best = diff;
++                bn = n;
++                bd = d;
++            }
++        }
++    *pn = bn;
++    *pd = bd;
++}
++
++/* ------------------------------------------------------------------ */
++/* Register helpers                                                    */
++
++static unsigned char
++cirrusSeqR(pCl, i)
++cirrusPtr pCl;
++int i;
++{
++    CL_OUT(pCl, CL_SEQ, i);
++    return CL_IN(pCl, CL_SEQ + 1);
++}
++
++static unsigned char
++cirrusCrtR(pCl, i)
++cirrusPtr pCl;
++int i;
++{
++    CL_OUT(pCl, CL_CRT, i);
++    return CL_IN(pCl, CL_CRT + 1);
++}
++
++static void
++cirrusAttrW(pCl, i, v)
++cirrusPtr pCl;
++int i, v;
++{
++    (void) CL_IN(pCl, CL_STAT1);        /* the flip-flop to "index" */
++    CL_OUT(pCl, CL_ATTR, i);
++    CL_OUT(pCl, CL_ATTR, v);
++}
++
++/*
++** The hidden DAC register (pixel format): four reads of the DAC mask port
++** after any other DAC access, then the write goes to it.  0: 8-bit palette.
++*/
++static void
++cirrusSetHDR(pCl, v)
++cirrusPtr pCl;
++int v;
++{
++    CL_OUT(pCl, CL_DAC_MASK, 0x00);
++    (void) CL_IN(pCl, CL_DAC_WIDX);     /* resets the access counter */
++    (void) CL_IN(pCl, CL_DAC_MASK);
++    (void) CL_IN(pCl, CL_DAC_MASK);
++    (void) CL_IN(pCl, CL_DAC_MASK);
++    (void) CL_IN(pCl, CL_DAC_MASK);
++    CL_OUT(pCl, CL_DAC_MASK, v);
++    (void) CL_IN(pCl, CL_DAC_WIDX);
++    CL_OUT(pCl, CL_DAC_MASK, 0xff);
++}
++
++/* ------------------------------------------------------------------ */
++/* Mode setting                                                        */
++
++/*
++** Program mode m at 8 bpp, pitch = width.  The frame starts at video
++** memory 0.  Blanking runs from the end of the picture to the end of the
++** line/frame, as XFree86 4's vgaHW does; the Cirrus overflow bits of the
++** blank ends (CR1A) and of the offset (CR1B) are set.
++*/
++static void
++cirrusSetTiming(pCl, m)
++cirrusPtr pCl;
++cirrusModePtr m;
++{
++    int  hd = m->w >> 3, hss = m->hss >> 3, hse = m->hse >> 3, ht = m->ht >> 3;
++    int  vd = m->h, vss = m->vss, vse = m->vse, vt = m->vt;
++    int  hbe = ht - 1, vbs = vd - 1, vbe = vt - 1;
++    int  offset = m->w >> 3;            /* CR13: pitch in 8-byte units */
++    int  num, den, misc;
++
++    cirrusFindClock(m->clock, &num, &den);
++
++    CL_SEQ_W(pCl, 0x00, 0x01);          /* synchronous reset */
++    CL_SEQ_W(pCl, 0x01, 0x21);          /* 8-dot clock, screen off */
++
++    misc = 0x2f;                        /* colour, RAM on, VCLK3, page 1 */
++    if (m->flags & CL_NHSYNC)
++        misc |= 0x40;
++    if (m->flags & CL_NVSYNC)
++        misc |= 0x80;
++    CL_OUT(pCl, CL_MISC_W, misc);
++
++    /* VCLK3, keeping the registers' reserved bits */
++    CL_SEQ_W(pCl, 0x0e, (cirrusSeqR(pCl, 0x0e) & 0x80) | (num & 0x7f));
++    CL_SEQ_W(pCl, 0x1e, (cirrusSeqR(pCl, 0x1e) & 0xc0) | (den & 0x3f));
++
++    /* CRTC: unlock CR0-CR7 first (CR11 bit 7) */
++    CL_CRT_W(pCl, 0x11, cirrusCrtR(pCl, 0x11) & 0x7f);
++    CL_CRT_W(pCl, 0x00, ht - 5);
++    CL_CRT_W(pCl, 0x01, hd - 1);
++    CL_CRT_W(pCl, 0x02, hd - 1);
++    CL_CRT_W(pCl, 0x03, 0x80 | (hbe & 0x1f));
++    CL_CRT_W(pCl, 0x04, hss);
++    CL_CRT_W(pCl, 0x05, ((hbe & 0x20) << 2) | (hse & 0x1f));
++    CL_CRT_W(pCl, 0x06, (vt - 2) & 0xff);
++    CL_CRT_W(pCl, 0x07, (((vt - 2) & 0x100) >> 8) | (((vd - 1) & 0x100) >> 7) |
++                        ((vss & 0x100) >> 6) | ((vbs & 0x100) >> 5) | 0x10 |
++                        (((vt - 2) & 0x200) >> 4) | (((vd - 1) & 0x200) >> 3) |
++                        ((vss & 0x200) >> 2));
++    CL_CRT_W(pCl, 0x08, 0x00);
++    CL_CRT_W(pCl, 0x09, 0x40 | ((vbs & 0x200) >> 4));
++    CL_CRT_W(pCl, 0x0a, 0x20);          /* text cursor off */
++    CL_CRT_W(pCl, 0x0b, 0x00);
++    CL_CRT_W(pCl, 0x0c, 0x00);          /* start address 0 */
++    CL_CRT_W(pCl, 0x0d, 0x00);
++    CL_CRT_W(pCl, 0x0e, 0x00);
++    CL_CRT_W(pCl, 0x0f, 0x00);
++    CL_CRT_W(pCl, 0x10, vss & 0xff);
++    CL_CRT_W(pCl, 0x12, (vd - 1) & 0xff);
++    CL_CRT_W(pCl, 0x13, offset & 0xff);
++    CL_CRT_W(pCl, 0x14, 0x00);
++    CL_CRT_W(pCl, 0x15, vbs & 0xff);
++    CL_CRT_W(pCl, 0x16, vbe & 0xff);
++    CL_CRT_W(pCl, 0x17, 0xe3);          /* byte mode, no vertical doubling */
++    CL_CRT_W(pCl, 0x18, 0xff);          /* line compare off */
++    CL_CRT_W(pCl, 0x19, 0x00);
++    CL_CRT_W(pCl, 0x1a, ((hbe & 0xc0) >> 2) | ((vbe & 0x300) >> 2));
++    CL_CRT_W(pCl, 0x1b, 0x22 | ((offset & 0x100) ? 0x10 : 0));
++    CL_CRT_W(pCl, 0x11, (vse & 0x0f) | 0x20);   /* vertical interrupt off */
++
++    CL_SEQ_W(pCl, 0x00, 0x03);          /* out of reset */
++}
++
++/* the parts of the chip set once, mode-independent */
++static void
++cirrusSetup(pCl)
++cirrusPtr pCl;
++{
++    int i;
++
++    CL_SEQ_W(pCl, 0x00, 0x01);
++    CL_SEQ_W(pCl, 0x01, 0x21);
++    CL_SEQ_W(pCl, 0x02, 0xff);          /* all planes */
++    CL_SEQ_W(pCl, 0x03, 0x00);
++    CL_SEQ_W(pCl, 0x04, 0x0e);          /* chain 4, extended memory */
++    CL_SEQ_W(pCl, 0x07, 0x21);          /* Picasso II: linear at 2 MB, 256 colours */
++    CL_SEQ_W(pCl, 0x08, 0x00);
++    CL_SEQ_W(pCl, 0x12, 0x00);          /* hardware cursor off */
++
++    CL_GFX_W(pCl, 0x00, 0x00);
++    CL_GFX_W(pCl, 0x01, 0x00);          /* no set/reset: CPU writes as they are */
++    CL_GFX_W(pCl, 0x02, 0x00);
++    CL_GFX_W(pCl, 0x03, 0x00);
++    CL_GFX_W(pCl, 0x04, 0x00);
++    CL_GFX_W(pCl, 0x05, 0x40);          /* 256-colour shift mode */
++    CL_GFX_W(pCl, 0x06, 0x01);          /* graphics */
++    CL_GFX_W(pCl, 0x07, 0x0f);
++    CL_GFX_W(pCl, 0x08, 0xff);
++    CL_GFX_W(pCl, 0x09, 0x00);          /* bank offsets 0: the window is linear */
++    CL_GFX_W(pCl, 0x0a, 0x00);
++    CL_GFX_W(pCl, 0x0b, 0x28);          /* single bank, 16 KB granularity */
++
++    for (i = 0; i < 16; i++)
++        cirrusAttrW(pCl, i, i);
++    cirrusAttrW(pCl, 0x10, 0x41);       /* graphics, 8-bit pixels */
++    cirrusAttrW(pCl, 0x11, 0x00);
++    cirrusAttrW(pCl, 0x12, 0x0f);
++    cirrusAttrW(pCl, 0x13, 0x00);
++    cirrusAttrW(pCl, 0x14, 0x00);
++    (void) CL_IN(pCl, CL_STAT1);
++    CL_OUT(pCl, CL_ATTR, 0x20);         /* palette to the display */
++
++    cirrusSetHDR(pCl, 0x00);            /* 8-bit palette mode */
++    CL_OUT(pCl, CL_DAC_MASK, 0xff);
++
++    cirrusBlitReset(pCl);
++}
++
++/* screen on (after the timing is set) */
++static void
++cirrusScreenOn(pCl)
++cirrusPtr pCl;
++{
++    CL_SEQ_W(pCl, 0x01, 0x01);
++}
++
++/*
++** Video memory: 2 MB if a long written 1 MB in survives a write at 0 (with
++** the second megabyte enabled, SR0F bit 7); else 1 MB, and SR0F as for one.
++*/
++static void
++cirrusSizeMemory(pCl)
++cirrusPtr pCl;
++{
++    volatile unsigned long *lo = (volatile unsigned long *)pCl->mem;
++    volatile unsigned long *hi = (volatile unsigned long *)(pCl->mem + 0x100000);
++
++    pCl->vram = 0x100000;
++    CL_SEQ_W(pCl, 0x0f, 0xb0);
++    if (pCl->info.mem_size >= 0x200000) {
++        *hi = 0x12345678UL;
++        *lo = 0xedcba987UL;
++        if (*hi == 0x12345678UL && *lo == 0xedcba987UL)
++            pCl->vram = 0x200000;
++    }
++    if (pCl->vram < 0x200000)
++        CL_SEQ_W(pCl, 0x0f, 0x30);
++    pCl->patAddr = (pCl->vram - CL_RESERVE) & ~7UL;
++}
++
++/* the solid-fill pattern: 8 bytes of ones, off the screen */
++static void
++cirrusWritePattern(pCl)
++cirrusPtr pCl;
++{
++    volatile unsigned long *p = (volatile unsigned long *)(pCl->mem + pCl->patAddr);
++
++    p[0] = 0xffffffffUL;
++    p[1] = 0xffffffffUL;
++}
++
++/* the new frame black (colour 0), by the blitter */
++static void
++cirrusClear(pRTG)
++rtgScreenPtr pRTG;
++{
++    if (!cirrusSolidFill(pRTG, 0, 0, pRTG->width, pRTG->height, 0L))
++        (*cirrusCore->cpuFill)(pRTG, 0, 0, pRTG->width, pRTG->height, 0L);
++    cirrusWaitIdle(pRTG);
++}
++
++/* mode m on the screen, the frame block updated (not cleared) */
++static void
++cirrusSetMode(pRTG, m)
++rtgScreenPtr pRTG;
++cirrusModePtr m;
++{
++    cirrusPtr pCl = CirrusOf(pRTG);
++
++    cirrusWaitIdle(pRTG);
++    CL_SEQ_W(pCl, 0x01, 0x21);
++    cirrusSetTiming(pCl, m);
++    cirrusScreenOn(pCl);
++    pCl->mode = m;
++    pRTG->width  = m->w;
++    pRTG->height = m->h;
++    pRTG->pitch  = m->w;
++}
++
++/* ------------------------------------------------------------------ */
++/* The card's operations                                               */
++
++static int
++cirrusOpen(pinfo)
++struct rtgfb_info *pinfo;
++{
++    int fd;
++
++    if ((fd = open(RTGFB_DEV, O_RDWR)) < 0)
++        return -1;
++    if (ioctl(fd, RTGFBIOC_GETINFO, pinfo) < 0 ||
++        pinfo->version != RTGFB_VERSION ||
++        pinfo->board != RTGFB_BOARD_PICASSO2) {
++        (void) close(fd);
++        return -1;
++    }
++    return fd;
++}
++
++/* probe: rtgfb knows a Picasso II.  Only GETINFO; the chip is not touched. */
++static Bool
++CirrusProbe()
++{
++    struct rtgfb_info info;
++    int fd;
++
++    if ((fd = cirrusOpen(&info)) < 0)
++        return FALSE;
++    (void) close(fd);
++    CLErr("cirrus: %s (%d/%d registers, %d/%d memory) at 0x%lx / 0x%lx\n",
++          info.name, info.manufacturer, info.reg_product,
++          info.manufacturer, info.mem_product, info.reg_phys, info.mem_phys);
++    return TRUE;
++}
++
++static void
++cirrusUnmap(pCl)
++cirrusPtr pCl;
++{
++    if (pCl->regs)
++        (void) munmap((caddr_t)pCl->regs, pCl->info.reg_size);
++    if (pCl->mem)
++        (void) munmap((caddr_t)pCl->mem, pCl->info.mem_size);
++    if (pCl->fd >= 0)
++        (void) close(pCl->fd);
++    (*cirrusCore->free)((pointer)pCl);
++}
++
++/*
++** initHW: map the board, identify the chip, size its memory, set the
++** size the core asks for (-mode; 0 = 1024x768) at its first rate, clear
++** the frame.
++*/
++static Bool
++CirrusInitHW(pRTG)
++rtgScreenPtr pRTG;
++{
++    cirrusPtr     pCl;
++    cirrusModePtr m;
++    caddr_t       a;
++    int           id;
++
++    if (pRTG->depth != 8) {
++        CLErr("CirrusInitHW: depth %d: this card has depth 8 only\n", pRTG->depth);
++        return FALSE;
++    }
++    pCl = (cirrusPtr) (*cirrusCore->alloc)(sizeof(cirrusRec));
++    if (!pCl)
++        return FALSE;
++    memset((char *)pCl, 0, sizeof(cirrusRec));
++    if ((pCl->fd = cirrusOpen(&pCl->info)) < 0) {
++        CLErr("CirrusInitHW: %s: %s\n", RTGFB_DEV, strerror(errno));
++        cirrusUnmap(pCl);
++        return FALSE;
++    }
++    a = (caddr_t)mmap(0, pCl->info.reg_size, PROT_READ | PROT_WRITE,
++                      MAP_SHARED, pCl->fd, (off_t)pCl->info.mmap_reg);
++    if (a == (caddr_t)-1) {
++        CLErr("CirrusInitHW: mmap of the registers failed (%s)\n", strerror(errno));
++        cirrusUnmap(pCl);
++        return FALSE;
++    }
++    pCl->regs = (volatile unsigned char *)a;
++    a = (caddr_t)mmap(0, pCl->info.mem_size, PROT_READ | PROT_WRITE,
++                      MAP_SHARED, pCl->fd, (off_t)pCl->info.mmap_mem);
++    if (a == (caddr_t)-1) {
++        CLErr("CirrusInitHW: mmap of the framebuffer failed (%s)\n", strerror(errno));
++        cirrusUnmap(pCl);
++        return FALSE;
++    }
++    pCl->mem = (unsigned char *)a;
++    pCl->dacData = CL_P2_DAC_DATA;
++
++    /* wake the chip up (the Picasso II has no VGA BIOS), extensions on */
++    CL_OUT(pCl, CL_WAKE_46E8, 0x16);
++    CL_OUT(pCl, CL_POS_102, 0x01);
++    CL_OUT(pCl, CL_WAKE_46E8, 0x0e);
++    CL_OUT(pCl, CL_VSE, 0x01);
++    CL_OUT(pCl, CL_MISC_W, 0x2f);       /* CRTC and status at 3Dx, not 3Bx */
++    CL_SEQ_W(pCl, 0x06, 0x12);
++
++    id = cirrusCrtR(pCl, 0x27) >> 2;
++    if (id != CL_ID_5426 && id != CL_ID_5428 && id != CL_ID_5429) {
++        CLErr("CirrusInitHW: chip id 0x%02x is no GD5426/5428/5429\n", id);
++        cirrusUnmap(pCl);
++        return FALSE;
++    }
++    pCl->chip = id;
++    pRTG->cardPrivate = (pointer)pCl;
++
++    cirrusSetup(pCl);
++    cirrusSizeMemory(pCl);
++    cirrusWritePattern(pCl);
++
++    if (pRTG->width > 0 || pRTG->height > 0) {
++        if (!(m = cirrusFindMode(pCl, pRTG->width, pRTG->height, 0))) {
++            CLErr("CirrusInitHW: no mode %dx%d at 8 bits; the modes are",
++                  pRTG->width, pRTG->height);
++            for (m = cirrusModes; m->w; m++)
++                if (cirrusUsable(pCl, m) && cirrusFindMode(pCl, m->w, m->h, 0) == m)
++                    CLErr(" %dx%d", m->w, m->h);
++            CLErr("\n");
++            pRTG->cardPrivate = (pointer)0;
++            cirrusUnmap(pCl);
++            return FALSE;
++        }
++    } else
++        m = cirrusFindMode(pCl, CL_DEFAULT_W, CL_DEFAULT_H, 0);  /* fits 1 MB */
++
++    pRTG->bitsPerPixel = 8;
++    pRTG->frameBase    = pCl->mem;
++    pRTG->fbBase       = pCl->mem;
++    pRTG->fbOffset     = 0;
++    pRTG->devFd        = pCl->fd;
++    cirrusSetMode(pRTG, m);
++    cirrusClear(pRTG);
++
++    CLErr("cirrus: CL-GD54%s, %ld KB, %dx%d at %d Hz (%ld kHz)\n",
++          id == CL_ID_5426 ? "26" : id == CL_ID_5428 ? "28" : "29",
++          pCl->vram >> 10, m->w, m->h, m->hz, m->clock);
++    return TRUE;
++}
++
++/* getModes: every size that fits at 8 bits, with its rates */
++static int
++CirrusGetModes(pRTG, modes, max)
++rtgScreenPtr pRTG;
++rtgModePtr   modes;
++int          max;
++{
++    cirrusPtr     pCl = CirrusOf(pRTG);
++    cirrusModePtr m, r;
++    int           n = 0, i;
++
++    for (m = cirrusModes; m->w && n < max; m++) {
++        if (!pCl || cirrusFindMode(pCl, m->w, m->h, 0) != m)
++            continue;               /* not usable, or not the size's first row */
++        modes[n].width       = m->w;
++        modes[n].height      = m->h;
++        modes[n].depths      = RTG_CAP_DEPTH8;
++        modes[n].nrates      = 0;
++        modes[n].currentRate = 0;
++        for (r = m; r->w; r++)
++            if (r->w == m->w && r->h == m->h && cirrusUsable(pCl, r) &&
++                modes[n].nrates < RTG_MODE_RATES) {
++                for (i = 0; i < modes[n].nrates && modes[n].rates[i] != r->hz; i++)
++                    ;
++                if (i == modes[n].nrates)
++                    modes[n].rates[modes[n].nrates++] = (short)r->hz;
++                if (r == pCl->mode)
++                    modes[n].currentRate = r->hz;
++            }
++        n++;
++    }
++    return n;
++}
++
++/* setMode (RandR): another size (frame cleared), or another rate (kept) */
++static Bool
++CirrusSetModeOp(pRTG, w, h, depth, rate)
++rtgScreenPtr pRTG;
++int          w, h, depth, rate;
++{
++    cirrusPtr     pCl = CirrusOf(pRTG);
++    cirrusModePtr m;
++    Bool          same;
++
++    if (!pCl || depth != pRTG->depth || !(m = cirrusFindMode(pCl, w, h, rate)))
++        return FALSE;
++    same = w == pRTG->width && h == pRTG->height;
++    cirrusSetMode(pRTG, m);
++    if (!same)
++        cirrusClear(pRTG);
++    CLErr("cirrus: %dx%d at %d Hz\n", m->w, m->h, m->hz);
++    return TRUE;
++}
++
++/* setColors: DAC entries first.., 16-bit components to the 6-bit DAC */
++static void
++CirrusSetColors(pRTG, first, n, rgb)
++rtgScreenPtr    pRTG;
++int             first, n;
++unsigned short *rgb;
++{
++    cirrusPtr pCl = CirrusOf(pRTG);
++
++    if (!pCl)
++        return;
++    CL_OUT(pCl, CL_DAC_WIDX, first);
++    for (n *= 3; n > 0; n--)
++        CL_OUT(pCl, pCl->dacData, *rgb++ >> 10);
++}
++
++static void
++CirrusCloseHW(pRTG)
++rtgScreenPtr pRTG;
++{
++    cirrusPtr pCl = CirrusOf(pRTG);
++
++    if (!pCl)
++        return;
++    cirrusWaitIdle(pRTG);
++    cirrusUnmap(pCl);
++    pRTG->cardPrivate = (pointer)0;
++    pRTG->frameBase = (unsigned char *)0;
++    pRTG->fbBase = (unsigned char *)0;
++}
++
++/* ------------------------------------------------------------------ */
++/* The card for the RTG core                                           */
++
++static rtgCardRec cirrusCard = {
++    RTG_CARD_ABI,
++    "cirrus",
++    "Cirrus GD542x: Picasso II/II+",
++    RTG_CAP_DEPTH8,
++    8,                          /* defaultDepth */
++    6,                          /* dacBits */
++    64,                         /* accelMin: -blitmin (setup ~20 byte writes) */
++    0,                          /* accelMax: no bands (the BLT is short) */
++
++    CirrusProbe,
++    CirrusInitHW,
++    CirrusGetModes,
++    CirrusSetModeOp,
++    CirrusCloseHW,
++
++    0,                          /* monitorSwitch: the SVGAIOC contract (rtgfb) */
++    CirrusSetColors,
++    cirrusSolidFill,
++    cirrusCopyRect,
++    0,                          /* patternFill */
++    cirrusWaitIdle,
++    0, 0, 0,                    /* hardware cursor: not yet (see the top) */
++    0,                          /* extensionInit */
++};
++
++rtgCardPtr
++CirrusCardEntry(core)
++rtgCoreFuncsPtr core;
++{
++    if (!core || core->version < RTG_CORE_VERSION ||
++        core->size < sizeof(rtgCoreFuncsRec))
++        return (rtgCardPtr)0;
++    cirrusCore = core;
++    return &cirrusCard;
++}
+diff --git a/programs/Xserver/hw/amix/rtg/rtgInit.c b/programs/Xserver/hw/amix/rtg/rtgInit.c
+index e471ed5..b47a83d 100644
+--- a/programs/Xserver/hw/amix/rtg/rtgInit.c
++++ b/programs/Xserver/hw/amix/rtg/rtgInit.c
+@@ -66,9 +66,11 @@ extern struct scrtype DefaultScrType;
+ /* The cards compiled into this server, probed in this order          */
+ 
+ extern rtgCardPtr ZZ9000CardEntry();    /* zz9000/zz9000hw.c: ZZ9000, Z3660 */
++extern rtgCardPtr CirrusCardEntry();    /* cirrus/cirrushw.c: Picasso II/II+ */
+ 
+ static rtgCardEntryProc rtgCardEntries[] = {
+     ZZ9000CardEntry,
++    CirrusCardEntry,
+ };
+ 
+ #define RTG_NCARDS (sizeof(rtgCardEntries) / sizeof(rtgCardEntries[0]))

@@ -87,6 +87,32 @@ patch -p1 --no-backup-if-mismatch < "$W/local-randr.patch" > "$W/log/patch-local
 # that the display panel offers 1080p at 50 Hz too; 60 alone on older kernels
 patch -p1 --no-backup-if-mismatch < "$W/local-randr-rates.patch" > "$W/log/patch-local-randr-rates.log"
 
+# local change: the RTG core split from the card (step 1 of
+# docs/MODULAR-X-SERVER-EVALUATION.md).  rtg.h gets a card ops table
+# (rtgCardRec: probe, initHW, getModes, setMode, closeHW, monitorSwitch,
+# setColors, solidFill/copyRect/patternFill/waitIdle, HW cursor, extensions,
+# caps) and a versioned callback table (rtgCoreFuncsRec) that is a card's
+# only way into the server; rtgInit.c probes a static card list (-card NAME,
+# /etc/X11/amix-card).  Everything card-independent moves from rtg/zz9000/
+# into the core (rtgdraw.c, rtgwin.c, rtgscreen.c, rtgcmap.c, rtgpix.c):
+# CopyWindow box order, PaintWindow tiles, pattern spans, the 16-bit PutImage
+# rows by move16 where uname names a 68040/060 (rtgcpu.c; never executed to
+# probe), else by movem.l blocks, the blitter banding (-blitmin/-blitmax).
+# Depths 8 (cfb, rtgcfb8.c), 16 (the core's own layer) and 24 in 32-bit
+# pixels (cfb32, rtgcfb32.c; cfb32 now built); -rtgdepth or the card file.
+# The zz9000 card keeps probe (Z3660: 16; MNT ZZ9000: 16 and 24), modes, its
+# BLITS queue and ZZ9K-SOFT3D
+patch -p1 --no-backup-if-mismatch < "$W/local-rtg-cardops.patch" > "$W/log/patch-local-rtg-cardops.log"
+# local change: the second card, `cirrus' (rtg/cirrus/): the Cirrus GD542x of
+# the Village Tronic Picasso II/II+ (Zorro II, real and in FS-UAE), through
+# the generic rtgfb kernel driver (/dev/rtgfb, major 54, amix-gate
+# io/rtgfb): VGA/Cirrus mode setting with VCLK3 for 640x480, 800x600 and
+# 1024x768 at 8 bits and their RandR rates, the 6-bit DAC, the BitBLT engine
+# for solid fills (colour-expanded pattern) and copies, the monitor switch
+# by the SVGAIOC contract.  Depth 8 only (16-bit pixels are little-endian
+# on this chip); the core's software cursor (FS-UAE draws no GD542x cursor)
+patch -p1 --no-backup-if-mismatch < "$W/local-rtg-cirrus.patch" > "$W/log/patch-local-rtg-cirrus.log"
+
 # local change: MIT-SHM on (Mesa's back buffer, x11perf -shmput); the port
 # kernel's ISSUE-62/66 fixes made shmget/shmat safe, shmband-tested 2026-10-25
 sed -i 's|^/\* MIT-SHM is independent of shared libraries and is unsafe on AMIX. \*/$|/* MIT-SHM: safe since the port kernel'"'"'s ISSUE-62/66 shm fixes */|; s|^#define HasShm NO$|#define HasShm YES|' config/cf/amix.cf
@@ -108,11 +134,11 @@ mkdir -p "$M/usr/amiga" "$M/usr/ucblib"
 cp -r "$W/disk/usr/amiga/include" "$W/disk/usr/amiga/lib" "$M/usr/amiga/"
 cp "$W/disk/usr/ucblib/"*.a "$M/usr/ucblib/"
 
-# 3. the stub archive: libc.a members whose plain names libc.so.1 does not export
+# 3. the stub archive: libc.a members whose plain names libc.so.1 does not export.
+# The list is stub-members.txt (one member per line); stub/ is build output only.
 export PATH=$HOME/opt/amix-cross/bin:$PATH
 rm -rf "$W/stub"; mkdir -p "$W/stub"; cd "$W/stub"
-MEMBERS="fpsetmask.o fpsetrnd.o fpsetsticky.o gettimeofday.o hrtsys.o select.o
-	seteguid.o shmsys.o signal.o syscall.o syslog.o time.o vfork.o"
+MEMBERS=$(cat "$W/stub-members.txt")
 m68k-cbm-sysv4-ar x "$M/usr/ccs/lib/libc.a" $MEMBERS
 m68k-cbm-sysv4-ar rcs libsockstub.a $MEMBERS
 

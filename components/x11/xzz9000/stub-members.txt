@@ -1,12 +1,13 @@
+fpsetmask.o
 fpsetrnd.o
 fpsetsticky.o
 gettimeofday.o
 hrtsys.o
 select.o
 seteguid.o
+shmsys.o
+signal.o
 syscall.o
 syslog.o
 time.o
 vfork.o
-signal.o
-fpsetmask.o
