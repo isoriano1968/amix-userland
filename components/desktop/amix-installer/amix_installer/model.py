@@ -10,7 +10,7 @@ Tags are the chosen options of the radio groups in TAG_GROUPS, plus the
 derived tags of derived_tags().
 """
 
-TAG_GROUPS = ("src", "target", "mach", "accel", "net", "layout", "kern", "boot", "desk")
+TAG_GROUPS = ("src", "target", "mach", "accel", "net", "layout", "kern", "boot", "gfx", "desk")
 
 NOT_AVAILABLE = "Not for this machine or layout"
 
@@ -163,9 +163,15 @@ STEPS = [
     Step("drivers", "Drivers", "Network, graphics, sound",
          "Only drivers for hardware the machine has are installed; each one is its own package "
          "and can be removed later.",
-         [G("drv", "Hardware", options=[
+         [G("gfx", "Graphics card", radio=True, options=[
+             O("rtg", "Z3660 RTG", "16-bit RTG modes for X", needs=("z3660",), mb=2),
+             # 68030 only: the rtgfb driver is relinked into the stock kernel
+             O("picasso2", "Picasso II", "Cirrus 8-bit RTG, 640\u00d7480 to 1024\u00d7768; FS-UAE "
+               "emulates it. The stock kernel gets /dev/rtgfb, relinked from your own",
+               needs=(("uae", "a3000", "a2500"), ("stock",), ("pvmk",)), mb=2),
+             O("chipset", "Amiga chipset", "No graphics card: the console and OPEN LOOK")]),
+          G("drv", "Hardware", options=[
              O("zen", "Z3660 Ethernet", "zen0 with interrupt-driven receive", needs=("z3660",), mb=1),
-             O("rtg", "Z3660 graphics", "16-bit RTG modes for X", needs=("z3660",), mb=2),
              O("paula", "Paula audio", "/dev/paula for players and games", mb=1),
              O("a2065", "A2065 Ethernet", "Commodore’s card, and FS-UAE’s network",
                needs=("net2065",), mb=1),
@@ -179,9 +185,9 @@ STEPS = [
          "X11R6.3 with Motif comes with every desktop choice except OPEN LOOK and the console.",
          [G("desk", "Desktop", radio=True, options=[
              O("cde", "CDE", "Front panel, file manager, terminal, App Manager",
-               badge="recommended", mb=140, probe=("/usr/dt/bin/dtwm",)),
+               badge="recommended", mb=140, probe=("/usr/dt/bin/dtwm",), needs=("rtg", "picasso2")),
              O("mwm", "Motif window manager", "mwm only, light and quick", mb=45,
-               probe=("/opt/motif/bin/mwm", "/usr/motif/bin/mwm")),
+               probe=("/opt/motif/bin/mwm", "/usr/motif/bin/mwm"), needs=("rtg", "picasso2")),
              O("ol", "OPEN LOOK", "AMIX’s own desktop, as shipped"),
              O("console", "Console only", "No X server")]),
           G("apps", "Applications", options=[
@@ -220,11 +226,12 @@ STEPS = [
 TAG_NAMES = {"060": "a 68060 card", "x11": "an X11 desktop"}
 
 DEFAULT_SEL = {"src": "hdf", "target": "sd", "mach": "a3000", "accel": "z3660", "cpu": "m020",
-               "layout": "split", "dsize": "d2g", "kern": "z3opt", "boot": "pvmk", "desk": "cde",
+               "layout": "split", "dsize": "d2g", "kern": "z3opt", "boot": "pvmk", "gfx": "rtg",
+               "desk": "cde",
                "keymap": "us", "net": "netzen"}
 
 DEFAULT_ON = {"pkg": True, "bigram": True, "vt": True, "syslog": True, "dlm": False, "mem": True,
-              "zen": True, "rtg": True, "paula": True, "a2065": False, "random": True,
+              "zen": True, "paula": True, "a2065": False, "random": True,
               "gpu": True, "video": True, "crypto": True, "netsurf": True, "media": True,
               "grafx2": False, "sysmon": True, "games": False, "gcc14": True, "gcc27": False,
               "headers": True, "pkgconf": True, "gnu": True, "python": False, "vim": True}

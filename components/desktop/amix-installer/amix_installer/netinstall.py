@@ -170,7 +170,7 @@ def packages_for(cfg):
     for s in model.STEPS:
         for g in s.groups:
             if g.id in ("pkgclient", "kern", "boot", "src", "target", "mach", "accel", "cpu",
-                        "layout", "dsize", "net", "keymap", "desk"):
+                        "layout", "dsize", "net", "keymap", "desk", "gfx"):
                 continue
             for o in g.options:
                 if not cfg.chosen(g, o) or cfg.installed(o) or o.id == "headers":
@@ -182,6 +182,8 @@ def packages_for(cfg):
     desk = cfg.sel.get("desk")
     if desk in PACKAGES and not cfg.installed(model.find_group("desk").option(desk)):
         pkgs = [p for p in PACKAGES[desk] if p not in pkgs] + pkgs
+    if "x11" in cfg.tags() and X_SERVER not in pkgs:
+        pkgs = [X_SERVER] + pkgs
     return pkgs, missing
 
 
@@ -196,6 +198,29 @@ def fs_uae_data_disk(pl):
     with hdf.Image(os.path.join(pl.paths["out_dir"], dd[0].name)) as im:
         blocks = im.read_rdb()[0].blocks
     return ("/dev/rdsk/c%dd0s1" % plan.SCSI_ID["data"], blocks)
+
+
+def plan_kernel(pl):
+    """The kernel a plan wrote for AMIX to install (the Picasso II one), or None."""
+    from . import kernel
+    if not [a for a in pl.actions if a.id == "kernel-rtgfb" and a.available]:
+        return None
+    p = os.path.join(pl.paths["out_dir"], kernel.NAME)
+    return p if os.path.isfile(p) else None
+
+
+def sysv_sum(data):
+    """What AMIX's sum(1) prints first: the System V checksum."""
+    s = sum(bytearray(data)) & 0xffffffff
+    r = (s & 0xffff) + (s >> 16)
+    return (r & 0xffff) + (r >> 16)
+
+
+# the X card driver for /etc/X11/amix-card, by the installer's graphics card
+# (the Z3660's becomes "z3660" when its card driver is split from zz9000)
+X_CARD = {"picasso2": "cirrus", "rtg": "zz9000"}
+# the X server, under every X desktop
+X_SERVER = "x11/xserver-amix"
 
 
 def missing_in_repo(repo, stem, _seen=None):
@@ -220,10 +245,11 @@ def missing_in_repo(repo, stem, _seen=None):
     return None
 
 
-def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None):
+def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kernel=None):
     """The steps AMIX runs after the bootstrap. data_disk: (raw slice, sectors)
     of the empty data disk partition to make a file system on, or None.
-    With repo, packages it does not hold are left out and reported."""
+    With repo, packages it does not hold are left out and reported.
+    kernel: (size, System V sum) of the kernel served at /kernel, or None."""
     pkgs, missing = packages_for(cfg)
     reserve = model.SPLIT_RESERVE_MB if data_disk else model.ROOT_RESERVE_MB
     if repo:
@@ -284,8 +310,31 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None):
     if cfg.sel.get("kern") not in (None, "stock"):
         lines += ["", "report 'the %s kernel is not packaged yet: the stock kernel stays'"
                   % model.find_group("kern").option(cfg.sel["kern"]).title]
+    card = X_CARD.get(cfg.sel.get("gfx")) if "x11" in cfg.tags() else None
+    if card:
+        lines += ["", "[ -d /etc/X11 ] || /usr/bin/mkdir /etc/X11 || fail 'mkdir /etc/X11'",
+                  "echo %s > /etc/X11/amix-card || fail 'writing /etc/X11/amix-card'" % card,
+                  "report 'X card driver: %s (/etc/X11/amix-card)'" % card]
+    if kernel and cfg.sel.get("gfx") == "picasso2":
+        size, ksum = kernel
+        lines += ["",
+                  "step 5 \"the kernel with /dev/rtgfb (major 54)\"",
+                  "$PKG http get $W/kernel /stand/unix.new >>$LOG 2>&1 || fail 'fetching the kernel'",
+                  "set -- `/usr/bin/sum /stand/unix.new`",
+                  "[ \"$1\" = %d ] && [ `/usr/bin/wc -c </stand/unix.new` -eq %d ] || "
+                  "{ /usr/bin/rm -f /stand/unix.new; fail 'the kernel arrived damaged'; }"
+                  % (ksum, size),
+                  "# the stock kernel stays, for pvmk's \"AMIX stock\" entry",
+                  "[ -f /stand/unix.stock ] || /usr/bin/cp /stand/unix /stand/unix.stock || "
+                  "fail 'keeping the stock kernel'",
+                  "/usr/bin/mv /stand/unix.new /stand/unix || fail 'installing the kernel'",
+                  "[ -c /dev/rtgfb ] || /usr/sbin/mknod /dev/rtgfb c 54 0 || fail 'mknod /dev/rtgfb'",
+                  "/usr/bin/chmod 666 /dev/rtgfb",
+                  "report 'the new kernel starts at the next boot; pvmk lists the old one as AMIX stock'"]
+    elif cfg.sel.get("gfx") == "picasso2":
+        lines += ["", "report 'no kernel with /dev/rtgfb was made: X cannot reach the card yet'"]
     lines += ["",
-              "step 5 \"removing the bootstrap\"",
+              "step 6 \"removing the bootstrap\"",
               "cd / && /usr/sbin/pkgrm -n -a /tmp/amixboot.admin %s >>$LOG 2>&1 || report 'pkgrm %s failed: remove it by hand'"
               % (BOOT_PKG, BOOT_PKG),
               "rm -f /tmp/amixboot.admin /tmp/go /tmp/amix-steps",
@@ -395,6 +444,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         path = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
         if path == "/steps":
             return self._reply(200, st.steps().encode())
+        if path == "/kernel" and st.kernel:
+            return self._reply(200, st.kernel[0], "application/octet-stream")
         if path.startswith("/repo/"):
             rel = os.path.normpath(path[len("/repo/"):])
             if rel.startswith("..") or os.path.isabs(rel):
@@ -441,8 +492,13 @@ class Session(object):
     """One network install: both servers, the scripts, the log."""
 
     def __init__(self, cfg, repo, host=None, data_disk=None, log=None,
-                 tftp_port=TFTP_PORT, http_port=HTTP_PORT, bind="0.0.0.0"):
+                 tftp_port=TFTP_PORT, http_port=HTTP_PORT, bind="0.0.0.0", kernel=None):
         self.cfg = cfg
+        self.kernel = None          # (bytes, size, sum) of the kernel for AMIX
+        if kernel:
+            with open(kernel, "rb") as f:
+                data = f.read()
+            self.kernel = (data, len(data), sysv_sum(data))
         self.repo = repo
         self.host = host or FS_UAE_HOST
         self.data_disk = data_disk
@@ -465,7 +521,8 @@ class Session(object):
         return self._boot
 
     def steps(self):
-        return steps_script(self.cfg, self.host, self.http_port, self.data_disk, self.repo)
+        return steps_script(self.cfg, self.host, self.http_port, self.data_disk, self.repo,
+                            self.kernel[1:] if self.kernel else None)
 
     def commands(self):
         """What to type at the AMIX console, as root."""

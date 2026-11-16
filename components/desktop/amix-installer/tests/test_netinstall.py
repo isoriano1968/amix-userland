@@ -175,3 +175,76 @@ class Bootstrap(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Picasso(unittest.TestCase):
+    """The Picasso II: a 68030 with the stock kernel, X through /dev/rtgfb."""
+
+    def cfg(self, **sel):
+        base = {"mach": "uae", "accel": "none", "kern": "stock", "boot": "pvmk",
+                "gfx": "picasso2", "desk": "cde"}
+        base.update(sel)
+        return model.Config(sel=base)
+
+    def test_choice_rules(self):
+        c = self.cfg()
+        self.assertEqual(c.sel["gfx"], "picasso2")
+        self.assertEqual(c.sel["desk"], "cde")
+        # the 68060 kernels cannot run a 68030: no Picasso II with them
+        self.assertNotEqual(self.cfg(mach="a3000", accel="z3660", kern="z3opt").sel["gfx"],
+                            "picasso2")
+        # the stock boot partition holds one kernel: pvmk boots the new one
+        self.assertNotEqual(self.cfg(boot="amixboot").sel["gfx"], "picasso2")
+        # no card, no X desktop
+        c = self.cfg(gfx="chipset")
+        self.assertNotIn(c.sel["desk"], ("cde", "mwm"))
+        self.assertNotIn("Picasso II", " ".join(netinstall.packages_for(self.cfg())[1]))
+
+    def test_steps_install_the_kernel(self):
+        t = netinstall.steps_script(self.cfg(), "10.0.2.2", kernel=(1478000, 4242))
+        Scripts.sh_ok(self, t)
+        self.assertNotIn("$(", t)
+        self.assertIn("$PKG http get $W/kernel /stand/unix.new", t)
+        self.assertIn('[ "$1" = 4242 ]', t)
+        self.assertIn("-eq 1478000", t)
+        self.assertIn("/usr/sbin/mknod /dev/rtgfb c 54 0", t)
+        self.assertIn("echo cirrus > /etc/X11/amix-card", t)
+        self.assertLess(t.index("/stand/unix.stock"), t.index("mv /stand/unix.new /stand/unix"))
+        self.assertLess(t.index("step 5"), t.index("step 6"))
+        no = netinstall.steps_script(self.cfg(), "10.0.2.2")
+        self.assertNotIn("/stand/unix.new", no)
+        self.assertIn("no kernel with /dev/rtgfb", no)
+        self.assertEqual(netinstall.packages_for(self.cfg())[0][0], "x11/xserver-amix")
+        z = netinstall.steps_script(model.Config(sel={"desk": "cde"}), "10.0.2.2")
+        self.assertIn("echo zz9000 > /etc/X11/amix-card", z)
+        self.assertNotIn("/stand/unix.new", z)
+        self.assertNotIn("amix-card", netinstall.steps_script(self.cfg(desk="console"), "10.0.2.2"))
+
+    def test_sysv_sum(self):
+        data = os.urandom(70000)
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(data)
+        try:
+            r = subprocess.run(["sum", "-s", f.name], stdout=subprocess.PIPE,
+                               universal_newlines=True)
+        except OSError:
+            self.skipTest("no sum(1)")
+        finally:
+            os.unlink(f.name)
+        self.assertEqual(int(r.stdout.split()[0]), netinstall.sysv_sum(data))
+
+    def test_served(self):
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(b"\x7fELF kernel")
+        try:
+            s = netinstall.Session(self.cfg(), "/nonexistent", host="127.0.0.1",
+                                   tftp_port=0, http_port=0, bind="127.0.0.1", kernel=f.name)
+            s.start()
+            try:
+                u = "http://127.0.0.1:%d" % s.http_port
+                self.assertEqual(urllib.request.urlopen(u + "/kernel").read(), b"\x7fELF kernel")
+                self.assertIn("-eq 11 ]", urllib.request.urlopen(u + "/steps").read().decode())
+            finally:
+                s.stop()
+        finally:
+            os.unlink(f.name)

@@ -211,6 +211,10 @@ def pvmk_conf(cfg, template=None):
         out.append(ln)
     if not entry_done:
         out.append("entry=AMIX,UNIX_Root:/stand/unix,native")
+    if cfg.sel.get("gfx") == "picasso2":
+        # the relinked kernel replaces /stand/unix; the stock one stays a choice
+        i = out.index("entry=AMIX,UNIX_Root:/stand/unix,native")
+        out.insert(i + 1, "entry=AMIX stock,UNIX_Root:/stand/unix.stock,native")
     for k, v in want.items():
         if k not in seen:
             out.append("%s=%s" % (k, v))
@@ -397,6 +401,8 @@ class NetInstall(Action):
 # roots on ID 6; pvmk's boot disk 5; the data disk 1 (the host adapter is 7)
 SCSI_ID = {"core": 6, "pvmk": 5, "data": 1}
 FSUAE_CONFIG = "amix-install.fs-uae"
+# the installer's graphics card -> FS-UAE's graphics_card
+FSUAE_CARD = {"picasso2": "picasso-ii"}
 README = "README-amix-installer.txt"
 
 
@@ -431,11 +437,50 @@ class DataDisk(Action):
         finish(ctx, self.name)
 
 
+class RtgfbKernel(Action):
+    """The user's own stock kernel with /dev/rtgfb linked in (kernel.py): for
+    a 68030 with a Picasso II.  AMIX installs it over the network, last."""
+
+    def __init__(self, src):
+        from . import kernel
+        kit, ld = kernel.find_kit(), kernel.find_ld()
+        why = None
+        if not kit:
+            why = "the rtgfb kernel kit is not installed (package developer/amix/rtgfb-kit)"
+        elif not ld:
+            why = "the AMIX cross linker %s is not installed (developer/amix/gcc-27)" \
+                % kernel.LINKERS[0]
+        super(RtgfbKernel, self).__init__(
+            "kernel-rtgfb", "Link the Picasso II driver into your kernel",
+            "%s: your /stand/unix plus /dev/rtgfb (major 54); the stock kernel stays as "
+            "/stand/unix.stock" % kernel.NAME, 2 << 20, [kernel.NAME], why)
+        self.src = src
+        self.kit, self.ld = kit, ld
+
+    def run(self, ctx):
+        from . import kernel
+        ctx.progress(0.1, "reading /stand/unix")
+        with hdf.Image(self.src) as im:
+            parts = im.read_rdb()
+            root = next((p for p in parts if p.kind == "amix-root" and
+                         p.name.lower() == "unix_root"), None) or \
+                next(p for p in parts if p.kind == "amix-root")
+            base = hdf.Ufs(im, root).read_file("/stand/unix", limit=16 << 20)
+        if base is None:
+            raise IOError("the core disk has no /stand/unix")
+        ctx.progress(0.4, "linking")
+        try:
+            kernel.relink_rtgfb(base, ctx.part(kernel.NAME), self.kit, self.ld, ctx.log)
+        except kernel.KernelError as e:
+            raise IOError("the Picasso II kernel: %s" % e)
+        finish(ctx, kernel.NAME)
+
+
 class FsUaeConfig(Action):
     """An FS-UAE A3000 with an A2065 and the new disks: the machine the
     network install fills (0.4).  The Kickstart is the user's own file."""
 
-    def __init__(self, names, kickstart, out):
+    def __init__(self, names, kickstart, out, gfx=None):
         disks = [n for n in (names.get("pvmk"), names.get("core"), names.get("data")) if n]
         missing = None if kickstart else "choose your A3000 Kickstart ROM on the Base system page"
         super(FsUaeConfig, self).__init__(
@@ -445,6 +490,7 @@ class FsUaeConfig(Action):
         self.names = names
         self.kickstart = kickstart
         self.out = out
+        self.gfx = gfx
 
     def text(self):
         out = ["# AMIX installation machine, written by amix-installer %s" % __version__,
@@ -452,6 +498,8 @@ class FsUaeConfig(Action):
                "[fs-uae]", "amiga_model = A3000", "chip_memory = 2048",
                "motherboard_ram = 16384", "kickstart_file = %s" % self.kickstart,
                "network_card = a2065"]
+        if self.gfx in FSUAE_CARD:
+            out.append("graphics_card = %s" % FSUAE_CARD[self.gfx])
         n = 0
         for role in ("pvmk", "core", "data"):
             name = self.names.get(role)
@@ -584,12 +632,14 @@ def make_plan(cfg, paths, fs=None, written=False):
             names.pop("pvmk")
         else:
             pl.actions.append(PvmkDisk(cfg, find_pvmk(), names["pvmk"]))
+    if sel.get("gfx") == "picasso2":
+        pl.actions.append(RtgfbKernel(src))
     if "data" in names:
         pl.actions.append(DataDisk(src, names["data"], model.DATA_DISK_MB[sel["dsize"]] << 20))
     kick = paths.get("kickstart")
     if not kick and fs.a3000_kickstarts():
         kick = fs.a3000_kickstarts()[0]      # the newest A3000 ROM in FS-UAE's folder
-    fsc = FsUaeConfig(names, kick, out)
+    fsc = FsUaeConfig(names, kick, out, sel.get("gfx"))
     pl.actions.append(fsc)
 
     # what AMIX does in FS-UAE over the emulated A2065 (0.4)
@@ -605,13 +655,15 @@ def make_plan(cfg, paths, fs=None, written=False):
     for s in model.STEPS:
         for g in s.groups:
             if g.id in ("pkgclient", "kern", "boot", "src", "target", "mach", "accel", "cpu",
-                        "layout", "dsize", "net", "keymap"):
+                        "layout", "dsize", "net", "keymap", "gfx"):
                 continue
             for o in g.options:
                 if cfg.chosen(g, o) and o.mb and not cfg.installed(o):
                     pkgs.append(o.title)
     if pkgs:
         inside.append("installs %d packages (%s)" % (len(pkgs), ", ".join(pkgs)))
+    if sel.get("gfx") == "picasso2":
+        inside.append("installs the Picasso II kernel, /dev/rtgfb and the X card setting")
     if sel["kern"] != "stock":
         inside.append("installs the %s kernel last, the stock kernel kept as a fallback"
                       % model.find_group("kern").option(sel["kern"]).title)

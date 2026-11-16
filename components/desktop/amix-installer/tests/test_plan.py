@@ -209,7 +209,10 @@ class FsUae(Base):
 
     def test_network_of_a_configuration(self):
         fs = fake_fs(self.d)
-        conf = lambda n, t: (open(fs.config_path(n), "w").write(t), fs.config_path(n))[1]  # noqa
+        def conf(n, t):
+            with open(fs.config_path(n), "w") as f:
+                f.write(t)
+            return fs.config_path(n)
         self.assertEqual(fs.network_of(conf("net", "[fs-uae]\n network_card = A2065\n")),
                          "a2065")
         self.assertIsNone(fs.network_of(conf("plain", "[fs-uae]\namiga_model = A3000\n")))
@@ -290,3 +293,28 @@ class Execute(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Picasso(Base):
+    def cfg(self, **sel):
+        base = {"mach": "uae", "accel": "none", "kern": "stock", "boot": "pvmk",
+                "gfx": "picasso2", "desk": "cde"}
+        base.update(sel)
+        return Base.cfg(self, **base)
+
+    def test_fs_uae_config_has_the_card(self):
+        pl = plan.make_plan(self.cfg(), dict(self.paths(), kickstart="/k.rom"))
+        fsc = [a for a in pl.actions if a.id == "fs-uae"][0]
+        self.assertIn("graphics_card = picasso-ii", fsc.text())
+        pl = plan.make_plan(self.cfg(gfx="chipset"), dict(self.paths(), kickstart="/k.rom"))
+        self.assertNotIn("graphics_card", [a for a in pl.actions if a.id == "fs-uae"][0].text())
+
+    def test_kernel_action_and_pvmk_entries(self):
+        pl = plan.make_plan(self.cfg(), self.paths())
+        self.assertIn("kernel-rtgfb", [a.id for a in pl.actions])
+        conf = plan.pvmk_conf(self.cfg())
+        self.assertIn("entry=AMIX,UNIX_Root:/stand/unix,native", conf)
+        self.assertIn("entry=AMIX stock,UNIX_Root:/stand/unix.stock,native", conf)
+        self.assertNotIn("unix.stock", plan.pvmk_conf(self.cfg(gfx="chipset")))
+        self.assertNotIn("kernel-rtgfb",
+                         [a.id for a in plan.make_plan(self.cfg(gfx="chipset"), self.paths()).actions])

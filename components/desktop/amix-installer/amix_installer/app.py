@@ -1109,6 +1109,7 @@ class Window(Adw.ApplicationWindow):
         host = netinstall.FS_UAE_HOST if emu else netinstall.lan_address()
         try:
             self.net = netinstall.Session(self.cfg, net.repo, host=host, data_disk=data_disk,
+                                          kernel=netinstall.plan_kernel(pl) if pl else None,
                                           log=lambda t: GLib.idle_add(self._run_logline, t))
             self.net.start()
         except OSError as e:

@@ -53,6 +53,8 @@ def load_data(data):
         sel[gid] = oid
     switch_ids = set(o.id for _, g in model.all_groups() if not g.radio for o in g.options)
     for oid, val in (data.get("switch") or {}).items():
+        if oid == "rtg":
+            continue        # before 0.5 a switch; now the "gfx" choice
         if oid not in switch_ids:
             msgs.append("unknown option %s" % oid)
             continue

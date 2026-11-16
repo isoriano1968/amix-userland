@@ -106,7 +106,8 @@ def run_net(cfg, pl):
         return 1
     host = netinstall.lan_address() if real else netinstall.FS_UAE_HOST
     try:
-        s = netinstall.Session(cfg, net[0].repo, host=host, data_disk=data_disk, log=print)
+        s = netinstall.Session(cfg, net[0].repo, host=host, data_disk=data_disk, log=print,
+                               kernel=None if real else netinstall.plan_kernel(pl))
         s.start()
     except OSError as e:
         print("amix-installer: the servers cannot start: %s" % e, file=sys.stderr)
