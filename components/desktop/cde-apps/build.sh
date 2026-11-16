@@ -6,6 +6,11 @@ set -e
 cd "$(dirname "$0")"
 P=../../../tools/amix-pkg-config
 for app in ${*:-amixcast ztopcde amixsysmon amixdisplay amixuae amixprinters amixq3 amixsoftware}; do
+	if [ $app = amixcast ]; then	# libupnp, Pth and core 1's zzav.h: its own script
+		sh amixcast/build-amixcast.sh
+		../../../tools/amix-fix-needed amixcast/amixcast > /dev/null
+		continue
+	fi
 	pkgs=xm
 	[ $app = amixsysmon ] && pkgs="xm amixstat"	# library/amixstat
 	[ $app = amixdisplay ] && pkgs="xm xrandr"	# x11/libxrandr

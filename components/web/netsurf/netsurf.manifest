@@ -2,8 +2,8 @@
 name     web/netsurf
 version  3.11
 summary  NetSurf web browser (framebuffer frontend on libnsfb's Xlib surface)
-require  developer/netsurf-buildsystem
-require  developer/nsgenbind
+build    developer/netsurf-buildsystem
+build    developer/nsgenbind
 require  library/libwapcaplet
 require  library/libparserutils
 require  library/libhubbub

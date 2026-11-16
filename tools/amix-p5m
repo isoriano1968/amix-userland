@@ -36,6 +36,8 @@ def read_manifest(path):
             elif key == "file":
                 w = value.split()
                 m["file"][w[0]] = "devel" in w[1:]
+                # mode=4755 owner=root group=sys: setuid helpers and the like
+                m.setdefault("attrs", {})[w[0]] = dict(x.split("=", 1) for x in w[1:] if "=" in x)
             elif key in ("name", "version", "summary"):
                 m[key] = value
     return m
@@ -148,19 +150,29 @@ def generate(comp_dir, contents=None, rev=None):
                     body.append("hardlink path=%s target=/%s%s" % (p, seen_ino[key], facet))
                     continue
                 seen_ino[key] = p
-                if p.startswith("etc/"):
-                    mode, extra = "0644", " preserve=renamenew"
+                if p.startswith("etc/"):        # configuration: kept when changed
+                    mode = "0755" if st.st_mode & 0o111 else "0644"
+                    extra = " preserve=renamenew"
                 else:
                     mode = "0555" if st.st_mode & 0o111 else "0444"
                     extra = ""
-                body.append("file %s path=%s owner=root group=bin mode=%s%s%s"
-                            % (p, p, mode, extra, facet))
+                at = m.get("attrs", {}).get("/" + p, {})
+                body.append("file %s path=%s owner=%s group=%s mode=%s%s%s"
+                            % (p, p, at.get("owner", "root"), at.get("group", "bin"),
+                               at.get("mode", mode), extra, facet))
     if m["file"]:
         listed = set(m["file"])
+        # a listed directory of the stage covers everything under it
+        trees = [p.rstrip("/") + "/" for p in listed if stage and
+                 os.path.isdir(os.path.join(stage, p.lstrip("/"))) and
+                 not os.path.islink(os.path.join(stage, p.lstrip("/")))]
+        under = lambda p: any(p.startswith(t) for t in trees)  # noqa: E731
         for p in sorted(listed - paths):
-            problems.append("%s: in the manifest, not in the stage" % p)
+            if p.rstrip("/") + "/" not in trees:
+                problems.append("%s: in the manifest, not in the stage" % p)
         for p in sorted(paths - listed):
-            problems.append("%s: in the stage, not in the manifest" % p)
+            if not under(p):
+                problems.append("%s: in the stage, not in the manifest" % p)
     elif paths:
         sys.stderr.write("amix-p5m: %s lists no files; the stage is taken as it is (%d)\n"
                          % (name, len(paths)))

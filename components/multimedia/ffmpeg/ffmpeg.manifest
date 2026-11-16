@@ -5,3 +5,9 @@ summary  FFmpeg 4.4.8
 require  library/pth
 require  library/sdl2
 require  x11/x11r6.3
+file     /opt/ffmpeg/bin/ffmpeg
+file     /opt/ffmpeg/bin/ffplay
+file     /opt/vplay/vplay
+file     /opt/amix/bin/ffmpeg
+file     /opt/amix/bin/ffplay
+file     /opt/amix/bin/vplay

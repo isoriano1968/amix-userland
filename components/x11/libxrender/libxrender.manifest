@@ -5,6 +5,9 @@ summary  X Render extension client library
 require  x11/x11r6.3
 require  x11/renderproto
 provide  xrender
-file     /usr/x11r6/lib/libXrender.so.1
+file     /usr/local/share/amix-stubs/libxrender/LIST
+file     /usr/local/share/amix-stubs/libxrender/libXrender.so.1.s
 file     /usr/x11r6/include/X11/extensions/Xrender.h
+file     /usr/x11r6/lib/libXrender.so
+file     /usr/x11r6/lib/libXrender.so.1
 file     /usr/x11r6/lib/pkgconfig/xrender.pc

@@ -39,7 +39,8 @@ PACKAGES = {
     "cde": ["desktop/cde"], "mwm": ["desktop/motif"], "netsurf": ["web/netsurf"],
     "media": ["multimedia/ffmpeg", "desktop/cde-apps"], "grafx2": ["graphics/grafx2"],
     "sysmon": ["desktop/cde-apps"], "games": ["games/quake", "games/ioquake3"],
-    "gcc14": ["developer/gcc-14"], "gcc27": ["developer/gcc-27"],
+    # gcc14/gcc27: developer/gcc-14 and gcc-27 are cross compilers on the PC; a
+    # compiler that runs on AMIX is not packaged yet (reported as such)
     "pkgconf": ["developer/pkgconf"], "gnu": ["gnu/gnu-tools"], "python": ["runtime/python3"],
     "vim": ["editor/vim"],
 }

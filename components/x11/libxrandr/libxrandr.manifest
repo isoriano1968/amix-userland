@@ -6,6 +6,9 @@ require  x11/x11r6.3
 require  x11/randrproto
 require  x11/libxrender
 provide  xrandr
-file     /usr/x11r6/lib/libXrandr.so.2
+file     /usr/local/share/amix-stubs/libxrandr/LIST
+file     /usr/local/share/amix-stubs/libxrandr/libXrandr.so.2.s
 file     /usr/x11r6/include/X11/extensions/Xrandr.h
+file     /usr/x11r6/lib/libXrandr.so
+file     /usr/x11r6/lib/libXrandr.so.2
 file     /usr/x11r6/lib/pkgconfig/xrandr.pc

@@ -28,7 +28,23 @@ ffplay: compat
 	$(MAKE) -C build-ffplay
 	../../../tools/amix-fix-needed build-ffplay/ffplay
 
+# vplay links MIT-SHM statically: libshmsys.a from x11/mesa-31's work tree
+SHM_LIBS ?= $(CURDIR)/../../x11/mesa-31/work/shm-static
 vplay: build
-	sh build.sh
+	SHM_LIBS=$(SHM_LIBS) sh build.sh
+	../../../tools/amix-fix-needed vplay
 
-.PHONY: compat build ffplay vplay
+# as on the box: the programs in /opt/ffmpeg/bin and /opt/vplay, their
+# launchers (ulimit, core 1's player) in /opt/amix/bin
+stage: build ffplay vplay
+	rm -rf $(STAGE_DIR)
+	mkdir -p $(STAGE_DIR)/opt/ffmpeg/bin $(STAGE_DIR)/opt/vplay $(STAGE_DIR)/opt/amix/bin
+	cp build-ff/ffmpeg build-ffplay/ffplay $(STAGE_DIR)/opt/ffmpeg/bin/
+	cp vplay $(STAGE_DIR)/opt/vplay/vplay
+	cp tools/ffmpeg.sh $(STAGE_DIR)/opt/amix/bin/ffmpeg
+	cp tools/ffplay.sh $(STAGE_DIR)/opt/amix/bin/ffplay
+	cp vplay.sh $(STAGE_DIR)/opt/amix/bin/vplay
+	chmod 755 $(STAGE_DIR)/opt/ffmpeg/bin/* $(STAGE_DIR)/opt/vplay/vplay $(STAGE_DIR)/opt/amix/bin/*
+	@$(manifest_files)
+
+.PHONY: compat build ffplay vplay stage

@@ -8,11 +8,17 @@ A manifest is NAME.manifest in the component.  Lines:
   require  area/component [>= VERSION]
                               another component, which must have a manifest
                               (and at least that version, when one is given)
+  build    area/component [>= VERSION]
+                              the same, but only to build this one (a tool of
+                              the build machine): not a requirement on AMIX,
+                              so amix-p5m leaves it out of the IPS package
   provide  PKG                a pkg-config name it installs
   file     /path [devel]      a path on AMIX it installs (checked in its stage
                               by $(manifest_files)); "devel" marks a development
                               file (headers, .so links, .pc, link stubs), which
-                              an IPS package tags facet.devel
+                              an IPS package tags facet.devel; mode=4755,
+                              owner=root, group=sys set those attributes (a
+                              setuid helper), else root:bin 0555/0444
 
 Every require must be a component, all the way down, without a cycle, and what
 it provides must be in the sysroot.  What is missing is built from its component
@@ -42,17 +48,19 @@ def read(path):
             continue
         key, _, value = line.partition(" ")
         value = value.strip()
-        if key == "require":
+        if key in ("require", "build"):
             w = value.split()
             if len(w) == 3 and w[1] == ">=":
                 m["minver"][w[0]] = w[2]
             elif len(w) != 1:
-                sys.exit("%s:%d: require takes a component and an optional >= VERSION: %s" % (path, n, line))
+                sys.exit("%s:%d: require/build takes a component and an optional >= VERSION: %s" % (path, n, line))
             m["require"].append(w[0])
         elif key == "file":
             w = value.split()
-            if len(w) not in (1, 2) or (len(w) == 2 and w[1] != "devel"):
-                sys.exit("%s:%d: file takes a path and an optional devel: %s" % (path, n, line))
+            if not w or any(x != "devel" and not (x.startswith(("mode=", "owner=", "group="))
+                                                  and len(x.split("=", 1)[1]) > 0) for x in w[1:]):
+                sys.exit("%s:%d: file takes a path, an optional devel and mode=/owner=/group=: %s"
+                         % (path, n, line))
             m["file"].append(w[0])
         elif key == "provide":
             m[key].append(value)

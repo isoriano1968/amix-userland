@@ -8,3 +8,13 @@ require  library/bzip2
 require  library/expat
 require  library/openssl
 require  network/ca-certificates
+file     /usr/local/bin/python3
+file     /usr/local/bin/python3.11
+file     /usr/local/bin/python3.11-config devel
+file     /usr/local/bin/python3-config devel
+file     /usr/local/include/python3.11 devel
+file     /usr/local/lib/libpython3.11.a devel
+file     /usr/local/lib/python3.11
+file     /usr/local/man/man1/python3.1
+file     /usr/local/man/man1/python3.11.1
+file     /usr/local/share/doc/python3-amix

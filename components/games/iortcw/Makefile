@@ -44,4 +44,14 @@ stage-core1:
 	mkdir -p $(BUILD_DIR)/elf
 	cp $(BUILD_DIR)/core1/wolf.elf $(BUILD_DIR)/elf/wolf-`sha256sum $(BUILD_DIR)/core1/z3660ARM_Core_wolf.bin | cut -c1-16`.elf
 
-.PHONY: core1 stage-core1
+# the IPS stage (iortcw.manifest): what stage-core1 puts on the box, without
+# its install script: the core 1 image and wolf.sh (c1q3 comes with games/ioquake3)
+stage: core1
+	rm -rf $(STAGE_DIR)
+	mkdir -p $(STAGE_DIR)/root/z3660ARMCores $(STAGE_DIR)/opt/rtcw
+	cp $(BUILD_DIR)/core1/z3660ARM_Core_wolf.bin $(STAGE_DIR)/root/z3660ARMCores/
+	cp files/amix/wolf.sh $(STAGE_DIR)/opt/rtcw/
+	chmod 755 $(STAGE_DIR)/opt/rtcw/wolf.sh
+	@$(manifest_files)
+
+.PHONY: core1 stage-core1 stage

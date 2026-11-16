@@ -66,4 +66,15 @@ stage-core1:
 	mkdir -p $(BUILD_DIR)/elf
 	cp $(BUILD_DIR)/core1/q3.elf $(BUILD_DIR)/elf/q3-`sha256sum $(BUILD_DIR)/core1/z3660ARM_Core_q3.bin | cut -c1-16`.elf
 
-.PHONY: core1 check-core1 stage-core1
+# the IPS stage (ioquake3.manifest): what stage-core1 puts on the box, without
+# its install script: the core 1 image, c1q3 (setuid in the manifest), q3.sh
+stage: core1
+	rm -rf $(STAGE_DIR)
+	mkdir -p $(STAGE_DIR)/root/z3660ARMCores $(STAGE_DIR)/opt/amix/bin $(STAGE_DIR)/opt/ioq3
+	cp $(BUILD_DIR)/core1/z3660ARM_Core_q3.bin $(STAGE_DIR)/root/z3660ARMCores/
+	cp files/amix/q3.sh $(STAGE_DIR)/opt/ioq3/
+	cp $(BUILD_DIR)/amix/c1q3 $(STAGE_DIR)/opt/amix/bin/
+	chmod 755 $(STAGE_DIR)/opt/ioq3/q3.sh $(STAGE_DIR)/opt/amix/bin/c1q3
+	@$(manifest_files)
+
+.PHONY: core1 check-core1 stage-core1 stage

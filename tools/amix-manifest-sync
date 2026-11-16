@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""amix-manifest-sync COMPONENT [-n]: make the manifest's `file` lines match
+build/stage (files and links, as amix-p5m sees them). Every other line stays
+where it is; a path keeps the words it had (devel...). Prints what changes;
+-n only prints. A listed directory of the stage stays one line and covers
+everything under it. Use it only when the stage is right and the list is behind:
+look at the diff it prints before committing."""
+import argparse
+import glob
+import os
+import sys
+
+
+def stage_paths(stage):
+    out = []
+    for top, dirs, files in os.walk(stage):
+        rel = os.path.relpath(top, stage)
+        for d in list(dirs):
+            if os.path.islink(os.path.join(top, d)):
+                dirs.remove(d)
+                files.append(d)
+        for f in files:
+            out.append("/" + os.path.normpath(os.path.join(rel, f)))
+    return sorted(out)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("component")
+    ap.add_argument("-n", action="store_true", help="only show the changes")
+    a = ap.parse_args()
+    comp = a.component.rstrip("/")
+    mans = glob.glob(os.path.join(comp, "*.manifest"))
+    if len(mans) != 1:
+        sys.exit("%s: one *.manifest expected" % comp)
+    stage = os.path.join(comp, "build", "stage")
+    if not os.path.isdir(stage):
+        sys.exit("%s: no build/stage (make stage first)" % comp)
+    with open(mans[0]) as f:
+        lines = f.read().splitlines()
+    words = {}
+    first = None
+    keep = []
+    for i, line in enumerate(lines):
+        w = line.split()
+        if w and w[0] == "file":
+            words[w[1]] = w[2:]
+            if first is None:
+                first = len(keep)
+            continue
+        keep.append(line)
+    # a listed directory of the stage covers everything under it (amix-p5m)
+    trees = [p.rstrip("/") + "/" for p in words
+             if os.path.isdir(os.path.join(stage, p.lstrip("/"))) and
+             not os.path.islink(os.path.join(stage, p.lstrip("/")))]
+    have = [p for p in stage_paths(stage) if not any(p.startswith(t) for t in trees)]
+    have = sorted(have + [t.rstrip("/") for t in trees])
+    gone = sorted(set(words) - set(have))
+    new = sorted(set(have) - set(words))
+    for p in gone:
+        print("- " + p)
+    for p in new:
+        print("+ " + p)
+    if a.n or not (gone or new):
+        print("%s: %d removed, %d added%s" % (mans[0], len(gone), len(new),
+                                              " (not written)" if a.n else ""))
+        return
+    block = ["file     %s%s" % (p, "".join(" " + x for x in words.get(p, []))) for p in have]
+    if first is None:
+        first = len(keep)
+    out = keep[:first] + block + keep[first:]
+    tmp = mans[0] + ".part"
+    with open(tmp, "w") as f:
+        f.write("\n".join(out) + "\n")
+    os.replace(tmp, mans[0])
+    print("%s: %d removed, %d added" % (mans[0], len(gone), len(new)))
+
+
+if __name__ == "__main__":
+    main()
