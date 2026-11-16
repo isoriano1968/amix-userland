@@ -312,13 +312,56 @@ class Picasso(Base):
 
     def test_kernel_action_and_pvmk_entries(self):
         pl = plan.make_plan(self.cfg(), self.paths())
-        self.assertIn("kernel-rtgfb", [a.id for a in pl.actions])
+        self.assertIn("kernel", [a.id for a in pl.actions])
         conf = plan.pvmk_conf(self.cfg())
         self.assertIn("entry=AMIX,UNIX_Root:/stand/unix,native", conf)
         self.assertIn("entry=AMIX stock,UNIX_Root:/stand/unix.stock,native", conf)
         self.assertNotIn("unix.stock", plan.pvmk_conf(self.cfg(gfx="chipset")))
-        self.assertNotIn("kernel-rtgfb",
+        self.assertNotIn("kernel",
                          [a.id for a in plan.make_plan(self.cfg(gfx="chipset"), self.paths()).actions])
+
+
+class Cards(Base):
+    """HydraNet, ZZ9000, VA2000: offered, their drivers linked into the kernel
+    here; a missing kit is named, never skipped silently."""
+
+    def cfg(self, **sel):
+        base = {"mach": "a3000", "accel": "none", "kern": "stock", "boot": "pvmk"}
+        base.update(sel)
+        return Base.cfg(self, **base)
+
+    def test_choices(self):
+        c = self.cfg(gfx="zz9000", net="nethydra", desk="cde")
+        self.assertEqual((c.sel["gfx"], c.sel["net"], c.sel["desk"]), ("zz9000", "nethydra", "cde"))
+        # FS-UAE has neither card; the ZZ9000 kit is for the stock kernel line
+        self.assertNotEqual(self.cfg(mach="uae", gfx="zz9000").sel["gfx"], "zz9000")
+        self.assertNotEqual(self.cfg(mach="uae", net="nethydra").sel["net"], "nethydra")
+        # the VA2000 driver exists for the 040/060 kernel only, and X has no
+        # va2000 driver yet: no X desktop with it
+        v = self.cfg(accel="mercury", kern="k040", gfx="va2000", desk="cde")
+        self.assertEqual(v.sel["gfx"], "va2000")
+        self.assertNotIn(v.sel["desk"], ("cde", "mwm"))
+        self.assertNotEqual(self.cfg(gfx="va2000").sel["gfx"], "va2000")
+
+    def test_kernel_drivers(self):
+        self.assertEqual(plan.kernel_drivers({"gfx": "zz9000", "net": "nethydra"}),
+                         ["zz9000", "hydra"])
+        self.assertEqual(plan.kernel_drivers({"gfx": "chipset", "net": "net2065"}), [])
+        a = plan.DriverKernel(self.src, ["zz9000", "hydra"])
+        self.assertEqual(a.name, "unix.zz9000+hydra")
+        self.assertIn("/dev/zz9000 (major 49), /dev/hya0 (major 47)", a.detail)
+        old = {k: os.environ.pop(k, None) for k in ("AMIX_ZZ9000_KIT", "AMIX_HYDRA_KIT")}
+        try:
+            from amix_installer import kernel
+            if not (kernel.find_kit("zz9000") or kernel.find_kit("hydra")):
+                self.assertIn("no kernel kit for ZZ9000 and HydraNet", a.missing)
+                self.assertIn("developer/amix/zz9000-kit", a.missing)
+        finally:
+            for k, v in old.items():
+                if v:
+                    os.environ[k] = v
+        a = plan.DriverKernel(self.src, ["va2000"], kern="k040")
+        self.assertIn("stock 68030 kernel only", a.missing)
 
 
 class PatchLevel(Base):
@@ -342,5 +385,5 @@ class PatchLevel(Base):
     def test_picasso_kernel_needs_the_patched_core(self):
         c = self.cfg(mach="uae", accel="none", kern="stock", boot="pvmk", gfx="picasso2")
         c.source.patch = None
-        a = plan.RtgfbKernel(self.src, patch_missing=True)
+        a = plan.DriverKernel(self.src, ["rtgfb"], patch_missing=True)
         self.assertIn("Patch Disk 1-2a", a.missing)

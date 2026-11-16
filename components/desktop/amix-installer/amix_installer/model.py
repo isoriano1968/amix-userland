@@ -116,6 +116,11 @@ STEPS = [
                 "AMIX has", needs=("none", "gvp", "a2630", "a2620", "mercury", "uae")),
               O("netzen", "Z3660 Ethernet",
                 "Only once a kernel from this installer runs", needs=("z3660",)),
+              # Zorro II, DP8390: the hydra driver is linked into the kernel here;
+              # FS-UAE has no Hydra, so the install itself runs there over its A2065
+              O("nethydra", "HydraNet",
+                "Hydra Systems AmigaNet (Zorro II). Only once a kernel from this installer "
+                "runs: its driver is linked into your kernel", needs=("a3000", "a2500")),
               O("nonet", "None", "Install from HDF files prepared in FS-UAE")]),
           G("keymap", "Keyboard", radio=True, options=[
               O("us", "US", "Amiga keyboard with the US layout"),
@@ -169,6 +174,13 @@ STEPS = [
              O("picasso2", "Picasso II", "Cirrus 8-bit RTG, 640\u00d7480 to 1024\u00d7768; FS-UAE "
                "emulates it. The stock kernel gets /dev/rtgfb, relinked from your own",
                needs=(("uae", "a3000", "a2500"), ("stock",), ("pvmk",)), mb=2),
+             # Zorro II product 3 (AMIX has no Zorro III): /dev/zz9000, major 49
+             O("zz9000", "ZZ9000", "MNT ZZ9000 RTG, 16-bit, tested at 1920\u00d7800; its driver "
+               "is linked into your kernel", needs=(("a3000", "a2500"), ("stock",)), mb=2),
+             # the driver exists for the 68040/060 kernel line only, and X has no
+             # va2000 card driver yet: the console and OPEN LOOK until it has
+             O("va2000", "VA2000", "MNT VA2000 RTG on the 68040/060 kernel; X support "
+               "comes later", needs=(("a3000", "a2500"), ("k040",)), mb=1),
              O("chipset", "Amiga chipset", "No graphics card: the console and OPEN LOOK")]),
           G("drv", "Hardware", options=[
              O("zen", "Z3660 Ethernet", "zen0 with interrupt-driven receive", needs=("z3660",), mb=1),
@@ -185,9 +197,11 @@ STEPS = [
          "X11R6.3 with Motif comes with every desktop choice except OPEN LOOK and the console.",
          [G("desk", "Desktop", radio=True, options=[
              O("cde", "CDE", "Front panel, file manager, terminal, App Manager",
-               badge="recommended", mb=140, probe=("/usr/dt/bin/dtwm",), needs=("rtg", "picasso2")),
+               badge="recommended", mb=140, probe=("/usr/dt/bin/dtwm",),
+               needs=("rtg", "picasso2", "zz9000")),
              O("mwm", "Motif window manager", "mwm only, light and quick", mb=45,
-               probe=("/opt/motif/bin/mwm", "/usr/motif/bin/mwm"), needs=("rtg", "picasso2")),
+               probe=("/opt/motif/bin/mwm", "/usr/motif/bin/mwm"),
+               needs=("rtg", "picasso2", "zz9000")),
              O("ol", "OPEN LOOK", "AMIX’s own desktop, as shipped"),
              O("console", "Console only", "No X server")]),
           G("apps", "Applications", options=[
@@ -224,6 +238,9 @@ STEPS = [
 
 # readable names of tags, for "needs ..." tooltips
 TAG_NAMES = {"060": "a 68060 card", "x11": "an X11 desktop"}
+
+# radio groups whose fallback is "no card", not the first card that fits
+FALLBACK = {"gfx": "chipset"}
 
 DEFAULT_SEL = {"src": "hdf", "target": "sd", "mach": "a3000", "accel": "z3660", "cpu": "m020",
                "layout": "split", "dsize": "d2g", "kern": "z3opt", "boot": "pvmk", "gfx": "rtg",
@@ -339,7 +356,11 @@ class Config(object):
                 cur = g.option(self.sel.get(g.id))
                 if cur is not None and self.available(cur):
                     continue
-                pick = next((o for o in g.options if self.available(o)), None)
+                # a card the machine may not have is never picked for the user:
+                # those groups fall back to their "none" choice first
+                safe = g.option(FALLBACK.get(g.id))
+                pick = safe if safe is not None and self.available(safe) else \
+                    next((o for o in g.options if self.available(o)), None)
                 if pick is not None and self.sel.get(g.id) != pick.id:
                     self.sel[g.id] = pick.id
                     changed.append(g.id)

@@ -255,7 +255,7 @@ def pvmk_conf(cfg, template=None):
         out.append(ln)
     if not entry_done:
         out.append("entry=AMIX,UNIX_Root:/stand/unix,native")
-    if cfg.sel.get("gfx") == "picasso2":
+    if kernel_drivers(cfg.sel):
         # the relinked kernel replaces /stand/unix; the stock one stays a choice
         i = out.index("entry=AMIX,UNIX_Root:/stand/unix,native")
         out.insert(i + 1, "entry=AMIX stock,UNIX_Root:/stand/unix.stock,native")
@@ -479,28 +479,66 @@ class DataDisk(Action):
         finish(ctx, self.name)
 
 
-class RtgfbKernel(Action):
-    """The user's own stock kernel with /dev/rtgfb linked in (kernel.py): for
-    a 68030 with a Picasso II.  AMIX installs it over the network, last."""
+# the installer's choices -> the kernel drivers linked in (kernel.DRIVERS)
+GFX_DRIVER = {"picasso2": "rtgfb", "zz9000": "zz9000", "va2000": "va2000"}
+NET_DRIVER = {"nethydra": "hydra"}
 
-    def __init__(self, src, patch_missing=False):
+
+def kernel_drivers(sel):
+    """The driver ids the chosen cards need in the kernel, graphics first."""
+    out = []
+    if sel.get("gfx") in GFX_DRIVER:
+        out.append(GFX_DRIVER[sel["gfx"]])
+    if sel.get("net") in NET_DRIVER:
+        out.append(NET_DRIVER[sel["net"]])
+    return out
+
+
+class DriverKernel(Action):
+    """The user's own stock kernel with the chosen cards' drivers linked in
+    (kernel.py), here, before anything goes to the Amiga.  AMIX installs it
+    over the network, last; the stock kernel stays as /stand/unix.stock."""
+
+    def __init__(self, src, ids, kern="stock", patch_missing=False):
         from . import kernel
-        kit, ld = kernel.find_kit(), kernel.find_ld()
+        drvs = [kernel.DRIVERS[i] for i in ids]
+        kits = dict((d.id, kernel.find_kit(d)) for d in drvs)
+        ld = kernel.find_ld()
         why = None
-        if patch_missing:
+        cards = " and ".join(d.card for d in drvs)
+        if kern != "stock":
+            why = "%s: the installer links drivers into the stock 68030 kernel only; " \
+                  "the %s kernel line is not built here yet" % (cards, kern)
+        elif [d for d in drvs if "030" not in d.lines]:
+            d = [d for d in drvs if "030" not in d.lines][0]
+            why = "the %s driver exists for the %s kernel only" % (d.card, "/".join(d.lines))
+        elif patch_missing:
             # the patch disk rebuilds /stand/unix: link into the patched one
             why = "the core disk lacks Patch Disk 1-2a: apply it, then run the installer again"
-        elif not kit:
-            why = "the rtgfb kernel kit is not installed (package developer/amix/rtgfb-kit)"
+        elif [d for d in drvs if not kits[d.id]]:
+            gone = [d for d in drvs if not kits[d.id]]
+            why = "no kernel kit for %s yet (package %s)" % (
+                " and ".join(d.card for d in gone), ", ".join(d.package for d in gone))
         elif not ld:
             why = "the AMIX cross linker %s is not installed (developer/amix/gcc-27)" \
                 % kernel.LINKERS[0]
-        super(RtgfbKernel, self).__init__(
-            "kernel-rtgfb", "Link the Picasso II driver into your kernel",
-            "%s: your /stand/unix plus /dev/rtgfb (major 54); the stock kernel stays as "
-            "/stand/unix.stock" % kernel.NAME, 2 << 20, [kernel.NAME], why)
+        elif [k for k in kits.values() if (kernel.kit_info(k) or {}).get("init")]:
+            # boot routines: the installer's stub, assembled and hooked once
+            if not kernel.find_as():
+                why = "the AMIX cross assembler %s is not installed (developer/amix/gcc-27)" \
+                    % kernel.ASSEMBLERS[0]
+            elif not kernel.find_io_init_patch(list(kits.values())):
+                why = "%s is not installed (developer/amix/kernel-kit-tools)" \
+                    % kernel.IO_INIT_PATCH
+        self.name = kernel.kernel_name(ids)
+        nodes = ", ".join("/dev/%s (major %d)" % (d.node, d.major) for d in drvs)
+        super(DriverKernel, self).__init__(
+            "kernel", "Link the %s driver%s into your kernel" % (cards, "s" if len(drvs) > 1 else ""),
+            "%s: your /stand/unix plus %s; the stock kernel stays as /stand/unix.stock"
+            % (self.name, nodes), 2 << 20, [self.name], why)
         self.src = src
-        self.kit, self.ld = kit, ld
+        self.ids = ids
+        self.kits, self.ld = kits, ld
 
     def run(self, ctx):
         from . import kernel
@@ -515,10 +553,10 @@ class RtgfbKernel(Action):
             raise IOError("the core disk has no /stand/unix")
         ctx.progress(0.4, "linking")
         try:
-            kernel.relink_rtgfb(base, ctx.part(kernel.NAME), self.kit, self.ld, ctx.log)
+            kernel.relink(base, ctx.part(self.name), self.ids, self.kits, self.ld, ctx.log)
         except kernel.KernelError as e:
-            raise IOError("the Picasso II kernel: %s" % e)
-        finish(ctx, kernel.NAME)
+            raise IOError("the kernel with %s: %s" % (", ".join(self.ids), e))
+        finish(ctx, self.name)
 
 
 class FsUaeConfig(Action):
@@ -688,8 +726,14 @@ def make_plan(cfg, paths, fs=None, written=False):
                 pl.problems.append("pvmk not found (package developer/amix/pvmk): "
                                    "%s cannot be written; choose the stock boot, install "
                                    "developer/amix/pvmk or set AMIX_PVMK_DIR" % names["pvmk"])
-    if sel.get("gfx") == "picasso2":
-        pl.actions.append(RtgfbKernel(src, cfg.source is not None and not cfg.source.patch))
+    ids = kernel_drivers(sel)
+    if ids:
+        dk = DriverKernel(src, ids, sel.get("kern", "stock"),
+                          cfg.source is not None and not cfg.source.patch)
+        pl.actions.append(dk)
+        if dk.missing:
+            # never a system whose chosen card has no driver in its kernel
+            pl.problems.append("the kernel for your cards cannot be made: %s" % dk.missing)
     if "data" in names:
         pl.actions.append(DataDisk(src, names["data"], model.DATA_DISK_MB[sel["dsize"]] << 20))
     kick = paths.get("kickstart")
@@ -718,8 +762,13 @@ def make_plan(cfg, paths, fs=None, written=False):
                     pkgs.append(o.title)
     if pkgs:
         inside.append("installs %d packages (%s)" % (len(pkgs), ", ".join(pkgs)))
-    if sel.get("gfx") == "picasso2":
-        inside.append("installs the Picasso II kernel, /dev/rtgfb and the X card setting")
+    if kernel_drivers(sel):
+        from . import kernel
+        ids = kernel_drivers(sel)
+        inside.append("installs the kernel with the %s driver%s, %s and the card setting"
+                      % (" and ".join(kernel.DRIVERS[i].card for i in ids),
+                         "s" if len(ids) > 1 else "",
+                         "their device nodes" if len(ids) > 1 else "its device node"))
     if sel["kern"] != "stock":
         inside.append("installs the %s kernel last, the stock kernel kept as a fallback"
                       % model.find_group("kern").option(sel["kern"]).title)

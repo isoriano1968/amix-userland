@@ -221,11 +221,11 @@ def hdf_movable():
 
 
 def plan_kernel(pl):
-    """The kernel a plan wrote for AMIX to install (the Picasso II one), or None."""
-    from . import kernel
-    if not [a for a in pl.actions if a.id == "kernel-rtgfb" and a.available]:
+    """The kernel a plan linked for AMIX to install (the cards' drivers), or None."""
+    a = next((a for a in pl.actions if a.id == "kernel" and a.available), None)
+    if a is None:
         return None
-    p = os.path.join(pl.paths["out_dir"], kernel.NAME)
+    p = os.path.join(pl.paths["out_dir"], a.name)
     return p if os.path.isfile(p) else None
 
 
@@ -243,7 +243,14 @@ def sysv_sum(data):
 
 # the X card driver for /etc/X11/amix-card, by the installer's graphics card
 # (the Z3660's becomes "z3660" when its card driver is split from zz9000)
-X_CARD = {"picasso2": "cirrus", "rtg": "zz9000"}
+X_CARD = {"picasso2": "cirrus", "rtg": "zz9000", "zz9000": "zz9000"}
+# a HydraNet comes up as AMIX's aen0 does in /etc/inet/network-config: plumbed
+# when the board answers, with the host name's address
+HYDRA_NETCONFIG = """
+# Hydra Systems AmigaNet (written by the AMIX Installer)
+/usr/sbin/slink addaen /dev/hya0 hya0 2>/dev/null &&
+	/usr/sbin/ifconfig hya0 `uname -n` up -trailers
+"""
 # the X server, under every X desktop
 X_SERVER = "x11/xserver-amix"
 
@@ -488,25 +495,7 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
         lines += ["", "[ -d /etc/X11 ] || /usr/bin/mkdir /etc/X11 || fail 'mkdir /etc/X11'",
                   "echo %s > /etc/X11/amix-card || fail 'writing /etc/X11/amix-card'" % card,
                   "report 'X card driver: %s (/etc/X11/amix-card)'" % card]
-    if kernel and cfg.sel.get("gfx") == "picasso2":
-        size, ksum = kernel
-        lines += ["",
-                  "step 7 \"the kernel with /dev/rtgfb (major 54)\"",
-                  "$PKG http get $W/kernel /stand/unix.new >>$LOG 2>&1 || fail 'fetching the kernel'",
-                  "set -- `/usr/bin/sum /stand/unix.new`",
-                  "[ \"$1\" = %d ] && [ `/usr/bin/wc -c </stand/unix.new` -eq %d ] || "
-                  "{ /usr/bin/rm -f /stand/unix.new; fail 'the kernel arrived damaged'; }"
-                  % (ksum, size),
-                  "# the stock kernel stays, for pvmk's \"AMIX stock\" entry",
-                  "[ -f /stand/unix.stock ] || /usr/bin/cp /stand/unix /stand/unix.stock || "
-                  "fail 'keeping the stock kernel'",
-                  "/usr/bin/mv /stand/unix.new /stand/unix || fail 'installing the kernel'",
-                  "[ -c /dev/rtgfb ] || /usr/sbin/mknod /dev/rtgfb c 54 0 || fail 'mknod /dev/rtgfb'",
-                  "/usr/bin/chmod 666 /dev/rtgfb",
-                  "report 'the new kernel starts at the next boot; pvmk lists the old one as AMIX stock'",
-                  "REBOOT=yes"]
-    elif cfg.sel.get("gfx") == "picasso2":
-        lines += ["", "report 'no kernel with /dev/rtgfb was made: X cannot reach the card yet'"]
+    lines += kernel_lines(cfg, kernel)
     lines += unboot_lines()
     lines += ["",
               "step 8 \"removing the bootstrap\"",
@@ -517,6 +506,48 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
               "report DONE",
               ""]
     return "\n".join(lines)
+
+
+def kernel_lines(cfg, kernel_file):
+    """Step 7: the kernel linked here with the cards' drivers (kernel_file =
+    (size, sysv sum) or None), its device nodes, a HydraNet's network line."""
+    from . import kernel as kmod
+    from .plan import kernel_drivers
+    ids = kernel_drivers(cfg.sel)
+    if not ids:
+        return []
+    drvs = [kmod.DRIVERS[i] for i in ids]
+    cards = " and ".join(d.card for d in drvs)
+    if not kernel_file:
+        return ["", "report 'no kernel with the %s driver was made: the card stays unused'"
+                % cards]
+    size, ksum = kernel_file
+    nodes = ", ".join("/dev/%s (major %d)" % (d.node, d.major) for d in drvs)
+    lines = ["",
+             "step 7 \"the kernel with %s\"" % nodes,
+             "$PKG http get $W/kernel /stand/unix.new >>$LOG 2>&1 || fail 'fetching the kernel'",
+             "set -- `/usr/bin/sum /stand/unix.new`",
+             "[ \"$1\" = %d ] && [ `/usr/bin/wc -c </stand/unix.new` -eq %d ] || "
+             "{ /usr/bin/rm -f /stand/unix.new; fail 'the kernel arrived damaged'; }"
+             % (ksum, size),
+             "# the stock kernel stays, for pvmk's \"AMIX stock\" entry",
+             "[ -f /stand/unix.stock ] || /usr/bin/cp /stand/unix /stand/unix.stock || "
+             "fail 'keeping the stock kernel'",
+             "/usr/bin/mv /stand/unix.new /stand/unix || fail 'installing the kernel'"]
+    for d in drvs:
+        lines += ["[ -c /dev/%s ] || /usr/sbin/mknod /dev/%s c %d 0 || fail 'mknod /dev/%s'"
+                  % (d.node, d.node, d.major, d.node),
+                  "/usr/bin/chmod %s /dev/%s" % ("666" if d.kind == "graphics" else "600", d.node)]
+    if "hydra" in ids:
+        N = "/etc/inet/network-config"
+        lines += ["if /usr/bin/grep hya0 %s >/dev/null; then report 'hya0 is in %s already'; else"
+                  % (N, N),
+                  "  /usr/bin/cat >> %s <<'EOF'%sEOF" % (N, HYDRA_NETCONFIG),
+                  "  report 'hya0 added to %s (the address of `uname -n`)'" % N,
+                  "fi"]
+    lines += ["report 'the new kernel starts at the next boot; pvmk lists the old one as AMIX stock'",
+              "REBOOT=yes"]
+    return lines
 
 
 def unboot_lines():

@@ -245,12 +245,23 @@ class Picasso(unittest.TestCase):
         self.assertLess(t.index("step 7"), t.index("step 8"))
         no = netinstall.steps_script(self.cfg(), "10.0.2.2")
         self.assertNotIn("/stand/unix.new", no)
-        self.assertIn("no kernel with /dev/rtgfb", no)
+        self.assertIn("no kernel with the Picasso II driver", no)
         self.assertEqual(netinstall.packages_for(self.cfg())[0][0], "x11/xserver-amix")
         z = netinstall.steps_script(model.Config(sel={"desk": "cde"}), "10.0.2.2")
         self.assertIn("echo zz9000 > /etc/X11/amix-card", z)
         self.assertNotIn("/stand/unix.new", z)
         self.assertNotIn("amix-card", netinstall.steps_script(self.cfg(desk="console"), "10.0.2.2"))
+
+    def test_steps_hydra_and_zz9000(self):
+        c = model.Config(sel={"mach": "a3000", "accel": "none", "kern": "stock", "boot": "pvmk",
+                              "gfx": "zz9000", "net": "nethydra", "desk": "cde"})
+        t = netinstall.steps_script(c, "10.0.2.2", kernel=(1490000, 777))
+        Scripts.sh_ok(self, t)
+        self.assertIn("/usr/sbin/mknod /dev/zz9000 c 49 0", t)
+        self.assertIn("/usr/sbin/mknod /dev/hya0 c 47 0", t)
+        self.assertIn("echo zz9000 > /etc/X11/amix-card", t)
+        self.assertIn("/usr/sbin/slink addaen /dev/hya0 hya0 2>/dev/null &&", t)
+        self.assertIn("ifconfig hya0 `uname -n` up -trailers", t)
 
     def test_sysv_sum(self):
         data = os.urandom(70000)
