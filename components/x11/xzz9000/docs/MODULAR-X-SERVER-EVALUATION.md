@@ -130,7 +130,44 @@ VA2000 comes up. Major numbers: zz9000 49,
 random 48, paula 53, va2000 68 (asokero's): check 68 against our kernel's
 table before import.
 
-## 6. Packaging and the installer
+## 5a. Capabilities come from the kernel driver (user, 2026-11-16)
+
+"It makes perfectly sense for our X drivers that those capabilities are being
+propagated so we know if console redirects work before even trying them on a
+card that does not have that feature."
+
+Every RTG kernel driver (zz9000, rtgfb, later va2000) answers one common
+ioctl from a shared header `rtgcaps.h` in amix-gate `io/`:
+
+```c
+#define RTGIOC_GETCAPS   (('R'<<8)|1)   /* same number in every RTG driver */
+struct rtg_caps {
+    unsigned short version, size;        /* struct grows at the end only */
+    char           board[24];            /* "Z3660 RTG", "ZZ9000", "Picasso II" */
+    unsigned long  caps;                 /* RTGCAP_* below */
+    unsigned long  depths;               /* bit n = depth n available (8, 16, 24) */
+    unsigned long  fb_size, max_width, max_height;
+};
+RTGCAP_CONSOLE_REDIRECT  /* kernel console can be drawn on the card */
+RTGCAP_MONITOR_SWITCH    /* Amiga/RTG switch */
+RTGCAP_BLIT_FILL, RTGCAP_BLIT_COPY, RTGCAP_BLIT_PATTERN  /* in the kernel or card */
+RTGCAP_HW_CURSOR, RTGCAP_CLUT, RTGCAP_SOFT3D, RTGCAP_MODE_LIST, RTGCAP_REFRESH
+```
+
+- The X core asks it once in `rtgProbe` and sets the card's caps from it
+  (intersected with what the X card code implements); RandR, the depth
+  choice, the cursor and extensions use only what both sides have.
+- Tools and rc scripts ask before acting: `S99zz9000` and `zz9k_test
+  redirect` switch the console only if `RTGCAP_CONSOLE_REDIRECT` is set and
+  say nothing otherwise; a console tool on a Picasso II says "this card has
+  no console redirect" instead of failing an ioctl.
+- A small `rtginfo` command prints the board and its capabilities (for
+  people, the installer and bug reports).
+- zz9000: the caps depend on the board (Z3660: 16 bit only, soft3D; ZZ9000:
+  8/16/24, no soft3D); rtgfb: per board table (Picasso II: monitor switch,
+  CLUT, depth 8, blitter in the card, no console redirect yet).
+- Old kernels without the ioctl: the X core falls back to the card's static
+  caps, as today.
 
 - `x11/xserver-amix` (core server, RandR, SHM, input), and one package per
   card: `x11/driver/rtg-zz9000` (ZZ9000 + Z3660), `rtg-va2000`, `rtg-cirrus`,
