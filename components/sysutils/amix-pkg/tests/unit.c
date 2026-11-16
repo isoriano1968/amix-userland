@@ -33,6 +33,27 @@ hashes(void)
 	CHECK(!strcmp(h, "3928e184fb8690f840da3988121d31be65cb9d3ef83ee6146feac861e19b563a"));
 	sha512_256_hex("", 0, h);
 	CHECK(!strcmp(h, "c672b8d1ef56ed28ab87c3622c5114069bdd3ad7b8f9737498d0c01ecef0967a"));
+	/* in pieces of odd sizes, across block edges: the same as at once */
+	{
+		struct hash x;
+		size_t at, step;
+		char one[65];
+
+		memset(big, 'a', 1000000);
+		for (step = 1; step < 300; step += 37) {
+			hash_init(&x, HASH_SHA1);
+			for (at = 0; at < 1000000; at += step)
+				hash_update(&x, big + at, at + step > 1000000 ? 1000000 - at : step);
+			hash_final(&x, h);
+			CHECK(!strcmp(h, "34aa973cd4c4daa4f61eeb2bdbad27316534016f"));
+			hash_init(&x, HASH_SHA512_256);
+			for (at = 0; at < 100003; at += step)
+				hash_update(&x, big + at, at + step > 100003 ? 100003 - at : step);
+			hash_final(&x, h);
+			sha512_256_hex(big, 100003, one);
+			CHECK(!strcmp(h, one));
+		}
+	}
 	free(big);
 }
 

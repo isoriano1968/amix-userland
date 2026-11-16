@@ -1,5 +1,7 @@
 /* fetch.c -- files from a repository origin (http.c, or a folder); gzip payloads */
 #include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -7,19 +9,26 @@
 
 #include "pkg.h"
 
-/* relpath is below the repository root: publisher/amix/catalog/catalog.attrs */
+static int
+to_buf(const void *p, size_t n, void *arg)
+{
+	buf_add(arg, p, n);
+	return 0;
+}
+
+/*
+ * relpath is below the repository root (publisher/amix/catalog/catalog.attrs):
+ * its bytes to sink, in pieces. 0, or -1 with errno.
+ */
 int
-fetch(const char *origin, const char *relpath, struct buf *out)
+fetch_stream(const char *origin, const char *relpath, http_sink sink, void *arg)
 {
 	const char *path = origin;
 	char *full;
-	int r;
 
-	buf_add(out, "", 0);
 	if (!strncmp(origin, "http://", 7)) {
 		size_t l = strlen(origin);
 		int status;
-
 		struct buf q = { 0 };
 		const char *p;
 
@@ -34,7 +43,7 @@ fetch(const char *origin, const char *relpath, struct buf *out)
 		buf_add(&q, "", 1);
 		full = xasprintf("%s%s%s", origin, l && origin[l - 1] == '/' ? "" : "/", q.data);
 		buf_free(&q);
-		status = http_request("GET", full, NULL, 0, out);
+		status = http_stream("GET", full, NULL, 0, sink, arg);
 		if (status != 200) {
 			if (status > 0 && verbose)
 				warnx("%s: HTTP %d", full, status);
@@ -55,9 +64,41 @@ fetch(const char *origin, const char *relpath, struct buf *out)
 	if (!strncmp(origin, "file://", 7))
 		path = origin + 7;
 	full = root_path(path, relpath);
-	r = read_file(full, out);
-	free(full);
-	return r;
+	{
+		char tmp[16384];
+		ssize_t n;
+		int fd = open(full, O_RDONLY), r = 0;
+
+		free(full);
+		if (fd < 0)
+			return -1;
+		while (r == 0 && (n = read(fd, tmp, sizeof(tmp))) != 0) {
+			if (n < 0) {
+				r = -1;
+				break;
+			}
+			if (sink(tmp, (size_t)n, arg) < 0)
+				r = -1;
+		}
+		if (r < 0) {
+			int e = errno;
+
+			close(fd);
+			errno = e;
+			return -1;
+		}
+		close(fd);
+	}
+	return 0;
+}
+
+/* the same, the whole file into out */
+int
+fetch(const char *origin, const char *relpath, struct buf *out)
+{
+	buf_add(out, "", 0);
+	out->len = 0;
+	return fetch_stream(origin, relpath, to_buf, out);
 }
 
 int

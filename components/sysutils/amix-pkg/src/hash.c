@@ -1,6 +1,9 @@
 /* hash.c -- SHA-1 (file names, catalog signatures) and SHA-512/256
  * (pkg.content-hash), FIPS 180-4, without OpenSSL. */
+#include <errno.h>
+#include <fcntl.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "pkg.h"
 
@@ -55,32 +58,36 @@ sha1_block(uint32_t h[5], const uint8_t *p)
 	h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e;
 }
 
-void
-sha1_hex(const void *data, size_t n, char out[41])
-{
-	uint32_t h[5] = { 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0 };
-	const uint8_t *p = data;
-	uint8_t last[128], d[20];
-	size_t rest, i, nb;
-	uint64_t bits = (uint64_t)n * 8;
+/* --- one interface for both: hash_init, hash_update, hash_final ---------- */
 
-	for (; n >= 64; p += 64, n -= 64)
-		sha1_block(h, p);
-	rest = n;
-	memset(last, 0, sizeof(last));
-	memcpy(last, p, rest);
-	last[rest] = 0x80;
-	nb = rest + 9 > 64 ? 128 : 64;
+static void
+sha1_init(struct hash *x)
+{
+	static const uint32_t iv[5] = { 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0 };
+
+	memcpy(x->h1, iv, sizeof(iv));
+}
+
+static void
+sha1_final(struct hash *x, char out[41])
+{
+	uint8_t d[20];
+	uint64_t bits = x->total * 8;
+	size_t i, nb;
+
+	x->blk[x->fill] = 0x80;
+	memset(x->blk + x->fill + 1, 0, sizeof(x->blk) - x->fill - 1);
+	nb = x->fill + 9 > 64 ? 128 : 64;
 	for (i = 0; i < 8; i++)
-		last[nb - 1 - i] = (uint8_t)(bits >> (8 * i));
-	sha1_block(h, last);
+		x->blk[nb - 1 - i] = (uint8_t)(bits >> (8 * i));
+	sha1_block(x->h1, x->blk);
 	if (nb == 128)
-		sha1_block(h, last + 64);
+		sha1_block(x->h1, x->blk + 64);
 	for (i = 0; i < 5; i++) {
-		d[4 * i] = (uint8_t)(h[i] >> 24);
-		d[4 * i + 1] = (uint8_t)(h[i] >> 16);
-		d[4 * i + 2] = (uint8_t)(h[i] >> 8);
-		d[4 * i + 3] = (uint8_t)h[i];
+		d[4 * i] = (uint8_t)(x->h1[i] >> 24);
+		d[4 * i + 1] = (uint8_t)(x->h1[i] >> 16);
+		d[4 * i + 2] = (uint8_t)(x->h1[i] >> 8);
+		d[4 * i + 3] = (uint8_t)x->h1[i];
 	}
 	hex(d, 20, out);
 }
@@ -139,33 +146,136 @@ sha512_block(uint64_t h[8], const uint8_t *p)
 	h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
 }
 
-void
-sha512_256_hex(const void *data, size_t n, char out[65])
+static void
+sha512_init(struct hash *x)
 {
 	/* the SHA-512/256 initial values (FIPS 180-4, 5.3.6.2) */
-	uint64_t h[8] = {
+	static const uint64_t iv[8] = {
 		0x22312194fc2bf72cULL, 0x9f555fa3c84c64c2ULL, 0x2393b86b6f53b151ULL,
 		0x963877195940eabdULL, 0x96283ee2a88effe3ULL, 0xbe5e1e2553863992ULL,
 		0x2b0199fc2c85b8aaULL, 0x0eb72ddc81c52ca2ULL,
 	};
-	const uint8_t *p = data;
-	uint8_t last[256], d[32];
-	size_t rest, i, nb;
-	uint64_t bits = (uint64_t)n * 8;
 
-	for (; n >= 128; p += 128, n -= 128)
-		sha512_block(h, p);
-	rest = n;
+	memcpy(x->h5, iv, sizeof(iv));
+}
+
+static void
+sha512_final(struct hash *x, char out[65])
+{
+	uint8_t last[256], d[32];
+	uint64_t bits = x->total * 8;
+	size_t i, nb;
+
 	memset(last, 0, sizeof(last));
-	memcpy(last, p, rest);
-	last[rest] = 0x80;
-	nb = rest + 17 > 128 ? 256 : 128;	/* 128-bit length; the high 64 bits stay 0 */
+	memcpy(last, x->blk, x->fill);
+	last[x->fill] = 0x80;
+	nb = x->fill + 17 > 128 ? 256 : 128;	/* 128-bit length; the high 64 bits stay 0 */
 	for (i = 0; i < 8; i++)
 		last[nb - 1 - i] = (uint8_t)(bits >> (8 * i));
-	sha512_block(h, last);
+	sha512_block(x->h5, last);
 	if (nb == 256)
-		sha512_block(h, last + 128);
+		sha512_block(x->h5, last + 128);
 	for (i = 0; i < 32; i++)
-		d[i] = (uint8_t)(h[i / 8] >> (56 - 8 * (i % 8)));
+		d[i] = (uint8_t)(x->h5[i / 8] >> (56 - 8 * (i % 8)));
 	hex(d, 32, out);
+}
+
+void
+hash_init(struct hash *x, int kind)
+{
+	memset(x, 0, sizeof(*x));
+	x->kind = kind;
+	if (kind == HASH_SHA1)
+		sha1_init(x);
+	else
+		sha512_init(x);
+}
+
+void
+hash_update(struct hash *x, const void *data, size_t n)
+{
+	const uint8_t *p = data;
+	size_t bs = x->kind == HASH_SHA1 ? 64 : 128;
+
+	x->total += n;
+	while (n) {
+		size_t take = bs - x->fill;
+
+		if (take > n)
+			take = n;
+		if (x->fill == 0 && n >= bs) {		/* whole blocks straight from p */
+			take = bs;
+			if (x->kind == HASH_SHA1)
+				sha1_block(x->h1, p);
+			else
+				sha512_block(x->h5, p);
+		} else {
+			memcpy(x->blk + x->fill, p, take);
+			x->fill += take;
+			if (x->fill == bs) {
+				if (x->kind == HASH_SHA1)
+					sha1_block(x->h1, x->blk);
+				else
+					sha512_block(x->h5, x->blk);
+				x->fill = 0;
+			}
+		}
+		p += take;
+		n -= take;
+	}
+}
+
+void
+hash_final(struct hash *x, char *out)
+{
+	if (x->kind == HASH_SHA1)
+		sha1_final(x, out);
+	else
+		sha512_final(x, out);
+}
+
+void
+sha1_hex(const void *data, size_t n, char out[41])
+{
+	struct hash x;
+
+	hash_init(&x, HASH_SHA1);
+	hash_update(&x, data, n);
+	hash_final(&x, out);
+}
+
+void
+sha512_256_hex(const void *data, size_t n, char out[65])
+{
+	struct hash x;
+
+	hash_init(&x, HASH_SHA512_256);
+	hash_update(&x, data, n);
+	hash_final(&x, out);
+}
+
+/* the hash of a file, read in pieces: 0, or -1 with errno */
+int
+hash_file(const char *path, int kind, char *out)
+{
+	struct hash x;
+	char tmp[16384];
+	ssize_t n;
+	int fd = open(path, O_RDONLY);
+
+	if (fd < 0)
+		return -1;
+	hash_init(&x, kind);
+	while ((n = read(fd, tmp, sizeof(tmp))) > 0)
+		hash_update(&x, tmp, (size_t)n);
+	if (n < 0) {
+		int e = errno;
+
+		close(fd);
+		errno = e;
+		return -1;
+	}
+	close(fd);
+	hash_final(&x, out);
+	return 0;
 }

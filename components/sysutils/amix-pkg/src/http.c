@@ -119,14 +119,20 @@ send_all(int s, const char *p, size_t n)
 	return 0;
 }
 
-/* one request; the whole response (status line, headers, body) into raw */
+#define HEAD_MAX	65536	/* status line and headers: no more */
+
+/*
+ * one request: the status line and headers into head (a C string, ending
+ * with the blank line), the body to sink in pieces as it comes; with
+ * drop_body (a redirect) the body is read and dropped. 0, or -1 with errno.
+ */
 static int
 exchange(const char *method, const char *host, int port, const char *path,
-    const void *body, size_t blen, struct buf *raw)
+    const void *body, size_t blen, struct buf *head, http_sink sink, void *arg)
 {
 	char tmp[8192];
 	char *req;
-	int s, r = 0;
+	int s, r = 0, in_body = 0;
 	void (*old)(int);
 
 	if ((s = dial(host, port)) < 0)
@@ -137,9 +143,11 @@ exchange(const char *method, const char *host, int port, const char *path,
 	if (send_all(s, req, strlen(req)) < 0 || (blen && send_all(s, body, blen) < 0))
 		r = -1;
 	free(req);
+	buf_add(head, "", 0);
 	old = signal(SIGALRM, on_alarm);
 	while (r == 0) {
 		ssize_t n;
+		const char *e;
 
 		alarm(TIMEOUT);
 		n = recv(s, tmp, sizeof(tmp), 0);
@@ -148,13 +156,36 @@ exchange(const char *method, const char *host, int port, const char *path,
 			if (errno == EINTR)
 				errno = ETIMEDOUT;
 			r = -1;
-		} else if (n == 0)
 			break;
-		else
-			buf_add(raw, tmp, (size_t)n);
+		}
+		if (n == 0)
+			break;
+		if (in_body) {
+			if (sink && sink(tmp, (size_t)n, arg) < 0)
+				r = -1;
+			continue;
+		}
+		buf_add(head, tmp, (size_t)n);
+		if ((e = strstr(head->data, "\r\n\r\n")) != NULL) {
+			size_t hl = (size_t)(e - head->data) + 4, rest = head->len - hl;
+
+			in_body = 1;
+			sink = (head->len >= 12 && head->data[9] == '3') ? NULL : sink;
+			if (rest && sink && sink(head->data + hl, rest, arg) < 0)
+				r = -1;
+			head->len = hl;
+			head->data[hl] = 0;
+		} else if (head->len > HEAD_MAX) {
+			errno = EPROTO;
+			r = -1;
+		}
 	}
 	signal(SIGALRM, old);
 	close(s);
+	if (r == 0 && !in_body) {
+		errno = EPROTO;		/* no blank line after the headers */
+		r = -1;
+	}
 	return r;
 }
 
@@ -190,22 +221,21 @@ header(const char *head, const char *name, char *val, size_t vlen)
 }
 
 /*
- * method GET or PUT on url; the body of the answer into out. Returns the HTTP
- * status (redirects followed), or -1 with errno when there was no answer.
+ * method GET or PUT on url; the body of the answer to sink, in pieces.
+ * Returns the HTTP status (redirects followed), or -1 with errno when there
+ * was no answer (or the sink failed).
  */
 int
-http_request(const char *method, const char *url, const void *body, size_t blen,
-    struct buf *out)
+http_stream(const char *method, const char *url, const void *body, size_t blen,
+    http_sink sink, void *arg)
 {
 	char host[256], loc[1024];
 	char *cur = xstrdup(url);
 	int hop, status = -1;
 
-	buf_add(out, "", 0);
 	for (hop = 0; hop <= REDIRECTS; hop++) {
-		struct buf raw = { 0 };
-		const char *path, *end;
-		char *head;
+		struct buf head = { 0 };
+		const char *path;
 		int port;
 
 		if (http_split(cur, host, sizeof(host), &port, &path) < 0) {
@@ -213,40 +243,48 @@ http_request(const char *method, const char *url, const void *body, size_t blen,
 			errno = EINVAL;
 			break;
 		}
-		if (exchange(method, host, port, path, body, blen, &raw) < 0) {
-			buf_free(&raw);
+		if (exchange(method, host, port, path, body, blen, &head, sink, arg) < 0) {
+			if (errno == EPROTO)
+				warnx("%s: not an HTTP answer", cur);
+			buf_free(&head);
 			break;
 		}
-		buf_add(&raw, "", 1);		/* NUL for the header scan */
-		raw.len--;
-		end = strstr(raw.data, "\r\n\r\n");
-		if (strncmp(raw.data, "HTTP/1.", 7) || !end || strlen(raw.data) < 12) {
+		if (strncmp(head.data, "HTTP/1.", 7) || head.len < 12) {
 			warnx("%s: not an HTTP answer", cur);
-			buf_free(&raw);
+			buf_free(&head);
 			errno = EPROTO;
 			break;
 		}
-		status = atoi(raw.data + 9);
-		head = xmalloc((size_t)(end - raw.data) + 3);
-		memcpy(head, raw.data, (size_t)(end - raw.data) + 2);
-		head[(end - raw.data) + 2] = 0;
+		status = atoi(head.data + 9);
 		if ((status == 301 || status == 302 || status == 303 || status == 307 ||
-		    status == 308) && header(head, "location", loc, sizeof(loc)) &&
+		    status == 308) && header(head.data, "location", loc, sizeof(loc)) &&
 		    !strncmp(loc, "http://", 7)) {
-			free(head);
-			buf_free(&raw);
+			buf_free(&head);
 			free(cur);
 			cur = xstrdup(loc);
 			status = -1;
 			continue;
 		}
-		free(head);
-		end += 4;
-		out->len = 0;
-		buf_add(out, end, raw.len - (size_t)(end - raw.data));
-		buf_free(&raw);
+		buf_free(&head);
 		break;
 	}
 	free(cur);
 	return status;
+}
+
+static int
+to_buf(const void *p, size_t n, void *arg)
+{
+	buf_add(arg, p, n);
+	return 0;
+}
+
+/* as http_stream, the body into out */
+int
+http_request(const char *method, const char *url, const void *body, size_t blen,
+    struct buf *out)
+{
+	buf_add(out, "", 0);
+	out->len = 0;
+	return http_stream(method, url, body, blen, to_buf, out);
 }

@@ -369,15 +369,18 @@ cmp_inst(const void *a, const void *b)
 	return strcmp(((const struct installed *)a)->stem, ((const struct installed *)b)->stem);
 }
 
+/*
+ * every installed package, one at a time: fn gets it (its manifest parsed)
+ * and takes it over (keep or free it), so callers that only look need not
+ * hold all manifests at once
+ */
 int
-installed_list(const struct image *im, struct installed **out, size_t *n)
+installed_each(const struct image *im, void (*fn)(struct installed *, void *), void *arg)
 {
 	char *dir = image_path(im, "installed");
 	DIR *d = opendir(dir);
 	struct dirent *e;
 
-	*out = NULL;
-	*n = 0;
 	if (!d) {
 		free(dir);
 		return 0;		/* nothing installed yet */
@@ -409,12 +412,37 @@ installed_list(const struct image *im, struct installed **out, size_t *n)
 		in.stem = fm.stem;
 		in.version = fm.version ? fm.version : xstrdup("0");
 		free(fm.publisher);
-		*out = xrealloc(*out, (*n + 1) * sizeof(**out));
-		(*out)[(*n)++] = in;
+		fn(&in, arg);
 	}
 	closedir(d);
 	free(dir);
-	qsort(*out, *n, sizeof(**out), cmp_inst);
+	return 0;
+}
+
+struct inlist {
+	struct installed *v;
+	size_t n;
+};
+
+static void
+inlist_add(struct installed *in, void *arg)
+{
+	struct inlist *l = arg;
+
+	l->v = xrealloc(l->v, (l->n + 1) * sizeof(*l->v));
+	l->v[l->n++] = *in;
+}
+
+int
+installed_list(const struct image *im, struct installed **out, size_t *n)
+{
+	struct inlist l = { NULL, 0 };
+
+	installed_each(im, inlist_add, &l);
+	if (l.n)
+		qsort(l.v, l.n, sizeof(*l.v), cmp_inst);
+	*out = l.v;
+	*n = l.n;
 	return 0;
 }
 

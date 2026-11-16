@@ -23,6 +23,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <zlib.h>
+
 #include "pkg.h"
 
 #define TMP	".pkgtmp"
@@ -451,7 +453,8 @@ struct change {
 	char *version;			/* new version, NULL: uninstall */
 	const struct installed *old;	/* NULL: fresh install */
 	struct manifest m;		/* new manifest */
-	struct buf raw;			/* as fetched, written to installed/ */
+	char *sig;			/* its catalog SHA-1: fetched again at commit, as
+					 * the raw text is not kept (memory) */
 };
 
 struct plan {
@@ -547,9 +550,16 @@ plan_add(const struct image *im, const struct catalog *cat, const struct install
 	c->stem = xstrdup(stem);
 	c->version = xstrdup(v->version);
 	c->old = old;
-	if (remote_manifest(im, stem, v->version, v->sig, &c->raw) < 0 ||
-	    manifest_parse(c->raw.data, c->raw.len, &c->m) < 0)
-		return -1;
+	{
+		struct buf raw = { 0 };
+		int bad = remote_manifest(im, stem, v->version, v->sig, &raw) < 0 ||
+		    manifest_parse(raw.data, raw.len, &c->m) < 0;
+
+		buf_free(&raw);
+		if (bad)
+			return -1;
+		c->sig = v->sig ? xstrdup(v->sig) : NULL;
+	}
 	for (i = 0; i < c->m.n; i++) {
 		const struct action *a = &c->m.act[i];
 		const char *fm = action_get(a, "fmri"), *ty = action_get(a, "type");
@@ -578,7 +588,7 @@ plan_free(struct plan *p)
 		free(p->c[i].stem);
 		free(p->c[i].version);
 		manifest_free(&p->c[i].m);
-		buf_free(&p->c[i].raw);
+		free(p->c[i].sig);
 	}
 	free(p->c);
 }
@@ -630,58 +640,128 @@ set_attrs(const struct image *im, const char *full, const struct action *a)
 static int
 same_content(const char *full, const char *want_hash)
 {
-	struct buf b = { 0 };
 	char h[65];
-	int same = 0;
 
-	if (want_hash && read_file(full, &b) == 0) {
-		sha512_256_hex(b.data, b.len, h);
-		same = !strcmp(h, want_hash);
-	}
-	buf_free(&b);
-	return same;
+	return want_hash && hash_file(full, HASH_SHA512_256, h) == 0 && !strcmp(h, want_hash);
 }
 
-/* the payload of a file action, checked */
+/* a payload on its way to a file: gunzip, hash and write, piece by piece */
+struct pstream {
+	z_stream z;
+	struct hash h;
+	int fd, end, bad;
+	unsigned long long n;
+};
+
 static int
-payload(const struct image *im, const struct action *a, struct buf *out)
+pstream_sink(const void *p, size_t n, void *arg)
+{
+	struct pstream *ps = arg;
+	unsigned char out[16384];
+
+	ps->z.next_in = (unsigned char *)p;
+	ps->z.avail_in = (uInt)n;
+	while (ps->z.avail_in && !ps->end) {
+		int r;
+		size_t got;
+
+		ps->z.next_out = out;
+		ps->z.avail_out = sizeof(out);
+		r = inflate(&ps->z, Z_NO_FLUSH);
+		if (r != Z_OK && r != Z_STREAM_END) {
+			ps->bad = 1;
+			errno = EINVAL;
+			return -1;
+		}
+		got = sizeof(out) - ps->z.avail_out;
+		hash_update(&ps->h, out, got);
+		ps->n += got;
+		while (got) {
+			ssize_t w = write(ps->fd, out + (sizeof(out) - ps->z.avail_out - got), got);
+
+			if (w <= 0)
+				return -1;
+			got -= (size_t)w;
+		}
+		if (r == Z_STREAM_END)
+			ps->end = 1;
+	}
+	return 0;
+}
+
+/*
+ * the payload of a file action into dest (a new file), checked: gunzipped
+ * and hashed as it arrives, so no payload is ever whole in memory (an
+ * A3000 has 16 MB). 0, or -1 after a message (dest removed).
+ */
+static int
+payload_to(const struct image *im, const struct action *a, const char *dest)
 {
 	char *rel = xasprintf("publisher/%s/file/%.2s/%s", PUBLISHER, a->payload, a->payload);
-	struct buf gz = { 0 };
 	const char *want = content_hash(a, "file"), *sz = action_get(a, "pkg.size");
+	const char *path = action_get(a, "path");
+	struct pstream ps;
 	char h[65];
 	int r = -1;
 
-	if (fetch(im->origin, rel, &gz) < 0)
-		warnx("%s: cannot fetch %s: %s", action_get(a, "path"), a->payload, strerror(errno));
-	else if (gunzip(&gz, out) < 0)
-		warnx("%s: payload is not gzip", action_get(a, "path"));
-	else if (sz && out->len != parse_ull(sz))
-		warnx("%s: payload size %lu, should be %s", action_get(a, "path"),
-		    (unsigned long)out->len, sz);
-	else {
-		if (want)
-			sha512_256_hex(out->data, out->len, h);
+	memset(&ps, 0, sizeof(ps));
+	hash_init(&ps.h, want ? HASH_SHA512_256 : HASH_SHA1);
+	ps.fd = open(dest, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (ps.fd < 0) {
+		warnx("%s: %s", dest, strerror(errno));
+		free(rel);
+		return -1;
+	}
+	if (inflateInit2(&ps.z, 16 + MAX_WBITS) != Z_OK) {
+		warnx("%s: zlib: no memory", path);
+		close(ps.fd);
+		unlink(dest);
+		free(rel);
+		return -1;
+	}
+	if (fetch_stream(im->origin, rel, pstream_sink, &ps) < 0) {
+		if (ps.bad)
+			warnx("%s: payload is not gzip", path);
 		else
-			sha1_hex(out->data, out->len, h);
+			warnx("%s: cannot fetch %s: %s", path, a->payload, strerror(errno));
+	} else if (!ps.end)
+		warnx("%s: payload is cut short", path);
+	else if (sz && ps.n != parse_ull(sz))
+		warnx("%s: payload size %llu, should be %s", path, ps.n, sz);
+	else {
+		hash_final(&ps.h, h);
 		if (strcmp(h, want ? want : a->payload))
-			warnx("%s: payload does not match its hash", action_get(a, "path"));
+			warnx("%s: payload does not match its hash", path);
+		else if (fsync(ps.fd) < 0)
+			warnx("%s: %s", dest, strerror(errno));
 		else
 			r = 0;
 	}
-	buf_free(&gz);
+	inflateEnd(&ps.z);
+	if (close(ps.fd) < 0 && r == 0) {
+		warnx("%s: %s", dest, strerror(errno));
+		r = -1;
+	}
+	if (r < 0)
+		unlink(dest);
 	free(rel);
 	return r;
 }
 
+/* the payload as full TMP (written as full TMP.new, then renamed): 0 or -1 */
 static int
-write_tmp(const char *full, const struct buf *data)
+write_payload(const struct image *im, const struct action *a, const char *full)
 {
-	char *tmp = xasprintf("%s" TMP, full);
-	int r = write_atomic(tmp, data->data, data->len) ;
+	char *tmp = xasprintf("%s" TMP, full), *nw = xasprintf("%s" TMP ".new", full);
+	int r = payload_to(im, a, nw);
 
-	/* write_atomic went via tmp.new; tmp is now the whole, synced file */
+	if (r == 0 && rename(nw, tmp) < 0) {
+		warnx("%s: %s", tmp, strerror(errno));
+		unlink(nw);
+		r = -1;
+	}
 	free(tmp);
+	free(nw);
 	return r;
 }
 
@@ -773,29 +853,21 @@ prepare(const struct image *im, struct change *c, struct txn *t,
 				char *np = xasprintf("%s.new", p);
 
 				if (!dry_run) {
-					struct buf b = { 0 };
+					char *fn = root_path(im->root, np);
+					char *npt = xasprintf("%s" TMP, np);
 
-					if (payload(im, a, &b) < 0) {
+					txn_tmp(t, npt);
+					if (write_payload(im, a, fn) < 0) {
 						bad = 1;
 					} else {
-						char *fn = root_path(im->root, np);
-						char *npt = xasprintf("%s" TMP, np);
+						char *ft = xasprintf("%s" TMP, fn);
 
-						txn_tmp(t, npt);
-						if (write_tmp(fn, &b) < 0) {
-							warnx("%s: %s", np, strerror(errno));
-							bad = 1;
-						} else {
-							char *ft = xasprintf("%s" TMP, fn);
-
-							set_attrs(im, ft, a);
-							free(ft);
-							txn_op(t, OP_RENAME, npt, np);
-						}
-						free(npt);
-						free(fn);
+						set_attrs(im, ft, a);
+						free(ft);
+						txn_op(t, OP_RENAME, npt, np);
 					}
-					buf_free(&b);
+					free(npt);
+					free(fn);
 				}
 				buf_str(&t->msgs, "kept /");
 				buf_str(&t->msgs, p);
@@ -810,24 +882,16 @@ prepare(const struct image *im, struct change *c, struct txn *t,
 			if (sz)
 				*bytes += parse_ull(sz);
 			if (!dry_run) {
-				struct buf b = { 0 };
-
-				if (payload(im, a, &b) < 0)
+				txn_tmp(t, tmp);
+				if (write_payload(im, a, full) < 0)
 					bad = 1;
 				else {
-					txn_tmp(t, tmp);
-					if (write_tmp(full, &b) < 0) {
-						warnx("%s: %s", p, strerror(errno));
-						bad = 1;
-					} else {
-						char *ft = xasprintf("%s" TMP, full);
+					char *ft = xasprintf("%s" TMP, full);
 
-						set_attrs(im, ft, a);
-						free(ft);
-						txn_op(t, OP_RENAME, tmp, p);
-					}
+					set_attrs(im, ft, a);
+					free(ft);
+					txn_op(t, OP_RENAME, tmp, p);
 				}
-				buf_free(&b);
 			}
 		} else if (!strcmp(a->type, "link")) {
 			const char *target = action_get(a, "target");
@@ -1093,36 +1157,57 @@ history(const struct image *im, const char *cmd, const struct plan *p, const cha
 	free(f);
 }
 
-/* the sorted list of every path the client owns */
+/* paths_write: the owners table, and the stems it points to (kept until written) */
+struct pathsw {
+	struct owners w;
+	char **stems;
+	size_t ns;
+};
+
+/* one installed package's paths into the table; its manifest freed at once */
+static void
+paths_one(struct installed *in, void *arg)
+{
+	struct pathsw *pw = arg;
+	size_t k;
+
+	for (k = 0; k < in->m.n; k++) {
+		const char *p = action_get(&in->m.act[k], "path");
+
+		if (p)
+			owners_add(&pw->w, p, in->stem, in->m.act[k].type[0]);
+	}
+	pw->stems = xrealloc(pw->stems, (pw->ns + 1) * sizeof(*pw->stems));
+	pw->stems[pw->ns++] = in->stem;
+	manifest_free(&in->m);
+	free(in->version);
+}
+
+/* var/pkg/paths: every installed path and its package, sorted */
 static void
 paths_write(const struct image *im)
 {
-	struct installed *in;
-	size_t nin, i, k;
+	size_t i;
 	struct buf b = { 0 };
 	char *f = image_path(im, "paths");
-	struct owners w = { 0 };
+	struct pathsw pw;
 
-	installed_list(im, &in, &nin);
-	for (i = 0; i < nin; i++)
-		for (k = 0; k < in[i].m.n; k++) {
-			const char *p = action_get(&in[i].m.act[k], "path");
-
-			if (p)
-				owners_add(&w, p, in[i].stem, in[i].m.act[k].type[0]);
-		}
-	qsort(w.o, w.n, sizeof(*w.o), cmp_owner);
+	memset(&pw, 0, sizeof(pw));
+	installed_each(im, paths_one, &pw);	/* one manifest in memory at a time */
+	qsort(pw.w.o, pw.w.n, sizeof(*pw.w.o), cmp_owner);
 	buf_add(&b, "", 0);
-	for (i = 0; i < w.n; i++) {
-		buf_str(&b, w.o[i].path);
+	for (i = 0; i < pw.w.n; i++) {
+		buf_str(&b, pw.w.o[i].path);
 		buf_str(&b, "\t");
-		buf_str(&b, w.o[i].stem);
+		buf_str(&b, pw.w.o[i].stem);
 		buf_str(&b, "\n");
 	}
 	write_atomic(f, b.data, b.len);
 	buf_free(&b);
-	owners_free(&w);
-	installed_free(in, nin);
+	owners_free(&pw.w);
+	for (i = 0; i < pw.ns; i++)
+		free(pw.stems[i]);
+	free(pw.stems);
 	free(f);
 }
 
@@ -1231,9 +1316,16 @@ run(struct image *im, const char *cmd, struct plan *p, const struct installed *i
 				if (!dry_run) {
 					char *full = root_path(im->root, tmpf);
 
+					struct buf raw = { 0 };
+					int bad;
+
 					txn_tmp(&t, tmpf);
-					if (write_atomic(full, c->raw.data, c->raw.len) < 0) {
+					bad = remote_manifest(im, c->stem, c->version, c->sig, &raw) < 0 ||
+					    write_atomic(full, raw.data, raw.len) < 0;
+					if (bad && errno)
 						warnx("%s: %s", tmpf, strerror(errno));
+					buf_free(&raw);
+					if (bad) {
 						free(full);
 						free(tmpf);
 						free(rel);
@@ -1272,6 +1364,12 @@ run(struct image *im, const char *cmd, struct plan *p, const struct installed *i
 			crash_point("committing");
 	}
 	journal_remove(im);
+	/* committed: the owners and the new manifests are done with (history needs
+	 * only names and versions), so paths_write does not stack on top of them */
+	owners_free(&w);
+	memset(&w, 0, sizeof(w));
+	for (i = 0; i < p->n; i++)
+		manifest_free(&p->c[i].m);
 	paths_write(im);
 	history(im, cmd, p, "ok");
 	if (t.msgs.len)

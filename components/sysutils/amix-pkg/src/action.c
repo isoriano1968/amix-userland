@@ -36,7 +36,8 @@ token(const char **sp)
 			buf_add(&b, s++, 1);
 	}
 	*sp = s;
-	return b.data;
+	/* exactly its size: a manifest holds thousands of these (an A3000 has 16 MB) */
+	return xrealloc(b.data, b.len + 1);
 }
 
 int

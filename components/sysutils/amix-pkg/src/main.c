@@ -12,7 +12,7 @@
 
 #include "pkg.h"
 
-#define VERSION_STRING	"0.3"
+#define VERSION_STRING	"0.4"
 
 static struct image im;
 
@@ -577,23 +577,20 @@ verify_pkg(const struct installed *in, int quiet)
 			else {
 				bad |= check_attrs(p, a, &st, quiet, stem, shown);
 				if (!preserve) {	/* configuration may be changed */
-					struct buf b = { 0 };
 					char h[65];
 
 					if (sz && (unsigned long long)st.st_size != parse_ull(sz))
 						REPORT("size %lu, should be %s", (unsigned long)st.st_size, sz);
-					else if (read_file(full, &b) < 0)
+					else if ((want || a->payload) &&
+					    hash_file(full, want ? HASH_SHA512_256 : HASH_SHA1, h) < 0)
 						REPORT("unreadable: %s", strerror(errno));
 					else if (want) {
-						sha512_256_hex(b.data, b.len, h);
 						if (strcmp(h, want))
 							REPORT("content changed (sha512/256)");
 					} else if (a->payload) {
-						sha1_hex(b.data, b.len, h);
 						if (strcmp(h, a->payload))
 							REPORT("content changed (sha1)");
 					}
-					buf_free(&b);
 				}
 			}
 		} else if (!strcmp(a->type, "link")) {

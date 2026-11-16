@@ -49,6 +49,19 @@ unsigned long long parse_ull(const char *s);		/* decimal; AMIX has no strtoull *
 /* --- hash.c -------------------------------------------------------------- */
 void sha1_hex(const void *p, size_t n, char out[41]);
 void sha512_256_hex(const void *p, size_t n, char out[65]);
+enum { HASH_SHA1, HASH_SHA512_256 };
+struct hash {			/* either, in pieces */
+	int kind;
+	uint32_t h1[5];
+	uint64_t h5[8];
+	uint8_t blk[128];
+	size_t fill;
+	uint64_t total;
+};
+void hash_init(struct hash *x, int kind);
+void hash_update(struct hash *x, const void *p, size_t n);
+void hash_final(struct hash *x, char *out);		/* 41 or 65 bytes */
+int hash_file(const char *path, int kind, char *out);	/* 0, or -1 (errno) */
 
 /* --- json.c -------------------------------------------------------------- */
 enum jtype { J_NULL, J_BOOL, J_NUM, J_STR, J_ARR, J_OBJ };
@@ -107,13 +120,18 @@ int version_at_least(const char *v, const char *min);
 
 /* --- fetch.c ------------------------------------------------------------- */
 /* origin: file:///path, /path, or http://host[:port]/path */
+/* where streamed bytes go: 0, or -1 to stop */
+typedef int (*http_sink)(const void *p, size_t n, void *arg);	/* 0, or -1 to stop */
 int fetch(const char *origin, const char *relpath, struct buf *out);
+int fetch_stream(const char *origin, const char *relpath, http_sink sink, void *arg);
 
 /* --- http.c -------------------------------------------------------------- */
 int http_split(const char *url, char *host, size_t hlen, int *port, const char **path);
 /* the HTTP status (redirects followed), or -1 with errno; the body into out */
 int http_request(const char *method, const char *url, const void *body, size_t blen,
     struct buf *out);
+int http_stream(const char *method, const char *url, const void *body, size_t blen,
+    http_sink sink, void *arg);
 int gunzip(const struct buf *in, struct buf *out);
 
 /* --- image.c: the client's state under the root -------------------------- */
@@ -154,6 +172,7 @@ struct installed {
 	struct manifest m;
 };
 int installed_list(const struct image *im, struct installed **out, size_t *n);
+int installed_each(const struct image *im, void (*fn)(struct installed *, void *), void *arg);
 void installed_free(struct installed *p, size_t n);
 
 /* a manifest from the repository, checked against the catalog's SHA-1 */
