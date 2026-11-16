@@ -71,9 +71,14 @@ def check_kit(kit):
             raise KernelError("kit file %s does not match KIT.sha256" % name)
 
 
+# where developer/amix/gcc-27 installs the cross tools (not on the user's PATH),
+# and a cross build in the home directory
+LD_DIRS = ("/opt/amix-cross/bin", os.path.expanduser("~/opt/amix-cross/bin"))
+
+
 def find_ld():
     for name in LINKERS:
-        p = shutil.which(name)
+        p = shutil.which(name) or shutil.which(name, path=os.pathsep.join(LD_DIRS))
         if p:
             return p
     return None
