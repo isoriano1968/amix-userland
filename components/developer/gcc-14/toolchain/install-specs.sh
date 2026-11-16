@@ -71,8 +71,21 @@ replace("endfile",
 # libamixc99 holds what SVR4.0's libc is missing -- snprintf, vsnprintf,
 # usleep, __cxa_atexit.  Named before -lc because it calls into libc and not
 # the other way round.
+#
+# %R/usr/lib/libc.so.1 after -lc names the shared libc to ld as an input file
+# of its own.  The archive usr/ccs/lib/libc.so carries libc.so.1 as a member,
+# so the program already gets it from there (and its NEEDED from the SONAME);
+# but ld only matches a library's DT_NEEDED against input FILES, never archive
+# members, and "/usr/lib/libc.so.1" is absolute, which ld opens on the host
+# without the sysroot and without -rpath-link.  So every link against a shared
+# library that needs libc (libX11.so, libXm.so ...) warned "/usr/lib/libc.so.1,
+# needed by ..., not found".  Named after -lc it changes nothing in the
+# output: the archive's members are bound first exactly as before, and ld
+# drops the file as already loaded (same SONAME) -- cde-hello links byte for
+# byte the same.  Only in the gcc 14 specs: gcc 2.7.2.3's wrapper names
+# libc.so.1 itself.
 replace("lib",
-        "%{!nostdlib:%{!nodefaultlibs:-L%R/usr/ccs/lib -L%R/usr/lib %{!shared:-lamixc99 -lc}%{shared:%R/usr/lib/libc.so.1}}}")
+        "%{!nostdlib:%{!nodefaultlibs:-L%R/usr/ccs/lib -L%R/usr/lib %{!shared:-lamixc99 -lc %R/usr/lib/libc.so.1}%{shared:%R/usr/lib/libc.so.1}}}")
 # The platform identifies itself.  A generic m68k-elf compiler defines nothing
 # that says "AMIX", so portable code has no way to select a path for this
 # target -- and code that IS written for it, like a crash handler that reads
