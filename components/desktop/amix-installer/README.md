@@ -45,7 +45,9 @@ and pycairo to make the icons.
 Your Kickstart ROM is only referred to by its path in the FS-UAE
 configuration, never copied.
 
-pvmk's build is found in `~/Sources/usr-amix/pvmk/build` or `$AMIX_PVMK_DIR`
+pvmk comes from the package `developer/amix/pvmk` (`/usr/share/pvmk`:
+bootblock.bin, pvmk.bin, conf/; `/usr/lib/pvmk`: mkadf, mkhdf), or from a
+pvmk build in `$AMIX_PVMK_DIR` or `~/Sources/usr-amix/pvmk/build`
 (bootblock.bin, pvmk.bin, host/mkadf, host/mkhdf).
     make install DESTDIR=/tmp/root HOST_PREFIX=/usr
 

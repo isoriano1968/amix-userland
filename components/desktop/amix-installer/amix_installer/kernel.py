@@ -43,8 +43,9 @@ def find_kit():
     here = os.path.dirname(os.path.abspath(__file__))
     cands = [os.environ.get(KIT_ENV),
              os.path.expanduser("~/Sources/usr-amix/amix-gate/usr/src/uts/amiga/io/rtgfb/port/kit"),
-             os.path.join(os.path.dirname(os.path.dirname(here)), "share", "amix-installer",
-                          "rtgfb")]
+             # <prefix>/lib/amix-installer/amix_installer -> <prefix>/share/...
+             os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(here))), "share",
+                          "amix-installer", "rtgfb")]
     for d in cands:
         if d and all(os.path.isfile(os.path.join(d, f)) for f in KIT_FILES):
             return d

@@ -72,7 +72,7 @@ class Servers(unittest.TestCase):
             tftp_get(self.s.tftp.port, "etc/passwd")
 
     def test_http(self):
-        self.assertIn(b"step 2 \"the package client\"", urllib.request.urlopen(self.url("/steps")).read())
+        self.assertIn(b"step 3 \"the package client\"", urllib.request.urlopen(self.url("/steps")).read())
         self.assertEqual(urllib.request.urlopen(
             self.url("/repo/publisher/amix/catalog/catalog.attrs")).read(), b'{"version":1}\n')
         for bad in ("/repo/../../etc/passwd", "/repo/%2e%2e/%2e%2e/etc/passwd", "/nothing"):
@@ -116,6 +116,9 @@ class Scripts(unittest.TestCase):
         self.sh_ok(t)
         self.assertNotIn("$(", t)
         self.assertIn("mkfs -F ufs $D 4093952", t)
+        # every place packages install to is on the data disk, there or not yet
+        self.assertIn("for d in usr/local usr/gnu opt usr/x11r6 usr/motif usr/dt; do", t)
+        self.assertIn("/usr/bin/ln -s /amixdata/$n /$d", t)
         self.assertIn("M=%d" % model.SPLIT_RESERVE_MB, t)
         self.assertIn("$PKG --min-free $M install", t)
         self.assertIn("editor/vim", t)
@@ -123,8 +126,37 @@ class Scripts(unittest.TestCase):
         self.assertIn("not packaged yet", t)            # the ARM core services
         self.assertIn("kernel is not packaged yet", t)
         self.assertLess(t.index("sysutils/amix-pkg"), t.index("step 4"))
-        self.assertIn("pkgrm -n -a /tmp/amixboot.admin AMIXboot", t)
-        self.assertNotIn("step 3", netinstall.steps_script(cfg, "10.0.2.2"))
+        self.assertIn("pkgrm -n -a /tmp/amixboot.admin AMIXboot >>$LOG 2>&1 || unboot", t)
+        self.assertLess(t.index("unboot() {"), t.index("|| unboot"))
+        # reports outlive the bootstrap: the installed pkg from step 3 on
+        self.assertLess(t.index("RPKG=$PKG"), t.index("step 4"))
+        self.assertNotIn("the data disk", netinstall.steps_script(cfg, "10.0.2.2"))
+
+    def test_unboot(self):
+        """pkgrm stops at a contents line it cannot parse: only AMIXboot's
+        lines go, the rest stays as it was, the old file is kept."""
+        d = tempfile.mkdtemp()
+        try:
+            boot, sadm = d + "/opt/amixboot", d + "/sadm/AMIXboot"
+            os.makedirs(boot + "/bin")
+            os.makedirs(sadm)
+            others = ("/usr/x11r5/fonts/server/MacFS/TrueType Fonts f none 0444 x sys 5 6 7 X11R5 X11R5\n"
+                      "/z f none 0644 root bin 1 2 3 core\n")
+            with open(d + "/contents", "w") as f:
+                f.write(others + "%s/bin d none 0755 root bin AMIXboot\n"
+                        "%s/bin/pkg f none 0555 root bin 1 2 3 AMIXboot\n" % (boot, boot))
+            fn = "\n".join(netinstall.unboot_lines())
+            fn = (fn.replace("/var/sadm/install/contents", d + "/contents")
+                  .replace(netinstall.BOOT_DIR, boot).replace("/var/sadm/pkg/AMIXboot", sadm))
+            r = subprocess.run(["sh", "-c", "report() { echo \"$*\"; }\n%s\nunboot" % fn],
+                               stdout=subprocess.PIPE, universal_newlines=True)
+            self.assertIn("AMIXboot removed", r.stdout)
+            with open(d + "/contents") as f:
+                self.assertEqual(f.read(), others)
+            self.assertTrue(os.path.exists(d + "/contents.amix-installer"))
+            self.assertFalse(os.path.exists(boot) or os.path.exists(sadm))
+        finally:
+            subprocess.run(["rm", "-rf", d])
 
     def test_admin_empty_values_last(self):
         # AMIX's pkginstall stops reading the admin file at an empty value
@@ -210,7 +242,7 @@ class Picasso(unittest.TestCase):
         self.assertIn("/usr/sbin/mknod /dev/rtgfb c 54 0", t)
         self.assertIn("echo cirrus > /etc/X11/amix-card", t)
         self.assertLess(t.index("/stand/unix.stock"), t.index("mv /stand/unix.new /stand/unix"))
-        self.assertLess(t.index("step 5"), t.index("step 6"))
+        self.assertLess(t.index("step 7"), t.index("step 8"))
         no = netinstall.steps_script(self.cfg(), "10.0.2.2")
         self.assertNotIn("/stand/unix.new", no)
         self.assertIn("no kernel with /dev/rtgfb", no)
@@ -248,3 +280,76 @@ class Picasso(unittest.TestCase):
                 s.stop()
         finally:
             os.unlink(f.name)
+
+
+class Foundation(unittest.TestCase):
+    """The same foundation on FS-UAE and real machines, before any optional set."""
+
+    def test_order_and_items(self):
+        import time
+        now = time.struct_time((2026, 11, 16, 12, 5, 0, 0, 320, 0))
+        t = netinstall.steps_script(model.Config(sel={"desk": "cde"}), "10.0.2.2", now=now)
+        Scripts.sh_ok(self, t)
+        self.assertNotIn("$(", t)
+        # the patch level first, then the client, the base set, then the options
+        self.assertLess(t.index("foundation patch present"), t.index("the package client"))
+        self.assertLess(t.index("the package client"), t.index("foundation library/amixc99"))
+        self.assertLess(t.index("foundation DONE"), t.index("step 6"))
+        for p in netinstall.FOUNDATION_PKGS:
+            self.assertIn("$PKG --min-free $M install %s " % p, t)
+        self.assertIn("TZ=GMT0 /usr/bin/date 111612052026", t)
+        self.assertIn("/usr/sbin/removef core /usr/amiga/bin/setclk", t)
+        self.assertIn("grep -v '^/usr/amiga/bin/setclk ' /var/sadm/install/contents", t)
+        self.assertIn("/var/sadm/install/contents.amix-installer", t)
+        self.assertLess(t.index("/usr/bin/cp -p /var/sadm/install/contents /var/sadm/install/contents.new"),
+                        t.index("grep -v '^/usr/amiga/bin/setclk '"))
+        self.assertNotIn("chmod 644 /var/sadm", t)
+        self.assertIn("/usr/bin/mv /usr/amiga/bin/setclk /usr/amiga/bin/setclk.core", t)
+        self.assertIn("/usr/bin/mv /usr/amiga/bin/setclk.core /usr/amiga/bin/setclk; report", t)
+        self.assertLess(t.index("install sysutils/setclk"),
+                        t.index("rm -f /usr/amiga/bin/setclk.core"))
+        self.assertLess(t.index("removef core /usr/amiga/bin/setclk"),
+                        t.index("install sysutils/setclk"))
+        self.assertIn("/etc/clkzone", t)
+        self.assertIn("/etc/init.d/syslogd.stock", t)
+        self.assertIn("foundation random missing", t)
+        # without the patch disk a missing patch stops the install
+        self.assertIn("fail 'apply Patch Disk 1-2a", t)
+        self.assertNotIn("$W/patch", t)
+        # the base set is not installed twice as an option
+        step6 = t[t.index("step 6"):]
+        self.assertNotIn("gnu/gnu-tools", step6)
+
+    def test_patch_disk_applied(self):
+        t = netinstall.steps_script(model.Config(), "10.0.2.2", patch=True)
+        Scripts.sh_ok(self, t)
+        self.assertIn("$B/bin/pkg http get $W/patch /tmp/amixpatch", t)
+        self.assertIn("A='n danger y n go'", t)
+        self.assertIn("A='n danger n go'", t)
+        self.assertIn("/sbin/sh /tmp/amixpatch", t)
+        self.assertIn("REBOOT=yes", t)
+        self.assertNotIn("fail 'apply Patch Disk 1-2a", t)
+
+    def test_base_set_must_be_in_the_repo(self):
+        with tempfile.TemporaryDirectory() as repo:
+            t = netinstall.steps_script(model.Config(), "10.0.2.2", repo=repo)
+        Scripts.sh_ok(self, t)
+        self.assertIn("foundation sysutils/setclk failed: not in the repository", t)
+        self.assertEqual(t.count("fail 'the foundation needs"), 1)
+
+    def test_report_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            rep = os.path.join(d, "foundation-report.txt")
+            s = netinstall.Session(model.Config(), d, host="127.0.0.1", tftp_port=0,
+                                   http_port=0, bind="127.0.0.1", report=rep)
+            s.start()
+            try:
+                s.reported("msg", "step 2: foundation: the AMIX patch level")
+                s.reported("msg", "foundation patch present 2.1p2a (kernel 2.1c 0800430)")
+                s.reported("msg", "foundation sysutils/setclk installed")
+            finally:
+                s.stop()
+            with open(rep) as f:
+                lines = f.read().splitlines()
+        self.assertEqual(lines[1:], ["foundation patch present 2.1p2a (kernel 2.1c 0800430)",
+                                     "foundation sysutils/setclk installed"])

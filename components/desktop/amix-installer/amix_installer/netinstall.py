@@ -36,7 +36,7 @@ BOOT_DIR = "/opt/amixboot"
 # option id -> IPS packages (components); options without packages yet are
 # reported, not installed
 PACKAGES = {
-    "cde": ["desktop/cde"], "mwm": ["desktop/motif"], "netsurf": ["web/netsurf"],
+    "cde": ["desktop/cde", "desktop/cde-dtlogin"], "mwm": ["desktop/motif"], "netsurf": ["web/netsurf"],
     "media": ["multimedia/ffmpeg", "desktop/cde-apps"], "grafx2": ["graphics/grafx2"],
     "sysmon": ["desktop/cde-apps"], "games": ["games/quake", "games/ioquake3"],
     # gcc14/gcc27: developer/gcc-14 and gcc-27 are cross compilers on the PC; a
@@ -48,6 +48,11 @@ PACKAGES = {
 BOOT_FILES = {
     "sysutils/amix-pkg": {"usr/bin/pkg": "bin/pkg"},
     "library/zlib": {"usr/local/lib/libz.so.1": "lib/libz.so.1"},
+}
+# carried too when the repository has them: libamixc99 is a shared library
+# from library/amixc99 version 2 on, and gcc 14 programs may need it
+BOOT_OPTIONAL = {
+    "library/amixc99": {"usr/lib/libamixc99.so.1": "lib/libamixc99.so.1"},
 }
 
 
@@ -100,10 +105,20 @@ def bootstrap(repo):
     E = svr4.Entry
     ents = [E("bin", "d"), E("lib", "d")]
     versions = []
-    for stem, files in BOOT_FILES.items():
-        v, man = _newest(repo, stem)
+    for stem, files in list(BOOT_FILES.items()) + list(BOOT_OPTIONAL.items()):
+        try:
+            v, man = _newest(repo, stem)
+        except KeyError:
+            if stem in BOOT_OPTIONAL:
+                continue
+            raise
+        have = [src for src in files if " path=%s " % src in man.replace("\n", " \n ")]
+        if stem in BOOT_OPTIONAL and not have:
+            continue
         versions.append("%s@%s" % (stem, v.split(":")[0]))
         for src, dst in files.items():
+            if stem in BOOT_OPTIONAL and src not in have:
+                continue
             ents.append(E(dst, "f", 0o555, data=payload(repo, man, src)))
     ents = ents[:2] + sorted(ents[2:], key=lambda e: e.path)
     info = {"NAME": "AMIX Installer bootstrap (removed again at the end)",
@@ -200,6 +215,11 @@ def fs_uae_data_disk(pl):
     return ("/dev/rdsk/c%dd0s1" % plan.SCSI_ID["data"], blocks)
 
 
+def hdf_movable():
+    from . import hdf
+    return hdf.MOVABLE
+
+
 def plan_kernel(pl):
     """The kernel a plan wrote for AMIX to install (the Picasso II one), or None."""
     from . import kernel
@@ -207,6 +227,11 @@ def plan_kernel(pl):
         return None
     p = os.path.join(pl.paths["out_dir"], kernel.NAME)
     return p if os.path.isfile(p) else None
+
+
+def report_path(pl):
+    """foundation-report.txt in the plan's out folder (or the current one)."""
+    return os.path.join(pl.paths.get("out_dir") or os.getcwd(), "foundation-report.txt")
 
 
 def sysv_sum(data):
@@ -245,19 +270,150 @@ def missing_in_repo(repo, stem, _seen=None):
     return None
 
 
-def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kernel=None):
+# --- the foundation -------------------------------------------------------------
+# What every AMIX gets, on FS-UAE and on a real Amiga alike, before any optional
+# set; each item is reported as "foundation <item> present|installed|missing|
+# failed <detail>", so two installs compare line by line.
+FOUNDATION_PKGS = ["library/zlib", "library/amixc99", "library/libm99", "sysutils/setclk",
+                   "gnu/gnu-tools"]
+# the patch disk's answers: no change list; "danger" (it runs outside single
+# user, as the installer does); the kernel when Cdev and conf are there; no
+# boot floppy; go
+PATCH_ANSWERS_KERNEL = ["n", "danger", "y", "n", "go"]
+PATCH_ANSWERS = ["n", "danger", "n", "go"]
+# foundation packages that replace a file of the SVR4 core package
+HANDOVER = {"sysutils/setclk": "/usr/amiga/bin/setclk"}
+
+
+def patch_check_lines(patch):
+    """Shell lines: the AMIX patch level (Patch Disk 1-2a markers); with patch
+    (the user's patch disk served at /patch) apply it when it is missing."""
+    lines = ["P=`/usr/bin/sed -n 's/^#define PATCHLEVEL *//p' /usr/include/patchlevel.h 2>/dev/null`",
+             "[ -n \"$P\" ] || P=`/usr/bin/sed -n 's/.*Amiga Version 2\\.1p\\([0-9a-z]*\\).*/\\1/p' "
+             "/etc/motd 2>/dev/null | /usr/bin/head -1`",
+             "if [ -n \"$P\" ] && [ -f /var/patch/README ]; then",
+             "  report \"foundation patch present 2.1p$P (kernel `/usr/bin/uname -v`)\""]
+    if patch:
+        lines += [
+            "else",
+            "  report 'foundation patch missing: applying your patch disk (AmigaUNIX Patch Disk 1-2a)'",
+            "  $B/bin/pkg http get $W/patch /tmp/amixpatch >>$LOG 2>&1 || fail 'fetching the patch disk'",
+            "  if /usr/bin/pkginfo -q Cdev && /usr/bin/pkginfo -q conf; then",
+            "    A='%s'; K='with the 2.1c kernel'" % " ".join(PATCH_ANSWERS_KERNEL),
+            "  else",
+            "    A='%s'; K='without the kernel update (Cdev or conf missing)'" % " ".join(PATCH_ANSWERS),
+            "  fi",
+            "  (cd /tmp && for a in $A; do echo $a; done | /sbin/sh /tmp/amixpatch) >>$LOG 2>&1",
+            "  /usr/bin/rm -f /tmp/amixpatch",
+            "  P=`/usr/bin/sed -n 's/^#define PATCHLEVEL *//p' /usr/include/patchlevel.h 2>/dev/null`",
+            "  [ -n \"$P\" ] || fail 'the patch disk did not apply: see /var/patch'",
+            "  report \"foundation patch installed 2.1p$P $K; AMIX asks its setup questions at the next boot\"",
+            "  REBOOT=yes"]
+    lines += ["else",
+              "  report 'foundation patch missing: AmigaUNIX Patch Disk 1-2a is not applied'",
+              "  fail 'apply Patch Disk 1-2a from your own disk first, or give the installer its image'",
+              "fi"] if not patch else ["fi"]
+    return lines
+
+
+def foundation_lines(have, now):
+    """Shell lines: the clock, the base set, syslogd, the random driver.
+    have: the foundation packages the repository holds (the others fail the
+    install). now: the host's time (UTC, a time.struct_time)."""
+    stamp = "%02d%02d%02d%02d%04d" % (now.tm_mon, now.tm_mday, now.tm_hour, now.tm_min,
+                                      now.tm_year)
+    gone = [p for p in FOUNDATION_PKGS if p not in have]
+    lines = ["report 'foundation %s failed: not in the repository'" % p for p in gone]
+    if gone:
+        lines += ["fail 'the foundation needs %s: not in the repository'" % " ".join(gone)]
+    for p in FOUNDATION_PKGS:
+        if p in gone:
+            continue
+        if p in HANDOVER:
+            # a file of Commodore's that the package replaces: core hands it
+            # over (removef, as SVR4 does), so pkg may own it; the file stays
+            # AMIX 2.1 ships installf but not removef: then its one change,
+            # the path's line out of the contents file (kept as .amix-installer)
+            path = HANDOVER[p]
+            C = "/var/sadm/install/contents"
+            lines += ["if /usr/bin/grep '^%s ' %s >/dev/null; then" % (path, C),
+                      "  if [ -x /usr/sbin/removef ]; then",
+                      "    /usr/sbin/removef core %s >>$LOG 2>&1 && /usr/sbin/removef -f core >>$LOG 2>&1 || "
+                      "fail 'removef %s'" % (path, path),
+                      "  else",
+                      "    [ -f %s.amix-installer ] || /usr/bin/cp -p %s %s.amix-installer || "
+                      "fail 'keeping %s'" % (C, C, C, C),
+                      "    a=`/usr/bin/wc -l < %s`" % C,
+                      "    # .new as a copy first: the original's owner, group and mode",
+                      "    /usr/bin/cp -p %s %s.new || fail 'copying %s'" % (C, C, C),
+                      "    /usr/bin/grep -v '^%s ' %s > %s.new || fail 'the contents without %s'"
+                      % (path, C, C, path),
+                      "    b=`/usr/bin/wc -l < %s.new`" % C,
+                      "    [ `/usr/bin/expr $a - $b` -eq 1 ] || { /usr/bin/rm -f %s.new; "
+                      "fail 'the contents would lose more than %s'; }" % (C, path),
+                      "    /usr/bin/mv %s.new %s || fail 'writing %s'" % (C, C, C),
+                      "  fi",
+                      "  report 'foundation %s: %s handed from core'" % (p, path),
+                      "fi",
+                      "# pkg replaces no unowned file: Commodore's binary steps aside for the",
+                      "# install only, back if it fails, gone when the package has its own",
+                      "[ ! -f %s ] || $PKG list %s >/dev/null 2>&1 || /usr/bin/mv %s %s.core || "
+                      "fail 'moving %s aside'" % (path, p, path, path, path)]
+        lines += ["if $PKG list %s >/dev/null 2>&1; then report 'foundation %s present'; else" % (p, p),
+                  "  $PKG --min-free $M install %s >>$LOG 2>&1 || "
+                  "{ %sreport 'foundation %s failed'; fail 'installing %s'; }"
+                  % (p, ("[ ! -f %s.core ] || /usr/bin/mv %s.core %s; " % ((HANDOVER[p],) * 3))
+                     if p in HANDOVER else "", p, p),
+                  "  report 'foundation %s installed'" % p,
+                  "fi"]
+        if p in HANDOVER:
+            lines += ["/usr/bin/rm -f %s.core" % HANDOVER[p]]
+    lines += [
+        "# the battery clock keeps local time (as AmigaDOS): setclk reads it in this zone",
+        "if [ -s /etc/clkzone ]; then report \"foundation clkzone present `/usr/bin/cat /etc/clkzone`\"; else",
+        "  Z=`. /etc/TIMEZONE; echo $TZ`",
+        "  [ -n \"$Z\" ] || Z=:GMT",
+        "  echo \"$Z\" > /etc/clkzone || fail 'writing /etc/clkzone'",
+        "  report \"foundation clkzone installed $Z\"",
+        "fi",
+        "# the time from this computer (UTC), then into the battery clock",
+        "TZ=GMT0 /usr/bin/date %s >>$LOG 2>&1 || fail 'setting the date'" % stamp,
+        "/usr/amiga/bin/setclk -s >>$LOG 2>&1 || report 'foundation clock: the battery clock was not written'",
+        "report \"foundation clock installed `/usr/bin/date` (battery `/usr/amiga/bin/setclk -p`)\"",
+        "# syslogd: Patch Disk 1-2a ships it off (an exit at the top of its script)",
+        "if /usr/bin/grep '^exit$' /etc/init.d/syslogd >/dev/null 2>&1; then",
+        "  [ -f /etc/init.d/syslogd.stock ] || /usr/bin/cp /etc/init.d/syslogd /etc/init.d/syslogd.stock",
+        "  /usr/bin/sed 's/^exit$/#exit  (syslogd on: AMIX Installer)/' /etc/init.d/syslogd.stock "
+        "> /etc/init.d/syslogd || fail 'enabling syslogd'",
+        "  /etc/init.d/syslogd start >>$LOG 2>&1",
+        "  report 'foundation syslogd installed'",
+        "elif [ -f /etc/init.d/syslogd ]; then report 'foundation syslogd present'; else",
+        "  report 'foundation syslogd missing: no /etc/init.d/syslogd (Patch Disk 1-2a)'",
+        "fi",
+        "if [ -c /dev/urandom ]; then report 'foundation random present'; else",
+        "  report 'foundation random missing: /dev/random is not packaged yet (a kernel relink)'",
+        "fi"]
+    return lines
+
+
+def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kernel=None,
+                 patch=False, now=None):
     """The steps AMIX runs after the bootstrap. data_disk: (raw slice, sectors)
     of the empty data disk partition to make a file system on, or None.
     With repo, packages it does not hold are left out and reported.
-    kernel: (size, System V sum) of the kernel served at /kernel, or None."""
+    kernel: (size, System V sum) of the kernel served at /kernel, or None.
+    patch: the user's patch disk is served at /patch. now: the host's UTC time."""
     pkgs, missing = packages_for(cfg)
+    pkgs = [p for p in pkgs if p not in FOUNDATION_PKGS]
     reserve = model.SPLIT_RESERVE_MB if data_disk else model.ROOT_RESERVE_MB
+    have = list(FOUNDATION_PKGS)
     if repo:
         gone = [(p, missing_in_repo(repo, p)) for p in pkgs]
         missing = missing + [("%s (not in the repository)" % p) if m == p else
                              ("%s (needs %s, not in the repository)" % (p, m))
                              for p, m in gone if m]
         pkgs = [p for p, m in gone if not m]
+        have = [p for p in FOUNDATION_PKGS if not missing_in_repo(repo, p)]
     W = "http://%s:%d" % (host, http_port)
     lines = ["#!/bin/sh",
              "# AMIX Installer: the install steps, fetched from %s/steps" % W,
@@ -265,35 +421,49 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
              "LD_LIBRARY_PATH=$B/lib; export LD_LIBRARY_PATH",
              "# MB pkg keeps free on each file system (the installer's core reserve)",
              "M=%d" % reserve,
+             "REBOOT=",
              "LOG=/tmp/amix-install.log; : > $LOG",
-             "report() { echo \"$*\"; echo \"$*\" | $B/bin/pkg http put \"$W/report/msg\" >/dev/null; }",
-             "fail() { report \"FAILED: $*\"; tail -20 $LOG | $B/bin/pkg http put \"$W/report/log\" >/dev/null; exit 1; }",
+             "# the reports go through the bootstrap's pkg, then the installed one",
+             "RPKG=$B/bin/pkg",
+             "report() { echo \"$*\"; echo \"$*\" | $RPKG http put \"$W/report/msg\" >/dev/null; }",
+             "fail() { report \"FAILED: $*\"; tail -20 $LOG | $RPKG http put \"$W/report/log\" >/dev/null; exit 1; }",
              "step() { n=$1; shift; report \"step $n: $*\"; }",
              "",
              "step 1 \"the system: `uname -a`\"",
              "report \"root: `/usr/bin/df -k / | /usr/bin/tail -1`\"",
              "",
-             "step 2 \"the package client\"",
-             "$B/bin/pkg set-publisher -O $W/repo amix >>$LOG 2>&1 || fail set-publisher",
-             "$B/bin/pkg refresh >>$LOG 2>&1 || fail refresh",
-             "$B/bin/pkg --min-free $M install sysutils/amix-pkg >>$LOG 2>&1 || fail 'installing the package client'",
-             "$B/bin/pkg --min-free $M update sysutils/amix-pkg >>$LOG 2>&1 || fail 'updating the package client'",
-             "PKG=/usr/bin/pkg",
-             "LD_LIBRARY_PATH=; export LD_LIBRARY_PATH",
-             "$PKG refresh >>$LOG 2>&1 || fail 'the installed client'"]
+             "step 2 \"foundation: the AMIX patch level\""]
+    lines += patch_check_lines(patch)
+    lines += ["",
+              "step 3 \"the package client\"",
+              "$B/bin/pkg set-publisher -O $W/repo amix >>$LOG 2>&1 || fail set-publisher",
+              "$B/bin/pkg refresh >>$LOG 2>&1 || fail refresh",
+              "$B/bin/pkg --min-free $M install sysutils/amix-pkg >>$LOG 2>&1 || fail 'installing the package client'",
+              "$B/bin/pkg --min-free $M update sysutils/amix-pkg >>$LOG 2>&1 || fail 'updating the package client'",
+              "PKG=/usr/bin/pkg",
+              "LD_LIBRARY_PATH=; export LD_LIBRARY_PATH",
+              "$PKG refresh >>$LOG 2>&1 || fail 'the installed client'",
+              "RPKG=$PKG",
+              "report 'foundation sysutils/amix-pkg installed'"]
     if data_disk:
         slice_, sectors = data_disk
         lines += ["",
-                  "step 3 \"the data disk on %s (%d sectors)\"" % (slice_, sectors),
+                  "step 4 \"the data disk on %s (%d sectors)\"" % (slice_, sectors),
                   "D=%s" % slice_,
                   "if /usr/sbin/mount | /usr/bin/grep /amixdata >/dev/null; then report 'data disk mounted already'; else",
                   "  /usr/sbin/mkfs -F ufs $D %d >>$LOG 2>&1 || fail mkfs" % sectors,
                   "  { [ -d /amixdata ] || /usr/bin/mkdir -p /amixdata; } && /usr/sbin/mount -F ufs `echo $D | /usr/bin/sed s/rdsk/dsk/` /amixdata >>$LOG 2>&1 || fail mount",
                   "  echo \"`echo $D | /usr/bin/sed s/rdsk/dsk/` $D /amixdata ufs 2 yes -\" >> /etc/vfstab",
                   "fi",
-                  "for d in usr/local usr/gnu opt; do",
-                  "  [ -d /$d ] && [ ! -h /$d ] || continue",
+                  "for d in %s; do" % " ".join(d.lstrip("/") for d in hdf_movable()),
+                  "  [ ! -h /$d ] || continue",
                   "  n=`echo $d | /usr/bin/sed 's|/|-|g'`",
+                  "  if [ ! -d /$d ]; then",
+                  "    # not there yet: its packages go straight to the data disk",
+                  "    { [ -d /amixdata/$n ] || /usr/bin/mkdir /amixdata/$n; } && /usr/bin/ln -s /amixdata/$n /$d || fail \"link /$d\"",
+                  "    report \"/$d is on the data disk\"",
+                  "    continue",
+                  "  fi",
                   "  report \"moving /$d to /amixdata/$n\"",
                   "  [ -d /amixdata/$n ] || /usr/bin/mkdir /amixdata/$n || fail \"mkdir /amixdata/$n\"",
                   "  (cd /$d && /usr/bin/find . -print | /usr/bin/cpio -pdm /amixdata/$n) >>$LOG 2>&1 || fail \"copy /$d\"",
@@ -301,7 +471,10 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
                   "  [ $a -eq $b ] || fail \"/$d: $a entries, copy has $b\"",
                   "  /usr/bin/mv /$d /$d.moved && /usr/bin/ln -s /amixdata/$n /$d && /usr/bin/rm -rf /$d.moved || fail \"link /$d\"",
                   "done"]
-    lines += ["", "step 4 \"packages: %s\"" % (" ".join(pkgs) or "none")]
+    lines += ["", "step 5 \"foundation: clock, base packages, syslogd\""]
+    lines += foundation_lines(have, now or time.gmtime())
+    lines += ["report 'foundation DONE'",
+              "", "step 6 \"packages: %s\"" % (" ".join(pkgs) or "none")]
     if pkgs:
         lines += ["$PKG --min-free $M install %s >>$LOG 2>&1 || fail 'installing packages'"
                   % " ".join(pkgs)]
@@ -318,7 +491,7 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
     if kernel and cfg.sel.get("gfx") == "picasso2":
         size, ksum = kernel
         lines += ["",
-                  "step 5 \"the kernel with /dev/rtgfb (major 54)\"",
+                  "step 7 \"the kernel with /dev/rtgfb (major 54)\"",
                   "$PKG http get $W/kernel /stand/unix.new >>$LOG 2>&1 || fail 'fetching the kernel'",
                   "set -- `/usr/bin/sum /stand/unix.new`",
                   "[ \"$1\" = %d ] && [ `/usr/bin/wc -c </stand/unix.new` -eq %d ] || "
@@ -330,17 +503,50 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
                   "/usr/bin/mv /stand/unix.new /stand/unix || fail 'installing the kernel'",
                   "[ -c /dev/rtgfb ] || /usr/sbin/mknod /dev/rtgfb c 54 0 || fail 'mknod /dev/rtgfb'",
                   "/usr/bin/chmod 666 /dev/rtgfb",
-                  "report 'the new kernel starts at the next boot; pvmk lists the old one as AMIX stock'"]
+                  "report 'the new kernel starts at the next boot; pvmk lists the old one as AMIX stock'",
+                  "REBOOT=yes"]
     elif cfg.sel.get("gfx") == "picasso2":
         lines += ["", "report 'no kernel with /dev/rtgfb was made: X cannot reach the card yet'"]
+    lines += unboot_lines()
     lines += ["",
-              "step 6 \"removing the bootstrap\"",
-              "cd / && /usr/sbin/pkgrm -n -a /tmp/amixboot.admin %s >>$LOG 2>&1 || report 'pkgrm %s failed: remove it by hand'"
-              % (BOOT_PKG, BOOT_PKG),
+              "step 8 \"removing the bootstrap\"",
+              "cd / && /usr/sbin/pkgrm -n -a /tmp/amixboot.admin %s >>$LOG 2>&1 || unboot" % BOOT_PKG,
               "rm -f /tmp/amixboot.admin /tmp/go /tmp/amix-steps",
+              "/usr/bin/sync; /usr/bin/sync",
+              "[ -z \"$REBOOT\" ] || report 'restart AMIX now: cd /; shutdown -y -g0 -i6'",
               "report DONE",
               ""]
     return "\n".join(lines)
+
+
+def unboot_lines():
+    """Shell function unboot: the bootstrap removed without pkgrm, when pkgrm
+    cannot (AMIX's pkgrm stops at any contents line it cannot parse, such as
+    X11R5's "/usr/x11r5/fonts/server/MacFS/TrueType Fonts" with its space):
+    its files, its lines of the contents file (only lines under BOOT_DIR that
+    end in the package name; the old file kept as .amix-installer), its
+    /var/sadm/pkg record."""
+    C = "/var/sadm/install/contents"
+    return ["",
+            "unboot() {",
+            "  report 'pkgrm %s failed: removing its files and records itself'" % BOOT_PKG,
+            "  n=`/usr/bin/grep -c ' %s$' %s`" % (BOOT_PKG, C),
+            "  m=`/usr/bin/grep -c '^%s[/ ].* %s$' %s`" % (BOOT_DIR, BOOT_PKG, C),
+            "  [ \"$n\" -eq \"$m\" ] || { report \"%s owns $n lines, $m under %s: remove it by hand\"; return; }"
+            % (BOOT_PKG, BOOT_DIR),
+            "  [ -f %s.amix-installer ] || /usr/bin/cp -p %s %s.amix-installer || "
+            "{ report 'keeping %s failed: remove %s by hand'; return; }" % (C, C, C, C, BOOT_PKG),
+            "  a=`/usr/bin/wc -l < %s`" % C,
+            "  /usr/bin/cp -p %s %s.new && /usr/bin/grep -v ' %s$' %s > %s.new || "
+            "{ /usr/bin/rm -f %s.new; report 'the contents without %s failed: remove it by hand'; return; }"
+            % (C, C, BOOT_PKG, C, C, C, BOOT_PKG),
+            "  b=`/usr/bin/wc -l < %s.new`" % C,
+            "  [ `/usr/bin/expr $a - $b` -eq $n ] || { /usr/bin/rm -f %s.new; "
+            "report 'the contents would lose more than %s: remove it by hand'; return; }" % (C, BOOT_PKG),
+            "  /usr/bin/mv %s.new %s || { report 'writing %s failed'; return; }" % (C, C, C),
+            "  /usr/bin/rm -rf %s /var/sadm/pkg/%s" % (BOOT_DIR, BOOT_PKG),
+            "  report '%s removed'" % BOOT_PKG,
+            "}"]
 
 
 # --- the servers --------------------------------------------------------------
@@ -446,6 +652,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return self._reply(200, st.steps().encode())
         if path == "/kernel" and st.kernel:
             return self._reply(200, st.kernel[0], "application/octet-stream")
+        if path == "/patch" and st.patch:
+            with open(st.patch, "rb") as fh:
+                return self._reply(200, fh.read(), "application/octet-stream")
         if path.startswith("/repo/"):
             rel = os.path.normpath(path[len("/repo/"):])
             if rel.startswith("..") or os.path.isabs(rel):
@@ -492,8 +701,12 @@ class Session(object):
     """One network install: both servers, the scripts, the log."""
 
     def __init__(self, cfg, repo, host=None, data_disk=None, log=None,
-                 tftp_port=TFTP_PORT, http_port=HTTP_PORT, bind="0.0.0.0", kernel=None):
+                 tftp_port=TFTP_PORT, http_port=HTTP_PORT, bind="0.0.0.0", kernel=None,
+                 patch=None, report=None):
         self.cfg = cfg
+        self.patch = patch          # the user's patch disk image, served at /patch
+        self.report = report        # foundation report file, or None
+        self.foundation = []        # its lines, as AMIX sent them
         self.kernel = None          # (bytes, size, sum) of the kernel for AMIX
         if kernel:
             with open(kernel, "rb") as f:
@@ -522,7 +735,19 @@ class Session(object):
 
     def steps(self):
         return steps_script(self.cfg, self.host, self.http_port, self.data_disk, self.repo,
-                            self.kernel[1:] if self.kernel else None)
+                            self.kernel[1:] if self.kernel else None, bool(self.patch))
+
+    def _write_report(self):
+        """foundation-report.txt: one line per item, the same on every machine."""
+        if not self.report:
+            return
+        try:
+            with open(self.report + ".part", "w") as f:
+                f.write("# AMIX foundation, %s\n" % time.strftime("%Y-%m-%d %H:%M:%S"))
+                f.write("\n".join(self.foundation) + "\n")
+            os.replace(self.report + ".part", self.report)
+        except OSError as e:
+            self.log("foundation report: %s" % e)
 
     def commands(self):
         """What to type at the AMIX console, as root."""
@@ -532,6 +757,9 @@ class Session(object):
         for line in text.splitlines() or [""]:
             t = time.strftime("%H:%M:%S")
             self.messages.append((t, kind, line))
+            if kind == "msg" and line.startswith("foundation "):
+                self.foundation.append(line)
+                self._write_report()
             if line == "DONE":
                 self.done = True
             if line.startswith("FAILED"):

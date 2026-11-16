@@ -175,16 +175,60 @@ class CopyCore(Action):
         finish(ctx, self.name, h.hexdigest())
 
 
+def check_patch_disk(path):
+    """None when path is the AmigaUNIX 2.1 patch disk image (Patch Disks 1
+    and 2: a /sbin/sh loader, then the cpio of /var/patch), else why not."""
+    if not path:
+        return "choose your patch disk image on the Base system page"
+    try:
+        with open(path, "rb") as f:
+            head = f.read(1024)
+    except OSError as e:
+        return "%s: %s" % (path, e.strerror or e)
+    if not head.startswith(b"#!/sbin/sh") or b"Patch Disks 1 and 2" not in head or \
+            b"/var/patch/apply" not in head:
+        return "%s is not the AmigaUNIX 2.1 patch disk (Patch Disks 1 and 2)" % path
+    return None
+
+
+PVMK_FILES = ("bootblock", "image", "mkadf", "mkhdf")
+
+
+def pvmk_files(d):
+    """pvmk in d, as {bootblock, image, mkadf, mkhdf, conf, readme}, or None.
+    d is a pvmk build directory (build/: bootblock.bin, pvmk.bin, host/mkadf,
+    host/mkhdf; conf/ beside it) or an installed prefix (the package
+    developer/amix/pvmk: share/pvmk/{bootblock.bin,pvmk.bin,conf/},
+    lib/pvmk/{mkadf,mkhdf})."""
+    if not d:
+        return None
+    share, lib = os.path.join(d, "share", "pvmk"), os.path.join(d, "lib", "pvmk")
+    for f in ({"bootblock": os.path.join(d, "bootblock.bin"), "image": os.path.join(d, "pvmk.bin"),
+               "mkadf": os.path.join(d, "host", "mkadf"), "mkhdf": os.path.join(d, "host", "mkhdf"),
+               "conf": os.path.join(d, "..", "conf", "pvmk.conf"),
+               "readme": os.path.join(d, "..", "conf", "README.disk")},
+              {"bootblock": os.path.join(share, "bootblock.bin"),
+               "image": os.path.join(share, "pvmk.bin"),
+               "mkadf": os.path.join(lib, "mkadf"), "mkhdf": os.path.join(lib, "mkhdf"),
+               "conf": os.path.join(share, "conf", "pvmk.conf"),
+               "readme": os.path.join(share, "conf", "README.disk")}):
+        if all(os.path.isfile(f[k]) for k in PVMK_FILES) and \
+                all(os.access(f[k], os.X_OK) for k in ("mkadf", "mkhdf")):
+            return f
+    return None
+
+
 def find_pvmk():
-    """A pvmk build: bootblock.bin, pvmk.bin, host/mkadf, host/mkhdf (and its conf/)."""
-    cands = [os.environ.get("AMIX_PVMK_DIR"),
-             os.path.expanduser("~/Sources/usr-amix/pvmk/build")]
+    """pvmk for the boot disk (see pvmk_files): $AMIX_PVMK_DIR, a build in
+    ~/Sources/usr-amix/pvmk/build, or the package developer/amix/pvmk under
+    the installer's own prefix or /usr."""
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    cands.append(os.path.join(os.path.dirname(os.path.dirname(here)), "share", "amix-installer", "pvmk"))
-    for d in cands:
-        if d and all(os.path.exists(os.path.join(d, f)) for f in
-                     ("bootblock.bin", "pvmk.bin", "host/mkadf", "host/mkhdf")):
-            return d
+    prefix = os.path.dirname(os.path.dirname(here))      # <prefix>/lib/amix-installer
+    env = os.environ.get("AMIX_PVMK_DIR")
+    for d in (env, os.path.expanduser("~/Sources/usr-amix/pvmk/build"), prefix, "/usr"):
+        f = pvmk_files(d)
+        if f:
+            return f
     return None
 
 
@@ -225,35 +269,33 @@ class PvmkDisk(Action):
     """pvmk's boot volume with our pvmk.conf, as an RDB disk of its own
     (pvmk.hdf: on the Z3660 SD card, SCSI unit 5)."""
 
-    def __init__(self, cfg, pvdir, name="pvmk.hdf"):
-        missing = None if pvdir else ("no pvmk build found (bootblock.bin, pvmk.bin, mkadf, "
-                                      "mkhdf); set AMIX_PVMK_DIR")
+    def __init__(self, cfg, pv, name="pvmk.hdf"):
+        missing = None if pv else ("pvmk not found: install developer/amix/pvmk, "
+                                   "or set AMIX_PVMK_DIR to a pvmk build")
         super(PvmkDisk, self).__init__(
             "pvmk", "Write the pvmk boot disk",
             "%s: boot menu entry AMIX = UNIX_Root:/stand/unix, keymap %s%s" %
             (name, cfg.sel["keymap"], ", z3reloc" if cfg.sel["accel"] == "z3660" else ""),
             1 << 20, [name], missing)
         self.cfg = cfg
-        self.pvdir = pvdir
+        self.pv = pv
         self.name = name
 
     def run(self, ctx):
-        d = self.pvdir
+        pvm = self.pv
         tmp = tempfile.mkdtemp(prefix="amix-installer-")
         try:
             conf = os.path.join(tmp, "pvmk.conf")
             with open(conf, "w") as f:
-                f.write(pvmk_conf(self.cfg, os.path.join(d, "..", "conf", "pvmk.conf")))
+                f.write(pvmk_conf(self.cfg, pvm["conf"]))
             adf = os.path.join(tmp, "pvmk.adf")
-            args = [os.path.join(d, "host", "mkadf"), "-q", "-o", adf,
-                    "-b", os.path.join(d, "bootblock.bin"), "-i", os.path.join(d, "pvmk.bin"),
+            args = [pvm["mkadf"], "-q", "-o", adf, "-b", pvm["bootblock"], "-i", pvm["image"],
                     "-n", "PVMK", "-f", "pvmk.conf=" + conf]
-            readme = os.path.join(d, "..", "conf", "README.disk")
-            if os.path.exists(readme):
-                args += ["-f", "README=" + readme]
+            if os.path.exists(pvm["readme"]):
+                args += ["-f", "README=" + pvm["readme"]]
             ctx.progress(0.1, "making the boot volume")
             run(args, ctx)
-            run([os.path.join(d, "host", "mkadf"), "--verify", adf, "-q"], ctx)
+            run([pvm["mkadf"], "--verify", adf, "-q"], ctx)
             with open(adf, "rb") as f:
                 bb = f.read(1024)
             pv = bb[hdf.PVBB_OFFSET:hdf.PVBB_OFFSET + 64]
@@ -266,7 +308,7 @@ class PvmkDisk(Action):
             ctx.log("pvmk fits the hole: %d of %d bytes" % (alloc, PVMK_HOLE_ROOM))
             ctx.progress(0.5, "making the disk")
             part = ctx.part(self.name)
-            run([os.path.join(d, "host", "mkhdf"), "-o", part,
+            run([pvm["mkhdf"], "-o", part,
                  "-p", "PVMK,image=%s,pri=4,bootblocks=2,pvbb" % adf], ctx)
             with hdf.Image(part) as im:
                 kinds = [p.kind for p in im.read_rdb()]
@@ -441,11 +483,14 @@ class RtgfbKernel(Action):
     """The user's own stock kernel with /dev/rtgfb linked in (kernel.py): for
     a 68030 with a Picasso II.  AMIX installs it over the network, last."""
 
-    def __init__(self, src):
+    def __init__(self, src, patch_missing=False):
         from . import kernel
         kit, ld = kernel.find_kit(), kernel.find_ld()
         why = None
-        if not kit:
+        if patch_missing:
+            # the patch disk rebuilds /stand/unix: link into the patched one
+            why = "the core disk lacks Patch Disk 1-2a: apply it, then run the installer again"
+        elif not kit:
             why = "the rtgfb kernel kit is not installed (package developer/amix/rtgfb-kit)"
         elif not ld:
             why = "the AMIX cross linker %s is not installed (developer/amix/gcc-27)" \
@@ -547,7 +592,7 @@ def readme(cfg, names):
     lines = ["Disks written by the AMIX Installer %s." % __version__, ""]
     for role, what in (("core", "the core system (root, swap, boot)"),
                        ("pvmk", "pvmk, the boot loader (boots first)"),
-                       ("data", "/usr/local, /usr/gnu and /opt")):
+                       ("data", hdf.MOVABLE_TEXT)):
         if role in names:
             lines.append("  SCSI ID %d  %-22s %s" % (SCSI_ID[role], names[role], what))
     lines.append("")
@@ -609,6 +654,11 @@ def make_plan(cfg, paths, fs=None, written=False):
     _, fits = cfg.space()
     if not fits:
         pl.problems.append("the selection does not fit (Disks page)")
+    # the foundation: every AMIX starts from 2.1p2a (FS-UAE and real machines)
+    if cfg.source is not None and cfg.source.path == src and not cfg.source.patch:
+        why = check_patch_disk(paths.get("patch_disk"))
+        if why:
+            pl.problems.append("the core disk lacks AmigaUNIX Patch Disk 1-2a: " + why)
     if pl.problems:
         return pl
 
@@ -631,9 +681,15 @@ def make_plan(cfg, paths, fs=None, written=False):
                                     "pvmk’s own “update” does it (0.4)"))
             names.pop("pvmk")
         else:
-            pl.actions.append(PvmkDisk(cfg, find_pvmk(), names["pvmk"]))
+            pv = find_pvmk()
+            pl.actions.append(PvmkDisk(cfg, pv, names["pvmk"]))
+            if pv is None:
+                # never a README or FS-UAE configuration naming a disk not written
+                pl.problems.append("pvmk not found (package developer/amix/pvmk): "
+                                   "%s cannot be written; choose the stock boot, install "
+                                   "developer/amix/pvmk or set AMIX_PVMK_DIR" % names["pvmk"])
     if sel.get("gfx") == "picasso2":
-        pl.actions.append(RtgfbKernel(src))
+        pl.actions.append(RtgfbKernel(src, cfg.source is not None and not cfg.source.patch))
     if "data" in names:
         pl.actions.append(DataDisk(src, names["data"], model.DATA_DISK_MB[sel["dsize"]] << 20))
     kick = paths.get("kickstart")
@@ -647,7 +703,7 @@ def make_plan(cfg, paths, fs=None, written=False):
     if "data" in names:
         inside.append("makes the data disk’s file system")
         if cfg.source is not None and cfg.source.movable_bytes():
-            inside.append("moves /usr/local, /usr/gnu and /opt (%d MB) there"
+            inside.append("moves " + hdf.MOVABLE_TEXT + " (%d MB) there"
                           % (cfg.source.movable_bytes() >> 20))
     if not cfg.installed(model.find_group("pkgclient").option("pkg")):
         inside.append("installs the package client")

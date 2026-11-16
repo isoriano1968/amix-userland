@@ -3,7 +3,7 @@
 RDB partitions (AmigaDOS devices/hardblocks.h), the AMIX UFS on UNIX_Root
 (4.3BSD FFS as written by SVR4, big-endian; the same reader as pvmk's
 svc/ufs.c), and what is installed: SVR4 packages, kernels in /stand, the
-size of /usr/local, /usr/gnu and /opt, a pvmk boot partition.
+size of the folders that move to the data disk (MOVABLE), a pvmk boot partition.
 
 The image is opened read-only (os.O_RDONLY) and nothing here has a write
 path: the source is never changed.
@@ -377,6 +377,7 @@ class SourceInfo(object):
         self.movable = {}           # /usr/local etc. -> bytes
         self.found = set()          # paths that exist (probes)
         self.pvmk = None            # Partition or None
+        self.patch = None           # "2.1p2a" when Patch Disk 1-2a is applied
         self.notes = []
 
     def has_core(self):
@@ -386,7 +387,25 @@ class SourceInfo(object):
         return sum(self.movable.values())
 
 
-MOVABLE = ("/usr/local", "/usr/gnu", "/opt")
+# what goes to the data disk: every place the packages install to, so the
+# core disk keeps only AMIX itself (X11R6, Motif and CDE included)
+MOVABLE = ("/usr/local", "/usr/gnu", "/opt", "/usr/x11r6", "/usr/motif", "/usr/dt")
+MOVABLE_TEXT = "/usr/local, /usr/gnu, /opt, /usr/x11r6, /usr/motif and /usr/dt"
+
+
+def patch_level(fs):
+    """"2.1pN" when AmigaUNIX Patch Disk 1-2a is applied (its /var/patch
+    README, and the level in patchlevel.h or /etc/motd), else None."""
+    import re
+    if not fs.exists("/var/patch/README"):
+        return None
+    for path, rx in (("/usr/include/patchlevel.h", r"#define\s+PATCHLEVEL\s+(\w+)"),
+                     ("/etc/motd", r"Amiga Version 2\.1p(\w+)")):
+        t = fs.read_file(path, limit=4096)
+        m = re.search(rx, t.decode("latin-1")) if t else None
+        if m:
+            return "2.1p" + m.group(1)
+    return None
 
 
 def inspect(path, probes=(), progress=None):
@@ -434,6 +453,7 @@ def inspect(path, probes=(), progress=None):
             if progress:
                 progress(d)
             info.movable[d] = fs.du(d)
+        info.patch = patch_level(fs)
         if not info.has_core():
             info.notes.append("the core package is not installed: not an AMIX core system")
     return info

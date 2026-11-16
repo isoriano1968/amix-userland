@@ -436,10 +436,12 @@ class Window(Adw.ApplicationWindow):
         flop = file_row("floppy", "Root floppy", ["*.adf", "*.img", "*.ADF"])
         outd = file_row("out_dir", "Folder for the new HDF files", [], folder=True)
         kick = file_row("kickstart", "A3000 Kickstart ROM for FS-UAE", ["*.rom", "*.ROM"])
+        patchd = file_row("patch_disk", "AmigaUNIX patch disk (Patch Disks 1 and 2)",
+                          ["*.adf", "*.ADF", "*.img"])
         repo = file_row("repo", "Package repository", [], folder=True)
         host = Adw.EntryRow(title="Address of the AMIX system")
         host.connect("changed", lambda e: self.paths.__setitem__("host", e.get_text().strip()))
-        for r in (hdf, tape, flop, host, outd, kick, repo):
+        for r in (hdf, tape, flop, host, outd, kick, patchd, repo):
             pg.add(r)
 
         def vis():
@@ -1110,6 +1112,8 @@ class Window(Adw.ApplicationWindow):
         try:
             self.net = netinstall.Session(self.cfg, net.repo, host=host, data_disk=data_disk,
                                           kernel=netinstall.plan_kernel(pl) if pl else None,
+                                          patch=self.paths.get("patch_disk"),
+                                          report=netinstall.report_path(pl) if pl else None,
                                           log=lambda t: GLib.idle_add(self._run_logline, t))
             self.net.start()
         except OSError as e:

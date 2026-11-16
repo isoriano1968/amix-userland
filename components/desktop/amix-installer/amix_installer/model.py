@@ -130,7 +130,7 @@ STEPS = [
          [G("layout", "Layout", radio=True, options=[
              O("single", "Everything on the core disk", "Only when it has room to spare"),
              O("split", "Core disk plus data disk",
-               "/usr/local, /usr/gnu and /opt on their own disk", badge="recommended"),
+               "/usr/local, /usr/gnu, /opt and the desktop on their own disk", badge="recommended"),
              O("grow", "Copy the core system to a larger disk",
                "For a core disk that was made too small", needs=("hdf", "tape"))]),
           G("dsize", "Data disk size", radio=True, options=[

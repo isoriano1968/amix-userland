@@ -13,6 +13,9 @@ def main(argv=None):
     ap.add_argument("--out", metavar="DIR", help="folder for the new disks")
     ap.add_argument("--kickstart", metavar="ROM",
                     help="your A3000 Kickstart ROM, for the FS-UAE configuration")
+    ap.add_argument("--patch-disk", metavar="ADF",
+                    help="your AmigaUNIX 2.1 patch disk image, applied when the core lacks it")
+    ap.add_argument("--repo", metavar="DIR", help="the AMIX package repository (else AMIX_REPO)")
     ap.add_argument("--no-fs-uae-list", action="store_true",
                     help="do not add \"AMIX Installer\" to FS-UAE's configurations")
     ap.add_argument("--plan", action="store_true", help="print the plan and exit (no window)")
@@ -55,11 +58,15 @@ def run_plan(args):
         paths["out_dir"] = os.path.abspath(args.out)
     if args.kickstart:
         paths["kickstart"] = os.path.abspath(args.kickstart)
+    if args.patch_disk:
+        paths["patch_disk"] = os.path.abspath(args.patch_disk)
+    if args.repo:
+        paths["repo"] = os.path.abspath(args.repo)
     if args.no_fs_uae_list:
         paths["fsuae_add"] = False
     pl = plan.make_plan(cfg, paths, written=args.net)
     if args.net:
-        return run_net(cfg, pl)
+        return run_net(cfg, pl, paths)
     print(pl.text())
     if pl.problems:
         return 1
@@ -86,7 +93,7 @@ def run_plan(args):
     return 0
 
 
-def run_net(cfg, pl):
+def run_net(cfg, pl, paths=None):
     """The network install page without a window: the disks are written, FS-UAE
     boots them, AMIX fetches the bootstrap and the packages from here."""
     import time
@@ -107,7 +114,9 @@ def run_net(cfg, pl):
     host = netinstall.lan_address() if real else netinstall.FS_UAE_HOST
     try:
         s = netinstall.Session(cfg, net[0].repo, host=host, data_disk=data_disk, log=print,
-                               kernel=None if real else netinstall.plan_kernel(pl))
+                               kernel=None if real else netinstall.plan_kernel(pl),
+                               patch=(paths or {}).get("patch_disk"),
+                               report=netinstall.report_path(pl))
         s.start()
     except OSError as e:
         print("amix-installer: the servers cannot start: %s" % e, file=sys.stderr)

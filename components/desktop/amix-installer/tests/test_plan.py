@@ -17,6 +17,7 @@ def fake_source(path, found=(), pvmk=None, movable=0):
     s.pvmk = pvmk
     s.movable = {"/usr/local": movable}
     s.packages = [("core", "Amiga Unix essential components", "")]
+    s.patch = "2.1p2a"
     return s
 
 
@@ -318,3 +319,28 @@ class Picasso(Base):
         self.assertNotIn("unix.stock", plan.pvmk_conf(self.cfg(gfx="chipset")))
         self.assertNotIn("kernel-rtgfb",
                          [a.id for a in plan.make_plan(self.cfg(gfx="chipset"), self.paths()).actions])
+
+
+class PatchLevel(Base):
+    def test_unpatched_core_needs_the_patch_disk(self):
+        c = self.cfg()
+        c.source.patch = None
+        pl = plan.make_plan(c, self.paths())
+        self.assertIn("Patch Disk 1-2a", " ".join(pl.problems))
+        bad = os.path.join(self.d, "bad.adf")
+        with open(bad, "wb") as f:
+            f.write(b"\0" * 2048)
+        pl = plan.make_plan(c, dict(self.paths(), patch_disk=bad))
+        self.assertIn("is not the AmigaUNIX 2.1 patch disk", " ".join(pl.problems))
+        good = os.path.join(self.d, "patch.adf")
+        with open(good, "wb") as f:
+            f.write(b'#!/sbin/sh\necho "This contains Patch Disks 1 and 2 ..."\n'
+                    b'exec /var/patch/apply\n'.ljust(1024, b"#") + b"\0" * 1024)
+        pl = plan.make_plan(c, dict(self.paths(), patch_disk=good))
+        self.assertFalse([p for p in pl.problems if "Patch Disk" in p])
+
+    def test_picasso_kernel_needs_the_patched_core(self):
+        c = self.cfg(mach="uae", accel="none", kern="stock", boot="pvmk", gfx="picasso2")
+        c.source.patch = None
+        a = plan.RtgfbKernel(self.src, patch_missing=True)
+        self.assertIn("Patch Disk 1-2a", a.missing)
