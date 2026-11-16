@@ -4,13 +4,16 @@
 confirmed it works (2026-11-07).** Pass 2 (the kernel step) is built and
 not booted (2026-11-07, section 5.1); its boot plan is section 5.2.
 The user agreed to the design on 2026-11-07 ("yes to all", section 9).
+The X server is `Xamix` (x11/xserver-amix) since 2026-11-16; it was
+`Xzz9000` (x11/xzz9000) before, and the box notes below (1.1, the pass 1
+install steps) keep the names of that time.
 
 This is a screen-mode selector like the Display panels on Linux desktops.
-The user picks the resolution and refresh rate of the Xzz9000 server on the
+The user picks the resolution and refresh rate of the Xamix server on the
 A3000 + Z3660; colour depth is shown, fixed at 16 bit (section 3). The
 change is **live** through RandR 1.1. The user decided in the X11R6.7
-session to backport RandR into Xzz9000 and to have this panel use it; that
-session owns the server patch (`components/x11/xzz9000/local-randr.patch`).
+session to backport RandR into Xamix and to have this panel use it; that
+session owns the server patch (`components/x11/xserver-amix/local-randr.patch`).
 After a change, a dialog asks for 15 seconds whether to keep the new
 resolution, and it goes back to the old one otherwise.
 
@@ -25,7 +28,7 @@ RandR can do.
 
 | layer | where | what it does |
 |---|---|---|
-| dtlogin | `/etc/dt/config/Xservers` → `/opt/amix/bin/Xzz9000-dt` (cde `files/dtlogin/`) | `-mode` = `$RTG_MODE`, else **the whole of line 1** of `/etc/dt/config/rtg-mode` (its comment says "first word", but the code passes the whole line unquoted, so a second word would become a stray server argument and the server would exit), else `1920x1080`. The wrapper `exec`s the server, so dtlogin's signals reach the server itself. |
+| dtlogin | `/etc/dt/config/Xservers` → `/opt/amix/bin/Xamix-dt` (cde `files/dtlogin/`) | `-mode` = `$RTG_MODE`, else **the whole of line 1** of `/etc/dt/config/rtg-mode` (its comment says "first word", but the code passes the whole line unquoted, so a second word would become a stray server argument and the server would exit), else `1920x1080`. The wrapper `exec`s the server, so dtlogin's signals reach the server itself. |
 | startx | `/opt/amix/bin/startx-z3 [WxH]` → `startx-rtg` (upstream `amix-z3660rtg/x11`) | `-mode` = first argument, else `$RTG_MODE`, else `1024x768`. It is checked against a hard-coded list: `640x480 800x600 1024x768 1280x720 1280x1024 1920x800 1920x1080 1280x800`. |
 | X server | `hw/amix/amixIo.c` `-mode`, `rtg/zz9000/zz9000hw.c` | Has its own table of 8 names (the same as startx-rtg). With no `-mode` its default is `zz9000_modes[5]` = 1920x800, which the Z3660 refuses. Depth is fixed at 16 (`ZZ9000_DEPTH`), and SETMODE always uses `ZZ9K_COLOR_16BIT565`. |
 | kernel | amix-gate `io/zz9000` `ZZ9KIOC_SETMODE` (struct `zz9k_mode` {width, height, color_mode, scale_mode}) | Looks up WxH in the board's mode table, giving one firmware id per WxH. Checks that `w*h*bpp` fits `fb_size`, then writes `REG_ZZ_MODE` = id \| colour<<8 \| scale<<12. There is no ioctl that lists the modes. |
@@ -57,7 +60,7 @@ fbinfo: masks r 0xf800 g 0x7e0 b 0x1f
 So X is running at 1920x1080 RGB565, with firmware 1.03 and a 46 MB
 framebuffer window. `/var/dt/Xpid` holds **dtlogin's** pid (202), not the
 server's (Xzz9000 was 203), so the wrapper writes its own
-`/var/dt/Xzz9000.pid`.
+`/var/dt/Xamix.pid`.
 
 **Incident, 2026-11-07:** that check ran `zz9k_test /dev/zz9000` with no
 subcommand. It is not a report: after printing it runs the mode test (SETMODE
@@ -120,7 +123,7 @@ What this means for the refresh choice:
   Alt+F VT switch would see only the first 4 MB. The first pass offers these
   two modes marked "experimental", or hides them until the kernel is checked
   (question Q3).
-- X server memory: `Xzz9000-dt` sets `ulimit -v 128 MB` and maps the whole
+- X server memory: `Xamix-dt` sets `ulimit -v 128 MB` and maps the whole
   46 MB board, so the frame size changes nothing there.
 - Speed: the 060 draws every non-blitted pixel, so 2560x1440 costs 1.8× the
   pixels of 1080p at 30 Hz.
@@ -137,7 +140,7 @@ UI.
 
 ## 3. Depth
 
-`components/x11/xzz9000/docs/DEPTH-24-32-EVALUATION.md` (the parallel
+`components/x11/xserver-amix/docs/DEPTH-24-32-EVALUATION.md` (the parallel
 session, 2026-11-07) concludes: **stay at 16 bpp**. The Z3660's video
 formatter drives the SiI9022 over 16 pins (`hdmi_data =
 {R[7:3],G[7:2],B[7:3]}`), so a 32 bpp frame shows the same 65536 colours at
@@ -202,7 +205,7 @@ installed server does not know; such a size would make `-mode` fail, and
 dtlogin would give up on the display.
 
 Without RandR (today's server on the box) the list is the 7 sizes every
-Xzz9000 knows (zz9000hw.c before RandR, without the ZZ9000-only 1920x800).
+Xamix knows (zz9000hw.c before RandR, without the ZZ9000-only 1920x800).
 Apply only saves, and says that the mode applies when X starts again.
 
 ### 4.3 The files
@@ -216,7 +219,7 @@ rate 60
 # comment
 ```
 
-Line 1 is `WxH` and nothing else, because Xzz9000-dt passes the whole of
+Line 1 is `WxH` and nothing else, because Xamix-dt passes the whole of
 line 1 to `-mode`. Line 2 (`rate N`) is optional and is used through RandR.
 Today's server ignores it at start.
 
@@ -226,13 +229,13 @@ Today's server ignores it at start.
 - Before each login screen: dtlogin runs Xsetup as root and waits for it.
   `amixdisplay -system` switches back to the login screen's mode, because a
   logged-out user's mode would otherwise stay after the server reset.
-- At server start: Xzz9000-dt passes line 1 to `-mode`, as before.
+- At server start: Xamix-dt passes line 1 to `-mode`, as before.
 
 ### 4.4 setlogin (setuid root)
 
 The user decided on setuid, so that every user can store defaults; the
 user's own file needs no privilege. `setlogin WxH [rate]` accepts only the
-Z3660 kernel table's sizes that Xzz9000 knows (16 sizes: not 2560x1440, not
+Z3660 kernel table's sizes that Xamix knows (16 sizes: not 2560x1440, not
 1920x800) and rates of 20–120 Hz or 0. It writes `rtg-mode.new` with
 `O_EXCL` and mode 0644, fsyncs it, renames it over `rtg-mode`, and notes
 the user's name in a comment line. It reads no environment and no other
@@ -245,7 +248,7 @@ long numbers are refused.
 - x11/libxrandr and x11/libxrender, shared (`libXrandr.so.2` and
   `libXrender.so.1` are NEEDED). They must be on the box before amixdisplay;
   they come with the RandR session's install.
-- An Xzz9000 with RandR for live changes. Without it, the app only saves.
+- An Xamix with RandR for live changes. Without it, the app only saves.
 - `cde-apps.manifest`: `require x11/libxrandr` added.
 
 ## 5. Pass 2: the kernel step (agreed, separate; built, not booted)
@@ -402,7 +405,7 @@ runs, and `df -k /` must show at least 200 MB free first.
   4 MB mapping (5.1), so it clears only the first 4 MB of a 1920x1200
   frame. Use the blitter (`ZZ9KIOC_BLITX` op 0, or a FILLRECT of the whole
   frame) instead, or leave it to the exposures.
-- `-mode WxH[@Hz]` at start, so that Xzz9000-dt and line 2 of rtg-mode
+- `-mode WxH[@Hz]` at start, so that Xamix-dt and line 2 of rtg-mode
   (`rate N`) can start straight at 50 Hz, without a RandR switch after
   login. The panel's `-restore`/`-system` already switch the rate through
   RandR once the server registers several.
@@ -440,7 +443,7 @@ says so:
 
 - **Depth change:** the HDMI path is RGB565 (section 3). If a deeper server
   ever exists, a depth change needs a server restart. Then the first draft's
-  flow applies: write `rtg-mode.new`, kill the server, and in Xzz9000-dt
+  flow applies: write `rtg-mode.new`, kill the server, and in Xamix-dt
   promote `.new` to `.try` and drop an unconfirmed `.try` on the next start.
   An Xsetup `amixdisplay -confirm` keeps `.try`, or reverts by killing the
   server. Note: `/var/dt/Xpid` is dtlogin's pid, not the server's.

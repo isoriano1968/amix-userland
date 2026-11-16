@@ -591,7 +591,7 @@ diff -ruN a/programs/Xserver/randr/Imakefile b/programs/Xserver/randr/Imakefile
 --- a/programs/Xserver/randr/Imakefile	1970-01-01 01:00:00.000000000 +0100
 +++ b/programs/Xserver/randr/Imakefile	2026-11-07 11:17:26.122045079 +0100
 @@ -0,0 +1,14 @@
-+XCOMM RandR 1.1 extension, backported from xorg-server 1.0.2 (AMIX Xzz9000).
++XCOMM RandR 1.1 extension, backported from xorg-server 1.0.2 (AMIX Xamix).
 +XCOMM randr.c and randrstr.h are the pristine upstream files plus the AMIX
 +XCOMM fit-up; mirandr.c is not used (the DDX has its own size table).
 +#include <Server.tmpl>

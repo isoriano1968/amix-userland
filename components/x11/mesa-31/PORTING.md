@@ -29,7 +29,7 @@ adds soft3D on the Z3660 and MIT-SHM (see README.md).
 1. Build `src` to produce `libGL.a` with the Xlib driver.
 2. Build `src-glu` to produce `libGLU.a`.
 3. Build `src-glut` to produce `libglut.a`.
-4. Build `xdemos` and run a minimal visual test against `Xzz9000`.
+4. Build `xdemos` and run a minimal visual test against `Xamix`.
 5. Build selected GLUT demos such as `gears` and `glutmech`.
 6. Add AMIX ELF shared-library rules only after the static path is proven.
 

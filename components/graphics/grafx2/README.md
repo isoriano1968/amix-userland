@@ -9,7 +9,7 @@ shading, layers and animation, and the classic Amiga, Atari ST, C64 and CPC pict
   `/usr/local/share/grafx2`, and each user's settings in `~/.grafx2`.
 - CDE gets the Grafx2 action, icons, an App Manager entry and a control in the AMIX
   subpanel (`desktop/cde-apps/panel/amix.fp`).
-- The X server must have a TrueColor visual. AMIX's Xzz9000 runs at 16 bits.
+- The X server must have a TrueColor visual. AMIX's Xamix runs at 16 bits on the Z3660.
 
 The component is the upstream release plus redcode's 6502 emulator v0.1 (for loading
 C64 programs, fetched by upstream's own build too), with two patches:

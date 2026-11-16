@@ -2,7 +2,7 @@
 # build060.sh -- the X11R6.3 client libraries as static archives built by
 # gcc14-cross-amix for the 68060 (-O2 -m68060), in lib060/.  AMIX's own are
 # gcc 2.7.2.3 -O for the 68020; CDE and Motif link them statically.
-# Source: xc060/, a copy of x11/xzz9000/src/xc after its build.sh step 4
+# Source: xc060/, a copy of x11/xserver-amix/src/xc after its build.sh step 4
 # (imake Makefiles for the AMIX cross configuration).  Each library's own
 # Makefile compiles (so per-file defines like ErrDes.c's ERRORDB stay);
 # only the compiler and its flags are replaced.

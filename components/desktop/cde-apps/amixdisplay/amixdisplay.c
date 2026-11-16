@@ -1,9 +1,9 @@
 /*
  * amixdisplay.c -- the Display settings for AMIX in CDE, after the Linux
  * desktops' panels: the screen resolution, refresh and colours of the
- * Xzz9000 server on the Z3660.
+ * Xamix server on the Z3660.
  *
- * The change is live through RandR 1.1 (x11/xzz9000 local-randr.patch).
+ * The change is live through RandR 1.1 (x11/xserver-amix local-randr.patch).
  * After it, a dialog asks "Keep this screen mode?" for 20 seconds and goes
  * back to the old one unless Keep is pressed, so a mode the monitor cannot
  * show undoes itself.  dtwm does not follow a root window resize, so it is
@@ -17,10 +17,10 @@
  *                             (Xsession.d: amixdisplay -restore)
  *   /etc/dt/config/rtg-mode   the login screen's, for everyone; written by
  *                             the setuid helper /opt/amix/lib/amixdisplay/setlogin,
- *                             read by Xzz9000-dt at server start and applied
+ *                             read by Xamix-dt at server start and applied
  *                             again before each greeter (Xsetup:
  *                             amixdisplay -system)
- * Both files: line 1 "WxH" and nothing else (Xzz9000-dt passes the whole
+ * Both files: line 1 "WxH" and nothing else (Xamix-dt passes the whole
  * line to -mode), line 2 optional "rate N" (Hz).
  *
  *   amixdisplay               the window
@@ -59,8 +59,8 @@
 #define KEEP_WAIT_MS 3000   /* after a size change: dtwm restarts first */
 #define MAXSIZES    64
 
-/* without RandR: the modes the Z3660 kernel driver and every Xzz9000
-   build know (zz9000hw.c before RandR, minus the ZZ9000-only 1920x800) */
+/* without RandR: the modes the Z3660 kernel driver and every Xamix (Xzz9000
+   before 2026-11-16) build know (zz9000hw.c before RandR, minus the ZZ9000-only 1920x800) */
 static const short fallback[][2] = {
     { 640, 480 }, { 800, 600 }, { 1024, 768 }, { 1280, 720 },
     { 1280, 800 }, { 1280, 1024 }, { 1920, 1080 }
@@ -614,7 +614,7 @@ static void apply_cb(Widget w, XtPointer cd, XtPointer cb)
     if (!have_rr || (i == cur_size && (!sel_rate || sel_rate == cur_rate))) {
         /* nothing to switch: save only.  Every mode saved is one the server
            is showing (or, without RandR, one of the fallback list that every
-           Xzz9000 knows): a mode unknown to the server at its start would
+           Xamix knows): a mode unknown to the server at its start would
            keep dtlogin from starting X at all */
         if (save(i, sel_rate) == 0) {
             show_state();
@@ -738,7 +738,7 @@ int main(int argc, char **argv)
     depth_opt = XmCreateOptionMenu(rc, "depth", a, n);
     set_label(XmOptionLabelGadget(depth_opt), "Colours: ");
     XtManageChild(depth_opt);
-    /* the Z3660's HDMI path is RGB565 (xzz9000 docs/DEPTH-24-32-EVALUATION.md):
+    /* the Z3660's HDMI path is RGB565 (xserver-amix docs/DEPTH-24-32-EVALUATION.md):
        the server has one depth, and another one would need a server restart */
     XtSetSensitive(depth_opt, False);
 

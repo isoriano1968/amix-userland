@@ -60,7 +60,7 @@ before `main`; rebuilding it with `ld -G -h` fixed the failure.
 1. Validate every `libfoo.so.N` with `file` and `dump -Lv`.
 2. Confirm `libXt.sa` and `libXmu.sa` each contain only `sharedlib.o`.
 3. Relink and test `xinit`, `xsetroot`, `xclock`, `xterm`, and `twm`.
-4. Start `Xzz9000` only after the client-side ABI tests pass.
+4. Start `Xamix` only after the client-side ABI tests pass.
 
 `amix-shared-rebuild.sh` performs these structural checks and regenerates the
 affected client link lines.

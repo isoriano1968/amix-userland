@@ -1,7 +1,7 @@
 # libXrandr 1.1.0.2 (X11R7.0) for AMIX: the RandR 1.1 client library,
 # libXrandr.so.2, with Xrandr.h and xrandr.pc (ours: R6.3 has no xproto.pc).
 # Built against the R6.3 libX11 and libXext; extutil.h (as <X11/extensions/
-# extutil.h>) from the R6.3 tree, as x11/libxp does.  Talks to the Xzz9000 RandR backport (x11/xzz9000).
+# extutil.h>) from the R6.3 tree, as x11/libxp does.  Talks to the Xamix RandR backport (x11/xserver-amix).
 COMPONENT_NAME    = libxrandr
 COMPONENT_VERSION = 1.1.0.2
 COMPONENT_ARCHIVE = libXrandr-$(COMPONENT_VERSION).tar.bz2
@@ -15,7 +15,7 @@ include ../../../make-rules/unpack.mk
 include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
-X11_SRC ?= $(HOME)/Sources/usr-amix/private/xzz9000/src/xc
+X11_SRC ?= $(CURDIR)/../xserver-amix/src/xc
 CFLAGS = -O2 -m68060 -fPIC -fno-strict-aliasing -fcommon -Wno-error=implicit-function-declaration \
 	-Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=implicit-int \
 	-U__linux__ -Ulinux -DSVR4 -DAMIX -D__amix__ -DMALLOC_0_RETURNS_NULL \

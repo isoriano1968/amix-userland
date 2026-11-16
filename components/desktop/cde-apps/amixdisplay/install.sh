@@ -5,7 +5,7 @@
 # and login-screen hooks, and the AMIX panel with its control.  Then Restart
 # Workspace Manager; the Application Manager entry comes with the next login
 # (or Application Manager, Reload Applications).
-# A live change needs an Xzz9000 with RandR (x11/xzz9000 local-randr.patch);
+# A live change needs an Xamix with RandR (x11/xserver-amix local-randr.patch);
 # without it Display only saves the login screen's mode.
 set -e
 cp amixdisplay /opt/amix/bin/amixdisplay.new

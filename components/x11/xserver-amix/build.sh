@@ -1,5 +1,6 @@
 #!/bin/sh
-# build.sh -- cross-build the X11R6.3 Xzz9000 server for the A3000 + Z3660 RTG
+# build.sh -- cross-build the X11R6.3 X server Xamix (hw/amix: one server, the
+# graphics cards are drivers in it: zz9000, cirrus) for the A3000 + Z3660 RTG
 # (amix-z3660rtg docs/X-CROSS.md, with the fork's x11/patches), from the local
 # copy of isoriano's X11R6.3 tree.  Every step logs to log/.
 #   sh build.sh            full build from a fresh copy of the tree
@@ -9,7 +10,7 @@
 #   DISTFILES  xorg-server-1.0.2 and randrproto-1.1.2 tarballs (default ./distfiles,
 #            checked against SOURCES.sha256)
 #   HDF      AMIX disk image for /usr/amiga and /usr/ucblib (read-only)
-# Output: src/xc/programs/Xserver/Xzz9000
+# Output: src/xc/programs/Xserver/Xamix (Xzz9000 before 2026-11-16)
 set -e
 W=$(cd "$(dirname "$0")" && pwd)
 UA=$(cd "$W/../../../.." && pwd)	# usr-amix, above amix-userland
@@ -23,6 +24,12 @@ mkdir -p "$W/log"
 # 1. the tree: a copy, CRLF in the AMIX DDX converted, the fork's patches in order
 rm -rf "$W/src/xc"; mkdir -p "$W/src"; cp -a "$XC_SRC" "$W/src/"
 cd "$W/src/xc"
+# the server target is Xamix (x11r6.3's port patch since 2026-11-16); a tree
+# made from the port patch before then names it Xzz9000.  The local patches
+# below expect Xamix in programs/Xserver/Imakefile.
+sed -i 's/Xzz9000/Xamix/g' programs/Xserver/Imakefile
+grep -q '^ServerTarget(Xamix,' programs/Xserver/Imakefile
+if grep -q Xzz9000 programs/Xserver/Imakefile; then echo "Imakefile: Xzz9000 left" >&2; exit 1; fi
 grep -rlI "$(printf '\r')" programs/Xserver/hw/amix > "$W/log/crlf-files.txt" || true
 [ -s "$W/log/crlf-files.txt" ] && xargs sed -i 's/\r$//' < "$W/log/crlf-files.txt"
 for p in zz9000hw-modes p5-1-solidrect-alu p5-2-copyarea-expose p5-3-setspans-alu \
@@ -124,7 +131,10 @@ if [ ! -f "$W/disk/usr/amiga/lib/libscreen.so" ]; then
 		python3 -I "$W/ufsget.py" "$HDF" 128 $d "$W/disk$d"
 	done
 fi
+# sysroot-mirror is a link into private/ (AMIX material): rebuild its target,
+# not the link
 M=$W/sysroot-mirror
+[ -L "$M" ] && M=$(readlink -f "$M")
 rm -rf "$M"; cp -rs "$SYSROOT" "$M"
 rm "$M/usr/lib/libscreen.so" "$M/usr/ccs/lib/libdbm.a" "$M/usr/include/amiga"
 cp "$W/disk/usr/amiga/lib/libscreen.so" "$M/usr/lib/libscreen.so"
@@ -162,6 +172,6 @@ done
 gcc -std=gnu89 -fcommon -w -o "$W/mkg3states-host" lib/lbxutil/image/mkg3states.c
 "$W/mkg3states-host" > lib/lbxutil/image/g3states.h
 (cd lib/lbxutil && make) > "$W/log/08-lbxutil.log" 2>&1
-(cd programs/Xserver && make Xzz9000) > "$W/log/09-Xserver.log" 2>&1
-ls -l programs/Xserver/Xzz9000
-sha256sum programs/Xserver/Xzz9000
+(cd programs/Xserver && make Xamix) > "$W/log/09-Xserver.log" 2>&1
+ls -l programs/Xserver/Xamix
+sha256sum programs/Xserver/Xamix

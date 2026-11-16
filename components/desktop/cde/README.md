@@ -32,7 +32,7 @@ here, and your own AMIX installation.
 - About 200 MB of free disk space under `/usr/dt`.
 
 Developed and tested on an Amiga 3000 with a Z3660 (68060 at 80 MHz, 128 MB),
-the Z3660's RTG output and the `Xzz9000` X server
+the Z3660's RTG output and the `Xamix` X server (`Xzz9000` until 2026-11-16)
 ([amix-z3660rtg](https://github.com/jusii/amix-z3660rtg)).
 
 ### The build host
@@ -109,7 +109,7 @@ their files in `/var/tmp`:
 
 | | |
 |---|---|
-| `target/dtlogin/` | dtlogin at boot through `/etc/init.d/dtlogin` and `dtconfig`. `/etc/dt/nodtlogin` skips it. Includes Motif, TWM and OPEN LOOK sessions next to CDE, and `Xzz9000-dt` as the server dtlogin starts. `mklogo.py` turns a picture of your choice into a dtlogin logo; none is included. |
+| `target/dtlogin/` | dtlogin at boot through `/etc/init.d/dtlogin` and `dtconfig`. `/etc/dt/nodtlogin` skips it. Includes Motif, TWM and OPEN LOOK sessions next to CDE, and `Xamix-dt` as the server dtlogin starts. `mklogo.py` turns a picture of your choice into a dtlogin logo; none is included. |
 | `target/keymap/` | The console's keyboard layout for X. `kmap2xmodmap.py` converts your machine's `/usr/amiga/lib/kmap/*` into xmodmap tables, and `xkeymap-amiga` loads the one that matches the console. |
 | `target/extra/XLC_LOCALE.C.amix` | A C locale for X11R6.3 with both halves of ISO 8859-1, so dtterm shows umlauts and other 8-bit characters. |
 
@@ -165,5 +165,5 @@ The patches in `patches/cde/` are one commit each. They cover these areas:
 - The CDE project (cdesktopenv) and The Open Group, for CDE.
 - ICS and The Open Group, for Motif.
 - asokero, for gcc14-cross-amix and the AMIX 68040/68060 kernel port.
-- jusii, for the Z3660 drivers and `Xzz9000`.
+- jusii, for the Z3660 drivers and `Xzz9000`, the server `Xamix` grew from.
 - The amigaux.org community.

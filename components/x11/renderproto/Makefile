@@ -1,7 +1,7 @@
 # renderproto 0.9.2 for AMIX: the Render extension headers (protocol 0.9), into
 # /usr/x11r6/include/X11/extensions, with renderproto.pc.  Headers only: the R6.3
 # Xlib takes the matching client library (x11/libxrender) and the
-# Xzz9000 server its own copy (x11/xzz9000 build.sh).
+# Xamix server its own copy (x11/xserver-amix build.sh).
 COMPONENT_NAME    = renderproto
 COMPONENT_VERSION = 0.9.2
 COMPONENT_ARCHIVE = renderproto-$(COMPONENT_VERSION).tar.bz2

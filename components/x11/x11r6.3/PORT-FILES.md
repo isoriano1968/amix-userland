@@ -11,13 +11,13 @@ X11R6.3 `xc` source tree (`install.sh` applies it).
 - `config/imake/Makefile.ini`, `config/imake/imakemdep.h`: bootstrap compiler/cpp
 - `config/util/amix-shared-rebuild.sh`: clean PIC library and client rebuild
 - `config/util/amix-build-programs.sh`: resumable AMIX client-program build helper
-- `config/util/startXzz9000`, `xinitrc.zz9000`, `twmrc.zz9000`, `Xmodmap.de`, `gears.zz9000`: build-tree twm test session without using crashing AMIX `xinit`; detaches console output before X and restores the ZZ9000 console path on exit
+- `config/util/startXamix`, `xinitrc.zz9000`, `twmrc.zz9000`, `Xmodmap.de`, `gears.zz9000`: build-tree twm test session without using crashing AMIX `xinit`; detaches console output before X and restores the ZZ9000 console path on exit
 - `programs/Imakefile`, `programs/rstart/Imakefile`: old cpp/make compatibility
 - `programs/twm/lex.l`: AMIX lex compatibility for the revision comment
 
 ## X server
 
-- `programs/Xserver/Imakefile`: `Xzz9000` target and AMIX DDX dependency graph
+- `programs/Xserver/Imakefile`: `Xamix` target (named `Xzz9000` before 2026-11-16) and AMIX DDX dependency graph
 - `programs/Xserver/include/servermd.h`: m68k AMIX image/bitmap padding and order
 - `programs/Xserver/dix/dixfonts.c`: font pad probe helpers for catching stale font objects
 - `programs/Xserver/mfb/maskbits.h`: disables the broken AMIX/m68k inline-asm bitfield fast path

@@ -5,8 +5,8 @@ Status: draft, 2026-10-24. Nothing downloaded or built yet.
 ## Goal
 
 The original CDE look and feel on AMIX: dtwm, front panel, dtsession, dtterm,
-dtfile, dtpad, the style manager. It runs on your X11R6.3 port with `Xzz9000`
-on the Z3660 RTG.
+dtfile, dtpad, the style manager. It runs on your X11R6.3 port with `Xamix`
+(`Xzz9000` until 2026-11-16) on the Z3660 RTG.
 
 Principle: an **era-matched stack**. Your X11R6.3 (1996/97) is the base, with
 a CDE release that still has the old SVR4 code paths and the imake build. It
@@ -74,7 +74,7 @@ should not need UTF-8, Xft or PAM, which AMIX doesn't have.
 |---|---|---|
 | P0 | `zen0` up: cable, IP, `S99zen`; FTP between PC and A3000 | a 2 MB file arrives in seconds |
 | P1 | gcc14-cross-amix: install, sysroot, `check-68060-safe.py`; C and C++ hello, X client against R6.3, shared-library test | answers to questions 1 and 2 |
-| P2 | R6.3 as the desktop runtime: library path, R6.3 clients and fonts next to R5 | `xterm`/`twm` from R6.3 on `Xzz9000` |
+| P2 | R6.3 as the desktop runtime: library path, R6.3 clients and fonts next to R5 | `xterm`/`twm` from R6.3 on `Xamix` |
 | P3 | Motif 2.3.x: `libXm`, `mwm`, a demo | mwm session on the Z3660 HDMI |
 | P4 | CDE core: DtSvc, DtWidget, Tt, dtwm, dtsession, dtterm, dtpad, front panel | a CDE session from `startx-z3` |
 | P5 | the rest: dtfile, dtstyle, dthelp, dtcm, dtmail; dtlogin on the RTG | login screen to desktop |

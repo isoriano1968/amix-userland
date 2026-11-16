@@ -5,10 +5,10 @@
  *
  *   setlogin WxH [rate]
  *
- * It writes /etc/dt/config/rtg-mode and nothing else.  Xzz9000-dt passes the
+ * It writes /etc/dt/config/rtg-mode and nothing else.  Xamix-dt passes the
  * whole of line 1 to the server's -mode, so line 1 is exactly "WxH"; line 2
  * is "rate N" when a rate is given.  Only the sizes of the Z3660 kernel
- * driver's table that Xzz9000 knows are accepted, and the rate must be
+ * driver's table that Xamix knows are accepted, and the rate must be
  * between 20 and 120 Hz.  The file is written next to the old one and
  * renamed over it, so a reader never sees half a file.
  */
@@ -26,7 +26,7 @@
 #define FILE_   "/etc/dt/config/rtg-mode"
 #define TMP     "/etc/dt/config/rtg-mode.new"
 
-/* zz9k_modes_z3660 (amix-gate io/zz9000) that Xzz9000 has in its table:
+/* zz9k_modes_z3660 (amix-gate io/zz9000) that Xamix has in its table:
    2560x1440 is not in it, 1920x800 is ZZ9000 only */
 static const int sizes[][2] = {
     { 640, 400 }, { 640, 480 }, { 640, 512 }, { 720, 480 }, { 720, 576 },

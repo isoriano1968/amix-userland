@@ -1,5 +1,5 @@
 # xrandr 1.0.2 (X11R7.0) for AMIX: the RandR command, /usr/x11r6/bin/xrandr.
-# Lists the sizes Xzz9000 offers and switches between them (x11/xzz9000 with
+# Lists the sizes Xamix offers and switches between them (x11/xserver-amix with
 # the RandR backport); the CDE display panel uses the same library calls.
 COMPONENT_NAME    = xrandr
 COMPONENT_VERSION = 1.0.2

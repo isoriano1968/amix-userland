@@ -8,7 +8,7 @@ index fde778f..c5ce198 100644
  CFB16DIR = cfb16
 +CFB32DIR = cfb32
  DDXDIR1  = hw/amix
- /* Xprint is not part of Xzz9000; its DIX stubs are linked through CFB16Libs. */
+ /* Xprint is not part of Xamix; its DIX stubs are linked through CFB16Libs. */
  AMIXDIRS = include dix os mi $(EXTDIRS) $(MFBDIR) $(CFB8DIR) $(CFB16DIR) \
 -           $(DDXDIR1) $(DEPDIRS)
 +           $(CFB32DIR) $(DDXDIR1) $(DEPDIRS)
@@ -19,9 +19,9 @@ index fde778f..c5ce198 100644
 -           hw/amix/rtg/zz9000/LibraryTargetName(zz9000) CFB16Libs
 +           hw/amix/rtg/zz9000/LibraryTargetName(zz9000) \
 +           cfb32/LibraryTargetName(cfb) CFB16Libs
- ServerTarget(Xzz9000,$(AMIXDIRS),$(AMIXOBJS),$(AMIXLIBS),$(SYSLIBS))
+ ServerTarget(Xamix,$(AMIXDIRS),$(AMIXOBJS),$(AMIXLIBS),$(SYSLIBS))
  #ifndef ServerToInstall
- #define ServerToInstall Xzz9000
+ #define ServerToInstall Xamix
 diff --git a/programs/Xserver/hw/amix/Imakefile b/programs/Xserver/hw/amix/Imakefile
 index 8256f63..30f8e6c 100644
 --- a/programs/Xserver/hw/amix/Imakefile

@@ -1,6 +1,6 @@
 /*
  * xhold.c -- hold one X connection open until the server goes away.
- * The X11R6.3 Xzz9000 resets whenever its last client disconnects (it has no
+ * The X11R6.3 server Xamix resets whenever its last client disconnects (it has no
  * -noreset): the font path goes back to the default and new connections are
  * refused while it resets.  Under startx, CDE's Xsession runs xset as its
  * first client, so that reset undid the font path and broke the next clients.

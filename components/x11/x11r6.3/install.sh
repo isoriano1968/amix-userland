@@ -93,7 +93,7 @@ do
     (cd "$DEST" && patch -s -p1 < "$p" 2>&1 | grep -v 'is read-only; trying to patch anyway') || true
 done
 U=$DEST/xc/config/util
-chmod +x "$U/amix-build-programs.sh" "$U/amix-shared-rebuild.sh" "$U/startXzz9000" \
+chmod +x "$U/amix-build-programs.sh" "$U/amix-shared-rebuild.sh" "$U/startXamix" \
     "$U/xinitrc.zz9000" "$U/gears.zz9000"
 
 test -f "$DEST/xc/config/cf/amix.cf" || fail "AMIX patches were not applied"

@@ -1,6 +1,6 @@
 # X11R6.3 for AMIX: the client libraries as shared libraries (libX*.so.7),
 # their headers and .pc files, libXtInherit's source and xauth, cross-built.
-# The Xzz9000 server is x11/xzz9000; the native AMIX build is README.md's.
+# The X server Xamix is x11/xserver-amix; the native AMIX build is README.md's.
 #
 #   gmake AMIX_SYSROOT=/path/to/clean/sysroot stage
 #

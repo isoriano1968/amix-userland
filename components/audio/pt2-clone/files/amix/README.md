@@ -40,7 +40,9 @@ at 80 MHz) and its RTG output.
   [68040/68060 kernel port](https://github.com/asokero/amix-040-060-port). Its
   shared-memory fixes make MIT-SHM safe.
 - X11R6.3 for AMIX ([x11r6.3-amix](https://github.com/isoriano1968/amix-userland/tree/main/components/x11/x11r6.3))
-  and an X server with 16-bit colour. On a Z3660, use the `Xzz9000` from
+  and an X server with 16-bit colour. On a Z3660, use `Xamix`
+  ([x11/xserver-amix](https://github.com/isoriano1968/amix-userland/tree/main/components/x11/xserver-amix),
+  called `Xzz9000` before 2026-11-16) with the Z3660 driver from
   [soft3d-z3660rtg-amix](https://github.com/isoriano1968/amix-gate/tree/main/usr/src/uts/amiga/io/soft3d).
 - For Paula sound: `/dev/paula` from paula-amix. Otherwise `/dev/audio`.
 

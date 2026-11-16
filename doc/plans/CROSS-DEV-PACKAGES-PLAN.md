@@ -28,7 +28,7 @@ The X11R6.3 libraries also need, today:
 - the imake cross configuration (`x11/cross/host.def`, `imakecpp.sh`) from a
   clone of amix-z3660rtg at no fixed commit;
 - `/usr/amiga`, `libscreen.so` and `libdbm.a` read with `ufsget.py` from an
-  AMIX disk image (`x11/xzz9000/build.sh` steps 2-4);
+  AMIX disk image (`x11/xserver-amix/build.sh` steps 2-4);
 - a sysroot that already holds an older `/usr/x11r6`, so a build can pick up
   old headers or libraries without notice.
 
@@ -53,7 +53,7 @@ For each of the three, in this order (each depends on the one before):
    in use on the box (symbols, sonames, NEEDED, sizes); differences are
    explained before anything replaces them.
 
-x11r6.3 also keeps the `Xzz9000` server in x11/xzz9000, which uses the same
+x11r6.3 also keeps the `Xamix` server in x11/xserver-amix, which uses the same
 tree with the server patch series; only the client libraries, headers,
 `.pc` files, `libXtInherit.a` and `xauth` belong to x11/x11r6.3.
 
@@ -89,7 +89,7 @@ return) comes after this and rebuilds all three with everything else.
 - **Sources reproduce.** `install.sh` (xc-1/2/3.tar.gz, SOURCES.sha256,
   0001-amix-port.patch) gives a tree that equals the one the box's
   libX*.so.7 were built from (`private/shared-build/xc`), except for what
-  x11/xzz9000/build.sh changes at build time (HasShm YES, site.def includes
+  x11/xserver-amix/build.sh changes at build time (HasShm YES, site.def includes
   host.def), the server patch series, and whitespace in three Imakefiles.
   The older copy `usr-amix/usr/x11r6/xc` lacks two fixes the patch has
   (AmixHasShm switch, two-argument gettimeofday for `__amix__` in Xos.h) and
@@ -102,7 +102,7 @@ return) comes after this and rebuilds all three with everything else.
   usr/lib/libscreen.so -> ../amiga/lib/libscreen.so, usr/ccs/lib/libdbm.a
   -> ../../ucblib/libdbm.a, usr/include/amiga, and the libc.a members of the
   server's stub archive (select.o, syslog.o, fpsetmask.o, ...). The stub
-  archive is a server matter (ServerExtraSysLibs) and stays in xzz9000.
+  archive is a server matter (ServerExtraSysLibs) and stays in xserver-amix.
 - **MIT-SHM** comes from `#define AmixHasShm YES` in site.def (the patch's
   switch), not from sed over amix.cf.
 - **Toolchains.** imake generates Makefiles for gcc-27's names

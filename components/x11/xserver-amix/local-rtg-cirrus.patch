@@ -8,7 +8,7 @@ index c5ce198..86b55ba 100644
             hw/amix/rtg/zz9000/LibraryTargetName(zz9000) \
 +           hw/amix/rtg/cirrus/LibraryTargetName(cirrus) \
             cfb32/LibraryTargetName(cfb) CFB16Libs
- ServerTarget(Xzz9000,$(AMIXDIRS),$(AMIXOBJS),$(AMIXLIBS),$(SYSLIBS))
+ ServerTarget(Xamix,$(AMIXDIRS),$(AMIXOBJS),$(AMIXLIBS),$(SYSLIBS))
  #ifndef ServerToInstall
 diff --git a/programs/Xserver/hw/amix/rtg/Imakefile b/programs/Xserver/hw/amix/rtg/Imakefile
 index 5e251b4..924f2c5 100644

@@ -741,9 +741,9 @@ diff -ruN a/xc/config/util/gears.zz9000 b/xc/config/util/gears.zz9000
 +
 +echo "gears.zz9000: Mesa gears demo not found" >&2
 +exit 1
-diff -ruN a/xc/config/util/startXzz9000 b/xc/config/util/startXzz9000
---- a/xc/config/util/startXzz9000
-+++ b/xc/config/util/startXzz9000
+diff -ruN a/xc/config/util/startXamix b/xc/config/util/startXamix
+--- a/xc/config/util/startXamix
++++ b/xc/config/util/startXamix
 @@ -0,0 +1,126 @@
 +#!/bin/sh
 +
@@ -752,15 +752,15 @@ diff -ruN a/xc/config/util/startXzz9000 b/xc/config/util/startXzz9000
 +MODE=${ZZ9K_MODE-1920x800}
 +FONT_PATH=${ZZ9K_FONT_PATH-$TOP/fonts/bdf/misc}
 +
-+SERVER=$TOP/programs/Xserver/Xzz9000
++SERVER=$TOP/programs/Xserver/Xamix
 +CLIENT=$TOP/config/util/xinitrc.zz9000
 +ZZ9K_DEV=${ZZ9K_DEV-/dev/zz9000}
 +ZZ9K_TEST=${ZZ9K_TEST-/usr/amiga/bin/zz9k_test}
 +ZZ9K_CONSOLE=${ZZ9K_CONSOLE-/usr/amiga/bin/zz9k_console}
 +ZZ9K_PRE_X_CMD=${ZZ9K_PRE_X_CMD-noconsole}
 +ZZ9K_EXIT_CMD=${ZZ9K_EXIT_CMD-redirect}
-+ZZ9K_SERVER_LOG=${ZZ9K_SERVER_LOG-/tmp/Xzz9000.log}
-+ZZ9K_CLIENT_LOG=${ZZ9K_CLIENT_LOG-/tmp/Xzz9000-clients.log}
++ZZ9K_SERVER_LOG=${ZZ9K_SERVER_LOG-/tmp/Xamix.log}
++ZZ9K_CLIENT_LOG=${ZZ9K_CLIENT_LOG-/tmp/Xamix-clients.log}
 +
 +case "$DISPLAY_NUMBER" in
 +:[0-9]*) ;;
@@ -776,7 +776,7 @@ diff -ruN a/xc/config/util/startXzz9000 b/xc/config/util/startXzz9000
 +    then
 +        :
 +    else
-+        echo "startXzz9000: missing $file" >&2
++        echo "startXamix: missing $file" >&2
 +        exit 1
 +    fi
 +done
@@ -800,7 +800,7 @@ diff -ruN a/xc/config/util/startXzz9000 b/xc/config/util/startXzz9000
 +    fi
 +fi
 +
-+echo "Starting Xzz9000 on $DISPLAY_NUMBER at $MODE"
++echo "Starting Xamix on $DISPLAY_NUMBER at $MODE"
 +echo "Exit twm to stop the X server."
 +echo "Server log: $ZZ9K_SERVER_LOG"
 +echo "Client log: $ZZ9K_CLIENT_LOG"
@@ -1003,7 +1003,7 @@ diff -ruN a/xc/config/util/Xmodmap.de b/xc/config/util/Xmodmap.de
 +! German keymap overlay for the AMIX X11R6 server.
 +! AMIX reports raw Amiga keycodes as X keycode = raw scancode + 1.
 +!
-+! This file intentionally avoids XKB; Xzz9000 is started with -kb.
++! This file intentionally avoids XKB; Xamix is started with -kb.
 +! Load with:
 +!   /usr/x11r6/xc/programs/xmodmap/xmodmap /usr/x11r6/xc/config/util/Xmodmap.de
 +
@@ -8091,16 +8091,16 @@ diff -ruN a/xc/programs/Xserver/Imakefile b/xc/programs/Xserver/Imakefile
 +CFB8DIR  = cfb
 +CFB16DIR = cfb16
 +DDXDIR1  = hw/amix
-+/* Xprint is not part of Xzz9000; its DIX stubs are linked through CFB16Libs. */
++/* Xprint is not part of Xamix; its DIX stubs are linked through CFB16Libs. */
 +AMIXDIRS = include dix os mi $(EXTDIRS) $(MFBDIR) $(CFB8DIR) $(CFB16DIR) \
 +           $(DDXDIR1) $(DEPDIRS)
 +AMIXOBJS = hw/amix/amixInit.o
 +AMIXLIBS = hw/amix/LibraryTargetName(amix) \
 +           hw/amix/rtg/LibraryTargetName(rtg) \
 +           hw/amix/rtg/zz9000/LibraryTargetName(zz9000) CFB16Libs
-+ServerTarget(Xzz9000,$(AMIXDIRS),$(AMIXOBJS),$(AMIXLIBS),$(SYSLIBS))
++ServerTarget(Xamix,$(AMIXDIRS),$(AMIXOBJS),$(AMIXLIBS),$(SYSLIBS))
 +#ifndef ServerToInstall
-+#define ServerToInstall Xzz9000
++#define ServerToInstall Xamix
 +#endif
 +#endif /* XAmixServer */
 +

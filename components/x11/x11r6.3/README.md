@@ -10,7 +10,7 @@ against the unmodified X11R6.3 sources, which
 ## Current status
 
 - X11R6.3 builds with GCC 2.7.2.3 and the AMIX GNU preprocessor.
-- The `Xzz9000` server links and starts at 16-bit modes including 1920x800.
+- The `Xamix` server (called `Xzz9000` until 2026-11-16) links and starts at 16-bit modes including 1920x800.
 - The ZZ9000 framebuffer uses R6 pixmap-private storage correctly for both
   16-bit drawing and depth-1 font/cursor bitmaps.
 - The native AMIX build has shared libraries in the AMIX model: `gcc -fpic`,
@@ -121,14 +121,14 @@ optional clients that may still need AMIX-specific attention. By default the
 script keeps going and reports all failed clients at the end; set
 `AMIX_PROGRAMS_KEEP_GOING=no` to stop on the first failure.
 
-## Running Xzz9000
+## Running Xamix
 
 The included `xinit` wrapper starts a 1920x800 session with `twm`, `xterm`,
 and `xclock` from the build tree:
 
 ```sh
 cd /usr/x11r6/xc
-sh config/util/startXzz9000 :0
+sh config/util/startXamix :0
 ```
 
 Choose `Exit` from the twm root menu to terminate the session and X server.
@@ -144,15 +144,15 @@ The session loads `/usr/x11r6/xc/config/util/Xmodmap.de` by default when
 `xmodmap` is available. Override or disable it with `ZZ9K_XMODMAP`:
 
 ```sh
-ZZ9K_XMODMAP=none sh config/util/startXzz9000 :1
-ZZ9K_XMODMAP=/path/to/Xmodmap sh config/util/startXzz9000 :1
+ZZ9K_XMODMAP=none sh config/util/startXamix :1
+ZZ9K_XMODMAP=/path/to/Xmodmap sh config/util/startXamix :1
 ```
 
 Set `ZZ9K_SHELL` to choose the shell used by the initial xterm and by the twm
 menu xterm entry:
 
 ```sh
-ZZ9K_SHELL=/usr/public/bin/bash sh config/util/startXzz9000 :1
+ZZ9K_SHELL=/usr/public/bin/bash sh config/util/startXamix :1
 ```
 
 The launcher uses `-ac` for the initial local test and `-kb` to avoid the

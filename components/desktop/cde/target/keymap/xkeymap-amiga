@@ -1,5 +1,5 @@
 #!/bin/sh
-# xkeymap-amiga -- give the X server (Xzz9000, built-in US keymap) the console's
+# xkeymap-amiga -- give the X server (Xamix, built-in US keymap) the console's
 # keyboard layout.  The console's map is /usr/amiga/lib/kmap/default.kmap, a
 # link to one of the maps there (amixkeymap sets it); its X table is
 # /usr/x11r6/lib/X11/xmodmap.amiga-NAME, generated from the same file by

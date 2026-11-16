@@ -16,7 +16,7 @@ include ../../../make-rules/unpack.mk
 include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
-X11_SRC ?= $(HOME)/Sources/usr-amix/private/xzz9000/src/xc
+X11_SRC ?= $(CURDIR)/../xserver-amix/src/xc
 SRCS = AddTrap Color Composite Cursor FillRect FillRects Filter Glyph Picture Poly Trap Tri Xrender
 CFLAGS = -O2 -m68060 -fPIC -fno-strict-aliasing -fcommon -Wno-error=implicit-function-declaration \
 	-Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=implicit-int \

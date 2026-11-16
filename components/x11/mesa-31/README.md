@@ -87,11 +87,11 @@ What it needs:
 - the 68040/68060 kernel from
   [amix-040-060-port](https://github.com/asokero/amix-040-060-port) (MIT-SHM
   is only safe there);
-- the Z3660 RTG driver built with `-DZZ9K_MAP_BOARD`, and the `Xzz9000`
-  server with the ZZ9K-SOFT3D extension. Both are in
-  [soft3d-z3660rtg-amix](https://github.com/isoriano1968/amix-gate/tree/main/usr/src/uts/amiga/io/soft3d);
-  [x11r6.3-amix](https://github.com/isoriano1968/amix-userland/tree/main/components/x11/x11r6.3) carries the
-  same server.
+- the Z3660 RTG driver built with `-DZZ9K_MAP_BOARD`, in
+  [soft3d-z3660rtg-amix](https://github.com/isoriano1968/amix-gate/tree/main/usr/src/uts/amiga/io/soft3d),
+  and the `Xamix` server (`Xzz9000` before 2026-11-16) with the ZZ9K-SOFT3D
+  extension, from
+  [x11/xserver-amix](https://github.com/isoriano1968/amix-userland/tree/main/components/x11/xserver-amix).
 
 Building, on the Linux host, in the prepared tree:
 

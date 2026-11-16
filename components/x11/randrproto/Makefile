@@ -1,7 +1,7 @@
 # randrproto 1.1.2 for AMIX: the RandR extension headers (protocol 1.1), into
 # /usr/x11r6/include/X11/extensions, with randrproto.pc.  Headers only: the R6.3
 # Xlib takes the matching client library (x11/libxrandr) and the
-# Xzz9000 server its own copy (x11/xzz9000 build.sh).
+# Xamix server its own copy (x11/xserver-amix build.sh).
 COMPONENT_NAME    = randrproto
 COMPONENT_VERSION = 1.1.2
 COMPONENT_ARCHIVE = randrproto-$(COMPONENT_VERSION).tar.bz2
