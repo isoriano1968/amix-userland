@@ -1,0 +1,7 @@
+# name, version and what building and running it needs
+name     sysutils/setclk
+version  2.1.1
+summary  setclk with a four-digit year: the right date at boot after 1999
+# replaces Commodore's /usr/amiga/bin/setclk (core); /etc/setclk and
+# /sbin/setclk are the core's links to it
+file     /usr/amiga/bin/setclk mode=0755 owner=amiga group=amiga

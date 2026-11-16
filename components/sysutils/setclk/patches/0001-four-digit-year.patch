@@ -1,0 +1,121 @@
+setclk: read and write the battery clock with a four-digit year.
+
+Commodore's setclk (AMIX 2.1c, usr/amiga/src/cmd/setclk) formats the year
+as years since 1900 with %02d: "126" for 2026. That overflows its 11-byte
+buffers, and date(1) rejects the 3-digit year ("date: bad conversion"), so
+every boot after 1999 keeps the root file system's last time. -s and
+"setclk MMDDhhmmYY" read the year back with %02d, so writing the battery
+clock breaks too.
+
+Every clock string becomes MMDDhhmmYYYY, which date(1) accepts. setclk
+still reads MMDDhhmmYY (70..99 = 19xx, 00..69 = 20xx) and now checks
+both forms. The year's range is AMIX's 32-bit time_t: 1970..2037.
+
+Earlier fixes: Harry "Piru" Sintonen's (public domain, 2006; the buffers
+and a 3-digit year) and a_petri's (2007; a 4-digit year for date), on
+https://amigaunix.com/doku.php/y2k-dst. This patch is written anew.
+
+--- a/usr/amiga/src/cmd/setclk/setclk.c
++++ b/usr/amiga/src/cmd/setclk/setclk.c
+@@ -19,6 +19,9 @@
+ 
+ #define	dysize(A) (((A)%4)? 365: 366)	/* number of days per year */
+ 
++/* MMDDhhmmYYYY: a four-digit year, so date(1) takes it after 1999 */
++#define	CLKBUF	sizeof("MMDDhhmmYYYY")
++
+ static int dmsize[12]={31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+ 
+ #ifndef BEXTIME_FILE
+@@ -51,7 +54,7 @@
+ 
+     if (!strcmp(*argv, "getclk"))
+     {
+-	char buffer[11];
++	char buffer[CLKBUF];
+ 
+ 	retval = read_clock(buffer);
+ 
+@@ -80,7 +83,7 @@
+     if (argc == 1)
+     {
+ 	time_t thetime = read_from_clock_device();
+-	char buffer[BUFSIZ*2], tmpbuf[sizeof("MMDDhhmmYY")];
++	char buffer[BUFSIZ*2], tmpbuf[CLKBUF];
+ 
+ 	/*
+ 	** Set the system time to what the hardware thinks is correct.
+@@ -138,7 +141,7 @@
+ 
+     if (set_clock)
+     {
+-	char buffer[11];
++	char buffer[CLKBUF];
+ 	struct tm *tm;
+ 	time_t thetime;
+ 
+@@ -156,8 +159,8 @@
+ 		      tm->tm_year);
+ #endif
+ 
+-	(void) sprintf(buffer, "%02d%02d%02d%02d%02d", tm->tm_mon, tm->tm_mday,
+-		       tm->tm_hour, tm->tm_min, tm->tm_year);
++	(void) sprintf(buffer, "%02d%02d%02d%02d%04d", tm->tm_mon, tm->tm_mday,
++		       tm->tm_hour, tm->tm_min, tm->tm_year + 1900);
+ 
+ 	retval = write_clock(buffer);
+ 
+@@ -175,7 +178,7 @@
+ 
+     if (display_clock)
+     {
+-	char buffer[11];
++	char buffer[CLKBUF];
+ 
+ 	retval = read_clock(buffer);
+ 
+@@ -189,7 +192,7 @@
+ static void
+ usage()
+ {
+-    (void) fprintf(stderr, "usage: %s [-p?] [-s | mmddHHMMYY]\n", progname);
++    (void) fprintf(stderr, "usage: %s [-p?] [-s | mmddHHMM[YY]YY]\n", progname);
+     exit(1);
+ }
+ 
+@@ -247,8 +250,8 @@
+ 
+     dmsize[1] = 28;
+ 
+-    (void) sprintf(buffer, "%02d%02d%02d%02d%02d", month, days, hours, mins,
+-		   year);
++    (void) sprintf(buffer, "%02d%02d%02d%02d%04d", month, days, hours, mins,
++		   year + 1900);
+ }
+ 
+ static time_t
+@@ -299,8 +302,11 @@
+ 	return FALSE;
+     }
+ 
+-    if (sscanf(buffer, "%02d%02d%02d%02d%02d", &month, &days, &hours, &mins,
+-	       &year) != 5)
++    if ((strlen(buffer) != 10 && strlen(buffer) != 12) ||
++	strspn(buffer, "0123456789") != strlen(buffer) ||
++	sscanf(buffer, "%2d%2d%2d%2d%d", &month, &days, &hours, &mins,
++	       &year) != 5 || month < 1 || month > 12 || days < 1 || days > 31 ||
++	hours > 23 || mins > 59 || (strlen(buffer) == 12 && (year < 1970 || year > 2037)))
+     {
+ 	(void) fprintf(stderr, "%s: Bad date format \"%s\"\n", progname,
+ 		       buffer);
+@@ -312,7 +318,9 @@
+ 
+     /* Add year */
+ 
+-    if (year < 70)
++    if (year >= 1900)
++	year -= 1900;			/* MMDDhhmmYYYY */
++    else if (year < 70)
+ 	year += 100;			/* ooooooohhhhh */
+ 
+     for (i=70; i < year; i++)

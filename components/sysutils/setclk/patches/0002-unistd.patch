@@ -1,0 +1,14 @@
+setclk: declare read, write and close (<unistd.h>).
+
+Commodore's compiler took them undeclared; gcc 14 does not.
+
+--- a/usr/amiga/src/cmd/setclk/setclk.c
++++ b/usr/amiga/src/cmd/setclk/setclk.c
+@@ -7,6 +7,7 @@
+ #include <stdlib.h>
+ #include <fcntl.h>
+ #include <errno.h>
++#include <unistd.h>
+ 
+ #define TRUE  (1)
+ #define FALSE (0)
