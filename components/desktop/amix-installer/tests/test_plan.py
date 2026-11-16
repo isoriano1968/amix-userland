@@ -207,6 +207,18 @@ class FsUae(Base):
             else:
                 os.environ["FS_UAE_BASE_DIR"] = old
 
+    def test_network_of_a_configuration(self):
+        fs = fake_fs(self.d)
+        conf = lambda n, t: (open(fs.config_path(n), "w").write(t), fs.config_path(n))[1]  # noqa
+        self.assertEqual(fs.network_of(conf("net", "[fs-uae]\n network_card = A2065\n")),
+                         "a2065")
+        self.assertIsNone(fs.network_of(conf("plain", "[fs-uae]\namiga_model = A3000\n")))
+        self.assertIsNone(fs.network_of(os.path.join(self.d, "none.fs-uae")))
+        # the one the installer writes has the A2065
+        pl = plan.make_plan(self.cfg(), dict(self.paths(), kickstart="/k.rom"), fs)
+        fsc = [a for a in pl.actions if a.id == "fs-uae"][0]
+        self.assertEqual(fs.network_of(conf("own", fsc.text())), "a2065")
+
 
 class Execute(Base):
     def only(self, pl, *ids):

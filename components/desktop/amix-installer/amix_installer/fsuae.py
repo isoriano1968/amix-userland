@@ -47,6 +47,19 @@ class FsUae(object):
         p = self.config_path(name)
         return bool(p and os.path.exists(p))
 
+    def network_of(self, path):
+        """The network card a configuration gives the Amiga, or None: the
+        network install needs network_card = a2065 (FS-UAE's slirp NAT)."""
+        try:
+            with open(path, errors="replace") as f:
+                for line in f:
+                    m = re.match(r"\s*network_card\s*=\s*(\S+)", line)
+                    if m:
+                        return m.group(1).lower()
+        except OSError:
+            pass
+        return None
+
     def a3000_kickstarts(self):
         """A3000 ROMs in the Kickstarts folder, newest version first."""
         d = self.folder("Kickstarts")

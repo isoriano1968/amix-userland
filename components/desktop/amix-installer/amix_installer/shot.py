@@ -67,7 +67,7 @@ def run(win, outdir):
     if os.environ.get("AMIX_SHOT_NET"):
         from . import plan
         if plan.default_repo():
-            scenes = [("n-net", {"src": "run"}, {}, 0)]
+            scenes = [("n-net", {"src": "run"}, {}, 0), ("n-fsuae-net", {"src": "run"}, {}, 0)]
     out = os.environ.get("AMIX_SHOT_OUT")
     if out and getattr(win, "source_state", None):
         win.paths["out_dir"] = out
@@ -99,7 +99,8 @@ def run(win, outdir):
         elif name.endswith("-net"):
             # the network install page for a running system (servers start, then stop)
             from . import plan
-            win._net_page(plan.NetInstall("", plan.default_repo()), real=True)
+            win._net_page(plan.NetInstall("", plan.default_repo()), real=True,
+                          emu=name.endswith("fsuae-net"))
             GLib.timeout_add(300, lambda: after_paint(net_grab) and False)
         else:
             after_paint(grab)

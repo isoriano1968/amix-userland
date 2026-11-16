@@ -858,6 +858,8 @@ class Window(Adw.ApplicationWindow):
             net = [a for a in pl.actions if a.id == "install"][0]
             if net.missing:
                 self._alert("Not ready", net.missing)
+            elif plan.fs_uae().installed:
+                self._ask_where(net)
             else:
                 self._net_page(net, real=True)
             return
@@ -1002,6 +1004,74 @@ class Window(Adw.ApplicationWindow):
         self.run_btns.append(back)
         return False
 
+    def _ask_where(self, net):
+        """A running system: on the Amiga itself, or in FS-UAE on this computer?
+        The two see this computer at different addresses."""
+        from . import netinstall
+        d = Adw.AlertDialog(
+            heading="Where does this AMIX run?",
+            body="On an Amiga, AMIX fetches the bootstrap from this computer over the LAN "
+                 "(%s). In FS-UAE here, it reaches this computer through FS-UAE\u2019s network "
+                 "as %s, and the installer can start FS-UAE for you."
+                 % (netinstall.lan_address(), netinstall.FS_UAE_HOST))
+        d.add_response("cancel", "Cancel")
+        d.add_response("amiga", "On the Amiga")
+        d.add_response("fsuae", "In FS-UAE Here")
+        d.set_response_appearance("fsuae", Adw.ResponseAppearance.SUGGESTED)
+        d.set_default_response("fsuae")
+        d.connect("response", lambda _d, r: r in ("amiga", "fsuae") and
+                  self._net_page(net, real=True, emu=(r == "fsuae")))
+        d.present(self)
+
+    def _fsuae_start(self, btns, info, cfgf):
+        """The Start FS-UAE button, with the configurations to start from; or a
+        row that says why FS-UAE cannot be started from here."""
+        fs = plan.fs_uae()
+        if not fs.installed:
+            info.add(Adw.ActionRow(title="FS-UAE is not installed here",
+                                   subtitle="Install it with: " + fsuae.install_hint()))
+            return
+        paths = []
+        if cfgf:
+            paths.append(cfgf)
+        for n in fs.configurations():
+            p = fs.config_path(n)
+            if p not in paths:
+                paths.append(p)
+        if not paths:
+            info.add(Adw.ActionRow(
+                title="No FS-UAE configuration",
+                subtitle="None in %s. Write the disks with this installer (it writes %s), or "
+                         "make an A3000 configuration with network_card = a2065 in FS-UAE\u2019s "
+                         "launcher." % (fs.folder("Configurations"), plan.FSUAE_CONFIG)))
+            return
+        # the ones with the A2065 first: the others cannot reach this computer
+        paths.sort(key=lambda p: fs.network_of(p) != "a2065")
+        names = [os.path.basename(p)[:-7] if p.endswith(".fs-uae") else p for p in paths]
+        row = Adw.ComboRow(title="FS-UAE configuration", model=Gtk.StringList.new(names))
+        info.add(row)
+
+        def check(*_a):
+            p = paths[row.get_selected()]
+            card = fs.network_of(p)
+            if card == "a2065":
+                row.set_subtitle("%s \u2014 A2065: AMIX must be 10.0.2.15 (the amigaunix line of "
+                                 "/etc/inet/hosts)" % p)
+                start.set_sensitive(True)
+            else:
+                row.set_subtitle("%s has no A2065 (network_card = %s): AMIX cannot reach this "
+                                 "computer. Add network_card = a2065 in FS-UAE\u2019s launcher."
+                                 % (p, card or "none"))
+                start.set_sensitive(False)
+        start = Gtk.Button(label="Start FS-UAE")
+        start.add_css_class("suggested-action")
+        start.connect("clicked", lambda b: subprocess.Popen(
+            [fs.binary, paths[row.get_selected()]], stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True))
+        row.connect("notify::selected", check)
+        check()
+        btns.append(start)
+
     def _offer_written(self):
         """The out folder already holds the disks of this plan (an earlier run):
         offer the network install with them instead of writing them again."""
@@ -1025,7 +1095,7 @@ class Window(Adw.ApplicationWindow):
         return True
 
     # -- the network install ---------------------------------------------------
-    def _net_page(self, net, real, pl=None):
+    def _net_page(self, net, real, pl=None, emu=False):
         """Serve the bootstrap and the repository; show what to type; log AMIX."""
         from . import netinstall
         data_disk = None
@@ -1035,7 +1105,8 @@ class Window(Adw.ApplicationWindow):
             except (OSError, hdf.NotAnImage) as e:
                 self._alert("The data disk cannot be read", str(e))
                 return
-        host = netinstall.lan_address() if real else netinstall.FS_UAE_HOST
+        emu = emu or not real           # AMIX in FS-UAE: this computer is 10.0.2.2
+        host = netinstall.FS_UAE_HOST if emu else netinstall.lan_address()
         try:
             self.net = netinstall.Session(self.cfg, net.repo, host=host, data_disk=data_disk,
                                           log=lambda t: GLib.idle_add(self._run_logline, t))
@@ -1050,8 +1121,7 @@ class Window(Adw.ApplicationWindow):
         for m in ("top", "bottom", "start", "end"):
             getattr(page, "set_margin_" + m)(28 if m in ("top", "bottom") else 16)
         page.append(label("Install over the network", ("title-1",)))
-        page.append(label(("On the Amiga" if real else "In FS-UAE (\u201c%s\u201d)"
-                           % fsuae.CONFIG_NAME) +
+        page.append(label(("In FS-UAE" if emu else "On the Amiga") +
                           ", log in as root at the console and type these lines. AMIX "
                           "fetches a small bootstrap from this computer and installs "
                           "everything with its own tools; its progress shows below.",
@@ -1069,7 +1139,7 @@ class Window(Adw.ApplicationWindow):
             info.add(Adw.ActionRow(title="Data disk",
                                    subtitle="%s, %d sectors: AMIX makes its file system"
                                    % data_disk))
-        if real:
+        if not emu:
             info.add(Adw.ActionRow(title="The Amiga\u2019s network",
                                    subtitle="Its A2065 must be up and reach %s (ping %s)"
                                    % (host, host)))
@@ -1083,16 +1153,13 @@ class Window(Adw.ApplicationWindow):
         sw.set_child(self.run_log)
         page.append(sw)
         btns = Gtk.Box(spacing=10, halign=Gtk.Align.END)
-        fs = plan.fs_uae()
-        cfgf = fs.config_path() if fs.has_config() else None
-        if pl is not None and not real:
-            own = os.path.join(pl.paths["out_dir"], plan.FSUAE_CONFIG)
-            cfgf = own if os.path.exists(own) else cfgf
-        if not real and fs.installed and cfgf:
-            start = Gtk.Button(label="Start FS-UAE")
-            start.connect("clicked", lambda b: subprocess.Popen(
-                [fs.binary, cfgf], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
-            btns.append(start)
+        if emu:
+            fs = plan.fs_uae()
+            cfgf = fs.config_path() if fs.has_config() else None
+            if pl is not None:
+                own = os.path.join(pl.paths["out_dir"], plan.FSUAE_CONFIG)
+                cfgf = own if os.path.exists(own) else cfgf
+            self._fsuae_start(btns, info, cfgf)
         stop = Gtk.Button(label="Stop and Go Back")
         stop.connect("clicked", lambda b: self._net_stop())
         btns.append(stop)
