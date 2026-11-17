@@ -487,6 +487,33 @@ class Cards(Base):
         self.assertEqual(plan.disk_device(sd, "core", 1), "/dev/rdsk/c6d0s1")   # stock rootdev
         self.assertEqual(plan.disk_device(sd, "data", 1), "/dev/rdsk/c1d0s1")
 
+    def test_040_kernels(self):
+        """our 68040/060 kernels are made here; the port kernel takes the Z3660's
+        SD card and Ethernet from kits, the Z3660 kernel has them built in"""
+        k = {"mach": "a3000", "accel": "z3660", "kern": "k040", "target": "sd",
+             "net": "netzen", "gfx": "rtg"}
+        self.assertEqual(plan.kernel_drivers(k), ["z3660scsi", "z3660eth"])
+        self.assertTrue(plan.kernel_built(k))
+        z = dict(k, kern="z3opt")
+        self.assertEqual(plan.kernel_drivers(z), [])
+        self.assertTrue(plan.kernel_built(z))
+        self.assertFalse(plan.kernel_built({"kern": "stock", "gfx": "chipset"}))
+        pl = plan.make_plan(self.cfg(**k), self.paths())
+        dk = [a for a in pl.actions if a.id == "kernel"][0]
+        self.assertEqual((dk.line, dk.variant, dk.root), ("040", "generic", (1, 6)))
+        self.assertIn("root on ced0s1", dk.detail)
+        self.assertTrue(dk.name.startswith("unix.k040+z3660scsi"))
+
+    def test_pvmk_stock_entry(self):
+        """a 68040/060 kernel gets no "AMIX stock" entry: the stock 68030
+        kernel does not run there"""
+        k = model.Config(sel={"mach": "a3000", "accel": "z3660", "kern": "k040", "boot": "pvmk"})
+        self.assertNotIn("AMIX stock", plan.pvmk_conf(k))
+        self.assertIn("z3reloc=yes", plan.pvmk_conf(k))
+        s = model.Config(sel={"mach": "a3000", "accel": "none", "kern": "stock", "boot": "pvmk",
+                              "gfx": "picasso2"})
+        self.assertIn("entry=AMIX stock,UNIX_Root:/stand/unix.stock,native", plan.pvmk_conf(s))
+
     def test_third_controller_refused(self):
         old = plan.scsi_controllers
         plan.scsi_controllers = lambda sel: ["a", "b", "c"]
@@ -513,8 +540,14 @@ class Cards(Base):
             for k, v in old.items():
                 if v:
                     os.environ[k] = v
+        # the port kernel: the VA2000's 040 kit; what is missing is named
         a = plan.DriverKernel(self.src, ["va2000"], kern="k040")
-        self.assertIn("stock 68030 kernel only", a.missing)
+        self.assertEqual(a.line, "040")
+        self.assertTrue(a.name.startswith("unix.k040+va2000"))
+        self.assertTrue(a.missing is None or "stock 68030 kernel only" not in a.missing)
+        # HydraNet has no 040 kit: refused by line
+        h = plan.DriverKernel(self.src, ["hydra"], kern="k040")
+        self.assertIn("for the stock 68030 kernel only", h.missing)
 
 
 class PatchLevel(Base):

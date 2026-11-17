@@ -500,9 +500,6 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
                   % " ".join(pkgs)]
     if missing:
         lines += ["report 'not packaged yet, left out: %s'" % ", ".join(missing).replace("'", "")]
-    if cfg.sel.get("kern") not in (None, "stock"):
-        lines += ["", "report 'the %s kernel is not packaged yet: the stock kernel stays'"
-                  % model.find_group("kern").option(cfg.sel["kern"]).title]
     card = X_CARD.get(cfg.sel.get("gfx")) if "x11" in cfg.tags() else None
     if card:
         lines += ["", "[ -d /etc/X11 ] || /usr/bin/mkdir /etc/X11 || fail 'mkdir /etc/X11'",
@@ -522,20 +519,22 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
 
 
 def kernel_lines(cfg, kernel_file):
-    """Step 7: the kernel linked here with the cards' drivers (kernel_file =
-    (size, sysv sum) or None), its device nodes, a HydraNet's network line."""
+    """Step 7: the kernel made here (kernel_file = (size, sysv sum) or None):
+    the stock one with the cards' drivers, or our 68040/060 kernel; its device
+    nodes, the install network card's network line."""
     from . import kernel as kmod
-    from .plan import kernel_drivers
-    ids = kernel_drivers(cfg)
-    if not ids:
+    from .plan import kernel_built, kernel_drivers
+    if not kernel_built(cfg):
         return []
+    ids = kernel_drivers(cfg)
     drvs = [kmod.DRIVERS[i] for i in ids]
-    cards = " and ".join(d.card for d in drvs)
+    k040 = cfg.sel.get("kern", "stock") != "stock"
+    what = model.find_group("kern").option(cfg.sel["kern"]).title if k040 else \
+        "the %s driver%s" % (" and ".join(d.card for d in drvs), "s" if len(drvs) > 1 else "")
     if not kernel_file:
-        return ["", "report 'no kernel with the %s driver was made: the card stays unused'"
-                % cards]
+        return ["", "report 'no kernel with %s was made: the stock kernel stays'" % what]
     size, ksum = kernel_file
-    nodes = ", ".join(kmod.describe(d) for d in drvs)
+    nodes = ", ".join(kmod.describe(d) for d in drvs) or what
     lines = ["",
              "step 7 \"the kernel with %s\"" % nodes,
              "$PKG http get $W/kernel /stand/unix.new >>$LOG 2>&1 || fail 'fetching the kernel'",
@@ -543,7 +542,7 @@ def kernel_lines(cfg, kernel_file):
              "[ \"$1\" = %d ] && [ `/usr/bin/wc -c </stand/unix.new` -eq %d ] || "
              "{ /usr/bin/rm -f /stand/unix.new; fail 'the kernel arrived damaged'; }"
              % (ksum, size),
-             "# the stock kernel stays, for pvmk's \"AMIX stock\" entry",
+             "# the stock kernel stays (pvmk's \"AMIX stock\" entry on a 68030)",
              "[ -f /stand/unix.stock ] || /usr/bin/cp /stand/unix /stand/unix.stock || "
              "fail 'keeping the stock kernel'",
              "/usr/bin/mv /stand/unix.new /stand/unix || fail 'installing the kernel'"]
@@ -565,7 +564,9 @@ def kernel_lines(cfg, kernel_file):
                   "  /usr/bin/cat >> %s <<'EOF'%sEOF" % (N, net_config(d)),
                   "  report '%s added to %s (the address of `uname -n`)'" % (ifc, N),
                   "fi"]
-    lines += ["report 'the new kernel starts at the next boot; pvmk lists the old one as AMIX stock'",
+    lines += ["report 'the new kernel starts at the next boot; %s'" % (
+                  "the stock one is kept as /stand/unix.stock (it does not run on a "
+                  "68040/060)" if k040 else "pvmk lists the old one as AMIX stock"),
               "REBOOT=yes"]
     return lines
 

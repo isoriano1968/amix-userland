@@ -269,7 +269,7 @@ def pvmk_conf(cfg, template=None):
         out.append(ln)
     if not entry_done:
         out.append("entry=AMIX,UNIX_Root:/stand/unix,native")
-    if kernel_drivers(cfg):
+    if kernel_built(cfg) and cfg.sel.get("kern", "stock") == "stock":
         # the relinked kernel replaces /stand/unix; the stock one stays a choice
         i = out.index("entry=AMIX,UNIX_Root:/stand/unix,native")
         out.insert(i + 1, "entry=AMIX stock,UNIX_Root:/stand/unix.stock,native")
@@ -626,6 +626,13 @@ GFX_DRIVER = {"picasso2": "rtgfb", "zz9000": "zz9000", "va2000": "va2000"}
 NET_DRIVER = {"nethydra": "hydra", "netxsurf": "xsurf100", "netzz9000": "zz9000eth"}
 
 
+def kernel_built(cfg):
+    """Whether the installer makes the kernel here: our 68040/060 kernels
+    always, the stock one when a card's driver is linked into it."""
+    sel = cfg.sel if hasattr(cfg, "sel") else cfg
+    return sel.get("kern", "stock") != "stock" or bool(kernel_drivers(cfg))
+
+
 def kernel_drivers(cfg):
     """The driver ids the chosen cards need in the kernel, graphics first:
     the main display and the further graphics cards, then the install network
@@ -641,37 +648,59 @@ def kernel_drivers(cfg):
     for c in net:
         if c in NET_DRIVER and NET_DRIVER[c] not in out:
             out.append(NET_DRIVER[c])
+    # the port kernel takes the Z3660's SD card and Ethernet from kits; the
+    # Z3660 kernel has both built in
+    if sel.get("kern") == "k040" and sel.get("accel") == "z3660":
+        if sel.get("target") == "sd":
+            out.insert(0, "z3660scsi")
+        if sel.get("net") == "netzen":
+            out.append("z3660eth")
     return out
 
 
 class DriverKernel(Action):
-    """The user's own stock kernel with the chosen cards' drivers linked in
-    (kernel.py), here, before anything goes to the Amiga.  AMIX installs it
-    over the network, last; the stock kernel stays as /stand/unix.stock."""
+    """The kernel for the machine, made here from the user's own stock
+    /stand/unix before anything goes to the Amiga: the stock kernel with the
+    chosen cards' drivers linked in, or our 68040/060 kernel (amix-kernel-040,
+    variant generic or z3660) with the 040 kits; its root and swap stamped
+    where the disks are.  AMIX installs it over the network, last; the stock
+    kernel stays as /stand/unix.stock."""
 
-    def __init__(self, src, ids, kern="stock", patch_missing=False):
+    def __init__(self, src, ids, kern="stock", patch_missing=False, root=(0, 6)):
         from . import kernel
+        self.line = "030" if kern == "stock" else "040"
+        self.variant = kernel.K040_VARIANT.get(kern)
+        self.root = root                      # (SCSI controller, unit) of the core disk
         drvs = [kernel.DRIVERS[i] for i in ids]
-        kits = dict((d.id, kernel.find_kit(d)) for d in drvs)
+        kits = dict((d.id, kernel.find_kit(d, self.line)) for d in drvs)
         ld = kernel.find_ld()
         why = None
         cards = " and ".join(d.card for d in drvs)
-        if kern != "stock":
-            # the 040 kits exist (va2000-040), but the port kernel reaches the
-            # Amiga as a package: there is no 040 base kernel on this computer
-            why = "%s: the installer links drivers into your stock 68030 kernel only; " \
-                  "linking into the %s kernel needs that kernel on this computer, " \
-                  "which the installer does not have yet" % (cards, kern)
-        elif [d for d in drvs if "030" not in d.lines]:
-            d = [d for d in drvs if "030" not in d.lines][0]
-            why = "the %s driver exists for the %s kernel only" % (d.card, "/".join(d.lines))
-        elif patch_missing:
+        k040 = kernel.find_kernel040() if self.line == "040" else None
+        if [d for d in drvs if self.line not in d.lines]:
+            d = [d for d in drvs if self.line not in d.lines][0]
+            why = "the %s driver exists for the %s kernel only" % (
+                d.card, " and ".join(kernel.LINE_NAME[x] for x in d.lines))
+        elif patch_missing and self.line == "030":
             # the patch disk rebuilds /stand/unix: link into the patched one
+            # (amix-kernel-040 takes 2.1c and 2.1p2a alike)
             why = "the core disk lacks Patch Disk 1-2a: apply it, then run the installer again"
+        elif self.line == "040" and not k040:
+            why = "%s is not installed (developer/amix/kernel-kit-tools 0.3)" % kernel.K040_TOOL
+        elif self.line == "040" and not kernel.find_elf_tools():
+            why = "no m68k ELF binutils (m68k-linux-gnu or m68k-elf) for %s" % kernel.K040_TOOL
+        elif self.variant == "z3660" and kernel.k040_root_args("z3660", root, k040) is None:
+            # an amix-kernel-040 before --root-unit roots the z3660 variant on c8d0
+            why = "this %s roots the Z3660 kernel on the SD card's unit 0, the AMIX core disk " \
+                  "is on unit %d: update developer/amix/kernel-kit-tools" % (kernel.K040_TOOL,
+                                                                             root[1])
+        elif self.line == "030" and root != (0, 6) and not kernel.find_stamp():
+            why = "%s is not installed (developer/amix/kernel-kit-tools 0.3)" % kernel.STAMP_ROOT
         elif [d for d in drvs if not kits[d.id]]:
             gone = [d for d in drvs if not kits[d.id]]
-            why = "no kernel kit for %s yet (package %s)" % (
-                " and ".join(d.card for d in gone), ", ".join(d.package for d in gone))
+            why = "no %s kernel kit for %s yet (package %s)" % (
+                kernel.LINE_NAME[self.line], " and ".join(d.card for d in gone),
+                ", ".join(d.package for d in gone))
         elif not ld:
             why = "the AMIX cross linker %s is not installed (developer/amix/gcc-27)" \
                 % kernel.LINKERS[0]
@@ -691,19 +720,31 @@ class DriverKernel(Action):
             elif not kernel.find_int2_patch(list(kits.values())):
                 why = "%s is not installed (developer/amix/kernel-kit-tools)" \
                     % kernel.INT2_PATCH
-        self.name = kernel.kernel_name(ids)
-        nodes = ", ".join(kernel.describe(d) for d in drvs)
-        super(DriverKernel, self).__init__(
-            "kernel", "Link the %s driver%s into your kernel" % (cards, "s" if len(drvs) > 1 else ""),
-            "%s: your /stand/unix plus %s; the stock kernel stays as /stand/unix.stock"
-            % (self.name, nodes), 2 << 20, [self.name], why)
+        if self.line == "030":
+            self.name = kernel.kernel_name(ids)
+            title = "Link the %s driver%s into your kernel" % (cards, "s" if len(drvs) > 1 else "")
+            detail = "%s: your /stand/unix plus %s; the stock kernel stays as /stand/unix.stock" \
+                % (self.name, ", ".join(kernel.describe(d) for d in drvs))
+        else:
+            what = {"generic": "68040/060 port", "z3660": "Z3660"}[self.variant]
+            self.name = "unix.%s%s" % ("k040" if self.variant == "generic" else "z3660",
+                                       "".join("+" + i for i in ids))
+            title = "Make the %s kernel from your own" % what
+            detail = "%s: amix-kernel-040 --variant %s from your /stand/unix%s; root on c%xd0s1" \
+                % (self.name, self.variant, (", with " + ", ".join(kernel.describe(d)
+                                                                  for d in drvs)) if drvs else "",
+                   (root[0] << 3) | root[1])
+            if k040 and not kernel.find_syssrc(k040):
+                detail += "; fetches NetBSD 10.1\u2019s syssrc.tgz (%d MB) once from " \
+                          "cdn.netbsd.org" % (kernel.SYSSRC_BYTES >> 20)
+        super(DriverKernel, self).__init__("kernel", title, detail, 2 << 20, [self.name], why)
         self.src = src
         self.ids = ids
         self.kits, self.ld = kits, ld
 
     def run(self, ctx):
         from . import kernel
-        ctx.progress(0.1, "reading /stand/unix")
+        ctx.progress(0.05, "reading /stand/unix")
         with hdf.Image(self.src) as im:
             parts = im.read_rdb()
             root = next((p for p in parts if p.kind == "amix-root" and
@@ -712,12 +753,40 @@ class DriverKernel(Action):
             base = hdf.Ufs(im, root).read_file("/stand/unix", limit=16 << 20)
         if base is None:
             raise IOError("the core disk has no /stand/unix")
-        ctx.progress(0.4, "linking")
         try:
-            kernel.relink(base, ctx.part(self.name), self.ids, self.kits, self.ld, ctx.log)
+            if self.line == "040":
+                ctx.progress(0.1, "making the 68040/060 kernel (amix-kernel-040)")
+                amix_sys = amix_sys_dir() if self.variant == "z3660" else None
+                base, info = kernel.make_040(
+                    base, self.variant, ctx.log, amix_sys=amix_sys, root=self.root,
+                    progress=lambda f, t: ctx.progress(0.1 + 0.3 * f, t))
+                ctx.log("%s: build id %s, nswap %s, root %s" % (
+                    self.variant, info.get("buildid"), info.get("nswap"), info.get("root", "?")))
+            # the root amix-kernel-040 could not place (an older tool), or the
+            # stock kernel's: stamped here
+            placed = self.line == "040" and kernel.k040_root_args(
+                self.variant, self.root, kernel.find_kernel040()) is not None
+            if not placed and self.root != (0, 6):
+                ctx.progress(0.6, "root and swap on c%xd0" % ((self.root[0] << 3) | self.root[1]))
+                base = kernel.stamp_root(base, self.root[0], self.root[1], ctx.log)
+            ctx.progress(0.7, "linking")
+            if self.ids:
+                kernel.relink(base, ctx.part(self.name), self.ids, self.kits, self.ld, ctx.log)
+            else:
+                with open(ctx.part(self.name), "xb") as f:
+                    f.write(base)
         except kernel.KernelError as e:
-            raise IOError("the kernel with %s: %s" % (", ".join(self.ids), e))
+            raise IOError("the kernel %s: %s" % (self.name, e))
         finish(ctx, self.name)
+
+
+def amix_sys_dir():
+    """AMIX's usr/sys (the z3660 variant compiles against it): the sysroot's."""
+    for d in (os.environ.get("AMIX_SYS"), "/opt/m68k-amix-sysroot/usr/sys",
+              os.path.expanduser("~/opt/m68k-amix-sysroot/usr/sys")):
+        if d and os.path.isdir(d):
+            return d
+    return None
 
 
 class FsUaeConfig(Action):
@@ -907,9 +976,10 @@ def make_plan(cfg, paths, fs=None, written=False):
                                    "%s cannot be written; choose the stock boot, install "
                                    "developer/amix/pvmk or set AMIX_PVMK_DIR" % names["pvmk"])
     ids = kernel_drivers(cfg)
-    if ids:
+    if kernel_built(cfg):
         dk = DriverKernel(src, ids, sel.get("kern", "stock"),
-                          cfg.source is not None and not cfg.source.patch)
+                          cfg.source is not None and not cfg.source.patch,
+                          root=(disk_controller(sel), SCSI_ID["core"]))
         pl.actions.append(dk)
         if dk.missing:
             # never a system whose chosen card has no driver in its kernel

@@ -124,8 +124,9 @@ STEPS = [
              # Commodore's AMIX knows the A3000's SCSI and the A2091 only: on an
              # A4000 (IDE, which AMIX does not drive; 68EC030 without MMU on the
              # A4000/030) it runs with our 68040/060 kernels, disks on a Z3660
-             O("a4000", "Amiga 4000", "With a 68040 or 68060 card; AMIX does not use its IDE: "
-               "the disks go on the Z3660’s SD card"),
+             O("a4000", "Amiga 4000", "Experimental, untested: AMIX has never booted on an "
+               "A4000. With a 68040 or 68060 card; its IDE is not used: the disks go on the "
+               "Z3660’s SD card", badge="experimental"),
              O("uae", "FS-UAE emulator", "A3000 configuration with A2065 network")]),
           G("accel", "CPU card", radio=True, options=[
               O("none", "None (bare metal)", "Onboard 68030 and its memory", needs=("a3000", "uae")),

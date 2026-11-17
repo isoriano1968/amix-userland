@@ -12,7 +12,8 @@ stock 68030 kernel, <id>-040 (port/kit-040) for the 68040/060 port kernels;
 the base kernel says which (a port kernel defines cputype):
   KIT.sha256   checksums, and the manifest: every *.o listed is linked and
                every patch_*.py (its cdevsw slot) runs, in the order listed;
-  KIT.info     id=, major=, node=, line=030|040, init=, intr=, entries=, streams=;
+  KIT.info     id=, major=, node=, line=030|040, init=, intr=, entries=, streams=,
+               provides= (globals the kernel may have already: see relink);
   check_relink_relocs.py, the loader check run on the result.
 A kit without KIT.info (rtgfb-kit 0.1) is taken with the facts in DRIVERS and
 no boot routine.
@@ -64,6 +65,10 @@ class Driver(object):
         # dd/sd driver: its disks are /dev/dsk and /dev/rdsk (block bmajor,
         # character cmajor), there is no node of its own to make
         self.bmajor, self.cmajor = bmajor, cmajor
+        # globals an object of the kit defines that the base, or an earlier
+        # kit's identical object, may define already (dev_kvmap): that object
+        # is then left out
+        self.provides = ()
         self.entries = tuple(entries)                # defined exactly once after the link
         self.lines = tuple(lines)                    # kernel lines the kit is built for
         self.init = init                             # its boot routine, called by the stub
@@ -92,6 +97,7 @@ class Driver(object):
             for k in ("bmajor", "cmajor"):
                 if info.get(k):
                     setattr(d, k, int(info[k]))
+            d.provides = tuple(info.get("provides", "").split())
             if "entries" in info:
                 d.entries = tuple(info["entries"].split())
             d.streams = info.get("streams") == "yes"
@@ -445,7 +451,8 @@ def check_result(data, ids=("rtgfb",)):
     defs = elf.defined()
     drvs = _drivers(ids)
     need = [s for d in drvs for s in d.entries + ((d.init,) if d.init else ()) +
-            ((d.intr,) if d.intr else ())]
+            ((d.intr,) if d.intr else ()) + tuple(d.provides)]
+    need = list(dict.fromkeys(need))
     if [d for d in drvs if d.init]:
         need.append(STUB)
     if [d for d in drvs if d.intr]:
@@ -463,6 +470,268 @@ def check_result(data, ids=("rtgfb",)):
         raise KernelError(".text and .data are not contiguous: AMIX's loader needs them so")
     if dat["size"] % 4:
         raise KernelError(".data is not a multiple of 4 bytes")
+
+
+def seen_needed(drvs):
+    """Whether any kit has provides=: only then are objects read."""
+    return any(d.provides for d in drvs)
+
+
+def kit_objects(base, drvs, kits, listing, log=None):
+    """The kits' objects to link, in order.  An object whose global
+    definitions are all in its kit's provides= and are defined already, by
+    the base or by an earlier kit's byte-identical object, is left out (it
+    must have no .data); some of them defined already, or by a different
+    object, is an error (as amix-gate's tools/kit-relink.sh)."""
+    import hashlib
+    log = log or (lambda t: None)
+    base_defs = set(Elf(base).defined()) if seen_needed(drvs) else set()
+    seen = {}                        # global -> sha256 of the object that defines it
+    out = []
+    for d in drvs:
+        prov = set(d.provides)
+        for n in listing[d.id]:
+            if not n.endswith(".o"):
+                continue
+            path = os.path.join(kits[d.id], n)
+            if not prov and not seen_needed(drvs):
+                out.append(path)
+                continue
+            with open(path, "rb") as f:
+                data = f.read()
+            sha = hashlib.sha256(data).hexdigest()
+            try:
+                elf = Elf(data)
+            except KernelError:
+                if prov:
+                    raise
+                out.append(path)
+                continue
+            defs = set(elf.defined())
+            if prov and defs and defs <= prov:
+                there = set(x for x in defs if x in base_defs or x in seen)
+                if there:
+                    if there != defs:
+                        raise KernelError("%s: %s defined already, %s not: the kit does not "
+                                          "fit this kernel" % (n, ", ".join(sorted(there)),
+                                                               ", ".join(sorted(defs - there))))
+                    other = [x for x in defs if x not in base_defs and seen[x] != sha]
+                    if other:
+                        raise KernelError("%s: %s defined by a different object of an earlier "
+                                          "kit" % (n, ", ".join(sorted(other))))
+                    dat = elf.section(".data")
+                    if dat is not None and dat["size"]:
+                        raise KernelError("%s has .data: it cannot be left out" % n)
+                    log("%s left out: %s defined already" % (n, ", ".join(sorted(defs))))
+                    continue
+            out.append(path)
+            for x in defs:
+                seen.setdefault(x, sha)
+    return out
+
+
+# -- the 68040/060 kernel: built here from the user's stock /stand/unix ------
+# developer/amix/kernel-kit-tools ships amix-kernel-040 (kernel-040/) and the
+# root stamp (kit-tools/stamp-rootcard.py); no kernel binary is ever shipped
+K040_VARIANT = {"k040": "generic", "z3opt": "z3660"}
+K040_TOOL = "amix-kernel-040"
+STAMP_ROOT = "stamp-rootcard.py"
+SYSSRC = "syssrc-10.1.tgz"
+# NetBSD 10.1's source set (amix-gate tools/netbsd-pin.sh): never shipped, fetched
+# once and kept in the user's data folder; plain HTTP, the sha256 is the check
+SYSSRC_URL = "http://cdn.netbsd.org/pub/NetBSD/NetBSD-10.1/source/sets/syssrc.tgz"
+SYSSRC_BYTES = 79497697
+
+
+def syssrc_cache():
+    base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.join(base, "amix-installer", "distfiles", SYSSRC)
+
+
+def fetch_syssrc(pin, progress=None, url=SYSSRC_URL):
+    """Download NetBSD 10.1's syssrc.tgz into the cache, checked against pin
+    (sha256) before it is kept.  Returns its path."""
+    import hashlib
+    import urllib.request
+    dst = syssrc_cache()
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    part = dst + ".part"
+    h = hashlib.sha256()
+    done = 0
+    try:
+        with urllib.request.urlopen(url, timeout=60) as r, open(part, "wb") as f:
+            while True:
+                b = r.read(1 << 20)
+                if not b:
+                    break
+                f.write(b)
+                h.update(b)
+                done += len(b)
+                if progress:
+                    progress(done / float(SYSSRC_BYTES), "NetBSD syssrc.tgz: %d of %d MB"
+                             % (done >> 20, SYSSRC_BYTES >> 20))
+    except OSError as e:
+        if os.path.exists(part):
+            os.remove(part)
+        raise KernelError("fetching %s: %s" % (url, e))
+    if pin and h.hexdigest() != pin:
+        os.remove(part)
+        raise KernelError("%s is not the pinned NetBSD 10.1 syssrc.tgz (sha256 %s, expected "
+                          "%s)" % (url, h.hexdigest()[:16], pin[:16]))
+    os.replace(part, dst)
+    return dst
+# the m68k ELF binutils + gcc amix-kernel-040 assembles with: m68k-linux-gnu
+# first (its pinned byte checks are made with it), then m68k-elf
+ELF_DIRS = (os.path.expanduser("~/opt/m68k-cross/bin"), "/usr/bin",
+            "/opt/m68k-amix/bin", os.path.expanduser("~/opt/m68k-amix/bin"))
+
+
+def find_kernel040():
+    """The kernel-040 kit (its folder holds amix-kernel-040): $AMIX_KERNEL040_KIT,
+    the package's share/kernel-040, or an amix-gate checkout's port/tools."""
+    for d in (os.environ.get("AMIX_KERNEL040_KIT"), os.path.join(_share_dir(), "kernel-040"),
+              os.path.expanduser("~/Sources/usr-amix/amix-gate/usr/src/uts/amiga/port/tools")):
+        if d and os.path.isfile(os.path.join(d, K040_TOOL)):
+            return d
+    return None
+
+
+def syssrc_pin(kit):
+    """The sha256 of the NetBSD syssrc the kit is made for (its KIT.info)."""
+    info = kit_info(kit) or {}
+    w = info.get("netbsd_syssrc", "").split()
+    return w[-1] if w else None
+
+
+def find_syssrc(kit):
+    """NetBSD 10.1's syssrc.tgz, checked against the kit's pin: $NETBSD_SYSSRC,
+    the kit's distfiles/, the installer's share/distfiles/."""
+    import hashlib
+    pin = syssrc_pin(kit) if kit else None
+    for p in (os.environ.get("NETBSD_SYSSRC"),
+              syssrc_cache(),
+              kit and os.path.join(kit, "distfiles", SYSSRC),
+              os.path.join(_share_dir(), "distfiles", SYSSRC),
+              os.path.expanduser("~/Sources/usr-amix/upstream/netbsd/" + SYSSRC)):
+        if p and os.path.isfile(p):
+            if pin:
+                with open(p, "rb") as f:
+                    if hashlib.sha256(f.read()).hexdigest() != pin:
+                        continue
+            return p
+    return None
+
+
+def find_elf_tools():
+    """A folder with m68k ELF binutils + gcc (m68k-linux-gnu-*, else m68k-elf-*)."""
+    for prefix in ("m68k-linux-gnu-", "m68k-elf-"):
+        for d in ELF_DIRS:
+            if all(os.access(os.path.join(d, prefix + t), os.X_OK) for t in ("as", "gcc", "nm")):
+                return d
+    return None
+
+
+def find_stamp(tools=None):
+    for d in (tools, os.environ.get("AMIX_KIT_TOOLS"), os.path.join(_share_dir(), "kit-tools")):
+        if d and os.path.isfile(os.path.join(d, STAMP_ROOT)):
+            return os.path.join(d, STAMP_ROOT)
+    return None
+
+
+def _run(cmd, what, log, env=None):
+    r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       universal_newlines=True, env=env)
+    for line in r.stdout.splitlines():
+        log(line)
+    if r.returncode:
+        tail = " / ".join(r.stdout.strip().splitlines()[-2:])
+        raise KernelError("%s failed (exit %d)%s" % (what, r.returncode,
+                                                     ": " + tail if tail else ""))
+
+
+def k040_roots(kit):
+    """Whether the kit's amix-kernel-040 takes --root-card/--root-unit and
+    --root-stock (amix-gate 16edff3 and later)."""
+    try:
+        with open(os.path.join(kit, K040_TOOL)) as f:
+            return "--root-unit" in f.read()
+    except OSError:
+        return False
+
+
+def k040_root_args(variant, root, kit):
+    """amix-kernel-040's root options for the core disk at root = (card, unit),
+    or None when the kit's tool cannot place it (the caller stamps)."""
+    if k040_roots(kit):
+        return ["--root-stock"] if root == (0, 6) else \
+            ["--root-card", str(root[0]), "--root-unit", str(root[1])]
+    # an older tool: the generic variant keeps the stock root, z3660 roots on c8d0
+    if root == ((1, 0) if variant == "z3660" else (0, 6)):
+        return []
+    return None
+
+
+def make_040(base, variant, log=None, amix_sys=None, kit=None, root=None, progress=None):
+    """Our 68040/060 kernel from the user's stock kernel (bytes): amix-kernel-040
+    in a temporary folder of its own (its work folder and lock live under
+    TMPDIR), its root on root = (card, unit) when given and the tool can.
+    Returns (bytes, OUT.info as a dict)."""
+    log = log or (lambda t: None)
+    kit = kit or find_kernel040()
+    if not kit:
+        raise KernelError("no %s (package developer/amix/kernel-kit-tools 0.3)" % K040_TOOL)
+    tgz = find_syssrc(kit)
+    if not tgz:
+        log("NetBSD 10.1 %s: fetching it once from %s" % (SYSSRC, SYSSRC_URL))
+        tgz = fetch_syssrc(syssrc_pin(kit), progress)
+    elf = find_elf_tools()
+    if not elf:
+        raise KernelError("no m68k ELF binutils (m68k-linux-gnu or m68k-elf)")
+    tmp = tempfile.mkdtemp(prefix="amix-k040-")
+    try:
+        bp, op = os.path.join(tmp, "unix.stock"), os.path.join(tmp, "unix.040")
+        with open(bp, "wb") as f:
+            f.write(base)
+        env = dict(os.environ, TMPDIR=tmp,
+                   PATH=os.pathsep.join([d for d in LD_DIRS if os.path.isdir(d)] + [elf] +
+                                        [os.environ.get("PATH", "")]))
+        cmd = ["sh", os.path.join(kit, K040_TOOL), "--variant", variant, "--netbsd", tgz]
+        if root is not None:
+            cmd += k040_root_args(variant, root, kit) or []
+        if amix_sys:
+            cmd += ["--amix-sys", amix_sys]
+        _run(cmd + [bp, op], "%s --variant %s" % (K040_TOOL, variant), log, env)
+        with open(op, "rb") as f:
+            data = f.read()
+        info = {}
+        with open(op + ".info") as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.rstrip("\n").split("=", 1)
+                    info[k] = v
+        return data, info
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def stamp_root(data, card, unit, log=None):
+    """The kernel's root (slice 1) and swap (slice 2) moved from the stock
+    c6d0 to card/unit (stamp-rootcard.py of kernel-kit-tools)."""
+    log = log or (lambda t: None)
+    tool = find_stamp()
+    if not tool:
+        raise KernelError("no %s (package developer/amix/kernel-kit-tools 0.3)" % STAMP_ROOT)
+    tmp = tempfile.mkdtemp(prefix="amix-stamp-")
+    try:
+        ip, op = os.path.join(tmp, "in"), os.path.join(tmp, "out")
+        with open(ip, "wb") as f:
+            f.write(data)
+        _run([sys.executable, tool, ip, op, "--card", str(card), "--unit", str(unit)],
+             "the root stamp (card %d unit %d)" % (card, unit), log)
+        with open(op, "rb") as f:
+            return f.read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def relink(base, out, ids, kits=None, ld=None, log=None, asm=None):
@@ -527,8 +796,7 @@ def relink(base, out, ids, kits=None, ld=None, log=None, asm=None):
             if r.returncode:
                 raise KernelError("%s failed (exit %d)" % (what, r.returncode))
         listing = dict((d.id, [n for n, _ in kit_listing(kits[d.id])]) for d in drvs)
-        objs = [os.path.join(kits[d.id], n) for d in drvs for n in listing[d.id]
-                if n.endswith(".o")]
+        objs = kit_objects(base, drvs, kits, listing, log)
         if inits:
             src, obj = os.path.join(tmp, STUB + ".s"), os.path.join(tmp, STUB + ".o")
             with open(src, "w") as f:

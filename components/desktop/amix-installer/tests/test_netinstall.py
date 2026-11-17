@@ -124,7 +124,7 @@ class Scripts(unittest.TestCase):
         self.assertIn("editor/vim", t)
         self.assertIn("desktop/cde", t)
         self.assertIn("not packaged yet", t)            # the ARM core services
-        self.assertIn("kernel is not packaged yet", t)
+        self.assertIn("no kernel with Z3660 optimised was made: the stock kernel stays", t)
         self.assertLess(t.index("sysutils/amix-pkg"), t.index("step 4"))
         self.assertIn("pkgrm -n -a /tmp/amixboot.admin AMIXboot >>$LOG 2>&1 || unboot", t)
         self.assertLess(t.index("unboot() {"), t.index("|| unboot"))

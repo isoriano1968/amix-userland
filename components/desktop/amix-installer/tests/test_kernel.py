@@ -262,6 +262,72 @@ class Relink(unittest.TestCase):
         with self.assertRaisesRegex(kernel.KernelError, "built for the 68040/060 port kernel only"):
             kernel.relink(base_kernel(), os.path.join(self.d, "u"), ["z3660eth"], ld=self.ld)
 
+    def provides_kit(self, name, objs, provides):
+        """a kit whose objects are real ELF files: {file: (text globals, data size)}"""
+        k = os.path.join(self.d, name)
+        os.mkdir(k)
+        names = []
+        for fn, (syms, data) in objs.items():
+            with open(os.path.join(k, fn), "wb") as f:
+                f.write(elf(text_syms=syms, data=data))
+            names.append(fn)
+        with open(os.path.join(k, "KIT.info"), "w") as f:
+            f.write("id=%s\nline=040\nprovides=%s\n" % (name, " ".join(provides)))
+        names.append("KIT.info")
+        with open(os.path.join(k, "KIT.sha256"), "w") as f:
+            for fn in names:
+                with open(os.path.join(k, fn), "rb") as g:
+                    f.write("%s  %s\n" % (hashlib.sha256(g.read()).hexdigest(), fn))
+        return k
+
+    def test_provides(self):
+        """an object of provides= globals the kernel has already is left out"""
+        kv = (("dev_kvmap", "dev_kvunmap"), 0)
+        a = self.provides_kit("va2000", {"va_040.o": (("va2000open",), 16), "kv.o": kv},
+                              ["dev_kvmap", "dev_kvunmap"])
+        b = self.provides_kit("xsurf100", {"xs_040.o": (("xsurf100info",), 16), "kv.o": kv},
+                              ["dev_kvmap", "dev_kvunmap"])
+        drvs = [kernel.DRIVERS["va2000"].with_info(kernel.kit_info(a)),
+                kernel.DRIVERS["xsurf100"].with_info(kernel.kit_info(b))]
+        listing = {"va2000": ["va_040.o", "kv.o"], "xsurf100": ["xs_040.o", "kv.o"]}
+        kits = {"va2000": a, "xsurf100": b}
+        t = [x for x in BASE if x not in ("cdevsw", "io_init")] + ["cputype"]
+        # the base has dev_kvmap: both copies go
+        objs = kernel.kit_objects(base_kernel(text=t + ["dev_kvmap", "dev_kvunmap"]), drvs,
+                                  kits, listing)
+        self.assertEqual([os.path.basename(o) for o in objs], ["va_040.o", "xs_040.o"])
+        # it has not: the first copy is linked, the second (identical) one left out
+        objs = kernel.kit_objects(base_kernel(text=t), drvs, kits, listing)
+        self.assertEqual([os.path.relpath(o, self.d) for o in objs],
+                         ["va2000/va_040.o", "va2000/kv.o", "xsurf100/xs_040.o"])
+        # a partial overlap fails
+        with self.assertRaisesRegex(kernel.KernelError, "dev_kvmap defined already, "
+                                                        "dev_kvunmap not"):
+            kernel.kit_objects(base_kernel(text=t + ["dev_kvmap"]), drvs, kits, listing)
+        # a different object for the same globals fails
+        c = self.provides_kit("zz9000eth", {"kv.o": (("dev_kvmap", "dev_kvunmap"), 0),
+                                            "pad.o": (("zz9000ethinfo",), 4)},
+                              ["dev_kvmap", "dev_kvunmap"])
+        with open(os.path.join(c, "kv.o"), "ab") as f:
+            pass
+        d2 = kernel.DRIVERS["zz9000eth"].with_info(kernel.kit_info(c))
+        other = self.provides_kit("z3660eth", {"kv.o": (("dev_kvmap", "dev_kvunmap"), 4)},
+                                  ["dev_kvmap", "dev_kvunmap"])
+        d3 = kernel.DRIVERS["z3660eth"].with_info(kernel.kit_info(other))
+        with self.assertRaisesRegex(kernel.KernelError, "different object"):
+            kernel.kit_objects(base_kernel(text=t), [drvs[0], d3], {"va2000": a,
+                               "z3660eth": other}, {"va2000": ["va_040.o", "kv.o"],
+                                                    "z3660eth": ["kv.o"]})
+        # an object with .data cannot be left out
+        with self.assertRaisesRegex(kernel.KernelError, "has .data"):
+            kernel.kit_objects(base_kernel(text=t + ["dev_kvmap", "dev_kvunmap"]), [d3],
+                               {"z3660eth": other}, {"z3660eth": ["kv.o"]})
+        # provides= symbols are checked: defined exactly once in the result
+        with self.assertRaisesRegex(kernel.KernelError, "dev_kvmap: 0 definitions"):
+            kernel.check_result(elf(text_syms=("va2000open",)), [drvs[0].with_info(
+                {"entries": "va2000open", "provides": "dev_kvmap"})])
+        self.assertTrue(d2.provides)
+
     def test_listed_twice(self):
         k = self.kit("rtgfb", ["rtgfb_030.o", "check_relink_relocs.py"])
         with open(os.path.join(k, "KIT.sha256")) as f:
