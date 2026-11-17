@@ -121,6 +121,15 @@ STEPS = [
               O("nethydra", "HydraNet",
                 "Hydra Systems AmigaNet (Zorro II). Only once a kernel from this installer "
                 "runs: its driver is linked into your kernel", needs=("a3000", "a2500")),
+              # AX88796B, /dev/xsf0, major 56: kits for both kernel lines
+              O("netxsurf", "X-Surf 100",
+                "Individual Computers X-Surf 100. Only once a kernel from this installer "
+                "runs: its driver is linked into your kernel", needs=("a3000", "a2500")),
+              # the ZZ9000's own port, /dev/zz0, major 52: with the ZZ9000 card
+              O("netzz9000", "ZZ9000 Ethernet",
+                "The MNT ZZ9000's Ethernet port. Only once a kernel from this installer "
+                "runs: its driver is linked into your kernel", needs=(("a3000", "a2500"),
+                                                                     ("zz9000",))),
               O("nonet", "None", "Install from HDF files prepared in FS-UAE")]),
           G("keymap", "Keyboard", radio=True, options=[
               O("us", "US", "Amiga keyboard with the US layout"),

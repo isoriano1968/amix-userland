@@ -336,6 +336,17 @@ class Cards(Base):
         # FS-UAE has neither card; the ZZ9000 kit is for the stock kernel line
         self.assertNotEqual(self.cfg(mach="uae", gfx="zz9000").sel["gfx"], "zz9000")
         self.assertNotEqual(self.cfg(mach="uae", net="nethydra").sel["net"], "nethydra")
+        # the X-Surf 100: Zorro machines, either kernel line
+        self.assertEqual(self.cfg(net="netxsurf").sel["net"], "netxsurf")
+        self.assertEqual(self.cfg(mach="a2500", accel="a2630", net="netxsurf").sel["net"],
+                         "netxsurf")
+        self.assertNotEqual(self.cfg(mach="uae", net="netxsurf").sel["net"], "netxsurf")
+        self.assertEqual(plan.kernel_drivers({"gfx": "rtg", "net": "netxsurf"}), ["xsurf100"])
+        # ZZ9000 Ethernet: only with the ZZ9000 card, both drivers linked
+        z = self.cfg(gfx="zz9000", net="netzz9000")
+        self.assertEqual((z.sel["gfx"], z.sel["net"]), ("zz9000", "netzz9000"))
+        self.assertNotEqual(self.cfg(gfx="picasso2", net="netzz9000").sel["net"], "netzz9000")
+        self.assertEqual(plan.kernel_drivers(z.sel), ["zz9000", "zz9000eth"])
         # the VA2000 has a kit for both kernel lines, and X has no va2000
         # driver yet: no X desktop with it
         v = self.cfg(accel="mercury", kern="k040", gfx="va2000", desk="cde")

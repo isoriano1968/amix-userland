@@ -57,7 +57,7 @@ class Driver(object):
     KIT.info overrides these facts."""
 
     def __init__(self, id, card, kind, node, major, entries=(), lines=("030",), init=None,
-                 streams=False, intr=None):
+                 streams=False, intr=None, gate=None):
         self.id, self.card, self.kind = id, card, kind
         self.node, self.major = node, major          # /dev/<node>, character major
         self.entries = tuple(entries)                # defined exactly once after the link
@@ -66,13 +66,14 @@ class Driver(object):
         self.intr = intr                             # its level-2 interrupt routine
         self.streams = streams
         self.package = "developer/amix/%s-kit" % id
+        self.gate = gate or id                       # its folder in amix-gate's io/
         self.env = "AMIX_%s_KIT" % id.upper()
 
     def with_info(self, info):
         """This driver with a kit's KIT.info facts (info: dict, or None:
         a kit before KIT.info, linked without a boot routine)."""
         d = Driver(self.id, self.card, self.kind, self.node, self.major, self.entries,
-                   self.lines, None, self.streams, None)
+                   self.lines, None, self.streams, None, self.gate)
         if info:
             if info.get("id", d.id) != d.id:
                 raise KernelError("the %s kit says it is %s" % (d.id, info["id"]))
@@ -102,6 +103,19 @@ DRIVERS = {
                      ("va2000open", "va2000close", "va2000read", "va2000write", "va2000ioctl",
                       "va2000mmap"), lines=("030", "040"), init="va2000init"),
     "hydra": Driver("hydra", "HydraNet", "network", "hya0", 47, ("hydrainfo",), streams=True),
+    # Individual Computers X-Surf 100 (AX88796B): Zorro II, or Zorro III space
+    # in an A3000, which the kits map
+    "xsurf100": Driver("xsurf100", "X-Surf 100", "network", "xsf0", 56,
+                       ("xsurf100info", "xsurf100init", "xsurf100intr"), lines=("030", "040"),
+                       init="xsurf100init", streams=True, intr="xsurf100intr"),
+    # the ZZ9000's own Ethernet port, beside its graphics (polled: no init, no intr)
+    "zz9000eth": Driver("zz9000eth", "ZZ9000 Ethernet", "network", "zz0", 52,
+                        ("zz9000ethinfo",), lines=("030", "040"), streams=True),
+    # the Z3660's Ethernet for the 68040/060 port kernel (the Z3660 kernel line
+    # has it built in): not linked by the installer until it has a 040 base
+    "z3660eth": Driver("z3660eth", "Z3660 Ethernet", "network", "zen0", 51,
+                       ("z3660ethinfo", "z3660eth_kvmap", "z3660eth_kvunmap"), lines=("040",),
+                       streams=True, gate="z3660net"),
 }
 # the stub calls graphics before network
 KIND_ORDER = ("graphics", "network")
@@ -170,7 +184,7 @@ def find_kit(drv="rtgfb", line="030"):
     env = d.env if line == "030" else "AMIX_%s_%s_KIT" % (d.id.upper(), line)
     cands = [os.environ.get(env),
              os.path.expanduser("~/Sources/usr-amix/amix-gate/usr/src/uts/amiga/io/%s/port/kit%s"
-                                % (d.id, sfx)),
+                                % (d.gate, sfx)),
              os.path.join(_share_dir(), d.id + sfx)]
     for k in cands:
         if not k:
@@ -442,6 +456,10 @@ def relink(base, out, ids, kits=None, ld=None, log=None, asm=None):
     line = base_line(base)
     drvs = []
     for d in _drivers(ids):
+        if line not in d.lines and not kits.get(d.id):
+            raise KernelError("this is the %s kernel; the %s driver is built for the %s kernel "
+                              "only" % (LINE_NAME[line], d.card,
+                                        " and ".join(LINE_NAME[x] for x in d.lines)))
         kits[d.id] = kits.get(d.id) or find_kit(d, line)
         if not kits[d.id]:
             raise KernelError("the %s kit for the %s kernel is not installed (package %s)"

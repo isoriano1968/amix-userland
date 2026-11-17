@@ -263,6 +263,29 @@ class Picasso(unittest.TestCase):
         self.assertIn("/usr/sbin/slink addaen /dev/hya0 hya0 2>/dev/null &&", t)
         self.assertIn("ifconfig hya0 `uname -n` up -trailers", t)
 
+    def test_steps_xsurf100(self):
+        c = model.Config(sel={"mach": "a3000", "accel": "none", "kern": "stock", "boot": "pvmk",
+                              "gfx": "picasso2", "net": "netxsurf", "desk": "cde"})
+        self.assertEqual(c.sel["net"], "netxsurf")
+        t = netinstall.steps_script(c, "10.0.2.2", kernel=(1490000, 777))
+        Scripts.sh_ok(self, t)
+        self.assertIn("/usr/sbin/mknod /dev/xsf0 c 56 0", t)
+        self.assertIn("/usr/bin/chmod 600 /dev/xsf0", t)
+        self.assertIn("# X-Surf 100 (written by the AMIX Installer)", t)
+        self.assertIn("/usr/sbin/slink addaen /dev/xsf0 xsf0 2>/dev/null &&", t)
+        self.assertIn("ifconfig xsf0 `uname -n` up -trailers", t)
+        self.assertNotIn("hya0", t)
+
+    def test_steps_zz9000eth(self):
+        c = model.Config(sel={"mach": "a3000", "accel": "none", "kern": "stock", "boot": "pvmk",
+                              "gfx": "zz9000", "net": "netzz9000", "desk": "cde"})
+        t = netinstall.steps_script(c, "10.0.2.2", kernel=(1490000, 777))
+        Scripts.sh_ok(self, t)
+        self.assertIn("/usr/sbin/mknod /dev/zz9000 c 49 0", t)
+        self.assertIn("/usr/sbin/mknod /dev/zz0 c 52 0", t)
+        self.assertIn("/usr/sbin/slink addaen /dev/zz0 zz0 2>/dev/null &&", t)
+        self.assertIn("ifconfig zz0 `uname -n` up -trailers", t)
+
     def test_sysv_sum(self):
         data = os.urandom(70000)
         with tempfile.NamedTemporaryFile(delete=False) as f:

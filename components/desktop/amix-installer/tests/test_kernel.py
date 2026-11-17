@@ -242,6 +242,11 @@ class Relink(unittest.TestCase):
             kernel.relink(base_kernel(), os.path.join(self.d, "u"), ["rtgfb"], {"rtgfb": k},
                           self.ld)
 
+    def test_no_kit_for_the_line(self):
+        """Z3660 Ethernet exists for the 040 line only: say so, not "not installed"."""
+        with self.assertRaisesRegex(kernel.KernelError, "built for the 68040/060 port kernel only"):
+            kernel.relink(base_kernel(), os.path.join(self.d, "u"), ["z3660eth"], ld=self.ld)
+
     def test_listed_twice(self):
         k = self.kit("rtgfb", ["rtgfb_030.o", "check_relink_relocs.py"])
         with open(os.path.join(k, "KIT.sha256")) as f:

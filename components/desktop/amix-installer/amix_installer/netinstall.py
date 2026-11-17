@@ -244,13 +244,19 @@ def sysv_sum(data):
 # the X card driver for /etc/X11/amix-card, by the installer's graphics card
 # (the Z3660's becomes "z3660" when its card driver is split from zz9000)
 X_CARD = {"picasso2": "cirrus", "rtg": "zz9000", "zz9000": "zz9000"}
-# a HydraNet comes up as AMIX's aen0 does in /etc/inet/network-config: plumbed
-# when the board answers, with the host name's address
-HYDRA_NETCONFIG = """
-# Hydra Systems AmigaNet (written by the AMIX Installer)
-/usr/sbin/slink addaen /dev/hya0 hya0 2>/dev/null &&
-	/usr/sbin/ifconfig hya0 `uname -n` up -trailers
+# a network card whose driver is linked into the kernel (HydraNet, X-Surf
+# 100) comes up as AMIX's aen0 does in /etc/inet/network-config: plumbed when
+# the board answers, with the host name's address
+NETCONFIG = """
+# %(card)s (written by the AMIX Installer)
+/usr/sbin/slink addaen /dev/%(ifc)s %(ifc)s 2>/dev/null &&
+	/usr/sbin/ifconfig %(ifc)s `uname -n` up -trailers
 """
+
+
+def net_config(drv):
+    """The network-config lines for a linked-in network driver."""
+    return NETCONFIG % {"card": drv.card, "ifc": drv.node}
 # the X server, under every X desktop
 X_SERVER = "x11/xserver-amix"
 
@@ -538,12 +544,14 @@ def kernel_lines(cfg, kernel_file):
         lines += ["[ -c /dev/%s ] || /usr/sbin/mknod /dev/%s c %d 0 || fail 'mknod /dev/%s'"
                   % (d.node, d.node, d.major, d.node),
                   "/usr/bin/chmod %s /dev/%s" % ("666" if d.kind == "graphics" else "600", d.node)]
-    if "hydra" in ids:
-        N = "/etc/inet/network-config"
-        lines += ["if /usr/bin/grep hya0 %s >/dev/null; then report 'hya0 is in %s already'; else"
-                  % (N, N),
-                  "  /usr/bin/cat >> %s <<'EOF'%sEOF" % (N, HYDRA_NETCONFIG),
-                  "  report 'hya0 added to %s (the address of `uname -n`)'" % N,
+    for d in drvs:
+        if d.kind != "network":
+            continue
+        N, ifc = "/etc/inet/network-config", d.node
+        lines += ["if /usr/bin/grep %s %s >/dev/null; then report '%s is in %s already'; else"
+                  % (ifc, N, ifc, N),
+                  "  /usr/bin/cat >> %s <<'EOF'%sEOF" % (N, net_config(d)),
+                  "  report '%s added to %s (the address of `uname -n`)'" % (ifc, N),
                   "fi"]
     lines += ["report 'the new kernel starts at the next boot; pvmk lists the old one as AMIX stock'",
               "REBOOT=yes"]

@@ -481,7 +481,7 @@ class DataDisk(Action):
 
 # the installer's choices -> the kernel drivers linked in (kernel.DRIVERS)
 GFX_DRIVER = {"picasso2": "rtgfb", "zz9000": "zz9000", "va2000": "va2000"}
-NET_DRIVER = {"nethydra": "hydra"}
+NET_DRIVER = {"nethydra": "hydra", "netxsurf": "xsurf100", "netzz9000": "zz9000eth"}
 
 
 def kernel_drivers(sel):
