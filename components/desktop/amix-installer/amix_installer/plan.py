@@ -580,9 +580,10 @@ def disk_controller(sel):
 
 def disk_device(sel, role, slice_, raw=True, fs_uae=False):
     """/dev/rdsk/c<x>d0s<n> (or /dev/dsk) of an AMIX disk: on the machine,
-    or in FS-UAE, where every disk is on the emulated A3000 SCSI."""
+    or in FS-UAE, where every disk is on the emulated A3000 SCSI.  AMIX writes
+    x in hex (c0-cf): card 1 unit 6 is ced0s1."""
     card = 0 if fs_uae else disk_controller(sel)
-    return "/dev/%s/c%dd0s%d" % ("rdsk" if raw else "dsk", (card << 3) | SCSI_ID[role], slice_)
+    return "/dev/%s/c%xd0s%d" % ("rdsk" if raw else "dsk", (card << 3) | SCSI_ID[role], slice_)
 FSUAE_CONFIG = "amix-install.fs-uae"
 # the installer's graphics card -> FS-UAE's graphics_card
 FSUAE_CARD = {"picasso2": "picasso-ii"}

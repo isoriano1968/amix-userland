@@ -439,9 +439,21 @@ class Cards(Base):
         a3 = {"mach": "a3000", "accel": "z3660", "target": "sd"}
         self.assertEqual(plan.scsi_controllers(a3), ["the A3000's own SCSI",
                                                      "the Z3660's SD card"])
-        # the Z3660 is controller 1: unit u is c(8+u)
-        self.assertEqual(plan.disk_device(a3, "core", 1), "/dev/rdsk/c14d0s1")
+        # the Z3660 is controller 1: unit u is c(8+u), written in hex (c8-ce)
+        self.assertEqual(plan.disk_device(a3, "core", 1), "/dev/rdsk/ced0s1")
         self.assertEqual(plan.disk_device(a3, "data", 1, raw=False), "/dev/dsk/c9d0s1")
+        old = dict(plan.SCSI_ID)
+        try:
+            plan.SCSI_ID["core"] = 0
+            self.assertEqual(plan.disk_device(a3, "core", 1), "/dev/rdsk/c8d0s1")
+        finally:
+            plan.SCSI_ID.clear()
+            plan.SCSI_ID.update(old)
+        # every name AMIX has: c0-c7 for card 0, c8-cf for card 1, never c1x
+        for card in (0, 1):
+            for unit in range(7):
+                n = "c%xd0s1" % ((card << 3) | unit)
+                self.assertRegex(n, r"^c[0-9a-f]d0s1$")
         # in FS-UAE every disk is on the emulated A3000 SCSI
         self.assertEqual(plan.disk_device(a3, "data", 1, fs_uae=True), "/dev/rdsk/c1d0s1")
         # a ZuluSCSI on the Amiga's own bus, or HDF files: controller 0
@@ -459,6 +471,13 @@ class Cards(Base):
         self.assertNotEqual(c.sel["kern"], "stock")
         self.assertNotEqual(c.sel["target"], "card")
         self.assertNotEqual(c.sel["net"], "nethydra")            # its kit is 68030 only
+        for gid, oid in (("net", "nethydra"), ("gfx", "picasso2"), ("netmore", "more_hydra"),
+                         ("gfxmore", "more_picasso2")):
+            o = model.find_group(gid).option(oid)
+            self.assertFalse(c.available(o))
+            self.assertIn("68040/060 kit is not built yet", c.why_not(o))
+        self.assertEqual(c.why_not(model.find_group("target").option("card")),
+                         model.NOT_AVAILABLE)
         self.assertTrue(c.available(model.find_group("net").option("netxsurf")))
         a = model.Config(sel={"mach": "a4000", "accel": "a3640", "kern": "k040"})
         self.assertEqual((a.sel["accel"], a.sel["kern"]), ("a3640", "k040"))

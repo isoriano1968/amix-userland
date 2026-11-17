@@ -775,7 +775,7 @@ class Window(Adw.ApplicationWindow):
                 ok = self.cfg.available(o)
                 have = self.cfg.installed(o)
                 row.set_sensitive(ok)
-                row.set_subtitle(o.sub if ok else model.NOT_AVAILABLE)
+                row.set_subtitle(o.sub if ok else self.cfg.why_not(o))
                 row.set_tooltip_text(None if ok else needs_text(self.cfg, o))
                 if size is not None:
                     size.set_visible(ok and not have)

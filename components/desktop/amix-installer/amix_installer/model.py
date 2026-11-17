@@ -22,6 +22,8 @@ offered while that option is the radio group's choice.
 TAG_GROUPS = ("src", "target", "mach", "accel", "net", "layout", "kern", "boot", "gfx", "desk")
 
 NOT_AVAILABLE = "Not for this machine or layout"
+# a Zorro II card that works in the A4000, whose driver has a 68030 kit only
+NO_040_KIT = {"a4000": "Fits the A4000, but its 68040/060 kit is not built yet"}
 
 # where the IPS client of doc/plans/IPS-INSTALLER-PLAN.md shows itself
 PKG_CLIENT_PROBES = ("/var/pkg", "/usr/bin/pkg")
@@ -29,9 +31,12 @@ PKG_CLIENT_PROBES = ("/var/pkg", "/usr/bin/pkg")
 
 class Option(object):
     def __init__(self, id, title, sub, needs=None, badge=None, mb=0, default=False, probe=(),
-                 twin=None):
+                 twin=None, blocked=None):
         self.id = id
         self.twin = twin            # (radio group, option) this further card duplicates
+        # {tag: why}: not available while the tag is chosen, for that reason
+        # (a card that fits the machine, but its kit is not built yet)
+        self.blocked = dict(blocked or {})
         self.probe = tuple(probe)   # paths that show it is installed on a source disk
         self.title = title
         self.sub = sub
@@ -145,7 +150,8 @@ STEPS = [
               # FS-UAE has no Hydra, so the install itself runs there over its A2065
               O("nethydra", "HydraNet",
                 "Hydra Systems AmigaNet (Zorro II). Only once a kernel from this installer "
-                "runs: its driver is linked into your kernel", needs=("a3000", "a2500")),
+                "runs: its driver is linked into your kernel", needs=("a3000", "a2500", "a4000"),
+                blocked=NO_040_KIT),
               # AX88796B, /dev/xsf0, major 56: kits for both kernel lines
               O("netxsurf", "X-Surf 100",
                 "Individual Computers X-Surf 100. Only once a kernel from this installer "
@@ -159,7 +165,8 @@ STEPS = [
           # further network cards: driver and device node only, no address
           G("netmore", "More network cards", options=[
               O("more_hydra", "HydraNet", "Its driver and /dev/hya0; set its address on AMIX",
-                needs=("a3000", "a2500"), twin=("net", "nethydra")),
+                needs=("a3000", "a2500", "a4000"),
+                blocked=NO_040_KIT, twin=("net", "nethydra")),
               O("more_xsurf", "X-Surf 100", "Its driver and /dev/xsf0; set its address on AMIX",
                 needs=("a3000", "a2500", "a4000"), twin=("net", "netxsurf")),
               O("more_zz9000eth", "ZZ9000 Ethernet",
@@ -215,7 +222,8 @@ STEPS = [
              # 68030 only: the rtgfb driver is relinked into the stock kernel
              O("picasso2", "Picasso II", "Cirrus 8-bit RTG, 640\u00d7480 to 1024\u00d7768; FS-UAE "
                "emulates it. The stock kernel gets /dev/rtgfb, relinked from your own",
-               needs=(("uae", "a3000", "a2500"), ("stock",), ("pvmk",)), mb=2),
+               needs=(("uae", "a3000", "a2500", "a4000"), ("stock",), ("pvmk",)), blocked=NO_040_KIT,
+               mb=2),
              # Zorro II product 3 (AMIX has no Zorro III): /dev/zz9000, major 49
              O("zz9000", "ZZ9000", "MNT ZZ9000 RTG, 16-bit, tested at 1920\u00d7800; its driver "
                "is linked into your kernel", needs=(("a3000", "a2500"), ("stock",)), mb=2),
@@ -229,7 +237,8 @@ STEPS = [
           # on the main display until X spans several cards
           G("gfxmore", "More graphics cards", options=[
              O("more_picasso2", "Picasso II", "Its driver and /dev/rtgfb, beside the main display",
-               needs=(("a3000", "a2500"), ("stock",)), twin=("gfx", "picasso2")),
+               needs=(("a3000", "a2500", "a4000"), ("stock",)), blocked=NO_040_KIT,
+               twin=("gfx", "picasso2")),
              O("more_zz9000", "ZZ9000", "Its driver and /dev/zz9000, beside the main display",
                needs=(("a3000", "a2500"), ("stock",)), twin=("gfx", "zz9000")),
              O("more_va2000", "VA2000", "Its driver and /dev/va2000, beside the main display",
@@ -389,12 +398,22 @@ class Config(object):
     def _fits(self, opt, tags):
         if opt.twin is not None and self.sel.get(opt.twin[0]) == opt.twin[1]:
             return False             # it is the radio group's choice already
+        if any(t in tags for t in opt.blocked):
+            return False
         if opt.needs is None:
             return True
         return all(any(n in tags for n in alt) for alt in opt.needs)
 
     def available(self, opt, tags=None):
         return self._fits(opt, self.tags() if tags is None else tags)
+
+    def why_not(self, opt):
+        """Why an option is greyed out: its own reason, or the general one."""
+        tags = self.tags()
+        for t, why in opt.blocked.items():
+            if t in tags:
+                return why
+        return NOT_AVAILABLE
 
     def further(self, gid):
         """The twins (radio option ids) of the chosen further cards of a switch
