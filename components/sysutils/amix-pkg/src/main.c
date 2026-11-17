@@ -34,7 +34,7 @@ usage(void)
 	    "  history                         what was changed, and when\n"
 	    "  http get URL [FILE] | put URL   plain HTTP (the installer's bootstrap)\n"
 	    "  version\n"
-	    "--min-free MB: space that must stay free on the root (default 200)\n", PUBLISHER);
+	    "--min-free MB: space that must stay free on each file system it writes to (default 100)\n", PUBLISHER);
 	exit(2);
 }
 

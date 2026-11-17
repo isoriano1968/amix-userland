@@ -30,7 +30,7 @@
 #define TMP	".pkgtmp"
 
 int dry_run;
-unsigned long min_free_mb = 200;
+unsigned long min_free_mb = 100;
 
 static void
 crash_point(const char *where)

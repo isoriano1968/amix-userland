@@ -22,8 +22,8 @@ Version 0.2: the read side (step 2) and the write side (step 3).
 
 Every change is checked first: no path of another IPS package, of stock
 AMIX or an SVR4 package (`/var/sadm/install/contents`; directories may be
-shared), and no file nobody owns is overwritten, and 200 MB stay free on
-the root (`--min-free MB`). Files are written as `<path>.pkgtmp`, checked
+shared), and no file nobody owns is overwritten, and 100 MB stay free on each
+file system it writes to (`--min-free MB`). Files are written as `<path>.pkgtmp`, checked
 (size, SHA-512/256) and renamed after a journal's commit point; an
 interrupted change is undone or finished by the next one. A configuration
 file you changed stays; the package's goes beside it as `.new`. A file you
