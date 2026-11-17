@@ -34,12 +34,17 @@ NEEDED names to the front of `.dynstr`, where AMIX's `ld.so.1` looks for them.
 ## Run on the A3000
 
 The A3000 needs the `library/ncurses` package: `/usr/local/lib/libncurses.so.6`
-and its terminfo in `/usr/share/terminfo`. Copy `hello` there (scp), then in
-any terminal:
+and its terminfo, about 1900 small files under `/usr/share/terminfo` on the
+root file system. pkg keeps 200 MB free on root by default, so on a small root
+it refuses the install; `pkg --min-free 20 install library/ncurses` lowers
+that reserve to 20 MB for this install.
+
+Copy `hello` to the A3000 (scp), then in any terminal:
 
 ```sh
-TERM=vt100 ./hello
+./hello
 ```
 
-`TERM` must name a terminfo entry the package installs (`vt100`, `xterm`,
-`dtterm`); a dtterm sets `TERM=dtterm` itself. `q` or the Quit item ends it.
+On the console `TERM` is already `amiga` (set by `/etc/profile`); elsewhere
+`TERM` must name an entry the package installs (`vt100`, `xterm`, `dtterm`),
+and a dtterm sets `TERM=dtterm` itself. `q` or the Quit item ends it.

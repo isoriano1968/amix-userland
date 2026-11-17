@@ -101,7 +101,7 @@ From this component directory (`components/developer/vscode` in
 amix-userland):
 
 ```sh
-make install      # make build only packages build/vscode-amix-0.5.0.vsix
+make install      # make build only packages build/vscode-amix-0.5.1.vsix
 ```
 
 `make build` runs `npx @vscode/vsce package` with the component's GitHub
@@ -272,12 +272,17 @@ compilers:
 ```
 
 with the runpath `/usr/local/lib`. The A3000 needs the `library/ncurses`
-package (`/usr/local/lib/libncurses.so.6` and its terminfo); then, in any
-terminal:
+package (`/usr/local/lib/libncurses.so.6` and about 1900 terminfo files under
+`/usr/share/terminfo` on root; on a small root use
+`pkg --min-free 20 install library/ncurses`, since pkg keeps 200 MB free by
+default). Then, in any terminal:
 
 ```sh
-TERM=vt100 ./hello
+./hello
 ```
+
+On the console `TERM` is already `amiga`; elsewhere any entry the package
+installs (`vt100`, `xterm`, `dtterm`).
 
 ## Notes
 

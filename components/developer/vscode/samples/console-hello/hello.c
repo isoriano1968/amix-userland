@@ -5,11 +5,13 @@
  *   make                    gcc 14 (m68k-elf-gcc), the default
  *   make TOOLCHAIN=gcc272   gcc 2.7.2.3 (m68k-cbm-sysv4-gcc)
  *
- * On the A3000, in a console, dtterm or ssh login: TERM=vt100 ./hello
- * (any terminal with a terminfo entry: vt100, xterm, dtterm).
+ * On the A3000, in a console, dtterm or ssh login: ./hello (on the console
+ * TERM is already amiga; elsewhere any terminfo entry the ncurses package
+ * installs: vt100, xterm, dtterm).
  * Only classic curses calls, as in SVR4 curses and ncurses.
  */
 #include <curses.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 #include <sys/utsname.h>
@@ -19,7 +21,7 @@ static const char *items[] = { "Say hello", "Show the time", "Quit" };
 
 static void draw(WINDOW *w, struct utsname *u, int sel, const char *msg)
 {
-    char now[64];
+    char now[64], line[3 * sizeof u->sysname + 8];
     time_t t = time(NULL);
     int i;
 
@@ -27,13 +29,17 @@ static void draw(WINDOW *w, struct utsname *u, int sel, const char *msg)
     werase(w);
     box(w, 0, 0);
     mvwprintw(w, 0, 2, " Hello AMIX ");
-    mvwprintw(w, 2, 3, "%s %s on %s (%s)", u->sysname, u->release,
-              u->nodename, u->machine);
-    mvwprintw(w, 3, 3, "%s", now);
+    /* AMIX says "UNIX_System_V 4.0 on amigaunix (Amiga (Unlimited))", wider
+     * than the window: system on one row, machine on the next, each cut to
+     * the 44 columns inside the frame, or it wraps over the border */
+    sprintf(line, "%s %s on %s", u->sysname, u->release, u->nodename);
+    mvwprintw(w, 2, 3, "%-44.44s", line);
+    mvwprintw(w, 3, 3, "%-44.44s", u->machine);
+    mvwprintw(w, 4, 3, "%s", now);
     for (i = 0; i < (int)NITEMS; i++) {
         if (i == sel)
             wattron(w, A_REVERSE);
-        mvwprintw(w, 5 + i, 5, " %-16s ", items[i]);
+        mvwprintw(w, 6 + i, 5, " %-16s ", items[i]);
         if (i == sel)
             wattroff(w, A_REVERSE);
     }
