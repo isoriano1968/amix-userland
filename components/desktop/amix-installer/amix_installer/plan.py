@@ -736,7 +736,7 @@ class DriverKernel(Action):
                    (root[0] << 3) | root[1])
             if k040 and not kernel.find_syssrc(k040):
                 detail += "; fetches NetBSD 10.1\u2019s syssrc.tgz (%d MB) once from " \
-                          "cdn.netbsd.org" % (kernel.SYSSRC_BYTES >> 20)
+                          "netbsd.org" % (kernel.SYSSRC_BYTES >> 20)
         super(DriverKernel, self).__init__("kernel", title, detail, 2 << 20, [self.name], why)
         self.src = src
         self.ids = ids

@@ -328,6 +328,33 @@ class Relink(unittest.TestCase):
                 {"entries": "va2000open", "provides": "dev_kvmap"})])
         self.assertTrue(d2.provides)
 
+    def test_fetch_syssrc(self):
+        """the first source that has the file, checked against the pin; a file
+        that does not match is never kept"""
+        good = os.path.join(self.d, "syssrc.tgz")
+        with open(good, "wb") as f:
+            f.write(b"netbsd source")
+        pin = hashlib.sha256(b"netbsd source").hexdigest()
+        env = os.environ.get("XDG_DATA_HOME")
+        os.environ["XDG_DATA_HOME"] = os.path.join(self.d, "data")
+        try:
+            gone = "file://" + os.path.join(self.d, "moved-to-the-archive.tgz")
+            p = kernel.fetch_syssrc(pin, urls=(gone, "file://" + good))
+            self.assertEqual(p, kernel.syssrc_cache())
+            with open(p, "rb") as f:
+                self.assertEqual(f.read(), b"netbsd source")
+            os.remove(p)
+            with self.assertRaisesRegex(kernel.KernelError, "not the pinned"):
+                kernel.fetch_syssrc("0" * 64, urls=("file://" + good,))
+            self.assertFalse(os.path.exists(kernel.syssrc_cache()))
+            self.assertFalse(os.path.exists(kernel.syssrc_cache() + ".part"))
+        finally:
+            if env is None:
+                os.environ.pop("XDG_DATA_HOME", None)
+            else:
+                os.environ["XDG_DATA_HOME"] = env
+        self.assertTrue(kernel.SYSSRC_URLS[0].startswith("http://archive.netbsd.org/"))
+
     def test_listed_twice(self):
         k = self.kit("rtgfb", ["rtgfb_030.o", "check_relink_relocs.py"])
         with open(os.path.join(k, "KIT.sha256")) as f:

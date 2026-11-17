@@ -538,8 +538,11 @@ K040_TOOL = "amix-kernel-040"
 STAMP_ROOT = "stamp-rootcard.py"
 SYSSRC = "syssrc-10.1.tgz"
 # NetBSD 10.1's source set (amix-gate tools/netbsd-pin.sh): never shipped, fetched
-# once and kept in the user's data folder; plain HTTP, the sha256 is the check
-SYSSRC_URL = "http://cdn.netbsd.org/pub/NetBSD/NetBSD-10.1/source/sets/syssrc.tgz"
+# once and kept in the user's data folder; plain HTTP, the sha256 is the check.
+# NetBSD moves a release to its archive when a newer one is out: tried in order
+SYSSRC_URLS = ("http://archive.netbsd.org/pub/NetBSD-archive/NetBSD-10.1/source/sets/syssrc.tgz",
+               "http://cdn.netbsd.org/pub/NetBSD/NetBSD-10.1/source/sets/syssrc.tgz")
+SYSSRC_URL = SYSSRC_URLS[0]
 SYSSRC_BYTES = 79497697
 
 
@@ -548,9 +551,20 @@ def syssrc_cache():
     return os.path.join(base, "amix-installer", "distfiles", SYSSRC)
 
 
-def fetch_syssrc(pin, progress=None, url=SYSSRC_URL):
-    """Download NetBSD 10.1's syssrc.tgz into the cache, checked against pin
-    (sha256) before it is kept.  Returns its path."""
+def fetch_syssrc(pin, progress=None, urls=SYSSRC_URLS):
+    """Download NetBSD 10.1's syssrc.tgz into the cache from the first of urls
+    that has it, checked against pin (sha256) before it is kept.  Returns its
+    path."""
+    errors = []
+    for url in ([urls] if isinstance(urls, str) else urls):
+        try:
+            return _fetch_syssrc(pin, progress, url)
+        except KernelError as e:
+            errors.append(str(e))
+    raise KernelError("; ".join(errors))
+
+
+def _fetch_syssrc(pin, progress, url):
     import hashlib
     import urllib.request
     dst = syssrc_cache()
@@ -682,7 +696,7 @@ def make_040(base, variant, log=None, amix_sys=None, kit=None, root=None, progre
         raise KernelError("no %s (package developer/amix/kernel-kit-tools 0.3)" % K040_TOOL)
     tgz = find_syssrc(kit)
     if not tgz:
-        log("NetBSD 10.1 %s: fetching it once from %s" % (SYSSRC, SYSSRC_URL))
+        log("NetBSD 10.1 %s: fetching it once (%s)" % (SYSSRC, SYSSRC_URL.split("/")[2]))
         tgz = fetch_syssrc(syssrc_pin(kit), progress)
     elf = find_elf_tools()
     if not elf:
