@@ -9,6 +9,10 @@ import os
 from . import model
 
 FORMAT = "amix-installer-profile"
+# the further cards of 0.5 are the hardware switches of the Machine page
+OLD_SWITCH = {"more_hydra": "hw_hydra", "more_xsurf": "hw_xsurf",
+              "more_zz9000eth": "hw_zz9000eth", "more_picasso2": "hw_picasso2",
+              "more_zz9000": "hw_zz9000", "more_va2000": "hw_va2000"}
 VERSION = 1
 
 
@@ -55,15 +59,17 @@ def load_data(data):
     for oid, val in (data.get("switch") or {}).items():
         if oid == "rtg":
             continue        # before 0.5 a switch; now the "gfx" choice
+        oid = OLD_SWITCH.get(oid, oid)
         if oid not in switch_ids:
             msgs.append("unknown option %s" % oid)
             continue
-        on[oid] = bool(val)
-    cfg = model.Config()
-    cfg.sel.update(sel)
-    cfg.on.update(on)
-    for gid in cfg.normalize():
-        if gid in sel:
+        on[oid] = bool(val) or on.get(oid, False)
+    # a profile from before the Machine page listed the hardware: its Amiga's
+    # own, and the cards its choices use, ticked (model.implied_on); the
+    # switches it names win
+    cfg = model.Config(sel=sel, on=on)
+    for gid in sorted(sel):
+        if cfg.sel.get(gid) != sel[gid]:
             msgs.append("%s: %s is not available here, now %s" % (gid, sel[gid], cfg.sel[gid]))
     return cfg, msgs
 

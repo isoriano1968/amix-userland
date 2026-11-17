@@ -553,36 +553,60 @@ SCSI_ID = {"core": 6, "pvmk": 5, "data": 1}
 SDCARDS = 2
 
 
-def scsi_controllers(sel):
+# dd/sd's controllers in its probe order: the Amiga's own, a Zorro card, a
+# CPU card's, the Z3660's SD card
+DD_SD = (("hw_a3000scsi", "the A3000's own SCSI"), ("hw_a2091", "the A2091"),
+         ("hw_gvpscsi", "the GVP card's SCSI"), ("hw_z3660sd", "the Z3660's SD card"))
+
+
+def hardware(cfg):
+    """(sel, the ticked hardware ids) of a model.Config, or of a bare sel dict
+    (then the hardware its choices imply: model.implied_on, and the CPU card's
+    own controller)."""
+    if hasattr(cfg, "tags"):
+        return cfg.sel, set(t for t in cfg.tags() if t.startswith("hw_"))
+    sel = cfg
+    have = set(k for k, v in model.implied_on(sel).items() if v)
+    if sel.get("accel") == "gvp":
+        have.add("hw_gvpscsi")
+    if sel.get("accel") == "z3660":
+        have.add("hw_z3660sd")
+    return sel, have
+
+
+def scsi_controllers(cfg):
     """The SCSI controllers AMIX's dd/sd finds on the machine, in its probe
-    order: the Amiga's own (or FS-UAE's), a CPU card's, the Z3660's SD card."""
+    order (the ticked ones it has a driver for).  cfg: a model.Config or its
+    sel dict."""
+    sel, have = hardware(cfg)
     if sel.get("mach") == "uae":
         return ["FS-UAE's A3000 SCSI"]
-    # the A4000's IDE is no controller of dd/sd: its first one may be the Z3660's
-    out = [] if sel.get("mach") == "a4000" else \
-        [{"a3000": "the A3000's own SCSI", "a2500": "the A2091"}.get(sel.get("mach"),
-                                                                     "the Amiga's SCSI")]
-    if sel.get("accel") == "gvp":
-        out.append("the GVP card's SCSI")
-    if sel.get("accel") == "z3660":
-        out.append("the Z3660's SD card")
-    return out
+    return [name for h, name in DD_SD if h in have]
 
 
-def disk_controller(sel):
-    """The controller the AMIX disks are on: the Z3660's for its SD card,
-    else the Amiga's own (a ZuluSCSI/BlueSCSI is on that bus too)."""
-    ctl = scsi_controllers(sel)
-    if sel.get("target") == "sd" and "the Z3660's SD card" in ctl:
-        return ctl.index("the Z3660's SD card")
-    return 0
+def disk_hw(cfg):
+    """The hardware id of the controller AMIX's disks are on."""
+    sel, _ = hardware(cfg)
+    on = sel.get("diskon") or ("on_z3660sd" if sel.get("target") == "sd" else None)
+    return model.DISK_HW.get(on)
+
+
+def disk_controller(cfg):
+    """dd/sd's number of the controller the AMIX disks are on (a ZuluSCSI or
+    BlueSCSI is on that bus too); 0 for one dd/sd does not drive."""
+    sel, have = hardware(cfg)
+    if sel.get("mach") == "uae":
+        return 0
+    ids = [h for h, _ in DD_SD if h in have]
+    h = disk_hw(cfg)
+    return ids.index(h) if h in ids else 0
 
 
 def disk_device(sel, role, slice_, raw=True, fs_uae=False):
     """/dev/rdsk/c<x>d0s<n> (or /dev/dsk) of an AMIX disk: on the machine,
     or in FS-UAE, where every disk is on the emulated A3000 SCSI.  AMIX writes
     x in hex (c0-cf): card 1 unit 6 is ced0s1."""
-    card = 0 if fs_uae else disk_controller(sel)
+    card = 0 if fs_uae else disk_controller(sel)      # sel: a model.Config or its dict
     return "/dev/%s/c%xd0s%d" % ("rdsk" if raw else "dsk", (card << 3) | SCSI_ID[role], slice_)
 FSUAE_CONFIG = "amix-install.fs-uae"
 # the installer's graphics card -> FS-UAE's graphics_card
@@ -634,13 +658,15 @@ def kernel_built(cfg):
 
 
 def kernel_drivers(cfg):
-    """The driver ids the chosen cards need in the kernel, graphics first:
-    the main display and the further graphics cards, then the install network
-    card and the further network cards.  cfg: a model.Config (or, for the
-    main choices alone, its sel dict)."""
+    """The driver ids the ticked cards need in the kernel, graphics first:
+    the main display and the other graphics cards, then the install network
+    interface and the other ones.  cfg: a model.Config (or, for the main
+    choices alone, its sel dict).  The Z3660 kernel takes no kits: the other
+    cards get theirs with the stock and the 68040/060 port kernels."""
     sel = cfg.sel if hasattr(cfg, "sel") else cfg
-    gfx = [sel.get("gfx")] + (cfg.further("gfxmore") if hasattr(cfg, "further") else [])
-    net = [sel.get("net")] + (cfg.further("netmore") if hasattr(cfg, "further") else [])
+    kits = sel.get("kern", "stock") in ("stock", "k040") and hasattr(cfg, "further")
+    gfx = [sel.get("gfx")] + (cfg.further("gfx") if kits else [])
+    net = [sel.get("net")] + (cfg.further("net") if kits else [])
     out = []
     for c in gfx:
         if c in GFX_DRIVER and GFX_DRIVER[c] not in out:
@@ -654,9 +680,10 @@ def kernel_drivers(cfg):
         # its RTG: the z3660rtg kit, before the other graphics cards
         if "rtg" in gfx:
             out.insert(0, "z3660rtg")
-        if sel.get("target") == "sd":
+        if disk_hw(cfg) == "hw_z3660sd" or (hasattr(cfg, "tags") and
+                                            "hw_z3660sd" in cfg.tags()):
             out.insert(0, "z3660scsi")
-        if sel.get("net") == "netzen":
+        if "netzen" in net:
             out.append("z3660eth")
     return out
 
@@ -946,11 +973,23 @@ def make_plan(cfg, paths, fs=None, written=False):
     if sel["boot"] != "pvmk":
         names.pop("pvmk")
     # AMIX's dd/sd takes SDCARDS controllers; one more is dropped at boot
-    ctl = scsi_controllers(sel)
+    ctl = scsi_controllers(cfg)
     if len(ctl) > SDCARDS:
-        pl.problems.append("AMIX's SCSI driver takes %d controllers, this machine has %d (%s): "
-                           "the last one is dropped at boot" % (SDCARDS, len(ctl),
-                                                               ", ".join(ctl)))
+        why = "AMIX's SCSI driver takes %d controllers, this machine has %d (%s)" % (
+            SDCARDS, len(ctl), ", ".join(ctl))
+        mine = dict(DD_SD).get(disk_hw(cfg))
+        if mine in ctl[SDCARDS:]:
+            pl.problems.append(why + ": %s, where AMIX's disks are, is dropped at boot" % mine)
+        else:
+            pl.actions.append(Later("dropped-controller", "Use %s" % " and ".join(
+                ctl[SDCARDS:]), "its disks are not seen by AMIX", why))
+    # disks on a controller no kernel of ours drives yet: written all the same
+    # (the machine boots them once a driver exists), the plan says so
+    dh = disk_hw(cfg)
+    dopt = model.find_group("dctl").option(dh) if dh else None
+    if dopt is not None and dopt.nodriver and sel["mach"] != "uae":
+        pl.actions.append(Later("disk-driver", "Boot AMIX from the %s" % dopt.title,
+                                "the disks are written for it now", dopt.nodriver))
     # an SD card: its configuration read, the images go where the card looks
     out, card_problems, card_cfg = card_setup(cfg, out, names)
     pl.paths["out_dir"] = out
@@ -982,7 +1021,7 @@ def make_plan(cfg, paths, fs=None, written=False):
     if kernel_built(cfg):
         dk = DriverKernel(src, ids, sel.get("kern", "stock"),
                           cfg.source is not None and not cfg.source.patch,
-                          root=(disk_controller(sel), SCSI_ID["core"]))
+                          root=(disk_controller(cfg), SCSI_ID["core"]))
         pl.actions.append(dk)
         if dk.missing:
             # never a system whose chosen card has no driver in its kernel
@@ -1008,7 +1047,8 @@ def make_plan(cfg, paths, fs=None, written=False):
     for s in model.STEPS:
         for g in s.groups:
             if g.id in ("pkgclient", "kern", "boot", "src", "target", "mach", "accel", "cpu",
-                        "layout", "dsize", "net", "keymap", "gfx", "gfxmore", "netmore"):
+                        "layout", "dsize", "net", "keymap", "gfx", "diskon", "dctl", "netif",
+                        "gfxhw", "memory"):
                 continue
             for o in g.options:
                 if cfg.chosen(g, o) and o.mb and not cfg.installed(o):

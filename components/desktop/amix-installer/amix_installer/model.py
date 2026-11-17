@@ -7,30 +7,35 @@ An option's "needs" says when it is available:
   ("a", "b")                one of the tags a or b is chosen
   (("a", "b"), ("c",))      (a or b) and c
 Tags are the chosen options of the radio groups in TAG_GROUPS, plus the
-derived tags of derived_tags(), plus "card:<id>" for every graphics card the
-machine has: the main display and the further cards.
+derived tags of derived_tags(), plus the id of every hardware switch that is
+on and fits (the groups of HW_GROUPS: hw_a2091, hw_zz9000, ...).
 
-A real Amiga can have several graphics and network cards.  The radio groups
-gfx (the main display: console and X) and net (the card the install runs over,
-with the host name's address) choose one each; the switch groups gfxmore and
-netmore add further cards, whose drivers are linked into the kernel too (a
-network card added so is not configured: its address is set on AMIX).  A
-further card is the "twin" of an option of the radio group, and is not
-offered while that option is the radio group's choice.
+The Machine page lists what the Amiga has: its disk controllers, network
+interfaces and graphics cards, as switches.  Later pages choose among them:
+the controller AMIX's disks are on (diskon), the interface the install runs
+over (net: the host name's address goes to it), the main display (gfx: the
+console and X).  Every other ticked card gets its driver and device node;
+its address, or its use beside the main display, is set on AMIX.  Changing
+the Amiga sets these switches to what that machine comes with (PRESET_ON).
 """
 
-TAG_GROUPS = ("src", "target", "mach", "accel", "net", "layout", "kern", "boot", "gfx", "desk")
+TAG_GROUPS = ("src", "target", "mach", "accel", "net", "diskon", "layout", "kern", "boot", "gfx",
+              "desk")
+# the switch groups of hardware the machine has
+HW_GROUPS = ("dctl", "netif", "gfxhw")
 
 NOT_AVAILABLE = "Not for this machine or layout"
+NOT_TICKED = "Not ticked on the Machine page"
 # where the IPS client of doc/plans/IPS-INSTALLER-PLAN.md shows itself
 PKG_CLIENT_PROBES = ("/var/pkg", "/usr/bin/pkg")
 
 
 class Option(object):
     def __init__(self, id, title, sub, needs=None, badge=None, mb=0, default=False, probe=(),
-                 twin=None, blocked=None):
+                 blocked=None, nodriver=None):
         self.id = id
-        self.twin = twin            # (radio group, option) this further card duplicates
+        # hardware the installer knows but no kernel of it drives yet: why
+        self.nodriver = nodriver
         # {tag: why}: not available while the tag is chosen, for that reason
         # (a card that fits the machine, but its kit is not built yet)
         self.blocked = dict(blocked or {})
@@ -79,6 +84,125 @@ def _norm_needs(needs):
 O = Option
 G = Group
 
+# what the Zorro slots of each machine take
+ZORRO2 = ("a3000", "a2500", "a4000")
+ZORRO3 = ("a3000", "a4000")
+# CPU cards the 68030 kernels (Commodore's, or it with kits) run on
+STOCK_CPUS = ("none", "gvp", "a2630", "a2620", "b1230", "uae")
+PORT_CPUS = ("z3660", "mercury", "gvp", "a3640", "dkb1240", "a1200_060", "uae")
+NODRV = "no driver yet"
+
+
+def _amigaux(drv):
+    return ("amigaux 1.1 has a driver for it (%s, MIT); it is not ported to the kernels of "
+            "this installer yet: tick it to record it, AMIX's disks cannot go on it" % drv)
+
+
+MACHINE = Step("machine", "Machine", "Amiga, CPU card and hardware",
+     "Tick what the Amiga has: the kernel, its drivers and the disk names follow it. Later "
+     "pages choose among it (the install network, the main display, where AMIX's disks go); "
+     "options the machine cannot use are greyed out.",
+     [G("mach", "Amiga", radio=True, options=[
+         O("a3000", "Amiga 3000", "AMIX’s own machine, onboard 68030"),
+         O("a2500", "Amiga 2500 / 2000", "Zorro II with a CPU card in the CPU slot"),
+         O("a4000", "Amiga 4000", "Experimental, untested: AMIX has never booted on an "
+           "A4000. With a 68040 or 68060 card, or a 68030 card with MMU", badge="experimental"),
+         # no Zorro: disks only on its IDE (gayle, not ported) or a card's SCSI
+         O("a1200", "Amiga 1200", "Experimental, untested: with a trapdoor CPU card with MMU. "
+           "No AMIX driver for its IDE or a card's SCSI yet: the disks are prepared now and "
+           "boot once one exists", badge="experimental"),
+         O("uae", "FS-UAE emulator", "A3000 configuration with A2065 network")]),
+      G("accel", "CPU card", radio=True, options=[
+          O("none", "None (bare metal)", "Onboard 68030 and its memory", needs=("a3000", "uae")),
+          O("z3660", "Z3660", "68060 plus ARM: RTG, Ethernet, SD card, up to 528 MB",
+            needs=("a3000", "a4000"), badge="fastest"),
+          O("a3640", "A3640", "Commodore’s 68040 card of the A4000/040",
+            needs=("a4000",)),
+          O("mercury", "Mercury", "68060 in the A3000 CPU slot", needs=("a3000",)),
+          O("gvp", "GVP G-Force", "68030 or 68040 cards with their own SCSI",
+            needs=("a3000", "a2500")),
+          O("a2630", "A2630", "Commodore’s 68030 card, 2 or 4 MB", needs=("a2500",)),
+          O("a2620", "A2620", "Commodore’s 68020 card with MMU", needs=("a2500",)),
+          O("b1230", "Blizzard 1230-III", "68030 with MMU in the trapdoor; its fast memory "
+            "sits below 1 GiB", needs=("a1200",)),
+          O("dkb1240", "DKB 1240", "68040 in the trapdoor", needs=("a1200",)),
+          O("a1200_060", "68060 trapdoor card", "Untested: its fast memory must sit below "
+            "1 GiB", needs=("a1200",), badge="untested"),
+          # their fast memory is mapped above 1 GiB, where AMIX has no pages
+          O("bliz_iv", "Blizzard 1230-IV, 1240, 1260", "Not yet: their fast memory sits "
+            "above 1 GiB", needs=("a1200",),
+            blocked={"a1200": "Their fast memory sits above 1 GiB, where AMIX has none"}),
+          O("ec030", "68EC030 card", "No MMU: AMIX cannot run on it", needs=("a1200", "a4000"),
+            blocked={"a1200": "A 68EC030 has no MMU, which AMIX needs",
+                     "a4000": "A 68EC030 has no MMU, which AMIX needs"})]),
+      G("memory", "Memory", options=[
+          O("bigram", "BigRAM on the A2630", "More fast RAM on the card, used by the kernel",
+            needs=("a2630",))]),
+      # the controllers AMIX's dd/sd drives (the A3000's, the A2091, a GVP card's,
+      # the Z3660's SD card) and the ones amigaux 1.1 has drivers for
+      G("dctl", "Disk controllers", options=[
+          O("hw_a3000scsi", "A3000 SCSI", "The A3000’s own SCSI: in AMIX since 2.1",
+            needs=("a3000", "uae")),
+          O("hw_a2091", "A2091 / A2090", "Commodore’s Zorro II SCSI card: in AMIX since 2.1",
+            needs=(ZORRO2,)),
+          O("hw_gvpscsi", "GVP SCSI", "The SCSI of the GVP G-Force card", needs=("gvp",)),
+          O("hw_z3660sd", "Z3660 SD card", "Disk images on the board’s SD card: in the Z3660 "
+            "kernel, a kit for the 68040/060 port", needs=("z3660",)),
+          O("hw_a4091", "A4091", "Commodore’s Zorro III SCSI-2 card (53C710)", needs=(ZORRO3,),
+            badge=NODRV, nodriver=_amigaux("a4091")),
+          O("hw_a4092", "A4092", "The new Zorro III SCSI-2 card (53C710)", needs=(ZORRO3,),
+            badge=NODRV, nodriver=_amigaux("a4091")),
+          O("hw_a4kt710", "A4000T SCSI", "The A4000T’s own SCSI (53C710)", needs=("a4000",),
+            badge=NODRV, nodriver=_amigaux("a4kt710")),
+          O("hw_gayle", "IDE port", "The A4000’s or A1200’s own IDE (Gayle)",
+            needs=("a4000", "a1200"), badge=NODRV, nodriver=_amigaux("gayle")),
+          O("hw_buddha", "Buddha IDE", "Zorro II, two IDE ports", needs=(ZORRO2,),
+            badge=NODRV, nodriver=_amigaux("buddha")),
+          O("hw_catweasel", "Catweasel Z-II IDE", "Zorro II, three IDE ports", needs=(ZORRO2,),
+            badge=NODRV, nodriver=_amigaux("catweasel")),
+          O("hw_blizscsi", "Blizzard SCSI kit", "The SCSI module of a Blizzard trapdoor card",
+            needs=("a1200",), badge=NODRV,
+            nodriver="No AMIX driver exists for it yet: tick it to record it, AMIX's disks "
+            "cannot go on it")]),
+      G("netif", "Network interfaces", options=[
+          O("hw_a2065", "A2065", "Commodore’s Ethernet card, in every AMIX; FS-UAE emulates it",
+            needs=(ZORRO2 + ("uae",),)),
+          O("hw_zen", "Z3660 Ethernet", "The board’s own port", needs=("z3660",)),
+          O("hw_hydra", "HydraNet", "Hydra Systems AmigaNet (Zorro II): a kit for the kernel",
+            needs=(ZORRO2,)),
+          O("hw_xsurf", "X-Surf 100", "Individual Computers X-Surf 100: a kit for the kernel",
+            needs=(ZORRO2,)),
+          O("hw_zz9000eth", "ZZ9000 Ethernet", "The MNT ZZ9000’s port: a kit for the kernel",
+            needs=((ZORRO2), ("hw_zz9000",)))]),
+      G("gfxhw", "Graphics cards", options=[
+          O("hw_rtg", "Z3660 RTG", "The board’s HDMI output (RGB565)", needs=("z3660",)),
+          O("hw_picasso2", "Picasso II", "Cirrus 8-bit RTG; FS-UAE emulates it",
+            needs=(ZORRO2 + ("uae",),)),
+          O("hw_zz9000", "ZZ9000", "MNT ZZ9000 RTG (Zorro II mode)", needs=(ZORRO2,)),
+          O("hw_va2000", "VA2000", "MNT VA2000 RTG", needs=(ZORRO2,))]),
+      G("net", "Network for the install", radio=True, options=[
+          O("net2065", "A2065", "Commodore’s Ethernet card: the only network a stock "
+            "AMIX has", needs=(("hw_a2065",), ("none", "gvp", "a2630", "a2620", "mercury",
+                                               "a3640", "uae"))),
+          O("netzen", "Z3660 Ethernet",
+            "Only once a kernel from this installer runs", needs=("hw_zen",)),
+          O("nethydra", "HydraNet", "Only once a kernel from this installer runs: its driver "
+            "is linked into your kernel", needs=("hw_hydra",)),
+          O("netxsurf", "X-Surf 100", "Only once a kernel from this installer runs: its "
+            "driver is linked into your kernel", needs=("hw_xsurf",)),
+          O("netzz9000", "ZZ9000 Ethernet", "Only once a kernel from this installer runs: its "
+            "driver is linked into your kernel", needs=("hw_zz9000eth",)),
+          O("nonet", "None", "Install from HDF files prepared in FS-UAE; the other "
+            "interfaces get their driver, their address is set on AMIX")]),
+      G("keymap", "Keyboard", radio=True, options=[
+          O("us", "US", "Amiga keyboard with the US layout"),
+          O("de", "German", "Amiga keyboard with the German layout"),
+          O("depc", "German PC keyboard", "In an emulator such as FS-UAE", needs=("uae",))]),
+      G("cpu", "Code for added packages", radio=True, options=[
+          O("m020", "68020–68060", "Runs on every machine above", badge="default"),
+          O("m060", "68060 tuned", "Fastest on 68060 cards", needs=("060",))])])
+
+
 STEPS = [
     Step("base", "Base system", "Your AMIX core system",
          "The installer starts from a core AMIX 2.1c installation made from your own "
@@ -93,10 +217,13 @@ STEPS = [
                badge="no copy needed", needs=("net2065", "netzen"))]),
           G("target", "Write to", radio=True, options=[
               O("sd", "Z3660 SD card", "HDF files for the board’s SD card",
-                needs=(("z3660",), ("hdf", "tape"))),
+                needs=(("on_z3660sd",), ("hdf", "tape"))),
+              # a ZuluSCSI/BlueSCSI sits on a SCSI bus: the disks' controller's
               O("card", "ZuluSCSI or BlueSCSI SD card",
                 "Disk images named by SCSI ID (HD60_512.hda …) to copy onto the card",
-                needs=(("a3000", "a2500"), ("hdf", "tape"))),
+                needs=(("on_a3000scsi", "on_a2091", "on_gvpscsi", "on_a4091", "on_a4092",
+                        "on_a4kt710", "on_blizscsi"), ("hdf", "tape"),
+                       ("a3000", "a2500", "a4000", "a1200"))),
               O("file", "HDF files only", "For FS-UAE, or to copy later",
                 needs=("hdf", "tape")),
               O("inplace", "The running system", "Its own disks, after a check of free space",
@@ -112,73 +239,38 @@ STEPS = [
               O("pkg", "AMIX package client",
                 "pkg and /var/pkg: installs, updates and removes packages, each file checked; "
                 "every package below needs it", mb=2, probe=PKG_CLIENT_PROBES)])]),
-    Step("machine", "Machine", "Amiga and accelerator",
-         "Kernel, drivers and memory layout follow the Amiga and its CPU card. Options a "
-         "machine cannot use are greyed out on the next pages.",
-         [G("mach", "Amiga", radio=True, options=[
-             O("a3000", "Amiga 3000", "AMIX’s own machine, onboard 68030"),
-             O("a2500", "Amiga 2500 / 2000", "Zorro II with a CPU card in the CPU slot"),
-             # Commodore's AMIX knows the A3000's SCSI and the A2091 only: on an
-             # A4000 (IDE, which AMIX does not drive; 68EC030 without MMU on the
-             # A4000/030) it runs with our 68040/060 kernels, disks on a Z3660
-             O("a4000", "Amiga 4000", "Experimental, untested: AMIX has never booted on an "
-               "A4000. With a 68040 or 68060 card; its IDE is not used: the disks go on the "
-               "Z3660’s SD card", badge="experimental"),
-             O("uae", "FS-UAE emulator", "A3000 configuration with A2065 network")]),
-          G("accel", "CPU card", radio=True, options=[
-              O("none", "None (bare metal)", "Onboard 68030 and its memory", needs=("a3000", "uae")),
-              O("z3660", "Z3660", "68060 plus ARM: RTG, Ethernet, SD card, up to 528 MB",
-                needs=("a3000", "a4000"), badge="fastest"),
-              O("a3640", "A3640", "Commodore’s 68040 card of the A4000/040",
-                needs=("a4000",)),
-              O("mercury", "Mercury", "68060 in the A3000 CPU slot", needs=("a3000",)),
-              O("gvp", "GVP G-Force", "68030 or 68040 cards with their own SCSI",
-                needs=("a3000", "a2500")),
-              O("a2630", "A2630", "Commodore’s 68030 card, 2 or 4 MB", needs=("a2500",)),
-              O("a2620", "A2620", "Commodore’s 68020 card with MMU", needs=("a2500",))]),
-          G("accopt", "CPU card options", options=[
-              O("bigram", "BigRAM on the A2630", "More fast RAM on the card, used by the kernel",
-                needs=("a2630",))]),
-          G("net", "Network for the install", radio=True, options=[
-              O("net2065", "A2065", "Commodore’s Ethernet card: the only network a stock "
-                "AMIX has", needs=("none", "gvp", "a2630", "a2620", "mercury", "a3640", "uae")),
-              O("netzen", "Z3660 Ethernet",
-                "Only once a kernel from this installer runs", needs=("z3660",)),
-              # Zorro II, DP8390: the hydra driver is linked into the kernel here;
-              # FS-UAE has no Hydra, so the install itself runs there over its A2065
-              O("nethydra", "HydraNet",
-                "Hydra Systems AmigaNet (Zorro II). Only once a kernel from this installer "
-                "runs: its driver is linked into your kernel", needs=("a3000", "a2500", "a4000")),
-              # AX88796B, /dev/xsf0, major 56: kits for both kernel lines
-              O("netxsurf", "X-Surf 100",
-                "Individual Computers X-Surf 100. Only once a kernel from this installer "
-                "runs: its driver is linked into your kernel", needs=("a3000", "a2500", "a4000")),
-              # the ZZ9000's own port, /dev/zz0, major 52: with the ZZ9000 card
-              O("netzz9000", "ZZ9000 Ethernet",
-                "The MNT ZZ9000's Ethernet port. Only once a kernel from this installer "
-                "runs: its driver is linked into your kernel", needs=(("a3000", "a2500", "a4000"),
-                                                                     ("card:zz9000",))),
-              O("nonet", "None", "Install from HDF files prepared in FS-UAE")]),
-          # further network cards: driver and device node only, no address
-          G("netmore", "More network cards", options=[
-              O("more_hydra", "HydraNet", "Its driver and /dev/hya0; set its address on AMIX",
-                needs=("a3000", "a2500", "a4000"), twin=("net", "nethydra")),
-              O("more_xsurf", "X-Surf 100", "Its driver and /dev/xsf0; set its address on AMIX",
-                needs=("a3000", "a2500", "a4000"), twin=("net", "netxsurf")),
-              O("more_zz9000eth", "ZZ9000 Ethernet",
-                "Its driver and /dev/zz0; set its address on AMIX",
-                needs=(("a3000", "a2500", "a4000"), ("card:zz9000",)), twin=("net", "netzz9000"))]),
-          G("keymap", "Keyboard", radio=True, options=[
-              O("us", "US", "Amiga keyboard with the US layout"),
-              O("de", "German", "Amiga keyboard with the German layout"),
-              O("depc", "German PC keyboard", "In an emulator such as FS-UAE", needs=("uae",))]),
-          G("cpu", "Code for added packages", radio=True, options=[
-              O("m020", "68020–68060", "Runs on every machine above", badge="default"),
-              O("m060", "68060 tuned", "Fastest on 68060 cards", needs=("060",))])]),
+    MACHINE,
     Step("disks", "Disks", "Core and data disk",
          "Keep the core system small and put what you add on a data disk: an update of one "
          "never fills the other, and a core disk that was made too small is no longer a problem.",
-         [G("layout", "Layout", radio=True, options=[
+         [G("diskon", "AMIX disks on", radio=True, options=[
+             # dd/sd's controllers first: a controller without a driver is never
+             # picked while one with a driver is ticked
+             O("on_a3000scsi", "A3000 SCSI", "Core disk at SCSI ID 6, pvmk at 5, data at 1",
+               needs=("hw_a3000scsi",)),
+             O("on_a2091", "A2091 / A2090", "Core disk at SCSI ID 6, pvmk at 5, data at 1",
+               needs=("hw_a2091",)),
+             O("on_gvpscsi", "GVP SCSI", "Core disk at SCSI ID 6, pvmk at 5, data at 1",
+               needs=("hw_gvpscsi",)),
+             O("on_z3660sd", "Z3660 SD card", "HDF files at units 6, 5 and 1 of the board",
+               needs=("hw_z3660sd",)),
+             O("on_a4091", "A4091", "No AMIX driver yet: the disks are written, AMIX boots "
+               "from them once it has one", needs=("hw_a4091",), badge=NODRV),
+             O("on_a4092", "A4092", "No AMIX driver yet: the disks are written, AMIX boots "
+               "from them once it has one", needs=("hw_a4092",), badge=NODRV),
+             O("on_a4kt710", "A4000T SCSI", "No AMIX driver yet: the disks are written, AMIX "
+               "boots from them once it has one", needs=("hw_a4kt710",), badge=NODRV),
+             O("on_gayle", "IDE port", "No AMIX driver yet: the disks are written, AMIX boots "
+               "from them once it has one", needs=("hw_gayle",), badge=NODRV),
+             O("on_buddha", "Buddha IDE", "No AMIX driver yet: the disks are written, AMIX "
+               "boots from them once it has one", needs=("hw_buddha",), badge=NODRV),
+             O("on_catweasel", "Catweasel Z-II IDE", "No AMIX driver yet: the disks are "
+               "written, AMIX boots from them once it has one", needs=("hw_catweasel",),
+               badge=NODRV),
+             O("on_blizscsi", "Blizzard SCSI kit", "No AMIX driver yet: the disks are "
+               "written, AMIX boots from them once it has one", needs=("hw_blizscsi",),
+               badge=NODRV)]),
+          G("layout", "Layout", radio=True, options=[
              O("single", "Everything on the core disk",
                "Only while 100 MB stay free on it; otherwise additions go to a data disk"),
              O("split", "Core disk plus data disk",
@@ -194,10 +286,9 @@ STEPS = [
          [G("kern", "Kernel", radio=True, options=[
              O("z3opt", "Z3660 optimised", "68060, large memory, no drivers for absent hardware",
                needs=("z3660",), badge="fastest"),
-             O("k040", "68040/060 port", "For 68040 and 68060 cards",
-               needs=("z3660", "mercury", "gvp", "a3640", "uae")),
+             O("k040", "68040/060 port", "For 68040 and 68060 cards", needs=(PORT_CPUS,)),
              O("stock", "Stock AMIX 2.1c", "Commodore’s 68030 kernel, unchanged",
-               needs=("a3000", "a2500", "uae"))]),
+               needs=(STOCK_CPUS,))]),
           G("boot", "Boot", radio=True, options=[
               O("pvmk", "pvmk boot partition",
                 "Boot menu and serial console; loads the kernel from UNIX_Root",
@@ -218,36 +309,27 @@ STEPS = [
              # built into the Z3660 kernel; the 68040/060 port kernel links the
              # z3660rtg kit (/dev/z3660rtg, major 55)
              O("rtg", "Z3660 RTG", "8, 15 and 16-bit RTG modes for X (HDMI is RGB565: no "
-               "24/32-bit)", needs=("z3660",), mb=2),
+               "24/32-bit)", needs=("hw_rtg",), mb=2),
              # Zorro II, /dev/rtgfb, major 54: a kit per kernel line (rtgfb, rtgfb-040)
              O("picasso2", "Picasso II", "Cirrus 8-bit RTG, 640\u00d7480 to 1024\u00d7768; FS-UAE "
                "emulates it. Its driver is linked into your kernel",
-               needs=(("uae", "a3000", "a2500", "a4000"), ("stock", "k040"), ("pvmk",)), mb=2),
+               needs=(("hw_picasso2",), ("stock", "k040"), ("pvmk",)), mb=2),
              # Zorro II product 3 (AMIX has no Zorro III): /dev/zz9000, major 49
              O("zz9000", "ZZ9000", "MNT ZZ9000 RTG, 16-bit, tested at 1920\u00d7800; its driver "
-               "is linked into your kernel", needs=(("a3000", "a2500", "a4000"), ("stock", "k040")),
-               mb=2),
+               "is linked into your kernel", needs=(("hw_zz9000",), ("stock", "k040")), mb=2),
              # Zorro II, /dev/va2000, major 68: a kit per kernel line (va2000,
              # va2000-040); X has no va2000 card driver yet: the console and
              # OPEN LOOK until it has
              O("va2000", "VA2000", "MNT VA2000 RTG; its driver is linked into your kernel, "
-               "X support comes later", needs=(("a3000", "a2500", "a4000"), ("stock", "k040")), mb=1),
+               "X support comes later", needs=(("hw_va2000",), ("stock", "k040")), mb=1),
              O("chipset", "Amiga chipset", "No graphics card: the console and OPEN LOOK")]),
-          # further graphics cards: driver and device node; X and the console stay
-          # on the main display until X spans several cards
-          G("gfxmore", "More graphics cards", options=[
-             O("more_picasso2", "Picasso II", "Its driver and /dev/rtgfb, beside the main display",
-               needs=(("a3000", "a2500", "a4000"), ("stock", "k040")),
-               twin=("gfx", "picasso2")),
-             O("more_zz9000", "ZZ9000", "Its driver and /dev/zz9000, beside the main display",
-               needs=(("a3000", "a2500", "a4000"), ("stock", "k040")), twin=("gfx", "zz9000")),
-             O("more_va2000", "VA2000", "Its driver and /dev/va2000, beside the main display",
-               needs=(("a3000", "a2500", "a4000"), ("stock", "k040")), twin=("gfx", "va2000"))]),
           G("drv", "Hardware", options=[
-             O("zen", "Z3660 Ethernet", "zen0 with interrupt-driven receive", needs=("z3660",), mb=1),
+             O("zen", "Z3660 Ethernet", "zen0 with interrupt-driven receive", needs=("hw_zen",),
+               mb=1),
              O("paula", "Paula audio", "/dev/paula for players and games", mb=1),
              O("a2065", "A2065 Ethernet", "Commodore’s card, and FS-UAE’s network",
-               needs=("net2065",), mb=1),
+               needs=(("hw_a2065",), ("none", "gvp", "a2630", "a2620", "mercury", "a3640",
+                                     "uae")), mb=1),
              O("random", "Random numbers", "/dev/random and /dev/urandom, needed by ssh", mb=1)]),
           G("core1", "Services on the ARM core", options=[
               O("gpu", "3D graphics", "OpenGL on the second ARM core", needs=("z3660",), mb=30),
@@ -305,16 +387,54 @@ FALLBACK = {"gfx": "chipset"}
 
 DEFAULT_SEL = {"src": "hdf", "target": "sd", "mach": "a3000", "accel": "z3660", "cpu": "m020",
                "layout": "split", "dsize": "d2g", "kern": "z3opt", "boot": "pvmk", "gfx": "rtg",
-               "desk": "cde",
+               "desk": "cde", "diskon": "on_z3660sd",
                "keymap": "us", "net": "netzen", "existing": "overwrite"}
 
 DEFAULT_ON = {"pkg": True, "bigram": True, "vt": True, "syslog": True, "mem": True,
-              "more_hydra": False, "more_xsurf": False, "more_zz9000eth": False,
-              "more_picasso2": False, "more_zz9000": False, "more_va2000": False,
+              "hw_a3000scsi": True, "hw_a2091": False, "hw_gvpscsi": True, "hw_z3660sd": True,
+              "hw_a4091": False, "hw_a4092": False, "hw_a4kt710": False, "hw_gayle": False,
+              "hw_buddha": False, "hw_catweasel": False, "hw_blizscsi": False,
+              "hw_a2065": True, "hw_zen": True, "hw_hydra": False, "hw_xsurf": False,
+              "hw_zz9000eth": False,
+              "hw_rtg": True, "hw_picasso2": False, "hw_zz9000": False, "hw_va2000": False,
               "zen": True, "paula": True, "a2065": False, "random": True,
               "gpu": True, "video": True, "crypto": True, "netsurf": True, "media": True,
               "grafx2": False, "sysmon": True, "games": False, "gcc14": True, "gcc27": False,
               "headers": True, "pkgconf": True, "gnu": True, "python": False, "vim": True}
+
+# what each Amiga comes with: set when it is chosen (A3000UX and A2500UX
+# shipped with an A2065; the A2500's disks are on its A2091)
+PRESET_ON = {
+    "a3000": {"hw_a3000scsi": True, "hw_a2065": True},
+    "a2500": {"hw_a2091": True, "hw_a2065": True},
+    "a4000": {"hw_gayle": True, "hw_a2065": False},
+    "a1200": {"hw_gayle": True},
+    "uae": {"hw_a3000scsi": True, "hw_a2065": True},
+}
+# the radio choices of the later pages -> the hardware they are
+GFX_HW = {"rtg": "hw_rtg", "picasso2": "hw_picasso2", "zz9000": "hw_zz9000",
+          "va2000": "hw_va2000"}
+NET_HW = {"net2065": "hw_a2065", "netzen": "hw_zen", "nethydra": "hw_hydra",
+          "netxsurf": "hw_xsurf", "netzz9000": "hw_zz9000eth"}
+DISK_HW = {"on_" + h[3:]: h for h in ("hw_a3000scsi", "hw_a2091", "hw_gvpscsi", "hw_z3660sd",
+                                      "hw_a4091", "hw_a4092", "hw_a4kt710", "hw_gayle",
+                                      "hw_buddha", "hw_catweasel", "hw_blizscsi")}
+
+
+def implied_on(sel):
+    """The hardware switches a selection implies: what its Amiga comes with,
+    the CPU card's own controller, and the cards its later choices use (for a
+    profile of an installer before 0.6, and a selection given as a dict)."""
+    on = dict(PRESET_ON.get(sel.get("mach"), {}))
+    for m, key in ((GFX_HW, "gfx"), (NET_HW, "net"), (DISK_HW, "diskon")):
+        if sel.get(key) in m:
+            on[m[sel[key]]] = True
+    if sel.get("target") == "sd":
+        on["hw_z3660sd"] = True
+    if sel.get("net") == "netzz9000":
+        on["hw_zz9000"] = True
+    return on
+
 
 # example sizes until the source image is read (version 0.2)
 CORE_DISK_MB = 600
@@ -363,7 +483,7 @@ def tag_title(tag):
         return TAG_NAMES[tag]
     for _, g in all_groups():
         o = g.option(tag)
-        if o is not None and g.radio:
+        if o is not None and (g.radio or g.id in HW_GROUPS):
             return o.title
     return tag
 
@@ -377,6 +497,7 @@ class Config(object):
         self.on = dict(DEFAULT_ON)
         if sel:
             self.sel.update(sel)
+            self.on.update(implied_on(sel))
         if on:
             self.on.update(on)
         self.normalize()
@@ -386,19 +507,17 @@ class Config(object):
         t = set(self.sel.get(g) for g in TAG_GROUPS)
         t.discard(None)
         t |= derived_tags(self.sel)
-        # the graphics cards the machine has: the main display, then every
-        # further card that is on and fits (judged without card tags)
-        if self.sel.get("gfx") not in (None, "chipset"):
-            t.add("card:" + self.sel["gfx"])
-        base = set(t)
-        for o in find_group("gfxmore").options:
-            if self.on.get(o.id) and self._fits(o, base):
-                t.add("card:" + o.twin[1])
+        # the hardware switches that are on and fit: twice, for a switch that
+        # needs another one (the ZZ9000's Ethernet needs the ZZ9000)
+        for _ in range(2):
+            base = set(t)
+            for gid in HW_GROUPS:
+                for o in find_group(gid).options:
+                    if self.on.get(o.id) and self._fits(o, base):
+                        t.add(o.id)
         return t
 
     def _fits(self, opt, tags):
-        if opt.twin is not None and self.sel.get(opt.twin[0]) == opt.twin[1]:
-            return False             # it is the radio group's choice already
         if any(t in tags for t in opt.blocked):
             return False
         if opt.needs is None:
@@ -414,13 +533,26 @@ class Config(object):
         for t, why in opt.blocked.items():
             if t in tags:
                 return why
+        # hardware this machine can have, not ticked on the Machine page
+        miss = self.missing(opt)
+        hw = dict((o.id, o) for gid in HW_GROUPS for o in find_group(gid).options)
+        if miss and all(any(t in hw and self.available(hw[t]) for t in alt) for alt in miss):
+            return NOT_TICKED
         return NOT_AVAILABLE
 
+    def hardware(self, gid):
+        """The ids of the ticked hardware of a HW_GROUPS group that fits."""
+        t = self.tags()
+        return [o.id for o in find_group(gid).options if o.id in t]
+
     def further(self, gid):
-        """The twins (radio option ids) of the chosen further cards of a switch
-        group (gfxmore, netmore)."""
-        g = find_group(gid)
-        return [o.twin[1] for o in g.options if self.chosen(g, o)]
+        """The other cards beside the main one, as the radio group's option
+        ids: "gfx" -> the graphics cards beside the main display, "net" -> the
+        network interfaces beside the install one; only cards a radio option
+        stands for (those with a driver for this kernel line)."""
+        hw = {"gfx": ("gfxhw", GFX_HW), "net": ("netif", NET_HW)}[gid]
+        have = self.hardware(hw[0])
+        return [oid for oid, h in hw[1].items() if h in have and oid != self.sel.get(gid)]
 
     def missing(self, opt):
         """The alternatives the option still needs, for a tooltip."""
@@ -489,6 +621,14 @@ class Config(object):
             raise KeyError("%s/%s" % (gid, oid))
         if not self.available(o):
             return False
+        if gid == "mach" and self.sel.get("mach") != oid:
+            # another Amiga: its own hardware, the cards ticked for the old
+            # one off
+            preset = set(k for p in PRESET_ON.values() for k in p)
+            for hg in HW_GROUPS:
+                for h in find_group(hg).options:
+                    self.on[h.id] = False if h.id in preset else DEFAULT_ON[h.id]
+            self.on.update(PRESET_ON.get(oid, {}))
         self.sel[gid] = oid
         self.normalize()
         return True
@@ -582,7 +722,7 @@ def _size_text(mb):
 
 def derived_tags(sel):
     t = set()
-    if sel.get("accel") in ("z3660", "mercury"):
+    if sel.get("accel") in ("z3660", "mercury", "a1200_060"):
         t.add("060")
     if sel.get("desk") in ("cde", "mwm"):
         t.add("x11")

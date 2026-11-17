@@ -37,7 +37,7 @@ class Rules(unittest.TestCase):
         for _, g in model.all_groups():
             if g.id in model.TAG_GROUPS:
                 known |= set(o.id for o in g.options)
-        known |= set("card:" + o.id for o in model.find_group("gfx").options if o.id != "chipset")
+        known |= set(o.id for gid in model.HW_GROUPS for o in model.find_group(gid).options)
         for _, g in model.all_groups():
             for o in g.options:
                 for alt in o.needs or ():
@@ -45,24 +45,25 @@ class Rules(unittest.TestCase):
                         self.assertIn(t, known, "%s needs unknown tag %s" % (o.id, t))
 
     def test_further_cards(self):
-        """Several graphics and network cards: one main display and one install
-        card (radio), the others switched on beside them."""
+        """The Machine page ticks every card the Amiga has; the main display
+        and the install interface are chosen among them, the others are
+        beside them."""
         c = model.Config(sel={"mach": "a3000", "accel": "none", "kern": "stock", "boot": "pvmk",
                               "gfx": "picasso2", "net": "net2065", "desk": "cde"},
-                         on={"more_zz9000": True, "more_va2000": True, "more_hydra": True,
-                             "more_xsurf": True})
-        self.assertEqual(c.further("gfxmore"), ["zz9000", "va2000"])
-        self.assertEqual(c.further("netmore"), ["nethydra", "netxsurf"])
-        # the main display is not offered again as a further card
-        self.assertFalse(c.available(model.find_group("gfxmore").option("more_picasso2")))
-        # a further ZZ9000 makes its Ethernet port available
-        self.assertIn("card:zz9000", c.tags())
-        self.assertTrue(c.available(model.find_group("netmore").option("more_zz9000eth")))
-        c.set_on("more_zz9000", False)
-        self.assertFalse(c.available(model.find_group("netmore").option("more_zz9000eth")))
-        # FS-UAE has one card of each: no further cards
-        u = model.Config(sel={"mach": "uae"}, on={"more_hydra": True, "more_zz9000": True})
-        self.assertEqual((u.further("gfxmore"), u.further("netmore")), ([], []))
+                         on={"hw_zz9000": True, "hw_va2000": True, "hw_hydra": True,
+                             "hw_xsurf": True})
+        self.assertEqual(c.further("gfx"), ["zz9000", "va2000"])
+        self.assertEqual(c.further("net"), ["nethydra", "netxsurf"])
+        self.assertEqual(c.hardware("gfxhw"), ["hw_picasso2", "hw_zz9000", "hw_va2000"])
+        # a ticked ZZ9000 makes its Ethernet port available
+        self.assertTrue(c.available(model.find_group("netif").option("hw_zz9000eth")))
+        c.set_on("hw_zz9000", False)
+        self.assertFalse(c.available(model.find_group("netif").option("hw_zz9000eth")))
+        # a card not ticked cannot be the main display
+        self.assertFalse(c.available(model.find_group("gfx").option("zz9000")))
+        # FS-UAE has no Zorro cards of these: none beside the main ones
+        u = model.Config(sel={"mach": "uae"}, on={"hw_hydra": True, "hw_zz9000": True})
+        self.assertEqual((u.further("gfx"), u.further("net")), ([], []))
         # the loadable-modules switch is gone: no kernel of ours has a loader
         self.assertIsNone(model.find_group("kopt").option("dlm"))
 
@@ -75,7 +76,9 @@ class Rules(unittest.TestCase):
         self.assertEqual(c.sel["net"], "net2065")
         c.select("accel", "a2630")
         self.assertEqual(c.sel["kern"], "stock")
-        self.assertTrue(c.chosen(*opt("accopt", "bigram")))
+        self.assertTrue(c.chosen(*opt("memory", "bigram")))
+        # its disks on its A2091: what an A2500 comes with
+        self.assertEqual(c.sel["diskon"], "on_a2091")
         self.assertFalse(c.chosen(*opt("drv", "zen")))
         self.assertFalse(c.chosen(*opt("kopt", "vt")))
         self.assertTrue(c.available(opt("drv", "a2065")[1]))
@@ -125,6 +128,71 @@ class Rules(unittest.TestCase):
     def test_missing_text(self):
         c = model.Config(sel={"mach": "a2500"})
         self.assertEqual(c.missing(opt("kopt", "mem")[1]), [("z3660",), ("z3opt",)])
+
+
+    def test_machine_page_groups(self):
+        """the Machine page: the Amiga, its CPU card and memory, then what it
+        has: disk controllers, network interfaces, graphics cards"""
+        ids = [g.id for g in model.STEPS[model.step_index("machine")].groups]
+        self.assertEqual(ids[:7], ["mach", "accel", "memory", "dctl", "netif", "gfxhw", "net"])
+        self.assertEqual(model.find_group("diskon").radio, True)
+        for gid in model.HW_GROUPS:
+            self.assertFalse(model.find_group(gid).radio)
+        # every disk choice stands for a controller switch, and back
+        self.assertEqual(sorted(model.DISK_HW.values()),
+                         sorted(o.id for o in model.find_group("dctl").options))
+        for oid, h in model.DISK_HW.items():
+            self.assertEqual(model.find_group("diskon").option(oid).needs, ((h,),))
+        # greyed out: not ticked, or not in this machine at all
+        c = model.Config()
+        on = model.find_group("diskon")
+        self.assertEqual(c.why_not(on.option("on_a2091")), model.NOT_TICKED)
+        c.select("mach", "a1200")
+        self.assertEqual(c.why_not(on.option("on_a2091")), model.NOT_AVAILABLE)
+        # a controller without a driver says why, and is marked
+        for o in model.find_group("dctl").options:
+            self.assertEqual(bool(o.nodriver), o.badge == model.NODRV, o.id)
+
+    def test_new_amiga_new_hardware(self):
+        """another Amiga: what it comes with is ticked, the cards of the old
+        one are off"""
+        c = model.Config()
+        c.set_on("hw_xsurf", True)
+        c.select("mach", "a2500")
+        self.assertEqual(c.hardware("dctl"), ["hw_a2091", "hw_gvpscsi"])
+        self.assertFalse(c.on["hw_xsurf"])
+        self.assertFalse(c.on["hw_a3000scsi"])
+        c.select("mach", "a3000")
+        self.assertTrue(c.on["hw_a3000scsi"])
+        self.assertFalse(c.on["hw_a2091"])
+
+    def test_amiga_1200(self):
+        """experimental: trapdoor cards with an MMU; its IDE and a Blizzard's
+        SCSI have no driver yet, the disks are written all the same"""
+        c = model.Config()
+        self.assertTrue(c.select("mach", "a1200"))
+        self.assertEqual(c.sel["accel"], "b1230")
+        self.assertEqual(c.sel["kern"], "stock")
+        self.assertEqual((c.sel["diskon"], c.sel["target"], c.sel["net"], c.sel["gfx"]),
+                         ("on_gayle", "file", "nonet", "chipset"))
+        self.assertTrue(c.select("accel", "dkb1240"))
+        self.assertEqual(c.sel["kern"], "k040")
+        self.assertTrue(c.select("accel", "a1200_060"))
+        self.assertIn("060", c.tags())
+        for oid in ("bliz_iv", "ec030"):
+            o = model.find_group("accel").option(oid)
+            self.assertFalse(c.select("accel", oid), oid)
+            self.assertIn("1 GiB" if oid == "bliz_iv" else "MMU", c.why_not(o))
+        # a Blizzard SCSI kit: the disks can go on it (a ZuluSCSI there too)
+        c.set_on("hw_blizscsi", True)
+        self.assertTrue(c.select("diskon", "on_blizscsi"))
+        self.assertTrue(c.available(model.find_group("target").option("card")))
+        # no Zorro slots
+        for oid in ("hw_a2091", "hw_a2065", "hw_zz9000", "hw_buddha"):
+            self.assertFalse(c.available(model.find_group("dctl").option(oid) or
+                                         model.find_group("netif").option(oid) or
+                                         model.find_group("gfxhw").option(oid)), oid)
+        self.assertFalse(c.available(model.find_group("accel").option("none")))
 
 
 class Space(unittest.TestCase):
@@ -208,6 +276,24 @@ class Profiles(unittest.TestCase):
         self.assertTrue(any("nosuch" in m for m in msgs))
         self.assertTrue(any("warp" in m for m in msgs))
         self.assertTrue(any(m.startswith("accel:") for m in msgs))
+
+    def test_profile_before_the_machine_page(self):
+        """an 0.5 profile: its main cards and further cards become ticks"""
+        data = {"format": "amix-installer-profile", "version": 1,
+                "choose": {"mach": "a3000", "accel": "none", "kern": "stock", "boot": "pvmk",
+                           "gfx": "picasso2", "net": "nethydra", "target": "card"},
+                "switch": {"more_xsurf": True, "more_zz9000": True, "more_va2000": False}}
+        c, msgs = profile.load_data(data)
+        self.assertEqual(msgs, [])
+        self.assertEqual((c.sel["gfx"], c.sel["net"], c.sel["diskon"]),
+                         ("picasso2", "nethydra", "on_a3000scsi"))
+        self.assertEqual(c.hardware("gfxhw"), ["hw_picasso2", "hw_zz9000"])
+        self.assertEqual(c.hardware("netif"), ["hw_a2065", "hw_hydra", "hw_xsurf"])
+        self.assertEqual(c.further("net"), ["net2065", "netxsurf"])
+        # the Z3660 SD card target ticks the card and puts the disks there
+        c, _ = profile.load_data(dict(data, choose={"mach": "a3000", "accel": "z3660",
+                                                    "target": "sd"}, switch={}))
+        self.assertEqual(c.sel["diskon"], "on_z3660sd")
 
     def test_not_a_profile(self):
         with self.assertRaises(ValueError):

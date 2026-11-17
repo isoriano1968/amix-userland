@@ -428,13 +428,18 @@ class Cards(Base):
         # ZZ9000 Ethernet: only with the ZZ9000 card, both drivers linked
         z = self.cfg(gfx="zz9000", net="netzz9000")
         self.assertEqual((z.sel["gfx"], z.sel["net"]), ("zz9000", "netzz9000"))
-        self.assertNotEqual(self.cfg(gfx="picasso2", net="netzz9000").sel["net"], "netzz9000")
+        # ZZ9000 Ethernet as the install interface says the ZZ9000 is there; with
+        # the card unticked its port is not offered
+        self.assertEqual(self.cfg(gfx="picasso2", net="netzz9000").sel["net"], "netzz9000")
+        n = model.Config(sel={"mach": "a3000", "accel": "none", "kern": "stock", "boot": "pvmk",
+                              "gfx": "picasso2", "net": "netzz9000"}, on={"hw_zz9000": False})
+        self.assertNotEqual(n.sel["net"], "netzz9000")
         self.assertEqual(plan.kernel_drivers(z.sel), ["zz9000", "zz9000eth"])
         # every card of a machine with several: graphics first, no driver twice
         m = model.Config(sel={"mach": "a3000", "accel": "none", "kern": "stock", "boot": "pvmk",
                               "gfx": "zz9000", "net": "nethydra"},
-                         on={"more_picasso2": True, "more_xsurf": True, "more_zz9000eth": True,
-                             "more_hydra": True})
+                         on={"hw_picasso2": True, "hw_xsurf": True, "hw_zz9000eth": True,
+                             "hw_hydra": True})
         self.assertEqual(plan.kernel_drivers(m), ["zz9000", "rtgfb", "hydra", "xsurf100",
                                                   "zz9000eth"])
         # the VA2000 has a kit for both kernel lines, and X has no va2000
@@ -484,17 +489,23 @@ class Cards(Base):
         self.assertNotEqual(c.sel["target"], "card")
         self.assertEqual(c.sel["net"], "nethydra")               # hydra-040 kit
         c = model.Config(sel=dict(c.sel, kern="k040"))
-        # as main cards, and beside others (the twin of the main card is not offered)
-        other = model.Config(sel=dict(c.sel, net="netxsurf", gfx="rtg"))
-        for cf, gid, oid in ((c, "net", "nethydra"), (c, "gfx", "picasso2"),
-                             (other, "netmore", "more_hydra"), (other, "gfxmore", "more_picasso2")):
-            self.assertTrue(cf.available(model.find_group(gid).option(oid)), oid)
+        # Zorro II cards in the A4000: ticked, then main cards or beside others
+        c.set_on("hw_picasso2", True)
+        c.set_on("hw_xsurf", True)
+        for gid, oid in (("net", "nethydra"), ("gfx", "picasso2"), ("netif", "hw_hydra"),
+                         ("gfxhw", "hw_picasso2")):
+            self.assertTrue(c.available(model.find_group(gid).option(oid)), oid)
+        self.assertEqual(c.further("net"), ["netzen", "netxsurf"])     # and the Z3660's port
         self.assertEqual(c.why_not(model.find_group("target").option("card")),
                          model.NOT_AVAILABLE)
         self.assertTrue(c.available(model.find_group("net").option("netxsurf")))
         a = model.Config(sel={"mach": "a4000", "accel": "a3640", "kern": "k040"})
         self.assertEqual((a.sel["accel"], a.sel["kern"]), ("a3640", "k040"))
-        self.assertEqual(a.sel["net"], "net2065")
+        # an A4000 comes without an A2065: ticked, the install runs over it
+        self.assertEqual(a.sel["net"], "nonet")
+        self.assertEqual(a.sel["diskon"], "on_gayle")             # its IDE: no driver yet
+        a.set_on("hw_a2065", True)
+        self.assertTrue(a.select("net", "net2065"))
         sd = {"mach": "a4000", "accel": "z3660", "target": "sd"}
         self.assertEqual(plan.scsi_controllers(sd), ["the Z3660's SD card"])
         self.assertEqual(plan.disk_device(sd, "core", 1), "/dev/rdsk/c6d0s1")   # stock rootdev
@@ -532,13 +543,52 @@ class Cards(Base):
         self.assertIn("entry=AMIX stock,UNIX_Root:/stand/unix.stock,native", plan.pvmk_conf(s))
 
     def test_third_controller_refused(self):
-        old = plan.scsi_controllers
-        plan.scsi_controllers = lambda sel: ["a", "b", "c"]
-        try:
-            pl = plan.make_plan(self.cfg(), self.paths())
-        finally:
-            plan.scsi_controllers = old
-        self.assertTrue(any("takes 2 controllers, this machine has 3" in p for p in pl.problems))
+        """dd/sd takes two controllers: the disks on the third one stop the
+        plan, a third one beside them is only noted"""
+        c = self.cfg(accel="gvp", target="file")
+        c.set_on("hw_a2091", True)
+        self.assertEqual(plan.scsi_controllers(c), ["the A3000's own SCSI", "the A2091",
+                                                    "the GVP card's SCSI"])
+        self.assertTrue(c.select("diskon", "on_gvpscsi"))
+        pl = plan.make_plan(c, self.paths())
+        self.assertTrue(any("takes 2 controllers, this machine has 3" in p and
+                            "the GVP card's SCSI, where AMIX's disks are, is dropped" in p
+                            for p in pl.problems), pl.problems)
+        c.select("diskon", "on_a3000scsi")
+        pl = plan.make_plan(c, self.paths())
+        self.assertFalse(any("controllers" in p for p in pl.problems), pl.problems)
+        d = [a for a in pl.actions if a.id == "dropped-controller"]
+        self.assertEqual(len(d), 1)
+        self.assertFalse(d[0].available)
+
+    def test_disks_without_a_driver(self):
+        """AMIX's disks on a controller only amigaux 1.1 drives: written, with a
+        step in the plan that says AMIX does not boot from them yet"""
+        c = Base.cfg(self, mach="a4000", accel="a3640", kern="k040", boot="pvmk")
+        self.assertEqual(c.sel["diskon"], "on_gayle")
+        pl = plan.make_plan(c, self.paths())
+        self.assertEqual(pl.problems, [])
+        d = [a for a in pl.actions if a.id == "disk-driver"]
+        self.assertEqual(len(d), 1)
+        self.assertFalse(d[0].available)
+        self.assertIn("gayle", d[0].missing)
+        self.assertIn("copy-core", [a.id for a in pl.actions])
+        # with an A2091 ticked the disks go there, with its driver
+        c.set_on("hw_a2091", True)
+        c.select("diskon", "on_a2091")
+        pl = plan.make_plan(c, self.paths())
+        self.assertFalse([a for a in pl.actions if a.id == "disk-driver"])
+        self.assertEqual(plan.disk_device(c, "core", 1), "/dev/rdsk/c6d0s1")
+
+    def test_other_cards_need_a_kit_kernel(self):
+        """the Z3660 kernel takes no kits: cards beside the main ones get their
+        drivers with the stock and 68040/060 port kernels only"""
+        c = model.Config(sel={"mach": "a3000", "accel": "z3660", "kern": "z3opt"},
+                         on={"hw_xsurf": True, "hw_zz9000": True})
+        self.assertEqual(plan.kernel_drivers(c), [])
+        c.select("kern", "k040")
+        self.assertEqual(plan.kernel_drivers(c), ["z3660scsi", "z3660rtg", "zz9000", "xsurf100",
+                                                  "z3660eth"])
 
     def test_kernel_drivers(self):
         self.assertEqual(plan.kernel_drivers({"gfx": "zz9000", "net": "nethydra"}),

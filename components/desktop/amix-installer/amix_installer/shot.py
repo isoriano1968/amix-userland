@@ -16,6 +16,8 @@ from . import model  # noqa: E402
 SCENES = [("%d-%s" % (i + 1, s.id), {}, {}, i) for i, s in enumerate(model.STEPS)] + [
     ("x-a2500-a2630-machine", {"mach": "a2500", "accel": "a2630"}, {}, model.step_index("machine")),
     ("x-a2500-a2630-drivers", {"mach": "a2500", "accel": "a2630"}, {}, model.step_index("drivers")),
+    ("x-a1200-machine", {"mach": "a1200"}, {}, model.step_index("machine")),
+    ("x-a1200-disks", {"mach": "a1200"}, {}, model.step_index("disks")),
     ("x-running-base", {"src": "run"}, {}, 0),
     ("x-single-disk-full", {"layout": "single"}, {}, model.step_index("disks")),
     ("x-running-summary", {"src": "run"}, {}, model.step_index("summary")),

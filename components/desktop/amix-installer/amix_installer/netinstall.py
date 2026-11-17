@@ -185,7 +185,8 @@ def packages_for(cfg):
     for s in model.STEPS:
         for g in s.groups:
             if g.id in ("pkgclient", "kern", "boot", "src", "target", "mach", "accel", "cpu",
-                        "layout", "dsize", "net", "keymap", "desk", "gfx", "gfxmore", "netmore"):
+                        "layout", "dsize", "net", "keymap", "desk", "gfx", "diskon", "dctl",
+                        "netif", "gfxhw", "memory"):
                 continue
             for o in g.options:
                 if not cfg.chosen(g, o) or cfg.installed(o) or o.id == "headers":
@@ -214,8 +215,8 @@ def fs_uae_data_disk(pl):
         return None
     with hdf.Image(os.path.join(pl.paths["out_dir"], dd[0].name)) as im:
         blocks = im.read_rdb()[0].blocks
-    return (plan.disk_device(pl.cfg.sel, "data", 1, fs_uae=True), blocks,
-            plan.disk_device(pl.cfg.sel, "data", 1))
+    return (plan.disk_device(pl.cfg, "data", 1, fs_uae=True), blocks,
+            plan.disk_device(pl.cfg, "data", 1))
 
 
 def hdf_movable():

@@ -305,7 +305,7 @@ class Picasso(unittest.TestCase):
         only their driver and device node"""
         c = model.Config(sel={"mach": "a3000", "accel": "none", "kern": "stock", "boot": "pvmk",
                               "gfx": "zz9000", "net": "nethydra", "desk": "cde"},
-                         on={"more_xsurf": True, "more_zz9000eth": True, "more_picasso2": True})
+                         on={"hw_xsurf": True, "hw_zz9000eth": True, "hw_picasso2": True})
         t = netinstall.steps_script(c, "10.0.2.2", kernel=(1490000, 777))
         Scripts.sh_ok(self, t)
         for node, major in (("zz9000", 49), ("rtgfb", 54), ("hya0", 47), ("xsf0", 56), ("zz0", 52)):
