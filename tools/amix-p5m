@@ -101,8 +101,14 @@ def generate(comp_dir, contents=None, rev=None):
     if name != rel:
         raise SystemExit("%s: manifest name %s is not its place %s" % (comp_dir, name, rel))
     stage = os.path.join(comp_dir, "build", "stage")
-    if name.startswith("meta/"):
-        stage = None            # a meta package is its requires: its members bring the files
+    # a meta package is its requires: its members bring the files.  meta.mk
+    # packs the members' stages into build/stage for the tar, so that stage
+    # must not become the package's own files (gnu/gnu-tools is meta.mk too)
+    mk = os.path.join(comp_dir, "Makefile")
+    uses_meta_mk = os.path.isfile(mk) and any(
+        l.split()[:2] == ["include", "../../../make-rules/meta.mk"] for l in open(mk))
+    if name.startswith("meta/") or uses_meta_mk:
+        stage = None
     problems = []
     lines = ["set name=pkg.fmri value=pkg://%s/%s@%s,%s-%s"
              % (PUBLISHER, name, ips_version(m["version"]), BUILD_RELEASE, rev or revision(comp_dir)),
