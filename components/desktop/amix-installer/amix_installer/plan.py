@@ -358,6 +358,92 @@ class Checksums(Action):
         ctx.progress(1.0, "done")
 
 
+class CardConfig(Action):
+    """The SD card's configuration with the AMIX disks: zuluscsi.ini or
+    bluescsi.ini (their [SCSI<id>] sections), or the Z3660's z3660cfg.txt
+    (hdf<N> and scsi<K> lines).  Every other line stays; the file as it was
+    is kept once as <name>.amix-installer."""
+
+    KEEP = ".amix-installer"
+
+    def __init__(self, path, old, new, title, detail):
+        super(CardConfig, self).__init__("card-config", title, detail, len(new), [])
+        self.path, self.old, self.new = path, old, new
+
+    def run(self, ctx):
+        with open(self.path, errors="replace") as f:
+            if f.read() != self.old:
+                raise safety.Refused("%s changed since the plan was made; nothing written"
+                                     % self.path)
+        keep = self.path + self.KEEP
+        if not os.path.exists(keep):
+            with open(keep, "x") as f:
+                f.write(self.old)
+                f.flush()
+                os.fsync(f.fileno())
+        part = self.path + ".part"
+        with open(part, "x") as f:
+            f.write(self.new)
+            f.flush()
+            os.fsync(f.fileno())
+        with open(part) as f:
+            if f.read() != self.new:
+                raise IOError("%s: read back differs" % part)
+        os.replace(part, self.path)
+        ctx.log("%s written (the old one kept as %s)" % (self.path, os.path.basename(keep)))
+        ctx.progress(1.0, "done")
+
+
+def card_setup(cfg, out, names):
+    """For an SD card target: the folder the disk images go to, the problems
+    that stop the plan, and the CardConfig action (or None).  out: the folder
+    chosen (the card's root, or the Z3660's hdf folder)."""
+    from . import scsicard
+    sel = cfg.sel
+    ids = dict((r, SCSI_ID[r]) for r in names)
+    if sel["target"] == "card":
+        card = scsicard.read_card(out)
+        img = os.path.normpath(os.path.join(out, card.image_dir()))
+        problems = scsicard.conflicts(card, ids, names)
+        if not os.path.isdir(img):
+            problems.append("%s names the image folder %s, which the card does not have"
+                            % (card.config, card.image_dir()))
+        if card.ini is None or problems:
+            return img, problems, None
+        new = scsicard.ini_with_amix(card, ids, names)
+        repl = scsicard.replaced_sections(card, ids)
+        detail = "[%s] for the AMIX disks (fixed disks, no host quirks)%s; the old file " \
+                 "kept as %s%s" % ("], [".join("SCSI%d" % i for i in sorted(ids.values())),
+                                   "; replaces [%s]" % "], [".join(repl) if repl else "",
+                                   card.config, CardConfig.KEEP)
+        return img, [], CardConfig(os.path.join(out, card.config), card.ini.text, new,
+                                   "Add the AMIX disks to %s" % card.config, detail)
+    if sel["target"] == "sd":
+        z = scsicard.read_z3660(out)
+        if z.root is None:
+            return out, [], None
+        img = os.path.join(z.root, scsicard.Z3660_HDF_DIR)
+        problems = scsicard.z3660_conflicts(z, ids, names)
+        if not os.path.isdir(img):
+            problems.append("the Z3660 card has no %s folder" % scsicard.Z3660_HDF_DIR)
+        if problems:
+            return img, problems, None
+        try:
+            new, slots, boot = scsicard.z3660_with_amix(z, ids, names,
+                                                         scsiboot="pvmk" in names)
+        except ValueError as e:
+            return img, [str(e)], None
+        units = ", ".join("unit %d = hdf%d" % (ids[r], slots[r])
+                          for r in sorted(slots, key=lambda r: ids[r]))
+        detail = "%s%s; the old file kept as %s%s" % (
+            units, "; scsiboot YES (pvmk boots from the SCSI ROM)" if boot else "",
+            scsicard.Z3660_CONFIG, CardConfig.KEEP)
+        cfgname = next(n for n in os.listdir(z.root) if n.lower() == scsicard.Z3660_CONFIG)
+        return img, [], CardConfig(os.path.join(z.root, cfgname), z.text, new,
+                                   "Add the AMIX disks to %s" % cfgname, detail)
+    return out, [], None
+
+
 class FragCheck(Action):
     """Z3660 firmware beta 21 misdirects HDFs with 32 or more fragments."""
 
@@ -644,7 +730,7 @@ class FsUaeRegister(Action):
         ctx.progress(1.0, "done")
 
 
-def readme(cfg, names):
+def readme(cfg, names, card_done=False):
     sel = cfg.sel
     lines = ["Disks written by the AMIX Installer %s." % __version__, ""]
     for role, what in (("core", "the core system (root, swap, boot)"),
@@ -653,9 +739,16 @@ def readme(cfg, names):
         if role in names:
             lines.append("  SCSI ID %d  %-22s %s" % (SCSI_ID[role], names[role], what))
     lines.append("")
-    if sel["target"] == "card":
+    if sel["target"] == "card" and card_done:
+        lines += ["The .hda files are on the ZuluSCSI/BlueSCSI SD card, and its ini file",
+                  "has their [SCSI<id>] sections (the old one is kept as .amix-installer)."]
+    elif sel["target"] == "card":
         lines += ["Copy the .hda files to the root of the ZuluSCSI/BlueSCSI SD card;",
                   "their names give the SCSI IDs. Keep ID 7 free for the host adapter."]
+    elif sel["target"] == "sd" and card_done:
+        lines += ["The .hdf files are in the hdf folder of the Z3660 SD card, and",
+                  "z3660cfg.txt gives each its SCSI unit (the old file is kept as",
+                  ".amix-installer). The firmware cannot use files in 32 or more pieces."]
     elif sel["target"] == "sd":
         lines += ["Copy the .hdf files to the hdf folder of the Z3660 SD card and give",
                   "each its SCSI unit in z3660cfg.txt as listed above. Write them to an",
@@ -724,6 +817,12 @@ def make_plan(cfg, paths, fs=None, written=False):
         names.pop("data")
     if sel["boot"] != "pvmk":
         names.pop("pvmk")
+    # an SD card: its configuration read, the images go where the card looks
+    out, card_problems, card_cfg = card_setup(cfg, out, names)
+    pl.paths["out_dir"] = out
+    if card_problems:
+        pl.problems += card_problems
+        return pl
 
     if sel["layout"] == "grow":
         pl.actions.append(Later("grow-core", "Copy the core system to a larger disk",
@@ -799,7 +898,9 @@ def make_plan(cfg, paths, fs=None, written=False):
     if sel["target"] == "sd":
         pl.actions.append(FragCheck([n for a in pl.runnable() for n in a.outputs
                                      if n.endswith(".hdf")]))
-    pl.actions.append(Checksums(cfg, readme(cfg, names)))
+    if card_cfg is not None:
+        pl.actions.append(card_cfg)
+    pl.actions.append(Checksums(cfg, readme(cfg, names, card_cfg is not None)))
     if fs.installed and paths.get("fsuae_add", True) and fsc.available and \
             not fs.has_config():
         pl.actions.append(FsUaeRegister(fs, fsc.text))

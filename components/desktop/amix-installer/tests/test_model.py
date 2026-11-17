@@ -213,3 +213,16 @@ class Safety(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Version(unittest.TestCase):
+    def test_one_version(self):
+        """__version__, the Makefile and the manifest name the same release"""
+        import re
+        import amix_installer
+        top = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        with open(os.path.join(top, "Makefile")) as f:
+            mk = re.search(r"^COMPONENT_VERSION = (\S+)", f.read(), re.M).group(1)
+        with open(os.path.join(top, "amix-installer.manifest")) as f:
+            mf = re.search(r"^version\s+(\S+)", f.read(), re.M).group(1)
+        self.assertEqual((amix_installer.__version__, mk), (mf, mf))

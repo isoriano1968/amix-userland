@@ -4,5 +4,5 @@
 # pycairo (icons at build time).  OpenIndiana: library/desktop/gtk4,
 # library/desktop/libadwaita, library/python/pygobject-39.
 name     desktop/amix-installer
-version  0.4.4
+version  0.4.6
 summary  Makes an AMIX disk for one machine from the user's own core system

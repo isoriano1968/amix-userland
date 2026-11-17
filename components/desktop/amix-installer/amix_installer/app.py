@@ -427,6 +427,13 @@ class Window(Adw.ApplicationWindow):
                     row.set_subtitle("From FS-UAE\u2019s Kickstarts: %s" % os.path.basename(
                         plan.fs_uae().a3000_kickstarts()[0]))
                     return
+                if p and key == "out_dir" and self.cfg.sel["target"] in ("card", "sd"):
+                    # what the card holds: its configuration, the SCSI IDs in use
+                    from . import scsicard
+                    info = scsicard.read_card(p) if self.cfg.sel["target"] == "card" \
+                        else scsicard.read_z3660(p)
+                    row.set_subtitle("%s\n%s" % (p, info.summary()))
+                    return
                 row.set_subtitle(p if p else ("No folder chosen" if folder else "No file chosen"))
             self._extra.append(upd)
             return row
