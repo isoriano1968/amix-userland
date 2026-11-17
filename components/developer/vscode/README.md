@@ -28,8 +28,9 @@ sudo pkg install metapackages/amix-cross-dev   # or pfexec with a pkg profile
 
 That brings `developer/amix/sysroot` (`/opt/m68k-amix-sysroot`),
 `developer/amix/gcc-27` (`/opt/amix-cross/bin`) and `developer/amix/gcc-14`
-(`/opt/m68k-amix/bin`). X11R6.3, Motif and CDE are not packaged yet, so X and
-CDE programs (the CDE Hello World sample) do not link from the packages alone.
+(`/opt/m68k-amix/bin`). X11R6.3 and Motif come as
+`developer/amix/x11r6.3` and `developer/amix/motif`, which the CDE Hello World
+sample links against.
 
 On Linux, built by hand under `~/opt`. For gcc 2.7.2.3:
 
@@ -242,7 +243,7 @@ Motif and X11R6.3 come from the gcc 14 sysroot for both compilers; the link
 line is ztopcde's:
 
 ```text
--lXm -lXmu -lXtInherit -lXt -lSM -lICE -lXext -lX11 -lsocket -lnsl -lamixc99 -lgen -lm
+-lXm -lXmu -lXt -lSM -lICE -lXext -lX11 -lsocket -lnsl -lamixc99 -lgen -lm
 ```
 
 with the runpath `/usr/motif/lib:/usr/x11r6/lib`. On the A3000, copy `hello`
