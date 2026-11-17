@@ -38,6 +38,7 @@ it).
 ## Build
 
     sh build.sh          (or: make build)
+    make stage           the package's files in build/stage (Xamix stripped)
 
 The tree is a copy of the R6.3 port tree (`XC_SRC`), the RTG fork's patches,
 then `local-*.patch` in the order build.sh gives.  The RTG fork's X material
@@ -59,6 +60,7 @@ difference to the last Xzz9000 build was the name (same sha256,
 |---|---|
 | `/usr/x11r6/bin/Xamix` | the server |
 | `/usr/x11r6/bin/X` | link to `Xamix` |
+| `/usr/x11r6/man/man1/Xserver.1` | the DIX options (hw/amix's `Xamix.man` is still Xsun's page and is not installed) |
 | `/opt/amix/bin/Xamix-dt` | the server as dtlogin starts it: limits, library path, `-mode` from `/etc/dt/config/rtg-mode`, fonts; log `/var/dt/Xamix.log` (source: desktop/cde `files/dtlogin/`) |
 | `/etc/dt/config/Xservers` | `:0 Local local_uid@console root /opt/amix/bin/Xamix-dt :0` |
 

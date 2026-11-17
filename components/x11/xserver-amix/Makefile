@@ -10,7 +10,33 @@ COMPONENT_VERSION = 2
 
 include ../../../make-rules/shared.mk
 
+XS    = src/xc/programs/Xserver
+STRIP = $(HOME)/opt/amix-cross/bin/m68k-cbm-sysv4-strip
+X11   = $(STAGE_DIR)/usr/x11r6
+
 build:
 	sh build.sh
 
-.PHONY: build
+# the server, the X link and the server's manual page (Xserver(1): the DIX
+# options).  hw/amix/Xamix.man is not installed: it is still Xsun's page with
+# the name replaced (Sun frame buffers, none of -card, -mode, -rtgdepth).
+# The dtlogin wrapper Xamix-dt is CDE's (desktop/cde files/dtlogin).
+stage: $(XS)/Xamix
+	rm -rf $(STAGE_DIR)
+	mkdir -p $(X11)/bin $(X11)/man/man1
+	$(STRIP) -o $(X11)/bin/Xamix $(XS)/Xamix
+	chmod 755 $(X11)/bin/Xamix
+	ln -s Xamix $(X11)/bin/X
+	cp $(XS)/Xserver.man $(X11)/man/man1/Xserver.1
+	chmod 644 $(X11)/man/man1/Xserver.1
+	chmod -R go-w,a+rX $(STAGE_DIR)
+	@$(manifest_files)
+	@test "`cd $(STAGE_DIR) && find . -type f -o -type l | wc -l`" = "`grep -c '^file ' xserver-amix.manifest`" || \
+		{ echo "the stage and xserver-amix.manifest list different files"; exit 1; }
+	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) \
+		-cf build/$(COMPONENT_NAME)-amix.tar usr
+
+$(XS)/Xamix:
+	sh build.sh
+
+.PHONY: build stage

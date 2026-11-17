@@ -2,5 +2,15 @@
 name     x11/xserver-amix
 version  2
 summary  Xamix, the AMIX X server: card drivers z3660 (Z3660 RTG), zz9000 (MNT ZZ9000) and cirrus (Picasso II)
-require  x11/x11r6.3
-require  library/soft3d
+# No require: Xamix needs only stock AMIX's shared libraries (readelf -d:
+# libsocket.so, libnsl.so, /usr/amiga/lib/libscreen.so, /usr/lib/libc.so.1).
+# The X libraries it uses (Xau, Xdmcp, xkbfile, font, lbxutil, zlib) are the
+# server's own, built from the R6.3 tree by build.sh and linked statically;
+# x11/x11r6.3's shared client libraries are not used.  ZZ9K-SOFT3D talks to
+# the zz9000 kernel driver by ioctl at run time; it needs no library/soft3d.
+# Run time data from stock AMIX, given by desktop/cde's Xamix-dt: fonts and
+# rgb in /usr/X/lib (-fp, -co); no XKB data yet, so Xamix-dt passes -kb
+# (XKB data: a later component).
+file     /usr/x11r6/bin/Xamix
+file     /usr/x11r6/bin/X
+file     /usr/x11r6/man/man1/Xserver.1
