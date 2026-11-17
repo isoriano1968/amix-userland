@@ -248,8 +248,15 @@ class Picasso(unittest.TestCase):
         self.assertIn("no kernel with the Picasso II driver", no)
         self.assertEqual(netinstall.packages_for(self.cfg())[0][0], "x11/xserver-amix")
         z = netinstall.steps_script(model.Config(sel={"desk": "cde"}), "10.0.2.2")
-        self.assertIn("echo zz9000 > /etc/X11/amix-card", z)
+        self.assertIn("echo z3660 > /etc/X11/amix-card", z)     # the Z3660 apart from a ZZ9000
         self.assertNotIn("/stand/unix.new", z)
+        # the 68040/060 port kernel: the Z3660 RTG from its kit, /dev/z3660rtg
+        k = model.Config(sel={"mach": "a3000", "accel": "z3660", "kern": "k040", "gfx": "rtg",
+                              "desk": "cde"})
+        kz = netinstall.steps_script(k, "10.0.2.2", kernel=(1490000, 777))
+        Scripts.sh_ok(self, kz)
+        self.assertIn("/usr/sbin/mknod /dev/z3660rtg c 55 0", kz)
+        self.assertIn("echo z3660 > /etc/X11/amix-card", kz)
         self.assertNotIn("amix-card", netinstall.steps_script(self.cfg(desk="console"), "10.0.2.2"))
 
     def test_steps_hydra_and_zz9000(self):

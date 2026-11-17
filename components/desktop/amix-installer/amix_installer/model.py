@@ -215,14 +215,18 @@ STEPS = [
          "Only drivers for hardware the machine has are installed; each one is its own package "
          "and can be removed later.",
          [G("gfx", "Main display", radio=True, options=[
-             O("rtg", "Z3660 RTG", "16-bit RTG modes for X", needs=("z3660",), mb=2),
+             # built into the Z3660 kernel; the 68040/060 port kernel links the
+             # z3660rtg kit (/dev/z3660rtg, major 55)
+             O("rtg", "Z3660 RTG", "8, 15 and 16-bit RTG modes for X (HDMI is RGB565: no "
+               "24/32-bit)", needs=("z3660",), mb=2),
              # Zorro II, /dev/rtgfb, major 54: a kit per kernel line (rtgfb, rtgfb-040)
              O("picasso2", "Picasso II", "Cirrus 8-bit RTG, 640\u00d7480 to 1024\u00d7768; FS-UAE "
                "emulates it. Its driver is linked into your kernel",
                needs=(("uae", "a3000", "a2500", "a4000"), ("stock", "k040"), ("pvmk",)), mb=2),
              # Zorro II product 3 (AMIX has no Zorro III): /dev/zz9000, major 49
              O("zz9000", "ZZ9000", "MNT ZZ9000 RTG, 16-bit, tested at 1920\u00d7800; its driver "
-               "is linked into your kernel", needs=(("a3000", "a2500"), ("stock",)), mb=2),
+               "is linked into your kernel", needs=(("a3000", "a2500", "a4000"), ("stock", "k040")),
+               mb=2),
              # Zorro II, /dev/va2000, major 68: a kit per kernel line (va2000,
              # va2000-040); X has no va2000 card driver yet: the console and
              # OPEN LOOK until it has
@@ -236,7 +240,7 @@ STEPS = [
                needs=(("a3000", "a2500", "a4000"), ("stock", "k040")),
                twin=("gfx", "picasso2")),
              O("more_zz9000", "ZZ9000", "Its driver and /dev/zz9000, beside the main display",
-               needs=(("a3000", "a2500"), ("stock",)), twin=("gfx", "zz9000")),
+               needs=(("a3000", "a2500", "a4000"), ("stock", "k040")), twin=("gfx", "zz9000")),
              O("more_va2000", "VA2000", "Its driver and /dev/va2000, beside the main display",
                needs=(("a3000", "a2500", "a4000"), ("stock", "k040")), twin=("gfx", "va2000"))]),
           G("drv", "Hardware", options=[

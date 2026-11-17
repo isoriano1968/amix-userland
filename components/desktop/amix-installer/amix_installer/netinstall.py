@@ -246,7 +246,9 @@ def sysv_sum(data):
 
 # the X card driver for /etc/X11/amix-card, by the installer's graphics card
 # (the Z3660's becomes "z3660" when its card driver is split from zz9000)
-X_CARD = {"picasso2": "cirrus", "rtg": "zz9000", "zz9000": "zz9000"}
+# the card /etc/X11/amix-card names: the Z3660 apart from the ZZ9000 (xserver-amix opens
+# /dev/z3660rtg, else the Z3660 kernel's built-in /dev/zz9000 when the board is a Z3660)
+X_CARD = {"picasso2": "cirrus", "rtg": "z3660", "zz9000": "zz9000"}
 # a network card whose driver is linked into the kernel (HydraNet, X-Surf
 # 100) comes up as AMIX's aen0 does in /etc/inet/network-config: plumbed when
 # the board answers, with the host name's address

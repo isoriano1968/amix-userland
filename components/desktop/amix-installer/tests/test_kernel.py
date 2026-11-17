@@ -73,8 +73,16 @@ class Checks(unittest.TestCase):
     def test_base_refuses_port_and_relinked_kernels(self):
         t = [s for s in BASE if s not in ("cdevsw", "io_init")]
         # a port kernel takes 040-line drivers only
-        with self.assertRaisesRegex(kernel.KernelError, "68040/060 port kernel; the ZZ9000"):
-            kernel.check_base(base_kernel(text=t + ["cputype"]), [kernel.DRIVERS["zz9000"]])
+        with self.assertRaisesRegex(kernel.KernelError, "68040/060 port kernel; the HydraNet"):
+            kernel.check_base(base_kernel(text=t + ["cputype"]),
+                              [kernel.DRIVERS["hydra"].with_info({"line": "030"})])
+        with self.assertRaisesRegex(kernel.KernelError, "stock 68030 kernel; the Z3660 RTG"):
+            kernel.check_base(base_kernel(), [kernel.DRIVERS["z3660rtg"]])
+        # conflicts=: a base with the driver built in, as a local symbol too
+        rtg = kernel.DRIVERS["z3660rtg"].with_info({"line": "040", "conflicts": "zz9k_regoff_z3660"})
+        kernel.check_base(base_kernel(text=t + ["cputype"]), [rtg])
+        with self.assertRaisesRegex(kernel.KernelError, "Z3660 RTG driver built in already"):
+            kernel.check_base(base_kernel(text=t + ["cputype", "zz9k_regoff_z3660"]), [rtg])
         va = kernel.DRIVERS["va2000"].with_info({"line": "040"})
         kernel.check_base(base_kernel(text=t + ["cputype"]), [va])
         self.assertEqual(kernel.base_line(base_kernel(text=t + ["cputype"])), "040")

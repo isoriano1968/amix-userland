@@ -502,10 +502,14 @@ class Cards(Base):
 
     def test_040_kernels(self):
         """our 68040/060 kernels are made here; the port kernel takes the Z3660's
-        SD card and Ethernet from kits, the Z3660 kernel has them built in"""
+        SD card, RTG and Ethernet from kits, the Z3660 kernel has them built in"""
         k = {"mach": "a3000", "accel": "z3660", "kern": "k040", "target": "sd",
              "net": "netzen", "gfx": "rtg"}
-        self.assertEqual(plan.kernel_drivers(k), ["z3660scsi", "z3660eth"])
+        self.assertEqual(plan.kernel_drivers(k), ["z3660scsi", "z3660rtg", "z3660eth"])
+        # the ZZ9000 beside it, from its 040 kit
+        self.assertEqual(plan.kernel_drivers(dict(k, gfx="zz9000")),
+                         ["z3660scsi", "zz9000", "z3660eth"])
+        self.assertTrue(model.Config(sel=dict(k, gfx="zz9000")).sel["gfx"] == "zz9000")
         self.assertTrue(plan.kernel_built(k))
         z = dict(k, kern="z3opt")
         self.assertEqual(plan.kernel_drivers(z), [])

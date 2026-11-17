@@ -69,6 +69,9 @@ class Driver(object):
         # kit's identical object, may define already (dev_kvmap): that object
         # is then left out
         self.provides = ()
+        # symbols that mean the base has this driver built in already (any
+        # binding, locals too): the kit is refused (z3660rtg on the z3660 variant)
+        self.conflicts = ()
         self.entries = tuple(entries)                # defined exactly once after the link
         self.lines = tuple(lines)                    # kernel lines the kit is built for
         self.init = init                             # its boot routine, called by the stub
@@ -98,6 +101,7 @@ class Driver(object):
                 if info.get(k):
                     setattr(d, k, int(info[k]))
             d.provides = tuple(info.get("provides", "").split())
+            d.conflicts = tuple(info.get("conflicts", "").split())
             if "entries" in info:
                 d.entries = tuple(info["entries"].split())
             d.streams = info.get("streams") == "yes"
@@ -111,7 +115,12 @@ DRIVERS = {
                     ("rtgfbopen", "rtgfbclose", "rtgfbioctl", "rtgfbmmap"), lines=("030", "040")),
     "zz9000": Driver("zz9000", "ZZ9000", "graphics", "zz9000", 49,
                      ("zz9000open", "zz9000close", "zz9000read", "zz9000write", "zz9000ioctl",
-                      "zz9000mmap")),
+                      "zz9000mmap"), lines=("030", "040")),
+    # the Z3660's RTG as its own driver for the generic port kernel (the
+    # Z3660 kernel variant has it built in: the kit's conflicts= refuses it)
+    "z3660rtg": Driver("z3660rtg", "Z3660 RTG", "graphics", "z3660rtg", 55,
+                       ("z3660rtgopen", "z3660rtgclose", "z3660rtgread", "z3660rtgwrite",
+                        "z3660rtgioctl", "z3660rtgmmap"), lines=("040",), init="z3660rtginit"),
     "va2000": Driver("va2000", "VA2000", "graphics", "va2000", 68,
                      ("va2000open", "va2000close", "va2000read", "va2000write", "va2000ioctl",
                       "va2000mmap"), lines=("030", "040"), init="va2000init"),
@@ -417,9 +426,14 @@ def check_base(data, ids=("rtgfb",)):
     else KernelError."""
     elf = Elf(data)
     have = set(elf.defined())
+    every = set(n for n, shndx, bind in elf.symbols() if n and shndx != SHN_UNDEF)
     line = "040" if "cputype" in have else "030"
     drvs = _drivers(ids)
     for d in drvs:
+        built_in = [s for s in d.conflicts if s in every]
+        if built_in:
+            raise KernelError("this kernel has the %s driver built in already (%s): its kit is "
+                              "not linked" % (d.card, ", ".join(built_in)))
         if line not in d.lines:
             raise KernelError("this is the %s kernel; the %s driver is built for the %s kernel"
                               % (LINE_NAME[line], d.card,

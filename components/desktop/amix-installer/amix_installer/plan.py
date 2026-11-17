@@ -651,6 +651,9 @@ def kernel_drivers(cfg):
     # the port kernel takes the Z3660's SD card and Ethernet from kits; the
     # Z3660 kernel has both built in
     if sel.get("kern") == "k040" and sel.get("accel") == "z3660":
+        # its RTG: the z3660rtg kit, before the other graphics cards
+        if "rtg" in gfx:
+            out.insert(0, "z3660rtg")
         if sel.get("target") == "sd":
             out.insert(0, "z3660scsi")
         if sel.get("net") == "netzen":
