@@ -27,6 +27,16 @@ class Base(unittest.TestCase):
         plan._fs_cache[:] = [fsuae.FsUae()]      # no FS-UAE: tests never see the host's
         self.tmp = tempfile.TemporaryDirectory()
         self.d = self.tmp.name
+        # the 68040/060 kernel tools as a stand-in: tests never depend on what
+        # the build machine has (amix-kernel-040, m68k ELF binutils)
+        from amix_installer import kernel
+        k040 = os.path.join(self.d, "kernel-040")
+        os.mkdir(k040)
+        with open(os.path.join(k040, kernel.K040_TOOL), "w") as f:
+            f.write("#!/bin/sh\n# stand-in: takes --root-card --root-unit --root-stock\nexit 1\n")
+        self._k040 = (kernel.find_kernel040, kernel.find_elf_tools)
+        kernel.find_kernel040 = lambda: k040
+        kernel.find_elf_tools = lambda: "/bin"
         self.src = os.path.join(self.d, "core.hdf")
         with open(self.src, "wb") as f:
             f.write(os.urandom(3 << 20) + b"\0" * (1 << 20))
@@ -34,6 +44,8 @@ class Base(unittest.TestCase):
         os.mkdir(self.out)
 
     def tearDown(self):
+        from amix_installer import kernel
+        kernel.find_kernel040, kernel.find_elf_tools = self._k040
         self.tmp.cleanup()
 
     def cfg(self, **sel):
@@ -534,7 +546,7 @@ class Cards(Base):
         try:
             from amix_installer import kernel
             if not (kernel.find_kit("zz9000") or kernel.find_kit("hydra")):
-                self.assertIn("no kernel kit for ZZ9000 and HydraNet", a.missing)
+                self.assertIn("kernel kit for ZZ9000 and HydraNet", a.missing)
                 self.assertIn("developer/amix/zz9000-kit", a.missing)
         finally:
             for k, v in old.items():
