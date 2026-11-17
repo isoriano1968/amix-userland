@@ -1,6 +1,6 @@
 # name, version and what building and running it needs
 name     x11/xserver-amix
-version  1
-summary  Xamix, the AMIX X server: card drivers zz9000 (ZZ9000, Z3660) and cirrus (Picasso II)
+version  2
+summary  Xamix, the AMIX X server: card drivers z3660 (Z3660 RTG), zz9000 (MNT ZZ9000) and cirrus (Picasso II)
 require  x11/x11r6.3
 require  library/soft3d

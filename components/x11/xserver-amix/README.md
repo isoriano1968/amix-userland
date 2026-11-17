@@ -4,15 +4,29 @@
 It is one server for every graphics card; the cards are drivers inside it,
 named after the card:
 
-| driver | cards | kernel device |
-|---|---|---|
-| `zz9000` | MNT ZZ9000, Z3660 RTG | `/dev/zz9000` (major 49) |
-| `cirrus` | Village Tronic Picasso II/II+ (GD542x) | `/dev/rtgfb` (major 54) |
-| `va2000` | later | |
+| driver | cards | kernel device | depths |
+|---|---|---|---|
+| `z3660` | Z3660 RTG | `/dev/z3660rtg` (major 55, amix-gate io/z3660rtg); else `/dev/zz9000` (major 49) if the board there is a Z3660 (the z3660 kernel variant's built-in RTG) | 16 |
+| `zz9000` | MNT ZZ9000 (a Z3660 is refused: use `z3660`) | `/dev/zz9000` (major 49) | 16, 24 (32-bit pixels) |
+| `cirrus` | Village Tronic Picasso II/II+ (GD542x) | `/dev/rtgfb` (major 54) | 8 |
+| `va2000` | later | | |
 
 `-card NAME` or `/etc/X11/amix-card` picks the driver, else the server probes
-them in order (docs/MODULAR-X-SERVER-EVALUATION.md).  The name follows the X
+them in this order (docs/MODULAR-X-SERVER-EVALUATION.md); a card file whose
+card finds no board falls back to the probe.  `-device PATH` replaces the
+node of the card `-card` (or the card file) names.  The name follows the X
 convention of one server per platform (Xsun, Xhp).
+
+**Depths.**  `-depth N` (or `-rtgdepth N`; 8, 15, 16, 24, or 32 for 24 in
+32-bit pixels), else the card file's second word, else 16.  The z3660 and
+zz9000 cards ask the kernel driver (`RTGIOC_GETCAPS`, amix-gate
+io/rtgcaps.h, copied byte for byte into rtg/rtgcaps.h) which depths the board
+shows and offer those they draw: the Z3660's HDMI is RGB565, its modes are 8,
+15 and 16 bit, and X gets 16 (8 waits for a colour table op, 15 for a 15-bit
+layer); `-depth 24` or `32` there stops the server with the board's depths.
+A kernel without the ioctl (EINVAL, ENOTTY) gets the old static facts: Z3660
+16, ZZ9000 16 and 24.  RandR takes its sizes from the kernel's mode list
+(`RTGCAP_MODE_LIST`) and offers rates only with `RTGCAP_REFRESH`.
 
 **Old name.** Until 2026-11-16 the server was `Xzz9000` and this component
 was `x11/xzz9000`.  The evaluations in `docs/`, the benchmarks in `bench/`
@@ -26,11 +40,18 @@ it).
     sh build.sh          (or: make build)
 
 The tree is a copy of the R6.3 port tree (`XC_SRC`), the RTG fork's patches,
-then `local-*.patch` in the order build.sh gives.  The server target is
-`Xamix` in `programs/Xserver/Imakefile` (x11r6.3's `0001-amix-port.patch`);
-build.sh renames it in a tree made before the rename.  Output:
-`src/xc/programs/Xserver/Xamix`.  The name is the only difference to the
-last Xzz9000 build: both binaries have the same sha256 (876470510f35...).
+then `local-*.patch` in the order build.sh gives.  The RTG fork's X material
+is in the component, unchanged from amix-z3660rtg 1.0 (`91667de`, the same
+archive as x11/x11r6.3's `RTG_COMMIT`): its `x11/patches` in
+`patches/amix-z3660rtg/`, `x11/cross/host.def` in `files/`,
+`x11/cross/imakecpp.sh` as `imakecpp.sh`; `patches/amix-z3660rtg.sha256`
+holds their sums, build.sh checks them.  No outside checkout is read.
+
+The server target is `Xamix` in `programs/Xserver/Imakefile` (x11r6.3's
+`0001-amix-port.patch`); build.sh renames it in a tree made before the
+rename.  Output: `src/xc/programs/Xserver/Xamix`.  Version 1's only
+difference to the last Xzz9000 build was the name (same sha256,
+876470510f35...; the imported patches give it too).
 
 ## On the machine
 

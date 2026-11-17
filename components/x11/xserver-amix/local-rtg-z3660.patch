@@ -1,0 +1,1103 @@
+diff --git a/programs/Xserver/hw/amix/amixIo.c b/programs/Xserver/hw/amix/amixIo.c
+index 4cfcb28..ab8518d 100644
+--- a/programs/Xserver/hw/amix/amixIo.c
++++ b/programs/Xserver/hw/amix/amixIo.c
+@@ -516,7 +516,9 @@ ddxUseMsg()
+     ErrorF("-type int              screen type.\n");
+     ErrorF("-width int             screen width in pixels.\n");
+     ErrorF("-height int            screen height in pixels.\n");
++#ifndef RTG	/* RTG: -depth is the colour depth (rtgUseMsg) */
+     ErrorF("-depth int             screen depth in planes.\n");
++#endif
+ #ifdef RTG
+     rtgUseMsg();
+ #endif
+diff --git a/programs/Xserver/hw/amix/rtg/cirrus/cirrushw.c b/programs/Xserver/hw/amix/rtg/cirrus/cirrushw.c
+index e759966..8d8ecc4 100644
+--- a/programs/Xserver/hw/amix/rtg/cirrus/cirrushw.c
++++ b/programs/Xserver/hw/amix/rtg/cirrus/cirrushw.c
+@@ -386,13 +386,20 @@ cirrusModePtr m;
+ /* ------------------------------------------------------------------ */
+ /* The card's operations                                               */
+ 
++static char *
++cirrusDev()
++{
++    return cirrusCore->device ? cirrusCore->device : RTGFB_DEV;
++}
++
+ static int
+ cirrusOpen(pinfo)
+ struct rtgfb_info *pinfo;
+ {
+     int fd;
+ 
+-    if ((fd = open(RTGFB_DEV, O_RDWR)) < 0)
++    /* -device (rtgCoreFuncsRec.device), else rtgfb's node */
++    if ((fd = open(cirrusDev(), O_RDWR)) < 0)
+         return -1;
+     if (ioctl(fd, RTGFBIOC_GETINFO, pinfo) < 0 ||
+         pinfo->version != RTGFB_VERSION ||
+@@ -455,7 +462,7 @@ rtgScreenPtr pRTG;
+         return FALSE;
+     memset((char *)pCl, 0, sizeof(cirrusRec));
+     if ((pCl->fd = cirrusOpen(&pCl->info)) < 0) {
+-        CLErr("CirrusInitHW: %s: %s\n", RTGFB_DEV, strerror(errno));
++        CLErr("CirrusInitHW: %s: %s\n", cirrusDev(), strerror(errno));
+         cirrusUnmap(pCl);
+         return FALSE;
+     }
+diff --git a/programs/Xserver/hw/amix/rtg/rtg.h b/programs/Xserver/hw/amix/rtg/rtg.h
+index 10f783d..1878613 100644
+--- a/programs/Xserver/hw/amix/rtg/rtg.h
++++ b/programs/Xserver/hw/amix/rtg/rtg.h
+@@ -58,7 +58,8 @@
+ ** refuses a card whose rtgCardRec.abi it does not know.  Both numbers go up
+ ** with any change of a record's layout or of an op's meaning.
+ */
+-#define RTG_CORE_VERSION    1       /* rtgCoreFuncsRec + rtgScreenRec */
++#define RTG_CORE_VERSION    2       /* rtgCoreFuncsRec + rtgScreenRec;
++                                       2: rtgCoreFuncsRec.device */
+ #define RTG_CARD_ABI        1       /* rtgCardRec */
+ 
+ /* rtgCardRec.caps */
+@@ -225,6 +226,11 @@ typedef struct _rtgCoreFuncsRec {
+                                     int (*swapped)(ClientPtr),
+                                     void (*reset)(ExtensionEntry *));
+     WindowPtr (*lookupWindow)(XID id, ClientPtr client);
++    char       *device;             /* -device PATH for the card being probed
++                                       or used, else NULL: the card's own
++                                       node(s).  Set by the core before each
++                                       probe; NULL for a card that -card or
++                                       the card file did not name            */
+ } rtgCoreFuncsRec, *rtgCoreFuncsPtr;
+ 
+ /* A card's entry point: its record, or NULL if this core is too old. */
+diff --git a/programs/Xserver/hw/amix/rtg/rtgInit.c b/programs/Xserver/hw/amix/rtg/rtgInit.c
+index b47a83d..84c2b09 100644
+--- a/programs/Xserver/hw/amix/rtg/rtgInit.c
++++ b/programs/Xserver/hw/amix/rtg/rtgInit.c
+@@ -65,10 +65,14 @@ extern struct scrtype DefaultScrType;
+ /* ------------------------------------------------------------------ */
+ /* The cards compiled into this server, probed in this order          */
+ 
+-extern rtgCardPtr ZZ9000CardEntry();    /* zz9000/zz9000hw.c: ZZ9000, Z3660 */
++extern rtgCardPtr Z3660CardEntry();     /* zz9000/zz9000hw.c: Z3660 RTG */
++extern rtgCardPtr ZZ9000CardEntry();    /* zz9000/zz9000hw.c: MNT ZZ9000 */
+ extern rtgCardPtr CirrusCardEntry();    /* cirrus/cirrushw.c: Picasso II/II+ */
+ 
++/* z3660 before zz9000: a Z3660 kernel that still has its RTG built in
++   answers on /dev/zz9000 too, and card zz9000 refuses that board */
+ static rtgCardEntryProc rtgCardEntries[] = {
++    Z3660CardEntry,
+     ZZ9000CardEntry,
+     CirrusCardEntry,
+ };
+@@ -89,7 +93,9 @@ int rtgCpuMove16      = 0;      /* set by rtgProbe */
+ /* Options (rtgProcessArgument)                                        */
+ 
+ static char *rtgOptCard    = (char *)0;    /* -card NAME */
+-static int   rtgOptDepth   = 0;            /* -rtgdepth 8|16|24, 0 = card's */
++static int   rtgOptDepth   = 0;            /* -depth/-rtgdepth as X depth, 0 = card's */
++static int   rtgOptDepthAsked = 0;         /*   as given: 8, 15, 16, 24 or 32 */
++static char *rtgOptDevice  = (char *)0;    /* -device PATH */
+ static int   rtgOptWidth   = 0;            /* -mode WxH, 0 = card's */
+ static int   rtgOptHeight  = 0;
+ static int   rtgOptBlitMin = -1;           /* -blitmin, -1 = card's */
+@@ -100,6 +106,7 @@ static rtgCardPtr rtgCard;                 /* the card in use */
+ static int        rtgDepthUsed;            /* its depth (rtgProbe) */
+ static char       rtgFileCard[64];         /* RTG_CARD_FILE: card name, */
+ static int        rtgFileDepth;            /*   depth (0 = none given) */
++static int        rtgFileDepthAsked;       /*   as written */
+ 
+ /* ------------------------------------------------------------------ */
+ /* Visuals                                                             */
+@@ -149,8 +156,57 @@ static rtgCoreFuncsRec rtgCore = {
+     rtgCpuCopy,
+     rtgCoreAddExtension,
+     LookupWindow,
++    (char *)0,                  /* device: rtgSelectCard */
+ };
+ 
++/*
++** Depths.  A depth as the user gives it -- 8, 15, 16, 24 or 32, as a
++** board's modes are named -- to the X depth: 32 is depth 24 in 32-bit
++** pixels (X11R6.3 has no depth 32); 0 for anything else.  15 stays 15: no
++** card here draws it (the core has no 15-bit layer), so it is refused with
++** the card's depths.
++*/
++static int
++rtgDepthOf(d)
++int d;
++{
++    switch (d) {
++    case 8: case 15: case 16: case 24:
++        return d;
++    case 32:
++        return 24;
++    }
++    return 0;
++}
++
++/* the RTG_CAP_DEPTH* bit of X depth d, 0 if the core has none */
++static unsigned long
++rtgDepthCap(d)
++int d;
++{
++    return d == 8 ? RTG_CAP_DEPTH8 : d == 16 ? RTG_CAP_DEPTH16 :
++           d == 24 ? RTG_CAP_DEPTH24 : 0;
++}
++
++/* the card's depths for a message: "16", "16, 24 (32-bit pixels)" */
++static char *
++rtgDepthList(caps)
++unsigned long caps;
++{
++    static char buf[64];
++
++    buf[0] = '\0';
++    if (caps & RTG_CAP_DEPTH8)
++        strcat(buf, "8");
++    if (caps & RTG_CAP_DEPTH16)
++        strcat(buf, buf[0] ? ", 16" : "16");
++    if (caps & RTG_CAP_DEPTH24)
++        strcat(buf, buf[0] ? ", 24 (32-bit pixels)" : "24 (32-bit pixels)");
++    if (!buf[0])
++        strcpy(buf, "none");
++    return buf;
++}
++
+ /* ------------------------------------------------------------------ */
+ /* Options                                                             */
+ 
+@@ -171,15 +227,24 @@ int    i;
+         rtgOptCard = argv[i];
+         return 2;
+     }
+-    if (!strcmp(argv[i], "-rtgdepth")) {        /* 8 or 16 */
++    /* the colour depth.  -depth was the AMIX screen's planes (amixIo.c);
++       in this server that screen only carries the input, and -depth is
++       the RTG depth, as in other X servers */
++    if (!strcmp(argv[i], "-rtgdepth") || !strcmp(argv[i], "-depth")) {
+         if (++i >= argc) UseMsg();
+-        rtgOptDepth = atoi(argv[i]);
+-        if (rtgOptDepth != 8 && rtgOptDepth != 16 && rtgOptDepth != 24) {
+-            ErrorF("-rtgdepth: 8, 16 or 24, not %s\n", argv[i]);
++        rtgOptDepthAsked = atoi(argv[i]);
++        if (!(rtgOptDepth = rtgDepthOf(rtgOptDepthAsked))) {
++            ErrorF("%s: 8, 15, 16, 24 or 32, not %s\n", argv[i - 1], argv[i]);
+             UseMsg();
++            exit(1);            /* UseMsg returns: no server at some depth */
+         }
+         return 2;
+     }
++    if (!strcmp(argv[i], "-device")) {  /* the card's device node */
++        if (++i >= argc) UseMsg();
++        rtgOptDevice = argv[i];
++        return 2;
++    }
+     if (!strcmp(argv[i], "-mode")) {    /* RTG mode: WxH (e.g. 1024x768) */
+         if (++i >= argc) UseMsg();
+         if (sscanf(argv[i], "%dx%d%c", &rtgOptWidth, &rtgOptHeight, &c) != 2 ||
+@@ -225,7 +290,12 @@ rtgUseMsg()
+         if ((c = (*rtgCardEntries[i])(&rtgCore)) != (rtgCardPtr)0)
+             ErrorF(" %s", c->name);
+     ErrorF("\n");
+-    ErrorF("-rtgdepth 8|16|24      RTG: depth (default: %s's second word, else the card's)\n", RTG_CARD_FILE);
++    ErrorF("-depth 8|15|16|24|32   RTG: colour depth, 32 = 24 in 32-bit pixels; only what the board shows\n");
++    ErrorF("                       (default: %s's second word, else the card's: 16 on the ZZ9000 and Z3660)\n", RTG_CARD_FILE);
++    ErrorF("-rtgdepth n            the same as -depth n\n");
++    ErrorF("-device path           RTG: the device of the card -card (or %s) names\n", RTG_CARD_FILE);
++    ErrorF("                       (default: the card's: z3660 /dev/z3660rtg, else /dev/zz9000 with a Z3660;\n");
++    ErrorF("                       zz9000 /dev/zz9000; cirrus /dev/rtgfb)\n");
+     ErrorF("-mode WxH              RTG video mode (e.g. 800x600, 1024x768)\n");
+     ErrorF("-blitmin int           RTG: card blitter for fills/copies of this many pixels or more (default: the card's, 0 = never)\n");
+     ErrorF("-blitmax int           RTG: split blitter ops into bands of at most this many pixels (default: the card's, 0 = never)\n");
+@@ -297,13 +367,10 @@ rtgCardFile()
+                     n < sizeof(rtgFileCard) - 1; n++)
+             rtgFileCard[n] = p[n];
+         rtgFileCard[n] = '\0';
+-        rtgFileDepth = atoi(p + n);
+-        if (rtgFileDepth != 8 && rtgFileDepth != 16 && rtgFileDepth != 24) {
+-            if (rtgFileDepth)
+-                ErrorF("rtg: %s: depth %d ignored (8, 16 or 24)\n",
+-                       RTG_CARD_FILE, rtgFileDepth);
+-            rtgFileDepth = 0;
+-        }
++        rtgFileDepthAsked = atoi(p + n);
++        if (!(rtgFileDepth = rtgDepthOf(rtgFileDepthAsked)) && rtgFileDepthAsked)
++            ErrorF("rtg: %s: depth %d ignored (8, 15, 16, 24 or 32)\n",
++                   RTG_CARD_FILE, rtgFileDepthAsked);
+         fclose(f);
+         return TRUE;
+     }
+@@ -324,6 +391,8 @@ rtgSelectCard()
+ 
+     (void) rtgCardFile();
+ 
++    /* -device belongs to the card -card names, else the card file's */
++    rtgCore.device = rtgOptDevice;
+     if (rtgOptCard) {
+         if ((i = rtgCardNamed(rtgOptCard)) < 0) {
+             ErrorF("rtg: no card %s in this server\n", rtgOptCard);
+@@ -331,7 +400,8 @@ rtgSelectCard()
+         }
+         c = rtgCardAt(i);
+         if (!(*c->probe)()) {
+-            ErrorF("rtg: -card %s: no such board found\n", c->name);
++            ErrorF("rtg: -card %s: no such board found%s%s\n", c->name,
++                   rtgOptDevice ? " on " : "", rtgOptDevice ? rtgOptDevice : "");
+             return (rtgCardPtr)0;
+         }
+         return c;
+@@ -343,9 +413,14 @@ rtgSelectCard()
+         else if ((*(c = rtgCardAt(want))->probe)())
+             return c;
+         else
+-            ErrorF("rtg: %s names %s, no such board found; probing the others\n",
+-                   RTG_CARD_FILE, rtgFileCard);
++            ErrorF("rtg: %s names %s, no such board found%s%s; probing the others\n",
++                   RTG_CARD_FILE, rtgFileCard,
++                   rtgOptDevice ? " on " : "", rtgOptDevice ? rtgOptDevice : "");
+     }
++    if (rtgOptDevice)
++        ErrorF("rtg: -device %s ignored for the other cards (no -card)\n",
++               rtgOptDevice);
++    rtgCore.device = (char *)0;
+     for (i = 0; i < RTG_NCARDS; i++)
+         if (i != want && (c = rtgCardAt(i)) && (*c->probe)())
+             return c;
+@@ -796,17 +871,32 @@ char      **argv;
+         return FALSE;
+     }
+ 
+-    /* -rtgdepth, else the card file's depth for this card, else the card's */
++    /*
++    ** -depth/-rtgdepth, else the card file's depth for this card, else the
++    ** card's.  The card's caps are what its probe found the board can show
++    ** (the Z3660: 16 only, its HDMI is RGB565).  A depth on the command line
++    ** that the board cannot show stops the server; one from the card file
++    ** gives way to the card's default.
++    */
+     rtgDepthUsed = rtgOptDepth;
+-    if (!rtgDepthUsed && rtgFileDepth && !strcmp(rtgFileCard, rtgCard->name))
+-        rtgDepthUsed = rtgFileDepth;
++    if (!rtgDepthUsed && rtgFileDepth && !strcmp(rtgFileCard, rtgCard->name)) {
++        if (rtgCard->caps & rtgDepthCap(rtgFileDepth))
++            rtgDepthUsed = rtgFileDepth;
++        else
++            ErrorF("rtg: %s: card %s (%s) cannot show depth %d, its depths: %s; depth %d\n",
++                   RTG_CARD_FILE, rtgCard->name, rtgCard->description,
++                   rtgFileDepthAsked, rtgDepthList(rtgCard->caps),
++                   rtgCard->defaultDepth);
++    }
+     if (!rtgDepthUsed)
+         rtgDepthUsed = rtgCard->defaultDepth;
+-    if (!(rtgCard->caps & (rtgDepthUsed == 8  ? RTG_CAP_DEPTH8 :
+-                           rtgDepthUsed == 24 ? RTG_CAP_DEPTH24 :
+-                                                RTG_CAP_DEPTH16)))
++    if (!(rtgCard->caps & rtgDepthCap(rtgDepthUsed)))
+     {
+-        ErrorF("rtgProbe: card %s has no depth %d\n", rtgCard->name, rtgDepthUsed);
++        ErrorF("rtg: card %s (%s) cannot show depth %d; its depths in this server: %s.\n"
++               "rtg: give one of them with -depth, or no -depth for %d\n",
++               rtgCard->name, rtgCard->description,
++               rtgOptDepth ? rtgOptDepthAsked : rtgDepthUsed,
++               rtgDepthList(rtgCard->caps), rtgCard->defaultDepth);
+         return FALSE;
+     }
+ 
+diff --git a/programs/Xserver/hw/amix/rtg/rtgcaps.h b/programs/Xserver/hw/amix/rtg/rtgcaps.h
+new file mode 100644
+index 0000000..b0fbd76
+--- /dev/null
++++ b/programs/Xserver/hw/amix/rtg/rtgcaps.h
+@@ -0,0 +1,45 @@
++/*
++ * rtgcaps.h - RTGIOC_GETCAPS, the capabilities ioctl every AMIX RTG kernel
++ * driver answers: amix-gate usr/src/uts/amiga/io/rtgcaps.h (82bd7df), MIT
++ * licence.  The block between the RTGCAPS BEGIN and RTGCAPS END lines is a
++ * byte-for-byte copy of the kernel's, as the drivers carry it; the cards
++ * (zz9000/) ask it for the board's name, depths, framebuffer size, largest
++ * mode and RTGCAP_* flags.  An older kernel answers EINVAL or ENOTTY: the
++ * card then keeps its static facts.
++ */
++/* RTGCAPS BEGIN */
++#ifndef RTGCAPS_H
++#define RTGCAPS_H
++
++#define RTGIOC_GETCAPS          (('R' << 8) | 1)  /* the same number in every RTG driver */
++#define RTGCAPS_VERSION         1
++
++#define RTGCAP_CONSOLE_REDIRECT 0x0001  /* the kernel console can be drawn on the board */
++#define RTGCAP_MONITOR_SWITCH   0x0002  /* the driver switches the monitor Amiga/RTG */
++#define RTGCAP_BLIT_FILL        0x0004  /* solid fills by ioctl (card or kernel) */
++#define RTGCAP_BLIT_COPY        0x0008  /* screen-to-screen copies by ioctl */
++#define RTGCAP_BLIT_PATTERN     0x0010
++#define RTGCAP_HW_CURSOR        0x0020
++#define RTGCAP_CLUT             0x0040  /* a palette the driver loads */
++#define RTGCAP_SOFT3D           0x0080  /* the Z3660 firmware's soft3D */
++#define RTGCAP_MODE_LIST        0x0100  /* a mode list by ioctl */
++#define RTGCAP_REFRESH          0x0200  /* refresh rates known and selectable */
++#define RTGCAP_CARD_BLITTER     0x0400  /* fills/copies run on the card */
++
++/* depths: bit n set = depth n can be shown; 24 is 24-bit colour in a
++ * 32-bit pixel (X depth 24, 32 bpp) */
++#define RTG_DEPTH(n)            (1UL << (n))
++
++struct rtg_caps {
++    unsigned short version;       /* in: caller's; out: the driver's */
++    unsigned short size;          /* in: bytes the caller has; out: bytes filled */
++    char board[24];               /* "Z3660 RTG", "ZZ9000", "Picasso II", NUL-terminated */
++    unsigned long caps;           /* RTGCAP_* */
++    unsigned long depths;         /* RTG_DEPTH(8) | RTG_DEPTH(16) ... */
++    unsigned long fb_size;        /* framebuffer bytes */
++    unsigned long max_width;      /* largest mode in the board's list */
++    unsigned long max_height;
++};
++
++#endif /* RTGCAPS_H */
++/* RTGCAPS END */
+diff --git a/programs/Xserver/hw/amix/rtg/zz9000/zz9000.h b/programs/Xserver/hw/amix/rtg/zz9000/zz9000.h
+index 2d72235..fdc20d3 100644
+--- a/programs/Xserver/hw/amix/rtg/zz9000/zz9000.h
++++ b/programs/Xserver/hw/amix/rtg/zz9000/zz9000.h
+@@ -1,15 +1,19 @@
+ #ifndef ZZ9000_H
+ #define ZZ9000_H
+ /*
+-** zz9000.h - the MNT ZZ9000 / Z3660 RTG card for the RTG core: the
+-** kernel driver's interface (/dev/zz9000, amix-gate io/zz9000) and the
+-** card's private state.  The card reaches the server only through
+-** zz9000Core (rtg.h, rtgCoreFuncsRec).
++** zz9000.h - the cards z3660 (Z3660 RTG) and zz9000 (MNT ZZ9000) for the
++** RTG core: the kernel drivers' interface and the cards' private state.
++** Both drivers have the same ioctls (amix-gate io/zz9000's zz9000.h):
++** io/z3660rtg on /dev/z3660rtg (major 55) and io/zz9000 on /dev/zz9000
++** (major 49; the z3660 kernel variant still drives its Z3660 there).  The
++** cards reach the server only through zz9000Core (rtg.h, rtgCoreFuncsRec).
+ */
+ 
+ #include "../rtg.h"
++#include "../rtgcaps.h"
+ 
+ #define ZZ9000_DEV          "/dev/zz9000"
++#define Z3660RTG_DEV        "/dev/z3660rtg"
+ #define ZZ9000_FB_OFFSET    0x10000
+ 
+ #define ZZ9K_COLOR_8BIT     0
+@@ -169,6 +173,8 @@ struct _ZZ9000ScreenRec {
+     unsigned long   mapSize;
+     unsigned long   fbOffset;
+     unsigned long   fbSize;
++    unsigned long   rtgcaps;            /* RTGCAP_* of RTGIOC_GETCAPS, */
++    int             haveCaps;           /*   if the driver answered it */
+ };
+ 
+ typedef struct _ZZ9000ScreenRec ZZ9000ScreenRec;
+diff --git a/programs/Xserver/hw/amix/rtg/zz9000/zz9000hw.c b/programs/Xserver/hw/amix/rtg/zz9000/zz9000hw.c
+index 2a0aafe..7b8f8e7 100644
+--- a/programs/Xserver/hw/amix/rtg/zz9000/zz9000hw.c
++++ b/programs/Xserver/hw/amix/rtg/zz9000/zz9000hw.c
+@@ -1,12 +1,23 @@
+ /*
+-** zz9000hw.c - the MNT ZZ9000 / Z3660 RTG card: probe, mode setting,
+-** framebuffer mapping, the RandR mode list, and the card's record for the
+-** RTG core (ZZ9000CardEntry).
++** zz9000hw.c - the Z3660 RTG and MNT ZZ9000 cards: probe, mode setting,
++** framebuffer mapping, the RandR mode list, and the cards' records for the
++** RTG core (Z3660CardEntry, ZZ9000CardEntry).
++**
++** The Z3660 keeps the ZZ9000's register interface and its kernel drivers
++** the same ioctls, so one body of code drives both boards, as two cards:
++**   z3660   the Z3660 RTG: /dev/z3660rtg (io/z3660rtg, major 55); else
++**           /dev/zz9000 (major 49) if the board there is a Z3660 (the z3660
++**           kernel variant still has its RTG built in there).
++**   zz9000  the MNT ZZ9000: /dev/zz9000 only; a Z3660 there is refused,
++**           with a word to use card z3660.
++** -device PATH (rtgCoreFuncsRec.device) replaces those nodes.  Which board
++** a node has: RTGIOC_GETCAPS's board name ("Z3660 RTG..."), else, on an
++** older kernel, GETINFO.product.
+ **
+-** The Z3660 keeps the ZZ9000's register interface, so this one card drives
+-** both boards; the kernel driver (/dev/zz9000, major 49) hides the rest.
+ ** The depths differ, and the probe narrows the card's caps to the board
+-** it finds (GETINFO.product):
++** it finds: RTGIOC_GETCAPS's depths where the kernel has it (of those, the
++** ones this card's X code draws: 16, and 24 in 32-bit pixels; 8 waits for
++** a colour table op, and the core has no 15), else the static facts:
+ **   Z3660:      16 only.  Its HDMI transmitter has a 16-bit bus: every mode
+ **               leaves the board as RGB565 (docs/DEPTH-24-32-EVALUATION.md),
+ **               so 24 would cost twice the bytes for the same colours.
+@@ -21,6 +32,7 @@
+ ** the ZZ9000 on Zorro II gets the movem.l rows.
+ */
+ 
++#include <stdio.h>
+ #include <sys/types.h>
+ #include <sys/mman.h>
+ #include <fcntl.h>
+@@ -31,11 +43,35 @@
+ #include "zz9000.h"
+ 
+ rtgCoreFuncsPtr zz9000Core;
+-static rtgCardRec zz9000Card;
++static rtgCardRec zz9000Card, z3660Card;
+ 
+ #define ZZ9000_DEPTHS_Z3660 (RTG_CAP_DEPTH16)
+ #define ZZ9000_DEPTHS_MNT   (RTG_CAP_DEPTH16 | RTG_CAP_DEPTH24)
+ 
++/* what a card's probe found: the node, the board, its RTGIOC_GETCAPS */
++typedef struct {
++    char           *dev;
++    int             z3660;              /* the board is a Z3660 */
++    int             product;            /* GETINFO.product */
++    int             haveCaps;           /* the driver answered GETCAPS */
++    struct rtg_caps caps;
++} ZZFoundRec, *ZZFoundPtr;
++
++static ZZFoundRec z3660Found, zz9000Found;
++
++#define ZZFound(pRTG) \
++    ((pRTG)->card == &z3660Card ? &z3660Found : &zz9000Found)
++
++/*
++** RandR and the refresh rates (RTGIOC_GETCAPS): the kernel's mode list is
++** the list of sizes when the driver says it has one (RTGCAP_MODE_LIST), and
++** rates are offered when it says they are known and selectable
++** (RTGCAP_REFRESH).  A kernel without GETCAPS keeps the old way: the
++** table below, with the rates GETMODES may give.
++*/
++static int zz9000KernelSizes;           /* sizes from the kernel's rows */
++static int zz9000UseRates = 1;          /* rates from the kernel's rows */
++
+ static ZZ9000ModeRec zz9000_modes[] = {
+     { "640x480",   640,  480 },
+     { "800x600",   800,  600 },
+@@ -59,10 +95,12 @@ static ZZ9000ModeRec zz9000_modes[] = {
+     { (char *)0 }
+ };
+ 
+-/* the default size, without -mode: 1920x800 */
+-#define ZZ9000_DEFAULT_MODE (&zz9000_modes[5])
++/* the default size, without -mode: 1920x800, where the kernel has it */
++#define ZZ9000_DEFAULT_W    1920
++#define ZZ9000_DEFAULT_H    800
+ 
+-static ZZ9000ModePtr ZZ9000_selected_mode = ZZ9000_DEFAULT_MODE;
++/* the size set (0 x 0: none yet), kept over a server reset */
++static int zz9000CurW, zz9000CurH;
+ 
+ /* the table's mode of w x h, NULL if none */
+ static ZZ9000ModePtr
+@@ -112,12 +150,31 @@ ZZ9000ScreenPtr pZZ;
+ 
+     ml.rows = zz9000_rows;
+     ml.n = ZZ9K_MODES_MAX;
+-    if (!pZZ || ioctl(pZZ->fd, ZZ9KIOC_GETMODES, &ml) < 0)
++    if (!pZZ || (pZZ->haveCaps && !(pZZ->rtgcaps & RTGCAP_MODE_LIST)) ||
++        ioctl(pZZ->fd, ZZ9KIOC_GETMODES, &ml) < 0)
+         zz9000_nrows = 0;               /* older kernel: 60 Hz only */
+     else
+         zz9000_nrows = ml.n < ZZ9K_MODES_MAX ? (int)ml.n : ZZ9K_MODES_MAX;
+ }
+ 
++/*
++** Is w x h a size of the board?  The kernel's rows where they are the list
++** (zz9000KernelSizes), else the table.  The rows must be fresh.
++*/
++static Bool
++ZZ9000SizeKnown(w, h)
++int w, h;
++{
++    int i;
++
++    if (!zz9000KernelSizes)
++        return ZZ9000ModeOf(w, h) != (ZZ9000ModePtr)0;
++    for (i = 0; i < zz9000_nrows; i++)
++        if (zz9000_rows[i].width == w && zz9000_rows[i].height == h)
++            return TRUE;
++    return FALSE;
++}
++
+ #define ZZ9000_RR_RATE(hz100) (((hz100) + 50) / 100)
+ #define ZZ9000_RR_DEFAULT 60
+ 
+@@ -130,7 +187,7 @@ short *rates;
+ {
+     int i, j, n = 0, r;
+ 
+-    for (i = 0; i < zz9000_nrows && n < max; i++) {
++    for (i = 0; zz9000UseRates && i < zz9000_nrows && n < max; i++) {
+         if (zz9000_rows[i].width != w || zz9000_rows[i].height != h ||
+             !zz9000_rows[i].hz100)
+             continue;
+@@ -152,7 +209,7 @@ int w, h;
+ {
+     int i;
+ 
+-    for (i = 0; i < zz9000_nrows; i++)
++    for (i = 0; zz9000UseRates && i < zz9000_nrows; i++)
+         if (zz9000_rows[i].width == w && zz9000_rows[i].height == h &&
+             (zz9000_rows[i].flags & ZZ9K_MF_CURRENT) && zz9000_rows[i].hz100)
+             return ZZ9000_RR_RATE(zz9000_rows[i].hz100);
+@@ -167,7 +224,7 @@ int w, h, rate;
+ {
+     int i;
+ 
+-    if (rate <= 0)
++    if (rate <= 0 || !zz9000UseRates)
+         return 0;
+     ZZ9000GetModes(pZZ);
+     for (i = 0; i < zz9000_nrows; i++)
+@@ -184,6 +241,8 @@ ZZ9000ScreenPtr pZZ;
+ {
+     int i;
+ 
++    if (!zz9000UseRates)
++        return 0;
+     ZZ9000GetModes(pZZ);
+     for (i = 0; i < zz9000_nrows; i++)
+         if (zz9000_rows[i].flags & ZZ9K_MF_CURRENT)
+@@ -267,12 +326,15 @@ rtgScreenPtr pRTG;
+ int w, h, rate;                 /* rate: RandR Hz, 0 = the size's first row */
+ {
+     ZZ9000ScreenPtr pZZ = GetZZ9000Screen(pRTG);
+-    ZZ9000ModePtr m, old = ZZ9000_selected_mode;
++    int oldw = zz9000CurW, oldh = zz9000CurH;
+     struct zz9k_fbinfo fbi;
+     struct zz9k_fill fill;
+     int hz, oldhz;
+ 
+-    if (!(m = ZZ9000ModeOf(w, h)) || !pZZ ||
++    if (!pZZ)
++        return FALSE;
++    ZZ9000GetModes(pZZ);
++    if (!ZZ9000SizeKnown(w, h) ||
+         !ZZ9000SizeFits(pRTG, w, h, pZZ->bytesPerPixel))
+         return FALSE;
+     hz = ZZ9000Hz100(pZZ, w, h, rate);
+@@ -288,8 +350,8 @@ int w, h, rate;                 /* rate: RandR Hz, 0 = the size's first row */
+         fbi.width != w || fbi.height != h ||
+         fbi.fb_offset != pZZ->fbOffset) {
+         ZZErr("ZZ9000SetSize: GETFBINFO after %dx%d failed, back to %dx%d\n",
+-               w, h, old->w, old->h);
+-        (void) ZZ9000SetTiming(pZZ, old->w, old->h, oldhz);
++               w, h, oldw, oldh);
++        (void) ZZ9000SetTiming(pZZ, oldw, oldh, oldhz);
+         return FALSE;
+     }
+ 
+@@ -298,7 +360,8 @@ int w, h, rate;                 /* rate: RandR Hz, 0 = the size's first row */
+     fill.value = 0;
+     (void) ioctl(pZZ->fd, ZZ9KIOC_FILL, &fill);
+ 
+-    ZZ9000_selected_mode = m;
++    zz9000CurW = w;
++    zz9000CurH = h;
+     pRTG->width  = fbi.width;
+     pRTG->height = fbi.height;
+     pRTG->pitch  = fbi.stride;
+@@ -308,10 +371,39 @@ int w, h, rate;                 /* rate: RandR Hz, 0 = the size's first row */
+ }
+ 
+ /*
+-** getModes: the table's sizes that fit the framebuffer now at one of the
+-** board's depths, with those depths and the kernel's rates for each (one
+-** GETMODES for all of them).
++** getModes: the board's sizes that fit the framebuffer now at one of the
++** card's depths, with those depths and the kernel's rates for each (one
++** GETMODES for all of them).  The sizes are the kernel's mode list where
++** RTGIOC_GETCAPS says it has one (each size once, in the kernel's order),
++** else the table.
+ */
++static int
++ZZ9000AddMode(pRTG, modes, n, w, h)
++rtgScreenPtr pRTG;
++rtgModePtr   modes;
++int          n, w, h;
++{
++    unsigned long depths = 0, caps = pRTG->card->caps;
++    int i;
++
++    for (i = 0; i < n; i++)
++        if (modes[i].width == w && modes[i].height == h)
++            return n;                   /* a second rate's row */
++    if ((caps & RTG_CAP_DEPTH16) && ZZ9000SizeFits(pRTG, w, h, 2))
++        depths |= RTG_CAP_DEPTH16;
++    if ((caps & RTG_CAP_DEPTH24) && ZZ9000SizeFits(pRTG, w, h, 4))
++        depths |= RTG_CAP_DEPTH24;
++    if (!depths)
++        return n;
++    modes[n].depths = depths;
++    modes[n].width  = w;
++    modes[n].height = h;
++    modes[n].nrates = ZZ9000RatesOf(w, h, modes[n].rates, RTG_MODE_RATES);
++    modes[n].currentRate = (w == pRTG->width && h == pRTG->height)
++                           ? ZZ9000CurrentRate(w, h) : 0;
++    return n + 1;
++}
++
+ static int
+ ZZ9000GetModeList(pRTG, modes, max)
+ rtgScreenPtr pRTG;
+@@ -319,30 +411,17 @@ rtgModePtr   modes;
+ int          max;
+ {
+     ZZ9000ModePtr m;
+-    unsigned long depths;
+-    int           n = 0;
++    int           i, n = 0;
+ 
+     ZZ9000GetModes(GetZZ9000Screen(pRTG));
+-    for (m = zz9000_modes; m->name && n < max; m++) {
+-        depths = 0;
+-        if ((zz9000Card.caps & RTG_CAP_DEPTH16) &&
+-            ZZ9000SizeFits(pRTG, m->w, m->h, 2))
+-            depths |= RTG_CAP_DEPTH16;
+-        if ((zz9000Card.caps & RTG_CAP_DEPTH24) &&
+-            ZZ9000SizeFits(pRTG, m->w, m->h, 4))
+-            depths |= RTG_CAP_DEPTH24;
+-        if (!depths)
+-            continue;
+-        modes[n].depths = depths;
+-        modes[n].width  = m->w;
+-        modes[n].height = m->h;
+-        modes[n].nrates = ZZ9000RatesOf(m->w, m->h, modes[n].rates,
+-                                        RTG_MODE_RATES);
+-        modes[n].currentRate =
+-            (m->w == pRTG->width && m->h == pRTG->height)
+-            ? ZZ9000CurrentRate(m->w, m->h) : 0;
+-        n++;
++    if (zz9000KernelSizes && zz9000_nrows > 0) {
++        for (i = 0; i < zz9000_nrows && n < max; i++)
++            n = ZZ9000AddMode(pRTG, modes, n, zz9000_rows[i].width,
++                              zz9000_rows[i].height);
++        return n;
+     }
++    for (m = zz9000_modes; m->name && n < max; m++)
++        n = ZZ9000AddMode(pRTG, modes, n, m->w, m->h);
+     return n;
+ }
+ 
+@@ -360,47 +439,188 @@ int          w, h, depth, rate;
+ }
+ 
+ /*
+-** probe: the board is there; and which one it is, for the caps (see the
+-** top of this file).
++** The probes.  ZZ9000OpenBoard opens path and asks the driver whether a
++** board is there (PROBE), which one (GETINFO; RTGIOC_GETCAPS where the
++** kernel has it) into *f; the descriptor, or -1 with errno.
+ */
+-static Bool
+-ZZ9000Probe()
++static int
++ZZ9000OpenBoard(path, f)
++char      *path;
++ZZFoundPtr f;
+ {
+     struct zz9k_info info;
+-    int fd;
+-
+-    fd = open(ZZ9000_DEV, O_RDWR);
+-    if (fd < 0)
+-        return FALSE;
+-    if (ioctl(fd, ZZ9KIOC_PROBE, 0) < 0) {
++    int fd, e;
++
++    memset((char *)f, 0, sizeof(*f));
++    if ((fd = open(path, O_RDWR)) < 0)
++        return -1;
++    if (ioctl(fd, ZZ9KIOC_PROBE, 0) < 0 ||
++        ioctl(fd, ZZ9KIOC_GETINFO, &info) < 0) {
++        e = errno;
+         (void) close(fd);
++        errno = e;
++        return -1;
++    }
++    f->dev = path;
++    f->product = info.product;
++    f->caps.version = RTGCAPS_VERSION;
++    f->caps.size = sizeof(f->caps);
++    if (ioctl(fd, RTGIOC_GETCAPS, &f->caps) == 0) {
++        f->haveCaps = 1;
++        f->caps.board[sizeof(f->caps.board) - 1] = '\0';
++        f->z3660 = !strncmp(f->caps.board, "Z3660", 5);
++    } else {                            /* EINVAL/ENOTTY: an older kernel */
++        memset((char *)&f->caps, 0, sizeof(f->caps));
++        f->z3660 = info.product == ZZ9K_PRODUCT_Z3660;
++    }
++    return fd;
++}
++
++/* the board's name for messages */
++static char *
++ZZ9000BoardName(f)
++ZZFoundPtr f;
++{
++    static char buf[48];
++
++    if (f->haveCaps && f->caps.board[0])
++        return f->caps.board;
++    if (f->z3660)
++        return "Z3660 RTG";
++    sprintf(buf, "MNT ZZ9000 (product %d)", f->product);
++    return buf;
++}
++
++/*
++** The card's caps from what its probe found: the depths of RTGIOC_GETCAPS
++** this card's X code draws, else the static facts; move16 for the Z3660
++** (measured there).  The log line says what the board shows and what X
++** offers of it.  FALSE if X can show none of its depths.
++*/
++static Bool
++ZZ9000SetCaps(card, f)
++rtgCardPtr card;
++ZZFoundPtr f;
++{
++    unsigned long c = 0, d = f->caps.depths;
++    char shows[64];
++
++    if (f->haveCaps) {
++        if (d & RTG_DEPTH(16))
++            c |= RTG_CAP_DEPTH16;
++        if (d & RTG_DEPTH(24))
++            c |= RTG_CAP_DEPTH24;
++        shows[0] = '\0';
++        if (d & RTG_DEPTH(8))
++            strcat(shows, " 8");
++        if (d & RTG_DEPTH(15))
++            strcat(shows, " 15");
++        if (d & RTG_DEPTH(16))
++            strcat(shows, " 16");
++        if (d & RTG_DEPTH(24))
++            strcat(shows, " 24/32");
++    } else
++        c = f->z3660 ? ZZ9000_DEPTHS_Z3660 : ZZ9000_DEPTHS_MNT;
++    if (f->z3660)
++        c |= RTG_CAP_MOVE16;
++    card->caps = c;
++
++    if (f->haveCaps)
++        ZZErr("%s: %s on %s: the board shows depths%s, this server %s%s%s\n",
++              card->name, ZZ9000BoardName(f), f->dev, shows,
++              (c & RTG_CAP_DEPTH16) ? "16" : "",
++              (c & RTG_CAP_DEPTH16) && (c & RTG_CAP_DEPTH24) ? " and " : "",
++              (c & RTG_CAP_DEPTH24) ? "24 (32-bit pixels)" : "");
++    else
++        ZZErr("%s: %s on %s (no RTGIOC_GETCAPS: an older kernel), depth%s\n",
++              card->name, ZZ9000BoardName(f), f->dev,
++              f->z3660 ? " 16" : "s 16 and 24 (32-bit pixels)");
++    if (!(c & (RTG_CAP_DEPTH16 | RTG_CAP_DEPTH24))) {
++        ZZErr("%s: this server draws none of the board's depths\n",
++              card->name);
+         return FALSE;
+     }
+-    if (ioctl(fd, ZZ9KIOC_GETINFO, &info) < 0) {
+-        ZZErr("zz9000: GETINFO failed (%s)\n", strerror(errno));
++    return TRUE;
++}
++
++/*
++** probe of card z3660: -device, else /dev/z3660rtg, else /dev/zz9000; a
++** node counts only with a Z3660 behind it.
++*/
++static Bool
++Z3660Probe()
++{
++    static char *nodes[] = { Z3660RTG_DEV, ZZ9000_DEV, (char *)0 };
++    char *one[2], **p, why[160];
++    ZZFoundRec f;
++    int fd, l;
++
++    if (zz9000Core->device) {
++        one[0] = zz9000Core->device;
++        one[1] = (char *)0;
++        p = one;
++    } else
++        p = nodes;
++    why[0] = '\0';
++    for (; *p; p++) {
++        if ((fd = ZZ9000OpenBoard(*p, &f)) < 0) {
++            l = strlen(why);
++            sprintf(why + l, "%s%.40s: %.40s", l ? "; " : "", *p,
++                    strerror(errno));
++            continue;
++        }
+         (void) close(fd);
++        if (!f.z3660) {
++            ZZErr("z3660: %s has a %s, not a Z3660 RTG: that board is card zz9000\n",
++                  *p, ZZ9000BoardName(&f));
++            l = strlen(why);
++            sprintf(why + l, "%s%.40s: not a Z3660", l ? "; " : "", *p);
++            continue;
++        }
++        if (!ZZ9000SetCaps(&z3660Card, &f))
++            return FALSE;
++        z3660Found = f;
++        return TRUE;
++    }
++    ZZErr("z3660: no Z3660 RTG (%s)\n", why);
++    return FALSE;
++}
++
++/* probe of card zz9000: -device, else /dev/zz9000; never a Z3660 */
++static Bool
++ZZ9000Probe()
++{
++    char *path = zz9000Core->device ? zz9000Core->device : ZZ9000_DEV;
++    ZZFoundRec f;
++    int fd;
++
++    if ((fd = ZZ9000OpenBoard(path, &f)) < 0) {
++        ZZErr("zz9000: no MNT ZZ9000 (%s: %s)\n", path, strerror(errno));
+         return FALSE;
+     }
+     (void) close(fd);
+-    if (info.product == ZZ9K_PRODUCT_Z3660) {
+-        zz9000Card.caps = ZZ9000_DEPTHS_Z3660 | RTG_CAP_MOVE16;
+-        ZZErr("zz9000: Z3660 RTG, depth 16\n");
+-    } else {
+-        zz9000Card.caps = ZZ9000_DEPTHS_MNT;
+-        ZZErr("zz9000: MNT ZZ9000 (product %d), depths 16 and 24\n",
+-              info.product);
++    if (f.z3660) {
++        ZZErr("zz9000: %s has a Z3660 RTG; card zz9000 is the MNT ZZ9000 only.\n"
++              "zz9000: use card z3660 (-card z3660, or z3660 in /etc/X11/amix-card)\n",
++              path);
++        return FALSE;
+     }
++    if (!ZZ9000SetCaps(&zz9000Card, &f))
++        return FALSE;
++    zz9000Found = f;
+     return TRUE;
+ }
+ 
+ /*
+-** initHW: the size the core asks for (-mode; 0 = the default, 1920x800),
+-** which must be one of the table.
++** initHW (both cards): the node the probe found, the size the core asks
++** for (-mode; 0 = the size set last, else 1920x800 where the board has it,
++** else the size it shows now), which must be one of the board's.
+ */
+ static Bool
+ ZZ9000InitHW(pRTG)
+ rtgScreenPtr pRTG;
+ {
++    ZZFoundPtr found = ZZFound(pRTG);
+     ZZ9000ScreenPtr pZZ;
+     ZZ9000ModePtr m;
+     struct zz9k_mode mode;
+@@ -408,26 +628,16 @@ rtgScreenPtr pRTG;
+     struct zz9k_fbinfo fbi;
+     struct zz9k_fill fill;
+     caddr_t base;
+-    int fd;
++    int fd, i, w, h;
+ 
+-    ZZErr("ZZ9000InitHW: starting\n");
++    ZZErr("ZZ9000InitHW: %s on %s\n", pRTG->card->name, found->dev);
+ 
+-    if (!(zz9000Card.caps & (pRTG->depth == 16 ? RTG_CAP_DEPTH16 :
+-                             pRTG->depth == 24 ? RTG_CAP_DEPTH24 : 0))) {
++    if (!found->dev ||
++        !(pRTG->card->caps & (pRTG->depth == 16 ? RTG_CAP_DEPTH16 :
++                              pRTG->depth == 24 ? RTG_CAP_DEPTH24 : 0))) {
+         ZZErr("ZZ9000InitHW: this board has no depth %d\n", pRTG->depth);
+         return FALSE;
+     }
+-    if (pRTG->width > 0 || pRTG->height > 0) {
+-        if (!(m = ZZ9000ModeOf(pRTG->width, pRTG->height))) {
+-            ZZErr("ZZ9000InitHW: no mode %dx%d; the modes are", pRTG->width,
+-                  pRTG->height);
+-            for (m = zz9000_modes; m->name; m++)
+-                ZZErr(" %s", m->name);
+-            ZZErr("\n");
+-            return FALSE;
+-        }
+-        ZZ9000_selected_mode = m;
+-    }
+ 
+     pZZ = (ZZ9000ScreenPtr) (*zz9000Core->alloc)(sizeof(ZZ9000ScreenRec));
+     if (!pZZ) {
+@@ -442,14 +652,19 @@ rtgScreenPtr pRTG;
+         pZZ->colorMode = ZZ9K_COLOR_16BIT565;
+         pZZ->bytesPerPixel = 2;
+     }
++    pZZ->haveCaps = found->haveCaps;
++    pZZ->rtgcaps  = found->caps.caps;
++    zz9000KernelSizes = found->haveCaps && (found->caps.caps & RTGCAP_MODE_LIST);
++    zz9000UseRates = !found->haveCaps || (found->caps.caps & RTGCAP_REFRESH);
+ 
+-    fd = open(ZZ9000_DEV, O_RDWR);
++    fd = open(found->dev, O_RDWR);
+     if (fd < 0) {
+         ZZErr("ZZ9000InitHW: cannot open %s (%s)\n",
+-               ZZ9000_DEV, strerror(errno));
++               found->dev, strerror(errno));
+         (*zz9000Core->free)((pointer)pZZ);
+         return FALSE;
+     }
++    pZZ->fd = fd;
+ 
+     if (ioctl(fd, ZZ9KIOC_PROBE, 0) < 0) {
+         ZZErr("ZZ9000InitHW: probe failed (%s)\n", strerror(errno));
+@@ -458,19 +673,57 @@ rtgScreenPtr pRTG;
+         return FALSE;
+     }
+ 
+-    mode.width = (unsigned short)ZZ9000_selected_mode->w;
+-    mode.height = (unsigned short)ZZ9000_selected_mode->h;
++    /* the size: -mode, the last one, the default, what the board shows */
++    ZZ9000GetModes(pZZ);
++    if (zz9000KernelSizes && zz9000_nrows == 0)
++        zz9000KernelSizes = 0;          /* no rows after all: the table */
++    w = pRTG->width;
++    h = pRTG->height;
++    if (w > 0 || h > 0) {
++        if (!ZZ9000SizeKnown(w, h)) {
++            ZZErr("ZZ9000InitHW: no mode %dx%d; the modes are", w, h);
++            if (zz9000KernelSizes)
++                for (i = 0; i < zz9000_nrows; i++)
++                    ZZErr(" %dx%d", zz9000_rows[i].width, zz9000_rows[i].height);
++            else
++                for (m = zz9000_modes; m->name; m++)
++                    ZZErr(" %s", m->name);
++            ZZErr("\n");
++            (void) close(fd);
++            (*zz9000Core->free)((pointer)pZZ);
++            return FALSE;
++        }
++    } else if (zz9000CurW > 0) {
++        w = zz9000CurW;
++        h = zz9000CurH;
++    } else if (ZZ9000SizeKnown(ZZ9000_DEFAULT_W, ZZ9000_DEFAULT_H)) {
++        w = ZZ9000_DEFAULT_W;
++        h = ZZ9000_DEFAULT_H;
++    } else {
++        w = zz9000_rows[0].width;       /* zz9000KernelSizes: rows exist */
++        h = zz9000_rows[0].height;
++        for (i = 0; i < zz9000_nrows; i++)
++            if (zz9000_rows[i].flags & ZZ9K_MF_CURRENT) {
++                w = zz9000_rows[i].width;
++                h = zz9000_rows[i].height;
++                break;
++            }
++    }
++
++    mode.width = (unsigned short)w;
++    mode.height = (unsigned short)h;
+     mode.color_mode = pZZ->colorMode;
+     mode.scale_mode = 0;
+ 
+     if (ioctl(fd, ZZ9KIOC_SETMODE, &mode) < 0) {
+-        ZZErr("ZZ9000InitHW: SETMODE %dx%d failed (%s)\n",
+-               ZZ9000_selected_mode->w, ZZ9000_selected_mode->h,
+-               strerror(errno));
++        ZZErr("ZZ9000InitHW: SETMODE %dx%d depth %d failed (%s)\n",
++               w, h, pRTG->depth, strerror(errno));
+         (void) close(fd);
+         (*zz9000Core->free)((pointer)pZZ);
+         return FALSE;
+     }
++    zz9000CurW = w;
++    zz9000CurH = h;
+ 
+     if (ioctl(fd, ZZ9KIOC_GETINFO, &info) < 0 ||
+         ioctl(fd, ZZ9KIOC_GETFBINFO, &fbi) < 0) {
+@@ -497,7 +750,6 @@ rtgScreenPtr pRTG;
+     if (ioctl(fd, ZZ9KIOC_SETSWITCH, ZZ9K_SWITCH_RTG) < 0)
+         ZZErr("ZZ9000InitHW: SETSWITCH RTG failed (%s)\n", strerror(errno));
+ 
+-    pZZ->fd       = fd;
+     pRTG->devFd   = fd;             /* for the rtg/ layer's monitor switch */
+     pZZ->mapBase  = (pointer)base;
+     pZZ->mapSize  = info.board_size;
+@@ -564,11 +816,41 @@ rtgScreenPtr pRTG;
+ /* ------------------------------------------------------------------ */
+ /* The card for the RTG core                                           */
+ 
++/*
++** The cards for the RTG core: the same ops, their own probe and caps.
++** z3660 comes first in the core's list (rtgInit.c).
++*/
++static rtgCardRec z3660Card = {
++    RTG_CARD_ABI,
++    "z3660",
++    "Z3660 RTG",
++    RTG_CAP_DEPTH16 | RTG_CAP_MOVE16,   /* narrowed or widened by the probe */
++    16,                         /* defaultDepth */
++    0,                          /* dacBits: no colour table */
++    1024,                       /* accelMin: -blitmin (MG10) */
++    8192,                       /* accelMax: -blitmax, ~0.16 ms per band */
++
++    Z3660Probe,
++    ZZ9000InitHW,
++    ZZ9000GetModeList,
++    ZZ9000SetModeOp,
++    ZZ9000CloseHW,
++
++    0,                          /* monitorSwitch: the SVGAIOC contract (monsw) */
++    0,                          /* setColors: TrueColor only */
++    zz9000SolidFill,
++    zz9000CopyRect,
++    0,                          /* patternFill */
++    zz9000WaitIdle,
++    0, 0, 0,                    /* no hardware cursor in this driver yet */
++    zz9000Soft3DInit,           /* ZZ9K-SOFT3D */
++};
++
+ static rtgCardRec zz9000Card = {
+     RTG_CARD_ABI,
+     "zz9000",
+-    "MNT ZZ9000 / Z3660 RTG",
+-    RTG_CAP_DEPTH16 | RTG_CAP_MOVE16,   /* narrowed or widened by the probe */
++    "MNT ZZ9000",
++    RTG_CAP_DEPTH16 | RTG_CAP_DEPTH24,  /* narrowed or widened by the probe */
+     16,                         /* defaultDepth */
+     0,                          /* dacBits: no colour table */
+     1024,                       /* accelMin: -blitmin (MG10) */
+@@ -587,20 +869,34 @@ static rtgCardRec zz9000Card = {
+     0,                          /* patternFill */
+     zz9000WaitIdle,
+     0, 0, 0,                    /* no hardware cursor in this driver yet */
+-    zz9000Soft3DInit,           /* ZZ9K-SOFT3D */
++    zz9000Soft3DInit,           /* ZZ9K-SOFT3D (it asks the kernel first) */
+ };
+ 
+ /*
+-** The entry point: the only symbol the core needs from this card (later
+-** the module's one export).  NULL if the core is older than this card.
++** The entry points: the only symbols the core needs from these cards
++** (later the module's exports).  NULL if the core is older than they are.
+ */
+-rtgCardPtr
+-ZZ9000CardEntry(core)
++static Bool
++ZZ9000CoreFits(core)
+ rtgCoreFuncsPtr core;
+ {
+     if (!core || core->version < RTG_CORE_VERSION ||
+         core->size < sizeof(rtgCoreFuncsRec))
+-        return (rtgCardPtr)0;
++        return FALSE;
+     zz9000Core = core;
+-    return &zz9000Card;
++    return TRUE;
++}
++
++rtgCardPtr
++Z3660CardEntry(core)
++rtgCoreFuncsPtr core;
++{
++    return ZZ9000CoreFits(core) ? &z3660Card : (rtgCardPtr)0;
++}
++
++rtgCardPtr
++ZZ9000CardEntry(core)
++rtgCoreFuncsPtr core;
++{
++    return ZZ9000CoreFits(core) ? &zz9000Card : (rtgCardPtr)0;
+ }

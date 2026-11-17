@@ -1,12 +1,16 @@
 #!/bin/sh
 # build.sh -- cross-build the X11R6.3 X server Xamix (hw/amix: one server, the
-# graphics cards are drivers in it: zz9000, cirrus) for the A3000 + Z3660 RTG
-# (amix-z3660rtg docs/X-CROSS.md, with the fork's x11/patches), from the local
-# copy of isoriano's X11R6.3 tree.  Every step logs to log/.
+# graphics cards are drivers in it: z3660, zz9000, cirrus) for the A3000 + Z3660
+# RTG (amix-z3660rtg docs/X-CROSS.md), from the local copy of isoriano's
+# X11R6.3 tree.  Every step logs to log/.
+# The RTG fork's X material is part of this component, unchanged from
+# amix-z3660rtg 1.0 (91667dec985e, the archive of x11/x11r6.3's RTG_COMMIT,
+# sha256 3b41d6bd...): its x11/patches in patches/amix-z3660rtg/, its
+# x11/cross/host.def in files/, its x11/cross/imakecpp.sh as ./imakecpp.sh;
+# patches/amix-z3660rtg.sha256 holds their sums.  No outside checkout is read.
 #   sh build.sh            full build from a fresh copy of the tree
 # Inputs:
 #   XC_SRC   the X11R6.3 tree (default usr-amix/usr/x11r6/xc; copied, never edited)
-#   RTG      amix-z3660rtg clone (default usr-amix/upstream/amix-z3660rtg)
 #   DISTFILES  xorg-server-1.0.2 and randrproto-1.1.2 tarballs (default ./distfiles,
 #            checked against SOURCES.sha256)
 #   HDF      AMIX disk image for /usr/amiga and /usr/ucblib (read-only)
@@ -15,11 +19,11 @@ set -e
 W=$(cd "$(dirname "$0")" && pwd)
 UA=$(cd "$W/../../../.." && pwd)	# usr-amix, above amix-userland
 XC_SRC=${XC_SRC:-$UA/usr/x11r6/xc}
-RTG=${RTG:-$UA/upstream/amix-z3660rtg}
 DISTFILES=${DISTFILES:-$W/distfiles}
 HDF=${HDF:-"$HOME/Documents/FS-UAE/Hard Drives/hd0Z3660AMIX_AMIGA3000.hdf"}
 SYSROOT=$HOME/opt/amix-cross/m68k-cbm-sysv4/sysroot
 mkdir -p "$W/log"
+(cd "$W" && sha256sum -c patches/amix-z3660rtg.sha256) > "$W/log/rtg-sha256.log"
 
 # 1. the tree: a copy, CRLF in the AMIX DDX converted, the fork's patches in order
 rm -rf "$W/src/xc"; mkdir -p "$W/src"; cp -a "$XC_SRC" "$W/src/"
@@ -36,7 +40,7 @@ for p in zz9000hw-modes p5-1-solidrect-alu p5-2-copyarea-expose p5-3-setspans-al
     p5-4-copyarea-alu p5-5-copyarea-onebox p5-6-stores32 p5-7-shortruns \
     rt04-monsw-hook rt07-card-blitter rt07b-small-fills rt07c-zeroline-bias \
     rt08-banded-default rt10-console-keyboard; do
-	patch -p1 --no-backup-if-mismatch < "$RTG/x11/patches/$p.patch" > "$W/log/patch-$p.log"
+	patch -p1 --no-backup-if-mismatch < "$W/patches/amix-z3660rtg/$p.patch" > "$W/log/patch-$p.log"
 done
 # local deviation: the per-GC trace lines only with -DZZ9000_DEBUG
 python3 - programs/Xserver/hw/amix/rtg/zz9000/zz9000screen.c <<'PY'
@@ -119,6 +123,20 @@ patch -p1 --no-backup-if-mismatch < "$W/local-rtg-cardops.patch" > "$W/log/patch
 # by the SVGAIOC contract.  Depth 8 only (16-bit pixels are little-endian
 # on this chip); the core's software cursor (FS-UAE draws no GD542x cursor)
 patch -p1 --no-backup-if-mismatch < "$W/local-rtg-cirrus.patch" > "$W/log/patch-local-rtg-cirrus.log"
+# local change: the Z3660 RTG as its own card, `z3660' (amix-gate 82bd7df:
+# io/z3660rtg, /dev/z3660rtg major 55, the zz9000 ioctls; io/rtgcaps.h).
+# Card z3660 opens /dev/z3660rtg, else /dev/zz9000 if the board there is a
+# Z3660 (the z3660 kernel variant's built-in RTG); card zz9000 is the MNT
+# ZZ9000 on /dev/zz9000 and refuses a Z3660 with a word to use z3660;
+# -device PATH replaces the card's node.  The depths come from
+# RTGIOC_GETCAPS (rtg/rtgcaps.h, the kernel's block byte for byte), the old
+# static facts on a kernel without it: the Z3660 16 only (its HDMI is
+# RGB565), the ZZ9000 16 and 24.  -depth N (8, 15, 16, 24, 32 = 24 in
+# 32-bit pixels) is the RTG depth, as -rtgdepth; one the board cannot show
+# stops the server with its depths.  RandR: the kernel's mode list as the
+# sizes with RTGCAP_MODE_LIST, rates only with RTGCAP_REFRESH.  The cirrus
+# card takes -device too.  rtgCoreFuncsRec grows .device: RTG_CORE_VERSION 2
+patch -p1 --no-backup-if-mismatch < "$W/local-rtg-z3660.patch" > "$W/log/patch-local-rtg-z3660.log"
 
 # local change: MIT-SHM on (Mesa's back buffer, x11perf -shmput); the port
 # kernel's ISSUE-62/66 fixes made shmget/shmat safe, shmband-tested 2026-10-25
@@ -155,9 +173,9 @@ m68k-cbm-sysv4-ar rcs libsockstub.a $MEMBERS
 # 4. host.def, site.def, host imake and cpp wrapper
 cd "$W/src/xc"
 { printf '#define AmixSysroot %s\n#define AmixXStubDir %s\n' "$M" "$W/stub"
-  cat "$RTG/x11/cross/host.def"; } > config/cf/host.def
+  cat "$W/files/host.def"; } > config/cf/host.def
 sed -i '127s|^/\* #include <host.def> \*/$|#include <host.def>|' config/cf/site.def
-cp "$RTG/x11/cross/imakecpp.sh" "$W/imakecpp.sh"; chmod +x "$W/imakecpp.sh"
+chmod +x "$W/imakecpp.sh"
 (cd config/imake && make -f Makefile.ini BOOTSTRAPCFLAGS="-DAMIX -DSVR4 -Dm68k" \
 	CC="gcc -std=gnu89 -fcommon") > "$W/log/01-imake-bootstrap.log" 2>&1
 export AMIX_SYSROOT=$M IMAKECPP=$W/imakecpp.sh
