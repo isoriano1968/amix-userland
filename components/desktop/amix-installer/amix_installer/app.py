@@ -86,8 +86,8 @@ def source_rows(info):
     root = Adw.ActionRow(title="Root file system",
                          subtitle="%s used, %s free on %s" % (_mb(info.root_used), _mb(info.root_avail),
                                                               info.root.name))
-    if info.root_avail < model.ROOT_RESERVE_MB * 1048576:
-        root.add_suffix(label("below %d MB free: needs a data disk" % model.ROOT_RESERVE_MB,
+    if info.root_avail < model.RESERVE_MB * 1048576:
+        root.add_suffix(label("below %d MB free: additions go to a data disk" % model.RESERVE_MB,
                               ("caption", "warning"), wrap=False))
     rows.append(root)
 
@@ -618,9 +618,13 @@ class Window(Adw.ApplicationWindow):
                     name.set_text(d["name"])
                     text.set_text("%d MB used, %d MB free" % (used, max(0, d["total"] - used)))
                     bar.set_disk(d)
-            warn.set_visible(not fits)
+            warn.set_visible(not fits or self.cfg.layout_moved)
             core = disks[0]
-            if not core["fits"] and self.cfg.sel["layout"] == "split":
+            if fits and self.cfg.layout_moved:
+                warn.set_text("Everything on the core disk would leave less than %d MB free "
+                              "there: what you add goes to a data disk instead."
+                              % model.RESERVE_MB)
+            elif not core["fits"] and self.cfg.sel["layout"] == "split":
                 warn.set_text("The core disk keeps less than %d MB free even with a data disk "
                               "(%d MB free). Let the installer copy the core system to a larger "
                               "disk." % (core["reserve"], max(0, core["total"] - core["used"])))

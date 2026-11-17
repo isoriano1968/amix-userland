@@ -108,14 +108,15 @@ class Driver(object):
 # first: the others are offered and planned, and the plan names a missing kit)
 DRIVERS = {
     "rtgfb": Driver("rtgfb", "Picasso II", "graphics", "rtgfb", 54,
-                    ("rtgfbopen", "rtgfbclose", "rtgfbioctl", "rtgfbmmap")),
+                    ("rtgfbopen", "rtgfbclose", "rtgfbioctl", "rtgfbmmap"), lines=("030", "040")),
     "zz9000": Driver("zz9000", "ZZ9000", "graphics", "zz9000", 49,
                      ("zz9000open", "zz9000close", "zz9000read", "zz9000write", "zz9000ioctl",
                       "zz9000mmap")),
     "va2000": Driver("va2000", "VA2000", "graphics", "va2000", 68,
                      ("va2000open", "va2000close", "va2000read", "va2000write", "va2000ioctl",
                       "va2000mmap"), lines=("030", "040"), init="va2000init"),
-    "hydra": Driver("hydra", "HydraNet", "network", "hya0", 47, ("hydrainfo",), streams=True),
+    "hydra": Driver("hydra", "HydraNet", "network", "hya0", 47, ("hydrainfo",), lines=("030", "040"),
+                    streams=True),
     # Individual Computers X-Surf 100 (AX88796B): Zorro II, or Zorro III space
     # in an A3000, which the kits map
     "xsurf100": Driver("xsurf100", "X-Surf 100", "network", "xsf0", 56,

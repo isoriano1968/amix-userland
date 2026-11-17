@@ -119,7 +119,7 @@ class Scripts(unittest.TestCase):
         # every place packages install to is on the data disk, there or not yet
         self.assertIn("for d in usr/local usr/gnu opt usr/x11r6 usr/motif usr/dt; do", t)
         self.assertIn("/usr/bin/ln -s /amixdata/$n /$d", t)
-        self.assertIn("M=%d" % model.SPLIT_RESERVE_MB, t)
+        self.assertIn("M=%d" % model.RESERVE_MB, t)
         self.assertIn("$PKG --min-free $M install", t)
         self.assertIn("editor/vim", t)
         self.assertIn("desktop/cde", t)

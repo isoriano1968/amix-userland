@@ -73,8 +73,8 @@ class Checks(unittest.TestCase):
     def test_base_refuses_port_and_relinked_kernels(self):
         t = [s for s in BASE if s not in ("cdevsw", "io_init")]
         # a port kernel takes 040-line drivers only
-        with self.assertRaisesRegex(kernel.KernelError, "68040/060 port kernel; the Picasso II"):
-            kernel.check_base(base_kernel(text=t + ["cputype"]))
+        with self.assertRaisesRegex(kernel.KernelError, "68040/060 port kernel; the ZZ9000"):
+            kernel.check_base(base_kernel(text=t + ["cputype"]), [kernel.DRIVERS["zz9000"]])
         va = kernel.DRIVERS["va2000"].with_info({"line": "040"})
         kernel.check_base(base_kernel(text=t + ["cputype"]), [va])
         self.assertEqual(kernel.base_line(base_kernel(text=t + ["cputype"])), "040")

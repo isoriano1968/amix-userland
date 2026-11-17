@@ -421,7 +421,7 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
     patch: the user's patch disk is served at /patch. now: the host's UTC time."""
     pkgs, missing = packages_for(cfg)
     pkgs = [p for p in pkgs if p not in FOUNDATION_PKGS]
-    reserve = model.SPLIT_RESERVE_MB if data_disk else model.ROOT_RESERVE_MB
+    reserve = model.RESERVE_MB
     have = list(FOUNDATION_PKGS)
     if repo:
         gone = [(p, missing_in_repo(repo, p)) for p in pkgs]

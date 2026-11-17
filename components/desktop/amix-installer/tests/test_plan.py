@@ -482,12 +482,13 @@ class Cards(Base):
         self.assertEqual(c.sel["mach"], "a4000")
         self.assertNotEqual(c.sel["kern"], "stock")
         self.assertNotEqual(c.sel["target"], "card")
-        self.assertNotEqual(c.sel["net"], "nethydra")            # its kit is 68030 only
-        for gid, oid in (("net", "nethydra"), ("gfx", "picasso2"), ("netmore", "more_hydra"),
-                         ("gfxmore", "more_picasso2")):
-            o = model.find_group(gid).option(oid)
-            self.assertFalse(c.available(o))
-            self.assertIn("68040/060 kit is not built yet", c.why_not(o))
+        self.assertEqual(c.sel["net"], "nethydra")               # hydra-040 kit
+        c = model.Config(sel=dict(c.sel, kern="k040"))
+        # as main cards, and beside others (the twin of the main card is not offered)
+        other = model.Config(sel=dict(c.sel, net="netxsurf", gfx="rtg"))
+        for cf, gid, oid in ((c, "net", "nethydra"), (c, "gfx", "picasso2"),
+                             (other, "netmore", "more_hydra"), (other, "gfxmore", "more_picasso2")):
+            self.assertTrue(cf.available(model.find_group(gid).option(oid)), oid)
         self.assertEqual(c.why_not(model.find_group("target").option("card")),
                          model.NOT_AVAILABLE)
         self.assertTrue(c.available(model.find_group("net").option("netxsurf")))
@@ -557,9 +558,13 @@ class Cards(Base):
         self.assertEqual(a.line, "040")
         self.assertTrue(a.name.startswith("unix.k040+va2000"))
         self.assertTrue(a.missing is None or "stock 68030 kernel only" not in a.missing)
-        # HydraNet has no 040 kit: refused by line
-        h = plan.DriverKernel(self.src, ["hydra"], kern="k040")
-        self.assertIn("for the stock 68030 kernel only", h.missing)
+        # HydraNet and the Picasso II have 040 kits too
+        h = plan.DriverKernel(self.src, ["rtgfb", "hydra"], kern="k040")
+        self.assertTrue(h.name.startswith("unix.k040+"))
+        self.assertTrue(h.missing is None or "68030 kernel only" not in h.missing)
+        # the Z3660 Ethernet has no 030 kit: refused by line
+        z = plan.DriverKernel(self.src, ["z3660eth"], kern="stock")
+        self.assertIn("68040/060", z.missing)
 
 
 class PatchLevel(Base):

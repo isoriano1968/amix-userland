@@ -22,9 +22,6 @@ offered while that option is the radio group's choice.
 TAG_GROUPS = ("src", "target", "mach", "accel", "net", "layout", "kern", "boot", "gfx", "desk")
 
 NOT_AVAILABLE = "Not for this machine or layout"
-# a Zorro II card that works in the A4000, whose driver has a 68030 kit only
-NO_040_KIT = {"a4000": "Fits the A4000, but its 68040/060 kit is not built yet"}
-
 # where the IPS client of doc/plans/IPS-INSTALLER-PLAN.md shows itself
 PKG_CLIENT_PROBES = ("/var/pkg", "/usr/bin/pkg")
 
@@ -151,8 +148,7 @@ STEPS = [
               # FS-UAE has no Hydra, so the install itself runs there over its A2065
               O("nethydra", "HydraNet",
                 "Hydra Systems AmigaNet (Zorro II). Only once a kernel from this installer "
-                "runs: its driver is linked into your kernel", needs=("a3000", "a2500", "a4000"),
-                blocked=NO_040_KIT),
+                "runs: its driver is linked into your kernel", needs=("a3000", "a2500", "a4000")),
               # AX88796B, /dev/xsf0, major 56: kits for both kernel lines
               O("netxsurf", "X-Surf 100",
                 "Individual Computers X-Surf 100. Only once a kernel from this installer "
@@ -166,8 +162,7 @@ STEPS = [
           # further network cards: driver and device node only, no address
           G("netmore", "More network cards", options=[
               O("more_hydra", "HydraNet", "Its driver and /dev/hya0; set its address on AMIX",
-                needs=("a3000", "a2500", "a4000"),
-                blocked=NO_040_KIT, twin=("net", "nethydra")),
+                needs=("a3000", "a2500", "a4000"), twin=("net", "nethydra")),
               O("more_xsurf", "X-Surf 100", "Its driver and /dev/xsf0; set its address on AMIX",
                 needs=("a3000", "a2500", "a4000"), twin=("net", "netxsurf")),
               O("more_zz9000eth", "ZZ9000 Ethernet",
@@ -184,7 +179,8 @@ STEPS = [
          "Keep the core system small and put what you add on a data disk: an update of one "
          "never fills the other, and a core disk that was made too small is no longer a problem.",
          [G("layout", "Layout", radio=True, options=[
-             O("single", "Everything on the core disk", "Only when it has room to spare"),
+             O("single", "Everything on the core disk",
+               "Only while 100 MB stay free on it; otherwise additions go to a data disk"),
              O("split", "Core disk plus data disk",
                "/usr/local, /usr/gnu, /opt and the desktop on their own disk", badge="recommended"),
              O("grow", "Copy the core system to a larger disk",
@@ -220,11 +216,10 @@ STEPS = [
          "and can be removed later.",
          [G("gfx", "Main display", radio=True, options=[
              O("rtg", "Z3660 RTG", "16-bit RTG modes for X", needs=("z3660",), mb=2),
-             # 68030 only: the rtgfb driver is relinked into the stock kernel
+             # Zorro II, /dev/rtgfb, major 54: a kit per kernel line (rtgfb, rtgfb-040)
              O("picasso2", "Picasso II", "Cirrus 8-bit RTG, 640\u00d7480 to 1024\u00d7768; FS-UAE "
-               "emulates it. The stock kernel gets /dev/rtgfb, relinked from your own",
-               needs=(("uae", "a3000", "a2500", "a4000"), ("stock",), ("pvmk",)), blocked=NO_040_KIT,
-               mb=2),
+               "emulates it. Its driver is linked into your kernel",
+               needs=(("uae", "a3000", "a2500", "a4000"), ("stock", "k040"), ("pvmk",)), mb=2),
              # Zorro II product 3 (AMIX has no Zorro III): /dev/zz9000, major 49
              O("zz9000", "ZZ9000", "MNT ZZ9000 RTG, 16-bit, tested at 1920\u00d7800; its driver "
                "is linked into your kernel", needs=(("a3000", "a2500"), ("stock",)), mb=2),
@@ -238,7 +233,7 @@ STEPS = [
           # on the main display until X spans several cards
           G("gfxmore", "More graphics cards", options=[
              O("more_picasso2", "Picasso II", "Its driver and /dev/rtgfb, beside the main display",
-               needs=(("a3000", "a2500", "a4000"), ("stock",)), blocked=NO_040_KIT,
+               needs=(("a3000", "a2500", "a4000"), ("stock", "k040")),
                twin=("gfx", "picasso2")),
              O("more_zz9000", "ZZ9000", "Its driver and /dev/zz9000, beside the main display",
                needs=(("a3000", "a2500"), ("stock",)), twin=("gfx", "zz9000")),
@@ -321,10 +316,11 @@ DEFAULT_ON = {"pkg": True, "bigram": True, "vt": True, "syslog": True, "mem": Tr
 CORE_DISK_MB = 600
 CORE_USED_MB = 310
 GROWN_CORE_MB = 2000
-ROOT_RESERVE_MB = 200
-# with a data disk the new packages go there: the core only gets the package
-# client, /var/pkg and the bootstrap, and keeps this much free
-SPLIT_RESERVE_MB = 100
+# what every file system keeps free (pkg --min-free); with a data disk the new
+# packages go there: the core only gets the package client, /var/pkg and the
+# bootstrap
+RESERVE_MB = 100
+ROOT_RESERVE_MB = SPLIT_RESERVE_MB = RESERVE_MB
 CORE_TOOLS_MB = 5
 # AMIX is not tested with disks above 2 GB (the core disks stop just below 2^31 bytes)
 DATA_DISK_MB = {"d1g": 1000, "d2g": 2000}
@@ -459,7 +455,27 @@ class Config(object):
                     moved = True
             if not moved:
                 break
+        # everything on a core disk that would keep under RESERVE_MB free: what
+        # is added goes to a data disk instead of the installer refusing
+        self.layout_moved = False
+        split = find_group("layout").option("split")
+        if self.sel.get("layout") == "single" and self.available(split) and \
+                not self.space()[0][0]["fits"]:
+            self.sel["layout"] = "split"
+            self.layout_moved = True
+            changed.append("layout")
+            self.normalize_after_layout(changed)
         return changed
+
+    def normalize_after_layout(self, changed):
+        """The data disk size once the layout moved to split."""
+        g = find_group("dsize")
+        if g.option(self.sel.get("dsize")) is None or not self.available(
+                g.option(self.sel.get("dsize"))):
+            pick = next((o for o in g.options if self.available(o)), None)
+            if pick is not None:
+                self.sel["dsize"] = pick.id
+                changed.append("dsize")
 
     # -- changes -----------------------------------------------------------
     def select(self, gid, oid):

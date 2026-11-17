@@ -133,7 +133,7 @@ class Space(unittest.TestCase):
         self.assertTrue(fits)
         self.assertEqual(len(disks), 2)
         self.assertEqual(disks[0]["add"], model.CORE_TOOLS_MB)
-        self.assertEqual(disks[0]["reserve"], model.SPLIT_RESERVE_MB)
+        self.assertEqual(disks[0]["reserve"], model.RESERVE_MB)
 
     def test_stock_core_with_data_disk(self):
         # the stock 469 MB root, 300 MB used: fits with a data disk, not alone
@@ -145,14 +145,32 @@ class Space(unittest.TestCase):
                 return 0
         _, fits = model.Config(source=Src()).space()
         self.assertTrue(fits)
-        _, fits = model.Config(sel={"layout": "single"}, on={}, source=Src()).space()
-        self.assertFalse(fits)
+        # alone it would keep under 100 MB free: the additions go to a data disk
+        c = model.Config(sel={"layout": "single"}, on={}, source=Src())
+        self.assertEqual(c.sel["layout"], "split")
+        self.assertTrue(c.layout_moved)
+        self.assertTrue(c.space()[1])
 
-    def test_single_does_not_fit(self):
+    def test_single_moves_to_a_data_disk(self):
         c = model.Config(sel={"layout": "single"})
+        self.assertEqual((c.sel["layout"], c.layout_moved), ("split", True))
+        self.assertIn(c.sel["dsize"], ("d1g", "d2g"))
+        # chosen again by hand: still on the data disk
+        c.select("layout", "single")
+        self.assertEqual(c.sel["layout"], "split")
+
+    def test_single_stays_with_room(self):
+        class Big(object):
+            root_used, root_avail = 300 << 20, 1500 << 20
+            found = set()
+
+            def movable_bytes(self):
+                return 0
+        c = model.Config(sel={"layout": "single"}, source=Big())
+        self.assertEqual((c.sel["layout"], c.layout_moved), ("single", False))
         disks, fits = c.space()
-        self.assertFalse(fits)
-        self.assertEqual(len(disks), 1)
+        self.assertTrue(fits)
+        self.assertEqual(disks[0]["reserve"], 100)
 
     def test_grow_fits(self):
         _, fits = model.Config(sel={"layout": "grow"}).space()
