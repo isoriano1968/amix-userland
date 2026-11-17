@@ -5,11 +5,12 @@
 #   make host-stage   build/stage$(HOST_PREFIX): bin, lib, share (no "stage":
 #                     this is not for the AMIX sysroot)
 #   make install      DESTDIR=... HOST_PREFIX=... (for packaging)
+#   make deb          build/amix-installer_<version>-1_all.deb (Debian, Ubuntu)
 #   make screenshots  every step as PNG under a virtual X server (Xvfb);
 #                     never opens a window on a real display
 #   make run          start it from the source tree (on your own display)
 COMPONENT_NAME    = amix-installer
-COMPONENT_VERSION = 0.4.2
+COMPONENT_VERSION = 0.4.4
 
 include ../../../make-rules/shared.mk
 
@@ -45,6 +46,11 @@ install: host-stage
 	mkdir -p $(DESTDIR)$(HOST_PREFIX)
 	cp -R $(HOST_STAGE)/. $(DESTDIR)$(HOST_PREFIX)/
 
+# the Debian package: the same files as the IPS package, under /usr
+DEB_DIR ?= $(BUILD_DIR)
+deb: build
+	VERSION=$(COMPONENT_VERSION) MAKE=$(MAKE) sh tools/mkdeb.sh $(DEB_DIR)
+
 SHOT_DIR ?= $(BUILD_DIR)/shots
 screenshots: build
 	sh tools/screenshots.sh $(SHOT_DIR)
@@ -59,4 +65,4 @@ STOCK_CONTENTS ?=
 repo:
 	sh tools/mkrepo.sh $(REPO) $(STOCK_CONTENTS)
 
-.PHONY: build test host-stage install screenshots run repo
+.PHONY: build test host-stage install deb screenshots run repo

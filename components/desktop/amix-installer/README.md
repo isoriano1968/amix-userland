@@ -10,6 +10,19 @@ amix-userland and amix-gate that fit the machine.
 
 It runs on the host, not on AMIX: OpenIndiana first, Linux too.
 
+## Install
+
+- OpenIndiana and Solaris: the IPS package `desktop/amix-installer`
+  (publisher `amix`): `pkg install desktop/amix-installer`
+- Debian, Ubuntu, Mint: `make deb` makes
+  `build/amix-installer_<version>-1_all.deb`; install it with
+  `sudo apt install ./amix-installer_<version>-1_all.deb`, which also pulls
+  in GTK 4, libadwaita and PyGObject
+
+Both put the same files under `/usr`. The driver kits, pvmk and the m68k
+cross assembler and linker are their own packages; without them the
+installer still runs, and its plan names what is missing.
+
 **Version 0.3 prepares the disks**: the core copy, the pvmk boot disk, an
 empty data disk and an FS-UAE configuration (an A3000 with an A2065), as
 HDF files, for the Z3660 SD card, or as ZuluSCSI/BlueSCSI images named by
@@ -35,6 +48,7 @@ and pycairo to make the icons.
 
     make build          # icons from the AMIX logo
     make test           # model, profiles, safety checks
+    make deb            # the Debian package, under build/
     make run            # from the source tree
     make screenshots    # every step, light and dark, under Xvfb, to build/shots
                         # (AMIX_SHOT_SOURCE=core.hdf: also with that image read)
