@@ -72,8 +72,13 @@ class Checks(unittest.TestCase):
 
     def test_base_refuses_port_and_relinked_kernels(self):
         t = [s for s in BASE if s not in ("cdevsw", "io_init")]
-        with self.assertRaisesRegex(kernel.KernelError, "68040"):
+        # a port kernel takes 040-line drivers only
+        with self.assertRaisesRegex(kernel.KernelError, "68040/060 port kernel; the Picasso II"):
             kernel.check_base(base_kernel(text=t + ["cputype"]))
+        va = kernel.DRIVERS["va2000"].with_info({"line": "040"})
+        kernel.check_base(base_kernel(text=t + ["cputype"]), [va])
+        self.assertEqual(kernel.base_line(base_kernel(text=t + ["cputype"])), "040")
+        self.assertEqual(kernel.base_line(base_kernel()), "030")
         with self.assertRaisesRegex(kernel.KernelError, "already"):
             kernel.check_base(base_kernel(text=t + ["rtgfbopen"]))
         with self.assertRaisesRegex(kernel.KernelError, "linked before"):
@@ -99,6 +104,28 @@ class Checks(unittest.TestCase):
         with self.assertRaises(kernel.KernelError):
             kernel.DRIVERS["hydra"].with_info({"id": "zz9000"})
         self.assertIsNone(kernel.DRIVERS["rtgfb"].with_info(None).init)
+
+    def test_int2(self):
+        """the level-2 chain: aenintr first, sp@(4) passed on, hooked once"""
+        src = kernel.int2_source(["hydraintr"])
+        self.assertLess(src.index("jsr\taenintr"), src.index("jsr\thydraintr"))
+        self.assertEqual(src.count("movel\t%sp@(4),%sp@-"), 2)
+        self.assertEqual(src.count("addql\t&4,%sp"), 2)
+        self.assertLess(src.index("rts"), src.index(".align\t4"))
+        h = kernel.DRIVERS["hydra"].with_info({"intr": "hydraintr", "entries": "hydrainfo"})
+        self.assertEqual(h.intr, "hydraintr")
+        t = [x for x in BASE if x not in ("cdevsw", "io_init")]
+        with self.assertRaisesRegex(kernel.KernelError, "int2_tbl"):
+            kernel.check_base(base_kernel(text=t + ["aenintr"]), [h])
+        with self.assertRaisesRegex(kernel.KernelError, "aenintr"):
+            kernel.check_base(base_kernel(data=["cdevsw", "io_init", "int2_tbl"]), [h])
+        kernel.check_base(base_kernel(text=t + ["aenintr"],
+                                      data=["cdevsw", "io_init", "int2_tbl"]), [h])
+        with self.assertRaisesRegex(kernel.KernelError, "linked before"):
+            kernel.check_base(base_kernel(text=t + [kernel.INT2_STUB]))
+        kernel.check_result(elf(text_syms=("hydrainfo", "hydraintr", kernel.INT2_STUB)), [h])
+        with self.assertRaisesRegex(kernel.KernelError, kernel.INT2_STUB):
+            kernel.check_result(elf(text_syms=("hydrainfo", "hydraintr")), [h])
 
     def test_stub(self):
         s = kernel.stub_source(["rtgfbinit", "hydrainit"])
@@ -191,6 +218,23 @@ class Relink(unittest.TestCase):
         self.assertEqual(calls[-1], "check_relink_relocs.py")
         self.assertEqual(kernel.stub_source(["rtgfbinit", "hydrainit"]).count("jsr"), 3)
 
+    def test_int2_chain_order(self):
+        """kit patches, then patch_int2.py once, then patch_io_init.py once"""
+        n = self.kit("hydra", ["hydra_030.o", "patch_hydra_cdevsw.py", "patch_int2.py",
+                               "patch_io_init.py", "check_relink_relocs.py"],
+                     "id=hydra\nmajor=47\nnode=/dev/hya0\nline=030\ninit=hydrainit\n"
+                     "intr=hydraintr\nentries=hydrainfo hydrainit hydraintr\nstreams=yes\n")
+        self.result_has(("hydrainfo", "hydrainit", "hydraintr", kernel.STUB, kernel.INT2_STUB))
+        t = [x for x in BASE if x not in ("cdevsw", "io_init")] + ["aenintr"]
+        kernel.relink(base_kernel(text=t, data=["cdevsw", "io_init", "int2_tbl"]),
+                      os.path.join(self.d, "u"), ["hydra"], {"hydra": n}, self.ld, asm=self.asm)
+        calls = self.calls()
+        self.assertEqual(calls[:3], ["as", "as", "ld"])
+        self.assertEqual(calls[3:6], ["patch_hydra_cdevsw.py",
+                                      "patch_int2.py %s" % kernel.INT2_STUB,
+                                      "patch_io_init.py %s" % kernel.STUB])
+        self.assertEqual(calls[-1], "check_relink_relocs.py")
+
     def test_missing_kit_file(self):
         k = self.kit("rtgfb", ["rtgfb_030.o", "check_relink_relocs.py"])
         os.remove(os.path.join(k, "rtgfb_030.o"))
@@ -198,12 +242,61 @@ class Relink(unittest.TestCase):
             kernel.relink(base_kernel(), os.path.join(self.d, "u"), ["rtgfb"], {"rtgfb": k},
                           self.ld)
 
+    def test_listed_twice(self):
+        k = self.kit("rtgfb", ["rtgfb_030.o", "check_relink_relocs.py"])
+        with open(os.path.join(k, "KIT.sha256")) as f:
+            first = f.readline()
+        with open(os.path.join(k, "KIT.sha256"), "a") as f:
+            f.write(first)
+        with self.assertRaisesRegex(kernel.KernelError, "rtgfb_030.o more than once"):
+            kernel.check_kit(k, "rtgfb")
+        # kit-tools: the same refusal before a shared patch script runs
+        with self.assertRaisesRegex(kernel.KernelError, "more than once"):
+            kernel.check_tools(os.path.join(k, "check_relink_relocs.py"))
+        os.remove(os.path.join(k, "KIT.sha256"))
+        kernel.check_tools(os.path.join(k, "check_relink_relocs.py"))   # no listing: taken as is
+
     def test_040_kit_refused(self):
         k = self.kit("va2000", ["va2000_040.o", "check_relink_relocs.py"],
                      "id=va2000\nmajor=68\nnode=/dev/va2000\nline=040\n")
-        with self.assertRaisesRegex(kernel.KernelError, "040 kernel"):
+        with self.assertRaisesRegex(kernel.KernelError, "built for the 68040/060 port kernel"):
             kernel.relink(base_kernel(), os.path.join(self.d, "u"), ["va2000"], {"va2000": k},
                           self.ld)
+
+    def test_kit_by_line(self):
+        """va2000 (030) and va2000-040 (040): the base kernel's line picks."""
+        share = os.path.join(self.d, "share")
+        os.mkdir(share)
+        k30 = self.kit("va2000", ["va2000_030.o", "check_relink_relocs.py"],
+                       "id=va2000\nline=030\nentries=va2000open\n")
+        k40 = self.kit("va2000-040", ["va2000_040.o", "check_relink_relocs.py"],
+                       "id=va2000\nline=040\nentries=va2000open dev_kvmap\n")
+        old = kernel._share_dir
+        kernel._share_dir = lambda: share
+        env = dict(os.environ)
+        try:
+            for k in (k30, k40):
+                shutil.move(k, share)
+            os.environ.pop("AMIX_VA2000_KIT", None)
+            os.environ.pop("AMIX_VA2000_040_KIT", None)
+            home = os.path.expanduser("~/Sources/usr-amix/amix-gate")
+            if os.path.isdir(home):
+                os.environ["HOME"] = self.d          # no amix-gate checkout in the way
+            self.assertEqual(kernel.find_kit("va2000"), os.path.join(share, "va2000"))
+            self.assertEqual(kernel.find_kit("va2000", "040"), os.path.join(share, "va2000-040"))
+            with self.assertRaises(kernel.KernelError):
+                kernel.find_kit("va2000", "060")
+            # a port kernel: the 040 kit is linked, not the 030 one
+            t = [s for s in BASE if s not in ("cdevsw", "io_init")] + ["cputype"]
+            self.result_has(("va2000open", "dev_kvmap"))
+            kernel.relink(base_kernel(text=t), os.path.join(self.d, "u"), ["va2000"],
+                          ld=self.ld)
+            with open(self.log) as f:
+                self.assertEqual(f.read().split(), ["ld", "check_relink_relocs.py"])
+        finally:
+            kernel._share_dir = old
+            os.environ.clear()
+            os.environ.update(env)
 
 
 if __name__ == "__main__":

@@ -7,10 +7,12 @@ into the one on the user's core disk, here, at install time; the result goes
 only into the user's own out folder, and AMIX installs it in step 7.
 
 Each driver comes as a kit, its own package (developer/amix/<id>-kit, or an
-amix-gate checkout's io/<id>/port/kit):
+amix-gate checkout's io/<id>/port/kit), one per kernel line: <id> for the
+stock 68030 kernel, <id>-040 (port/kit-040) for the 68040/060 port kernels;
+the base kernel says which (a port kernel defines cputype):
   KIT.sha256   checksums, and the manifest: every *.o listed is linked and
                every patch_*.py (its cdevsw slot) runs, in the order listed;
-  KIT.info     id=, major=, node=, line=030|040, init=, entries=, streams=;
+  KIT.info     id=, major=, node=, line=030|040, init=, intr=, entries=, streams=;
   check_relink_relocs.py, the loader check run on the result.
 A kit without KIT.info (rtgfb-kit 0.1) is taken with the facts in DRIVERS and
 no boot routine.
@@ -39,6 +41,12 @@ BASE_HOOK = (("io_init", ".data"), ("parinit", ".text"))
 BASE_NEEDS = ("autocon", "getminor", "copyin", "copyout", "bzero", "printf", "nodev", "cdevsw")
 STUB = "amixdrv_init"
 IO_INIT_PATCH = "patch_io_init.py"
+# the level-2 interrupt chain: int2_tbl[] (data) has no spare slot either;
+# its aenintr entry is retargeted to amixdrv_int2, which calls aenintr and
+# then each chosen driver's level-2 routine (KIT.info intr=)
+INT2_HOOK = (("int2_tbl", ".data"), ("aenintr", ".text"))
+INT2_STUB = "amixdrv_int2"
+INT2_PATCH = "patch_int2.py"
 RELOC_CHECK = "check_relink_relocs.py"
 NAME = "unix.rtgfb"
 
@@ -49,12 +57,13 @@ class Driver(object):
     KIT.info overrides these facts."""
 
     def __init__(self, id, card, kind, node, major, entries=(), lines=("030",), init=None,
-                 streams=False):
+                 streams=False, intr=None):
         self.id, self.card, self.kind = id, card, kind
         self.node, self.major = node, major          # /dev/<node>, character major
         self.entries = tuple(entries)                # defined exactly once after the link
         self.lines = tuple(lines)                    # kernel lines the kit is built for
         self.init = init                             # its boot routine, called by the stub
+        self.intr = intr                             # its level-2 interrupt routine
         self.streams = streams
         self.package = "developer/amix/%s-kit" % id
         self.env = "AMIX_%s_KIT" % id.upper()
@@ -63,7 +72,7 @@ class Driver(object):
         """This driver with a kit's KIT.info facts (info: dict, or None:
         a kit before KIT.info, linked without a boot routine)."""
         d = Driver(self.id, self.card, self.kind, self.node, self.major, self.entries,
-                   self.lines, None, self.streams)
+                   self.lines, None, self.streams, None)
         if info:
             if info.get("id", d.id) != d.id:
                 raise KernelError("the %s kit says it is %s" % (d.id, info["id"]))
@@ -74,6 +83,7 @@ class Driver(object):
             if info.get("line"):
                 d.lines = tuple(info["line"].replace("|", " ").split())
             d.init = info.get("init") or None
+            d.intr = info.get("intr") or None
             if "entries" in info:
                 d.entries = tuple(info["entries"].split())
             d.streams = info.get("streams") == "yes"
@@ -88,7 +98,9 @@ DRIVERS = {
     "zz9000": Driver("zz9000", "ZZ9000", "graphics", "zz9000", 49,
                      ("zz9000open", "zz9000close", "zz9000read", "zz9000write", "zz9000ioctl",
                       "zz9000mmap")),
-    "va2000": Driver("va2000", "VA2000", "graphics", "va2000", 68, lines=("040",)),
+    "va2000": Driver("va2000", "VA2000", "graphics", "va2000", 68,
+                     ("va2000open", "va2000close", "va2000read", "va2000write", "va2000ioctl",
+                      "va2000mmap"), lines=("030", "040"), init="va2000init"),
     "hydra": Driver("hydra", "HydraNet", "network", "hya0", 47, ("hydrainfo",), streams=True),
 }
 # the stub calls graphics before network
@@ -144,14 +156,22 @@ def _share_dir():
                         "amix-installer")
 
 
-def find_kit(drv="rtgfb"):
-    """A driver's kit: $AMIX_<ID>_KIT, an amix-gate checkout's
-    io/<id>/port/kit, or the installer's share folder (the kit package)."""
+LINES = ("030", "040")
+
+
+def find_kit(drv="rtgfb", line="030"):
+    """A driver's kit for a kernel line: $AMIX_<ID>_KIT, an amix-gate
+    checkout's io/<id>/port/kit, or the installer's share folder (the kit
+    package); for the 040 line $AMIX_<ID>_040_KIT, port/kit-040, <id>-040."""
     d = DRIVERS[drv] if isinstance(drv, str) else drv
-    cands = [os.environ.get(d.env),
-             os.path.expanduser("~/Sources/usr-amix/amix-gate/usr/src/uts/amiga/io/%s/port/kit"
-                                % d.id),
-             os.path.join(_share_dir(), d.id)]
+    if line not in LINES:
+        raise KernelError("no kernel line %s" % line)
+    sfx = "" if line == "030" else "-" + line
+    env = d.env if line == "030" else "AMIX_%s_%s_KIT" % (d.id.upper(), line)
+    cands = [os.environ.get(env),
+             os.path.expanduser("~/Sources/usr-amix/amix-gate/usr/src/uts/amiga/io/%s/port/kit%s"
+                                % (d.id, sfx)),
+             os.path.join(_share_dir(), d.id + sfx)]
     for k in cands:
         if not k:
             continue
@@ -159,6 +179,36 @@ def find_kit(drv="rtgfb"):
         if need and all(os.path.isfile(os.path.join(k, f)) for f in need):
             return k
     return None
+
+
+def duplicates(listing):
+    """Names a KIT.sha256 lists more than once (a broken kit build)."""
+    seen, dup = set(), []
+    for n, _ in listing:
+        if n in seen and n not in dup:
+            dup.append(n)
+        seen.add(n)
+    return dup
+
+
+def check_tools(path):
+    """The kit-tools folder a shared patch script comes from: when it has a
+    KIT.sha256, every file in it matches and none is listed twice."""
+    import hashlib
+    d = os.path.dirname(path)
+    listing = kit_listing(d)
+    if listing is None:
+        return
+    dup = duplicates(listing)
+    if dup:
+        raise KernelError("%s/KIT.sha256 lists %s more than once" % (d, ", ".join(dup)))
+    for name, want in listing:
+        p = os.path.join(d, name)
+        if not os.path.isfile(p):
+            raise KernelError("the kernel kit tools in %s lack %s" % (d, name))
+        with open(p, "rb") as f:
+            if hashlib.sha256(f.read()).hexdigest() != want:
+                raise KernelError("kit tool %s does not match KIT.sha256" % name)
 
 
 def check_kit(kit, drv="rtgfb"):
@@ -169,6 +219,10 @@ def check_kit(kit, drv="rtgfb"):
     listing = kit_listing(kit)
     if listing is None:
         raise KernelError("the %s kit has no KIT.sha256" % d.id)
+    dup = duplicates(listing)
+    if dup:
+        raise KernelError("the %s kit's KIT.sha256 lists %s more than once"
+                          % (d.id, ", ".join(dup)))
     want = dict(listing)
     gone = [n for n in want if not os.path.isfile(os.path.join(kit, n))]
     if gone:
@@ -183,6 +237,15 @@ def check_kit(kit, drv="rtgfb"):
     if os.path.isfile(os.path.join(kit, "KIT.info")) and "KIT.info" not in want:
         raise KernelError("the %s kit's KIT.info is not in its KIT.sha256" % d.id)
     return d.with_info(kit_info(kit))
+
+
+def find_int2_patch(kits):
+    """patch_int2.py: developer/amix/kernel-kit-tools, else any kit's."""
+    for k in [os.environ.get("AMIX_KIT_TOOLS"), os.path.join(_share_dir(), "kit-tools")] + \
+            list(kits):
+        if k and os.path.isfile(os.path.join(k, INT2_PATCH)):
+            return os.path.join(k, INT2_PATCH)
+    return None
 
 
 def find_io_init_patch(kits):
@@ -213,6 +276,19 @@ def find_ld():
 
 def find_as():
     return _find_tool(ASSEMBLERS)
+
+
+def int2_source(intrs):
+    """amixdrv_int2: aenintr first (what int2_tbl called), then each chosen
+    driver's level-2 routine, each with p2int's argument (sp@(4)) passed on;
+    as amix-gate's amixdrv_int2.s.in."""
+    lines = ["# amixdrv_int2 -- written by the AMIX Installer: int2_tbl's aenintr entry",
+             "# calls it; aenintr first, then each chosen driver's level-2 routine",
+             "\t.text", "\t.globl\t%s" % INT2_STUB, "%s:" % INT2_STUB]
+    for r in ["aenintr"] + list(intrs):
+        lines += ["\tmovel\t%sp@(4),%sp@-", "\tjsr\t%s" % r, "\taddql\t&4,%sp"]
+    lines += ["\trts", "\t.align\t4", ""]
+    return "\n".join(lines)
 
 
 def stub_source(inits):
@@ -286,21 +362,42 @@ def _drivers(ids):
     return [DRIVERS[i] if isinstance(i, str) else i for i in ids]
 
 
+LINE_NAME = {"030": "stock 68030", "040": "68040/060 port"}
+
+
+def base_line(data):
+    """The kernel line of an AMIX kernel: 030 (stock), 040 (a port kernel:
+    it defines cputype)."""
+    return "040" if "cputype" in Elf(data).defined() else "030"
+
+
 def check_base(data, ids=("rtgfb",)):
-    """A stock 68030 kernel that can take these drivers; else KernelError."""
+    """An AMIX kernel whose line the drivers are built for, without them yet;
+    else KernelError."""
     elf = Elf(data)
     have = set(elf.defined())
-    if "cputype" in have:
-        raise KernelError("this is a 68040/68060 port kernel, not the stock 68030 one")
+    line = "040" if "cputype" in have else "030"
     drvs = _drivers(ids)
     for d in drvs:
-        if any(e in have for e in d.entries):
-            raise KernelError("this kernel already has /dev/%s" % d.node)
+        if line not in d.lines:
+            raise KernelError("this is the %s kernel; the %s driver is built for the %s kernel"
+                              % (LINE_NAME[line], d.card,
+                                 " and ".join(LINE_NAME[x] for x in d.lines)))
+        dup = [e for e in d.entries if e in have]
+        if dup:
+            raise KernelError("this kernel already has %s (/dev/%s)" % (", ".join(dup), d.node))
     if STUB in have:
         raise KernelError("this kernel already has %s: it was linked before" % STUB)
+    if INT2_STUB in have:
+        raise KernelError("this kernel already has %s: it was linked before" % INT2_STUB)
     missing = [s for s in BASE_NEEDS if s not in have]
     if missing:
         raise KernelError("not an AMIX kernel: no %s" % ", ".join(missing))
+    if [d for d in drvs if d.intr]:
+        for sym, sec in INT2_HOOK:
+            if elf.defined_in(sym) != [sec]:
+                raise KernelError("no %s in %s: the drivers' interrupt routines have nowhere "
+                                  "to go" % (sym, sec))
     if [d for d in drvs if d.init]:
         for sym, sec in BASE_HOOK:
             if elf.defined_in(sym) != [sec]:
@@ -313,9 +410,12 @@ def check_result(data, ids=("rtgfb",)):
     elf = Elf(data)
     defs = elf.defined()
     drvs = _drivers(ids)
-    need = [s for d in drvs for s in d.entries + ((d.init,) if d.init else ())]
+    need = [s for d in drvs for s in d.entries + ((d.init,) if d.init else ()) +
+            ((d.intr,) if d.intr else ())]
     if [d for d in drvs if d.init]:
         need.append(STUB)
+    if [d for d in drvs if d.intr]:
+        need.append(INT2_STUB)
     for s in need:
         if defs.count(s) != 1:
             raise KernelError("%s: %d definitions, not one" % (s, defs.count(s)))
@@ -332,34 +432,46 @@ def check_result(data, ids=("rtgfb",)):
 
 
 def relink(base, out, ids, kits=None, ld=None, log=None, asm=None):
-    """base: the bytes of the user's /stand/unix.  Links the drivers `ids`
-    into it and writes out (the new kernel).  kits: {id: kit dir} (found
-    when left out).  Returns the new kernel's sha256."""
+    """base: the bytes of an AMIX kernel (the user's /stand/unix).  Links
+    the drivers `ids` into it, each from its kit for the base's line, and
+    writes out (the new kernel).  kits: {id: kit dir} (found when left
+    out).  Returns the new kernel's sha256."""
     import hashlib
     log = log or (lambda t: None)
     kits = dict(kits or {})
+    line = base_line(base)
     drvs = []
     for d in _drivers(ids):
-        kits[d.id] = kits.get(d.id) or find_kit(d)
+        kits[d.id] = kits.get(d.id) or find_kit(d, line)
         if not kits[d.id]:
-            raise KernelError("the %s kit is not installed (package %s)" % (d.id, d.package))
+            raise KernelError("the %s kit for the %s kernel is not installed (package %s)"
+                              % (d.id, LINE_NAME[line], d.package))
         d = check_kit(kits[d.id], d)
-        if "030" not in d.lines:
-            raise KernelError("the %s driver is built for the %s kernel, not the stock 68030 one"
-                              % (d.card, "/".join(d.lines)))
+        if line not in d.lines:
+            raise KernelError("the %s kit in %s is built for the %s kernel, not the %s one"
+                              % (d.card, kits[d.id], " and ".join(LINE_NAME[x] for x in d.lines),
+                                 LINE_NAME[line]))
         drvs.append(d)
     order = sorted(drvs, key=lambda d: KIND_ORDER.index(d.kind) if d.kind in KIND_ORDER else 9)
     inits = [d.init for d in order if d.init]
+    intrs = [d.intr for d in order if d.intr]
     ld = ld or find_ld()
     if not ld:
         raise KernelError("no AMIX cross linker (%s)" % " or ".join(LINKERS))
-    if inits:
+    if inits or intrs:
         asm = asm or find_as()
         if not asm:
             raise KernelError("no AMIX cross assembler (%s)" % " or ".join(ASSEMBLERS))
+    if inits:
         io_patch = find_io_init_patch([kits[d.id] for d in drvs])
         if not io_patch:
             raise KernelError("no %s (package developer/amix/kernel-kit-tools)" % IO_INIT_PATCH)
+        check_tools(io_patch)
+    if intrs:
+        int2_patch = find_int2_patch([kits[d.id] for d in drvs])
+        if not int2_patch:
+            raise KernelError("no %s (package developer/amix/kernel-kit-tools)" % INT2_PATCH)
+        check_tools(int2_patch)
     check_base(base, drvs)
     log("base kernel sha256 %s" % hashlib.sha256(base).hexdigest())
     tmp = tempfile.mkdtemp(prefix="amix-kernel-")
@@ -386,13 +498,25 @@ def relink(base, out, ids, kits=None, ld=None, log=None, asm=None):
             log("%s: parinit, %s" % (STUB, ", ".join(inits)))
             run([asm, "-o", obj, src], "assembling %s" % STUB)
             objs.append(obj)
+        if intrs:
+            src, obj = os.path.join(tmp, INT2_STUB + ".s"), os.path.join(tmp, INT2_STUB + ".o")
+            with open(src, "w") as f:
+                f.write(int2_source(intrs))
+            log("%s: aenintr, %s" % (INT2_STUB, ", ".join(intrs)))
+            run([asm, "-o", obj, src], "assembling %s" % INT2_STUB)
+            objs.append(obj)
         run([ld, "-r", "-o", op, bp] + objs, "ld -r")
-        # each kit's own retargets (its cdevsw slot), in its KIT.sha256 order
+        # each kit's own retargets (its cdevsw slot), in its KIT.sha256 order;
+        # the shared hooks once each: the level-2 chain, then the boot chain
         for d in drvs:
             for n in listing[d.id]:
-                if n.startswith("patch_") and n.endswith(".py") and n != IO_INIT_PATCH:
+                if n.startswith("patch_") and n.endswith(".py") and \
+                        n not in (IO_INIT_PATCH, INT2_PATCH):
                     run([sys.executable, os.path.join(kits[d.id], n), op],
                         "%s (%s)" % (n, d.card))
+        if intrs:
+            run([sys.executable, int2_patch, op, INT2_STUB],
+                "the level-2 interrupt chain (%s)" % INT2_STUB)
         if inits:
             run([sys.executable, io_patch, op, STUB], "the io_init boot hook (%s)" % STUB)
         with open(op, "rb") as f:

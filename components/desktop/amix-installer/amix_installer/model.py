@@ -177,10 +177,11 @@ STEPS = [
              # Zorro II product 3 (AMIX has no Zorro III): /dev/zz9000, major 49
              O("zz9000", "ZZ9000", "MNT ZZ9000 RTG, 16-bit, tested at 1920\u00d7800; its driver "
                "is linked into your kernel", needs=(("a3000", "a2500"), ("stock",)), mb=2),
-             # the driver exists for the 68040/060 kernel line only, and X has no
-             # va2000 card driver yet: the console and OPEN LOOK until it has
-             O("va2000", "VA2000", "MNT VA2000 RTG on the 68040/060 kernel; X support "
-               "comes later", needs=(("a3000", "a2500"), ("k040",)), mb=1),
+             # Zorro II, /dev/va2000, major 68: a kit per kernel line (va2000,
+             # va2000-040); X has no va2000 card driver yet: the console and
+             # OPEN LOOK until it has
+             O("va2000", "VA2000", "MNT VA2000 RTG; its driver is linked into your kernel, "
+               "X support comes later", needs=(("a3000", "a2500"), ("stock", "k040")), mb=1),
              O("chipset", "Amiga chipset", "No graphics card: the console and OPEN LOOK")]),
           G("drv", "Hardware", options=[
              O("zen", "Z3660 Ethernet", "zen0 with interrupt-driven receive", needs=("z3660",), mb=1),

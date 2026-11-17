@@ -507,8 +507,11 @@ class DriverKernel(Action):
         why = None
         cards = " and ".join(d.card for d in drvs)
         if kern != "stock":
-            why = "%s: the installer links drivers into the stock 68030 kernel only; " \
-                  "the %s kernel line is not built here yet" % (cards, kern)
+            # the 040 kits exist (va2000-040), but the port kernel reaches the
+            # Amiga as a package: there is no 040 base kernel on this computer
+            why = "%s: the installer links drivers into your stock 68030 kernel only; " \
+                  "linking into the %s kernel needs that kernel on this computer, " \
+                  "which the installer does not have yet" % (cards, kern)
         elif [d for d in drvs if "030" not in d.lines]:
             d = [d for d in drvs if "030" not in d.lines][0]
             why = "the %s driver exists for the %s kernel only" % (d.card, "/".join(d.lines))
@@ -530,6 +533,14 @@ class DriverKernel(Action):
             elif not kernel.find_io_init_patch(list(kits.values())):
                 why = "%s is not installed (developer/amix/kernel-kit-tools)" \
                     % kernel.IO_INIT_PATCH
+        if not why and [k for k in kits.values() if (kernel.kit_info(k) or {}).get("intr")]:
+            # level-2 interrupt routines: the installer's chain, hooked once
+            if not kernel.find_as():
+                why = "the AMIX cross assembler %s is not installed (developer/amix/gcc-27)" \
+                    % kernel.ASSEMBLERS[0]
+            elif not kernel.find_int2_patch(list(kits.values())):
+                why = "%s is not installed (developer/amix/kernel-kit-tools)" \
+                    % kernel.INT2_PATCH
         self.name = kernel.kernel_name(ids)
         nodes = ", ".join("/dev/%s (major %d)" % (d.node, d.major) for d in drvs)
         super(DriverKernel, self).__init__(

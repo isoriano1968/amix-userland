@@ -336,12 +336,15 @@ class Cards(Base):
         # FS-UAE has neither card; the ZZ9000 kit is for the stock kernel line
         self.assertNotEqual(self.cfg(mach="uae", gfx="zz9000").sel["gfx"], "zz9000")
         self.assertNotEqual(self.cfg(mach="uae", net="nethydra").sel["net"], "nethydra")
-        # the VA2000 driver exists for the 040/060 kernel only, and X has no
-        # va2000 driver yet: no X desktop with it
+        # the VA2000 has a kit for both kernel lines, and X has no va2000
+        # driver yet: no X desktop with it
         v = self.cfg(accel="mercury", kern="k040", gfx="va2000", desk="cde")
         self.assertEqual(v.sel["gfx"], "va2000")
         self.assertNotIn(v.sel["desk"], ("cde", "mwm"))
-        self.assertNotEqual(self.cfg(gfx="va2000").sel["gfx"], "va2000")
+        self.assertEqual(self.cfg(gfx="va2000").sel["gfx"], "va2000")
+        z = self.cfg(accel="z3660", kern="z3opt", gfx="va2000")
+        self.assertEqual(z.sel["kern"], "z3opt")
+        self.assertNotEqual(z.sel["gfx"], "va2000")
 
     def test_kernel_drivers(self):
         self.assertEqual(plan.kernel_drivers({"gfx": "zz9000", "net": "nethydra"}),
