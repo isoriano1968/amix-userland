@@ -442,9 +442,11 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
              "REBOOT=",
              "LOG=/tmp/amix-install.log; : > $LOG",
              "# the reports go through the bootstrap's pkg, then the installed one",
-             "RPKG=$B/bin/pkg",
-             "report() { echo \"$*\"; echo \"$*\" | $RPKG http put \"$W/report/msg\" >/dev/null; }",
-             "fail() { report \"FAILED: $*\"; tail -20 $LOG | $RPKG http put \"$W/report/log\" >/dev/null; exit 1; }",
+             "# with the library path each needs: the bootstrap's own lib/, so that a",
+             "# FAILED still reaches the installer after LD_LIBRARY_PATH is cleared",
+             "RPKG=$B/bin/pkg; RLD=$B/lib",
+             "report() { echo \"$*\"; echo \"$*\" | LD_LIBRARY_PATH=$RLD $RPKG http put \"$W/report/msg\" >/dev/null; }",
+             "fail() { report \"FAILED: $*\"; tail -20 $LOG | LD_LIBRARY_PATH=$RLD $RPKG http put \"$W/report/log\" >/dev/null; exit 1; }",
              "step() { n=$1; shift; report \"step $n: $*\"; }",
              "",
              "step 1 \"the system: `uname -a`\"",
@@ -461,7 +463,7 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
               "PKG=/usr/bin/pkg",
               "LD_LIBRARY_PATH=; export LD_LIBRARY_PATH",
               "$PKG refresh >>$LOG 2>&1 || fail 'the installed client'",
-              "RPKG=$PKG",
+              "RPKG=$PKG; RLD=",
               "report 'foundation sysutils/amix-pkg installed'"]
     if data_disk:
         slice_, sectors = data_disk[:2]

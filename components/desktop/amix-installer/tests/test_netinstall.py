@@ -130,6 +130,13 @@ class Scripts(unittest.TestCase):
         self.assertLess(t.index("unboot() {"), t.index("|| unboot"))
         # reports outlive the bootstrap: the installed pkg from step 3 on
         self.assertLess(t.index("RPKG=$PKG"), t.index("step 4"))
+        # a FAILED from the installed client still gets out: the bootstrap's pkg
+        # reports with its own lib/ while LD_LIBRARY_PATH is cleared (2026-11-17)
+        self.assertIn("RPKG=$B/bin/pkg; RLD=$B/lib", t)
+        self.assertIn("echo \"$*\" | LD_LIBRARY_PATH=$RLD $RPKG http put", t)
+        self.assertIn("tail -20 $LOG | LD_LIBRARY_PATH=$RLD $RPKG http put", t)
+        self.assertLess(t.index("LD_LIBRARY_PATH=; export"), t.index("RPKG=$PKG; RLD="))
+        self.assertLess(t.index("fail 'the installed client'"), t.index("RPKG=$PKG; RLD="))
         self.assertNotIn("the data disk", netinstall.steps_script(cfg, "10.0.2.2"))
 
     def test_unboot(self):
