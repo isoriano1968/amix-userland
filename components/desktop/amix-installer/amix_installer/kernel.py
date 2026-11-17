@@ -57,9 +57,13 @@ class Driver(object):
     KIT.info overrides these facts."""
 
     def __init__(self, id, card, kind, node, major, entries=(), lines=("030",), init=None,
-                 streams=False, intr=None, gate=None):
+                 streams=False, intr=None, gate=None, bmajor=None, cmajor=None):
         self.id, self.card, self.kind = id, card, kind
         self.node, self.major = node, major          # /dev/<node>, character major
+        # a storage driver (kind "storage") adds a controller to AMIX's own
+        # dd/sd driver: its disks are /dev/dsk and /dev/rdsk (block bmajor,
+        # character cmajor), there is no node of its own to make
+        self.bmajor, self.cmajor = bmajor, cmajor
         self.entries = tuple(entries)                # defined exactly once after the link
         self.lines = tuple(lines)                    # kernel lines the kit is built for
         self.init = init                             # its boot routine, called by the stub
@@ -73,7 +77,7 @@ class Driver(object):
         """This driver with a kit's KIT.info facts (info: dict, or None:
         a kit before KIT.info, linked without a boot routine)."""
         d = Driver(self.id, self.card, self.kind, self.node, self.major, self.entries,
-                   self.lines, None, self.streams, None, self.gate)
+                   self.lines, None, self.streams, None, self.gate, self.bmajor, self.cmajor)
         if info:
             if info.get("id", d.id) != d.id:
                 raise KernelError("the %s kit says it is %s" % (d.id, info["id"]))
@@ -85,6 +89,9 @@ class Driver(object):
                 d.lines = tuple(info["line"].replace("|", " ").split())
             d.init = info.get("init") or None
             d.intr = info.get("intr") or None
+            for k in ("bmajor", "cmajor"):
+                if info.get(k):
+                    setattr(d, k, int(info[k]))
             if "entries" in info:
                 d.entries = tuple(info["entries"].split())
             d.streams = info.get("streams") == "yes"
@@ -116,9 +123,22 @@ DRIVERS = {
     "z3660eth": Driver("z3660eth", "Z3660 Ethernet", "network", "zen0", 51,
                        ("z3660ethinfo", "z3660eth_kvmap", "z3660eth_kvunmap"), lines=("040",),
                        streams=True, gate="z3660net"),
+    # the Z3660's SD card as a second controller of AMIX's dd/sd (b18/c40):
+    # for the 68040/060 port kernel (the Z3660 kernel line has it built in);
+    # kit patch_z3660scsi_card.py widens sd.c's controller table
+    "z3660scsi": Driver("z3660scsi", "Z3660 SD card", "storage", None, None,
+                        ("z3660queue", "z3660_scsicard", "z3660scsi_kvmap",
+                         "z3660scsi_kvunmap"), lines=("040",), bmajor=18, cmajor=40),
 }
 # the stub calls graphics before network
-KIND_ORDER = ("graphics", "network")
+KIND_ORDER = ("storage", "graphics", "network")
+
+
+def describe(d):
+    """What a driver gives AMIX, for plans and logs."""
+    if d.kind == "storage":
+        return "%s (a controller of AMIX's dd/sd, b%s/c%s)" % (d.card, d.bmajor, d.cmajor)
+    return "/dev/%s (major %d)" % (d.node, d.major)
 
 
 def kernel_name(ids):

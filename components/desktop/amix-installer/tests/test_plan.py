@@ -435,6 +435,48 @@ class Cards(Base):
         self.assertEqual(z.sel["kern"], "z3opt")
         self.assertNotEqual(z.sel["gfx"], "va2000")
 
+    def test_scsi_controllers_and_devices(self):
+        a3 = {"mach": "a3000", "accel": "z3660", "target": "sd"}
+        self.assertEqual(plan.scsi_controllers(a3), ["the A3000's own SCSI",
+                                                     "the Z3660's SD card"])
+        # the Z3660 is controller 1: unit u is c(8+u)
+        self.assertEqual(plan.disk_device(a3, "core", 1), "/dev/rdsk/c14d0s1")
+        self.assertEqual(plan.disk_device(a3, "data", 1, raw=False), "/dev/dsk/c9d0s1")
+        # in FS-UAE every disk is on the emulated A3000 SCSI
+        self.assertEqual(plan.disk_device(a3, "data", 1, fs_uae=True), "/dev/rdsk/c1d0s1")
+        # a ZuluSCSI on the Amiga's own bus, or HDF files: controller 0
+        for t in ("card", "file"):
+            self.assertEqual(plan.disk_device(dict(a3, target=t), "core", 1),
+                             "/dev/rdsk/c6d0s1")
+        self.assertEqual(plan.scsi_controllers({"mach": "a2500", "accel": "gvp"}),
+                         ["the A2091", "the GVP card's SCSI"])
+
+    def test_amiga_4000(self):
+        """no stock kernel, no ZuluSCSI; the Z3660 is controller 0"""
+        c = model.Config(sel={"mach": "a4000", "accel": "z3660", "kern": "stock", "target": "card",
+                              "net": "nethydra"})
+        self.assertEqual(c.sel["mach"], "a4000")
+        self.assertNotEqual(c.sel["kern"], "stock")
+        self.assertNotEqual(c.sel["target"], "card")
+        self.assertNotEqual(c.sel["net"], "nethydra")            # its kit is 68030 only
+        self.assertTrue(c.available(model.find_group("net").option("netxsurf")))
+        a = model.Config(sel={"mach": "a4000", "accel": "a3640", "kern": "k040"})
+        self.assertEqual((a.sel["accel"], a.sel["kern"]), ("a3640", "k040"))
+        self.assertEqual(a.sel["net"], "net2065")
+        sd = {"mach": "a4000", "accel": "z3660", "target": "sd"}
+        self.assertEqual(plan.scsi_controllers(sd), ["the Z3660's SD card"])
+        self.assertEqual(plan.disk_device(sd, "core", 1), "/dev/rdsk/c6d0s1")   # stock rootdev
+        self.assertEqual(plan.disk_device(sd, "data", 1), "/dev/rdsk/c1d0s1")
+
+    def test_third_controller_refused(self):
+        old = plan.scsi_controllers
+        plan.scsi_controllers = lambda sel: ["a", "b", "c"]
+        try:
+            pl = plan.make_plan(self.cfg(), self.paths())
+        finally:
+            plan.scsi_controllers = old
+        self.assertTrue(any("takes 2 controllers, this machine has 3" in p for p in pl.problems))
+
     def test_kernel_drivers(self):
         self.assertEqual(plan.kernel_drivers({"gfx": "zz9000", "net": "nethydra"}),
                          ["zz9000", "hydra"])

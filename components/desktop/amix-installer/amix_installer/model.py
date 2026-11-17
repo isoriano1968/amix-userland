@@ -116,11 +116,18 @@ STEPS = [
          [G("mach", "Amiga", radio=True, options=[
              O("a3000", "Amiga 3000", "AMIX’s own machine, onboard 68030"),
              O("a2500", "Amiga 2500 / 2000", "Zorro II with a CPU card in the CPU slot"),
+             # Commodore's AMIX knows the A3000's SCSI and the A2091 only: on an
+             # A4000 (IDE, which AMIX does not drive; 68EC030 without MMU on the
+             # A4000/030) it runs with our 68040/060 kernels, disks on a Z3660
+             O("a4000", "Amiga 4000", "With a 68040 or 68060 card; AMIX does not use its IDE: "
+               "the disks go on the Z3660’s SD card"),
              O("uae", "FS-UAE emulator", "A3000 configuration with A2065 network")]),
           G("accel", "CPU card", radio=True, options=[
               O("none", "None (bare metal)", "Onboard 68030 and its memory", needs=("a3000", "uae")),
               O("z3660", "Z3660", "68060 plus ARM: RTG, Ethernet, SD card, up to 528 MB",
-                needs=("a3000",), badge="fastest"),
+                needs=("a3000", "a4000"), badge="fastest"),
+              O("a3640", "A3640", "Commodore’s 68040 card of the A4000/040",
+                needs=("a4000",)),
               O("mercury", "Mercury", "68060 in the A3000 CPU slot", needs=("a3000",)),
               O("gvp", "GVP G-Force", "68030 or 68040 cards with their own SCSI",
                 needs=("a3000", "a2500")),
@@ -131,7 +138,7 @@ STEPS = [
                 needs=("a2630",))]),
           G("net", "Network for the install", radio=True, options=[
               O("net2065", "A2065", "Commodore’s Ethernet card: the only network a stock "
-                "AMIX has", needs=("none", "gvp", "a2630", "a2620", "mercury", "uae")),
+                "AMIX has", needs=("none", "gvp", "a2630", "a2620", "mercury", "a3640", "uae")),
               O("netzen", "Z3660 Ethernet",
                 "Only once a kernel from this installer runs", needs=("z3660",)),
               # Zorro II, DP8390: the hydra driver is linked into the kernel here;
@@ -142,11 +149,11 @@ STEPS = [
               # AX88796B, /dev/xsf0, major 56: kits for both kernel lines
               O("netxsurf", "X-Surf 100",
                 "Individual Computers X-Surf 100. Only once a kernel from this installer "
-                "runs: its driver is linked into your kernel", needs=("a3000", "a2500")),
+                "runs: its driver is linked into your kernel", needs=("a3000", "a2500", "a4000")),
               # the ZZ9000's own port, /dev/zz0, major 52: with the ZZ9000 card
               O("netzz9000", "ZZ9000 Ethernet",
                 "The MNT ZZ9000's Ethernet port. Only once a kernel from this installer "
-                "runs: its driver is linked into your kernel", needs=(("a3000", "a2500"),
+                "runs: its driver is linked into your kernel", needs=(("a3000", "a2500", "a4000"),
                                                                      ("card:zz9000",))),
               O("nonet", "None", "Install from HDF files prepared in FS-UAE")]),
           # further network cards: driver and device node only, no address
@@ -154,10 +161,10 @@ STEPS = [
               O("more_hydra", "HydraNet", "Its driver and /dev/hya0; set its address on AMIX",
                 needs=("a3000", "a2500"), twin=("net", "nethydra")),
               O("more_xsurf", "X-Surf 100", "Its driver and /dev/xsf0; set its address on AMIX",
-                needs=("a3000", "a2500"), twin=("net", "netxsurf")),
+                needs=("a3000", "a2500", "a4000"), twin=("net", "netxsurf")),
               O("more_zz9000eth", "ZZ9000 Ethernet",
                 "Its driver and /dev/zz0; set its address on AMIX",
-                needs=(("a3000", "a2500"), ("card:zz9000",)), twin=("net", "netzz9000"))]),
+                needs=(("a3000", "a2500", "a4000"), ("card:zz9000",)), twin=("net", "netzz9000"))]),
           G("keymap", "Keyboard", radio=True, options=[
               O("us", "US", "Amiga keyboard with the US layout"),
               O("de", "German", "Amiga keyboard with the German layout"),
@@ -184,8 +191,9 @@ STEPS = [
              O("z3opt", "Z3660 optimised", "68060, large memory, no drivers for absent hardware",
                needs=("z3660",), badge="fastest"),
              O("k040", "68040/060 port", "For 68040 and 68060 cards",
-               needs=("z3660", "mercury", "gvp", "uae")),
-             O("stock", "Stock AMIX 2.1c", "Commodore’s 68030 kernel, unchanged")]),
+               needs=("z3660", "mercury", "gvp", "a3640", "uae")),
+             O("stock", "Stock AMIX 2.1c", "Commodore’s 68030 kernel, unchanged",
+               needs=("a3000", "a2500", "uae"))]),
           G("boot", "Boot", radio=True, options=[
               O("pvmk", "pvmk boot partition",
                 "Boot menu and serial console; loads the kernel from UNIX_Root",
@@ -215,7 +223,7 @@ STEPS = [
              # va2000-040); X has no va2000 card driver yet: the console and
              # OPEN LOOK until it has
              O("va2000", "VA2000", "MNT VA2000 RTG; its driver is linked into your kernel, "
-               "X support comes later", needs=(("a3000", "a2500"), ("stock", "k040")), mb=1),
+               "X support comes later", needs=(("a3000", "a2500", "a4000"), ("stock", "k040")), mb=1),
              O("chipset", "Amiga chipset", "No graphics card: the console and OPEN LOOK")]),
           # further graphics cards: driver and device node; X and the console stay
           # on the main display until X spans several cards
@@ -225,7 +233,7 @@ STEPS = [
              O("more_zz9000", "ZZ9000", "Its driver and /dev/zz9000, beside the main display",
                needs=(("a3000", "a2500"), ("stock",)), twin=("gfx", "zz9000")),
              O("more_va2000", "VA2000", "Its driver and /dev/va2000, beside the main display",
-               needs=(("a3000", "a2500"), ("stock", "k040")), twin=("gfx", "va2000"))]),
+               needs=(("a3000", "a2500", "a4000"), ("stock", "k040")), twin=("gfx", "va2000"))]),
           G("drv", "Hardware", options=[
              O("zen", "Z3660 Ethernet", "zen0 with interrupt-driven receive", needs=("z3660",), mb=1),
              O("paula", "Paula audio", "/dev/paula for players and games", mb=1),

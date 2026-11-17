@@ -221,6 +221,20 @@ class Plans(Base):
         with open(p) as f:
             self.assertEqual(f.read(), new)
 
+    def test_z3660_card_needs_autoconfig(self):
+        os.mkdir(os.path.join(self.out, "hdf"))
+        cfgtext = Z3660_CFG.replace("scsi1 1\n", "")
+        with open(os.path.join(self.out, "z3660cfg.txt"), "w") as f:
+            f.write(cfgtext)
+        hdfdir = dict(self.paths(), out_dir=os.path.join(self.out, "hdf"))
+        # Commodore's boot, autoconfig_rtg NO: AMIX would not find the SD card
+        pl = plan.make_plan(self.cfg(target="sd", boot="amixboot", kern="k040"), hdfdir)
+        self.assertTrue(any("autoconfig_rtg YES" in p for p in pl.problems), pl.problems)
+        with open(os.path.join(self.out, "z3660cfg.txt"), "w") as f:
+            f.write(cfgtext.replace("autoconfig_rtg NO", "autoconfig_rtg YES"))
+        pl = plan.make_plan(self.cfg(target="sd", boot="amixboot", kern="k040"), hdfdir)
+        self.assertFalse(any("autoconfig_rtg" in p for p in pl.problems), pl.problems)
+
     def test_z3660_card(self):
         os.mkdir(os.path.join(self.out, "hdf"))
         with open(os.path.join(self.out, "z3660cfg.txt"), "w") as f:

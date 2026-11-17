@@ -234,6 +234,7 @@ class Z3660Card(object):
         self.slots = {}              # N -> path of hdf<N> or iso<N>
         self.units = {}              # SCSI unit -> slot
         self.scsiboot = None         # True, False or None (not in the file)
+        self.settings = {}           # every other key: its first value
         self.problems = []
 
     def used(self):
@@ -297,6 +298,8 @@ def read_z3660(folder):
             continue
         if w[0] == "scsiboot":
             c.scsiboot = w[1].upper() == "YES"
+            continue
+        c.settings[w[0]] = w[1]
     return c
 
 

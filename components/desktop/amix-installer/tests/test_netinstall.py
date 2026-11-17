@@ -301,6 +301,35 @@ class Picasso(unittest.TestCase):
         self.assertNotIn("ifconfig zz0", t)
         self.assertIn("echo zz9000 > /etc/X11/amix-card", t)
 
+    def test_data_disk_vfstab_on_the_machine(self):
+        """mkfs in FS-UAE on c1d0s1; the machine's vfstab names c9d0s1 when
+        the disks are on the Z3660's SD card"""
+        c = model.Config(sel={"mach": "a3000", "accel": "z3660", "target": "sd"})
+        t = netinstall.steps_script(c, "10.0.2.2",
+                                    data_disk=("/dev/rdsk/c1d0s1", 4000000, "/dev/rdsk/c9d0s1"))
+        Scripts.sh_ok(self, t)
+        self.assertIn("D=/dev/rdsk/c1d0s1", t)
+        self.assertIn("V=/dev/rdsk/c9d0s1", t)
+        self.assertIn('echo \"`echo $V | /usr/bin/sed s/rdsk/dsk/` $V /amixdata', t)
+        # the old two-part form: the machine is FS-UAE's
+        t2 = netinstall.steps_script(c, "10.0.2.2", data_disk=("/dev/rdsk/c1d0s1", 4000000))
+        self.assertIn("V=/dev/rdsk/c1d0s1", t2)
+
+    def test_storage_driver_no_mknod(self):
+        """a storage driver gets no device node, a network one beside it does"""
+        from amix_installer import plan
+        old = plan.kernel_drivers
+        plan.kernel_drivers = lambda cfg: ["z3660scsi", "xsurf100"]
+        try:
+            t = "\n".join(netinstall.kernel_lines(
+                model.Config(sel={"net": "netxsurf"}), (1490000, 777)))
+        finally:
+            plan.kernel_drivers = old
+        self.assertIn("Z3660 SD card (a controller of AMIX's dd/sd, b18/c40)", t)
+        self.assertIn("/usr/sbin/mknod /dev/xsf0 c 56 0", t)
+        self.assertEqual([ln for ln in t.splitlines() if "/usr/sbin/mknod" in ln],
+                         ["[ -c /dev/xsf0 ] || /usr/sbin/mknod /dev/xsf0 c 56 0 || fail 'mknod /dev/xsf0'"])
+
     def test_sysv_sum(self):
         data = os.urandom(70000)
         with tempfile.NamedTemporaryFile(delete=False) as f:

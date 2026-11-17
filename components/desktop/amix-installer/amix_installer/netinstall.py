@@ -203,8 +203,10 @@ def packages_for(cfg):
 
 
 def fs_uae_data_disk(pl):
-    """(raw slice, sectors) of the data disk a plan wrote, as AMIX sees it in
-    FS-UAE (SCSI ID 1, first partition = slice 1), or None without one.
+    """(raw slice, sectors, raw slice on the machine) of the data disk a plan
+    wrote: AMIX makes its file system in FS-UAE (SCSI ID 1, first partition =
+    slice 1, on the emulated A3000 SCSI), and the machine's /etc/vfstab names
+    it where the machine has it (c9d0s1 on the Z3660's SD card), or None.
     Raises OSError or hdf.NotAnImage when the disk cannot be read."""
     from . import hdf, plan
     dd = [a for a in pl.actions if a.id == "data-disk"]
@@ -212,7 +214,8 @@ def fs_uae_data_disk(pl):
         return None
     with hdf.Image(os.path.join(pl.paths["out_dir"], dd[0].name)) as im:
         blocks = im.read_rdb()[0].blocks
-    return ("/dev/rdsk/c%dd0s1" % plan.SCSI_ID["data"], blocks)
+    return (plan.disk_device(pl.cfg.sel, "data", 1, fs_uae=True), blocks,
+            plan.disk_device(pl.cfg.sel, "data", 1))
 
 
 def hdf_movable():
@@ -459,14 +462,18 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
               "RPKG=$PKG",
               "report 'foundation sysutils/amix-pkg installed'"]
     if data_disk:
-        slice_, sectors = data_disk
+        slice_, sectors = data_disk[:2]
+        # where the machine finds it: its /etc/vfstab line (the same in FS-UAE
+        # unless the disks go on the Z3660's SD card)
+        on_machine = data_disk[2] if len(data_disk) > 2 else slice_
         lines += ["",
                   "step 4 \"the data disk on %s (%d sectors)\"" % (slice_, sectors),
                   "D=%s" % slice_,
+                  "V=%s" % on_machine,
                   "if /usr/sbin/mount | /usr/bin/grep /amixdata >/dev/null; then report 'data disk mounted already'; else",
                   "  /usr/sbin/mkfs -F ufs $D %d >>$LOG 2>&1 || fail mkfs" % sectors,
                   "  { [ -d /amixdata ] || /usr/bin/mkdir -p /amixdata; } && /usr/sbin/mount -F ufs `echo $D | /usr/bin/sed s/rdsk/dsk/` /amixdata >>$LOG 2>&1 || fail mount",
-                  "  echo \"`echo $D | /usr/bin/sed s/rdsk/dsk/` $D /amixdata ufs 2 yes -\" >> /etc/vfstab",
+                  "  echo \"`echo $V | /usr/bin/sed s/rdsk/dsk/` $V /amixdata ufs 2 yes -\" >> /etc/vfstab",
                   "fi",
                   "for d in %s; do" % " ".join(d.lstrip("/") for d in hdf_movable()),
                   "  [ ! -h /$d ] || continue",
@@ -528,7 +535,7 @@ def kernel_lines(cfg, kernel_file):
         return ["", "report 'no kernel with the %s driver was made: the card stays unused'"
                 % cards]
     size, ksum = kernel_file
-    nodes = ", ".join("/dev/%s (major %d)" % (d.node, d.major) for d in drvs)
+    nodes = ", ".join(kmod.describe(d) for d in drvs)
     lines = ["",
              "step 7 \"the kernel with %s\"" % nodes,
              "$PKG http get $W/kernel /stand/unix.new >>$LOG 2>&1 || fail 'fetching the kernel'",
@@ -541,6 +548,8 @@ def kernel_lines(cfg, kernel_file):
              "fail 'keeping the stock kernel'",
              "/usr/bin/mv /stand/unix.new /stand/unix || fail 'installing the kernel'"]
     for d in drvs:
+        if d.kind == "storage" or not d.node:
+            continue                 # disks of AMIX's dd/sd: /dev/dsk, /dev/rdsk exist
         lines += ["[ -c /dev/%s ] || /usr/sbin/mknod /dev/%s c %d 0 || fail 'mknod /dev/%s'"
                   % (d.node, d.node, d.major, d.node),
                   "/usr/bin/chmod %s /dev/%s" % ("666" if d.kind == "graphics" else "600", d.node)]

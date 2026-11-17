@@ -437,6 +437,13 @@ def card_setup(cfg, out, names):
             return out, [], None
         img = os.path.join(z.root, scsicard.Z3660_HDF_DIR)
         problems = scsicard.z3660_conflicts(z, ids, names)
+        # AMIX finds the SD card only with the Z3660 in the AutoConfig list:
+        # pvmk puts it there (z3reloc), else the firmware must (autoconfig_rtg)
+        if sel.get("boot") != "pvmk" and \
+                z.settings.get("autoconfig_rtg", "").upper() != "YES":
+            problems.append("with Commodore's boot AMIX does not find the Z3660's SD card: "
+                            "choose the pvmk boot (it relocates the Z3660, z3reloc) or set "
+                            "autoconfig_rtg YES in z3660cfg.txt")
         if not os.path.isdir(img):
             problems.append("the Z3660 card has no %s folder" % scsicard.Z3660_HDF_DIR)
         if problems:
@@ -541,6 +548,41 @@ class NetInstall(Action):
 # SCSI IDs, the same in FS-UAE and on a ZuluSCSI/BlueSCSI: the stock kernel
 # roots on ID 6; pvmk's boot disk 5; the data disk 1 (the host adapter is 7)
 SCSI_ID = {"core": 6, "pvmk": 5, "data": 1}
+# AMIX's dd/sd takes this many SCSI controllers (sd.c SDCARDS); a disk is
+# c<x>d0s<n> with x = (controller << 3) | unit, controllers in probe order
+SDCARDS = 2
+
+
+def scsi_controllers(sel):
+    """The SCSI controllers AMIX's dd/sd finds on the machine, in its probe
+    order: the Amiga's own (or FS-UAE's), a CPU card's, the Z3660's SD card."""
+    if sel.get("mach") == "uae":
+        return ["FS-UAE's A3000 SCSI"]
+    # the A4000's IDE is no controller of dd/sd: its first one may be the Z3660's
+    out = [] if sel.get("mach") == "a4000" else \
+        [{"a3000": "the A3000's own SCSI", "a2500": "the A2091"}.get(sel.get("mach"),
+                                                                     "the Amiga's SCSI")]
+    if sel.get("accel") == "gvp":
+        out.append("the GVP card's SCSI")
+    if sel.get("accel") == "z3660":
+        out.append("the Z3660's SD card")
+    return out
+
+
+def disk_controller(sel):
+    """The controller the AMIX disks are on: the Z3660's for its SD card,
+    else the Amiga's own (a ZuluSCSI/BlueSCSI is on that bus too)."""
+    ctl = scsi_controllers(sel)
+    if sel.get("target") == "sd" and "the Z3660's SD card" in ctl:
+        return ctl.index("the Z3660's SD card")
+    return 0
+
+
+def disk_device(sel, role, slice_, raw=True, fs_uae=False):
+    """/dev/rdsk/c<x>d0s<n> (or /dev/dsk) of an AMIX disk: on the machine,
+    or in FS-UAE, where every disk is on the emulated A3000 SCSI."""
+    card = 0 if fs_uae else disk_controller(sel)
+    return "/dev/%s/c%dd0s%d" % ("rdsk" if raw else "dsk", (card << 3) | SCSI_ID[role], slice_)
 FSUAE_CONFIG = "amix-install.fs-uae"
 # the installer's graphics card -> FS-UAE's graphics_card
 FSUAE_CARD = {"picasso2": "picasso-ii"}
@@ -649,7 +691,7 @@ class DriverKernel(Action):
                 why = "%s is not installed (developer/amix/kernel-kit-tools)" \
                     % kernel.INT2_PATCH
         self.name = kernel.kernel_name(ids)
-        nodes = ", ".join("/dev/%s (major %d)" % (d.node, d.major) for d in drvs)
+        nodes = ", ".join(kernel.describe(d) for d in drvs)
         super(DriverKernel, self).__init__(
             "kernel", "Link the %s driver%s into your kernel" % (cards, "s" if len(drvs) > 1 else ""),
             "%s: your /stand/unix plus %s; the stock kernel stays as /stand/unix.stock"
@@ -830,6 +872,12 @@ def make_plan(cfg, paths, fs=None, written=False):
         names.pop("data")
     if sel["boot"] != "pvmk":
         names.pop("pvmk")
+    # AMIX's dd/sd takes SDCARDS controllers; one more is dropped at boot
+    ctl = scsi_controllers(sel)
+    if len(ctl) > SDCARDS:
+        pl.problems.append("AMIX's SCSI driver takes %d controllers, this machine has %d (%s): "
+                           "the last one is dropped at boot" % (SDCARDS, len(ctl),
+                                                               ", ".join(ctl)))
     # an SD card: its configuration read, the images go where the card looks
     out, card_problems, card_cfg = card_setup(cfg, out, names)
     pl.paths["out_dir"] = out

@@ -127,6 +127,21 @@ class Checks(unittest.TestCase):
         with self.assertRaisesRegex(kernel.KernelError, kernel.INT2_STUB):
             kernel.check_result(elf(text_syms=("hydrainfo", "hydraintr")), [h])
 
+    def test_storage_kind(self):
+        """z3660scsi: a controller of AMIX's dd/sd, no node of its own"""
+        d = kernel.DRIVERS["z3660scsi"].with_info(
+            {"id": "z3660scsi", "major": "", "bmajor": "18", "cmajor": "40", "line": "040",
+             "init": "", "intr": "",
+             "entries": "z3660queue z3660_scsicard z3660scsi_kvmap z3660scsi_kvunmap"})
+        self.assertEqual((d.kind, d.node, d.major, d.bmajor, d.cmajor, d.init, d.intr),
+                         ("storage", None, None, 18, 40, None, None))
+        self.assertIn("dd/sd, b18/c40", kernel.describe(d))
+        self.assertEqual(kernel.KIND_ORDER[0], "storage")
+        # a Z3660 line kernel has it built in: refused, like any entry it has
+        t = [s for s in BASE if s not in ("cdevsw", "io_init")] + ["cputype", "z3660queue"]
+        with self.assertRaisesRegex(kernel.KernelError, "already has z3660queue"):
+            kernel.check_base(base_kernel(text=t), [d])
+
     def test_stub(self):
         s = kernel.stub_source(["rtgfbinit", "hydrainit"])
         self.assertLess(s.index("jsr\tparinit"), s.index("jsr\trtgfbinit"))
