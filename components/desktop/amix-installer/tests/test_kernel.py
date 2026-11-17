@@ -105,6 +105,7 @@ class Checks(unittest.TestCase):
         self.assertLess(s.index("jsr\tparinit"), s.index("jsr\trtgfbinit"))
         self.assertLess(s.index("jsr\trtgfbinit"), s.index("jsr\thydrainit"))
         self.assertIn(".globl\t%s" % kernel.STUB, s)
+        self.assertLess(s.index("rts"), s.index(".align\t4"))
 
 
 class Relink(unittest.TestCase):

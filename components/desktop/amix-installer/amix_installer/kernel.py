@@ -222,7 +222,9 @@ def stub_source(inits):
              "# instead of parinit; parinit first, then each chosen driver's init",
              "\t.text", "\t.globl\t%s" % STUB, "%s:" % STUB, "\tjsr\tparinit"]
     lines += ["\tjsr\t%s" % i for i in inits]
-    lines += ["\trts", ""]
+    # .text stays a multiple of 4 bytes, so the kernel's .data follows it
+    # directly (one init: 14 bytes without the pad)
+    lines += ["\trts", "\t.align\t4", ""]
     return "\n".join(lines)
 
 
