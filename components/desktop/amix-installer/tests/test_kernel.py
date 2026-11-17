@@ -150,6 +150,50 @@ class Checks(unittest.TestCase):
         self.assertLess(s.index("rts"), s.index(".align\t4"))
 
 
+class ElfTools(unittest.TestCase):
+    """amix-kernel-040 before amix-gate 6a47917 needs m68k-linux-gnu; m68k-elf
+    alone is refused with a reason before anything runs."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = self.tmp.name
+        self.bin = os.path.join(self.d, "bin")
+        os.mkdir(self.bin)
+        self.kit = os.path.join(self.d, "kit")
+        os.mkdir(self.kit)
+        self._dirs = kernel.ELF_DIRS
+        kernel.ELF_DIRS = (self.bin,)
+
+    def tearDown(self):
+        kernel.ELF_DIRS = self._dirs
+        self.tmp.cleanup()
+
+    def tools(self, prefix):
+        for t in ("as", "gcc", "nm"):
+            p = os.path.join(self.bin, prefix + t)
+            with open(p, "w") as f:
+                f.write("#!/bin/sh\n")
+            os.chmod(p, 0o755)
+
+    def tool(self, text):
+        with open(os.path.join(self.kit, kernel.K040_TOOL), "w") as f:
+            f.write(text)
+
+    def test_old_kit_needs_linux_gnu(self):
+        self.tool("#!/bin/sh\nfor p in m68k-linux-gnu m68k-elf; do :; done\n")
+        self.tools("m68k-elf-")
+        self.assertIsNone(kernel.find_elf_tools(self.kit))
+        self.assertIn("0.3 rev 1", kernel.elf_tools_missing(self.kit))
+        self.tools("m68k-linux-gnu-")
+        self.assertEqual(kernel.find_elf_tools(self.kit), self.bin)
+
+    def test_rev1_takes_elf(self):
+        self.tool("#!/bin/sh\n. \"$HERE/m68k-gas.sh\"\n")
+        self.assertIn("developer/amix/gcc-14", kernel.elf_tools_missing(self.kit))
+        self.tools("m68k-elf-")
+        self.assertEqual(kernel.find_elf_tools(self.kit), self.bin)
+
+
 class Relink(unittest.TestCase):
     """The order of the steps, with a stand-in as, ld and kit scripts that log."""
 

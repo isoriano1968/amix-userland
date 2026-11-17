@@ -10,7 +10,7 @@
 #                     never opens a window on a real display
 #   make run          start it from the source tree (on your own display)
 COMPONENT_NAME    = amix-installer
-COMPONENT_VERSION = 0.5.2
+COMPONENT_VERSION = 0.5.3
 
 include ../../../make-rules/shared.mk
 

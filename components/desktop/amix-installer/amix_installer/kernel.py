@@ -636,13 +636,39 @@ def find_syssrc(kit):
     return None
 
 
-def find_elf_tools():
-    """A folder with m68k ELF binutils + gcc (m68k-linux-gnu-*, else m68k-elf-*)."""
-    for prefix in ("m68k-linux-gnu-", "m68k-elf-"):
+def k040_takes_elf(kit):
+    """Whether the kit's amix-kernel-040 makes its kernel with m68k-elf
+    binutils too (tools/m68k-gas.sh, amix-gate 6a47917, kernel-kit-tools 0.3
+    rev 1); before it, m68k-elf gas fails the FPSP size check."""
+    try:
+        with open(os.path.join(kit, K040_TOOL)) as f:
+            return "m68k-gas.sh" in f.read()
+    except (OSError, TypeError):
+        return False
+
+
+def find_elf_tools(kit=None):
+    """A folder with m68k ELF binutils + gcc for the kernel-040 kit:
+    m68k-linux-gnu-*, or m68k-elf-* when the kit's tool takes them."""
+    kit = kit or find_kernel040()
+    prefixes = ("m68k-linux-gnu-", "m68k-elf-") if k040_takes_elf(kit) else ("m68k-linux-gnu-",)
+    for prefix in prefixes:
         for d in ELF_DIRS:
             if all(os.access(os.path.join(d, prefix + t), os.X_OK) for t in ("as", "gcc", "nm")):
                 return d
     return None
+
+
+def elf_tools_missing(kit):
+    """Why find_elf_tools(kit) finds nothing, for the user."""
+    if k040_takes_elf(kit):
+        return "no m68k ELF binutils + gcc (m68k-elf from developer/amix/gcc-14, or " \
+               "m68k-linux-gnu) for %s" % K040_TOOL
+    for d in ELF_DIRS:
+        if os.access(os.path.join(d, "m68k-elf-as"), os.X_OK):
+            return "this %s needs m68k-linux-gnu binutils; with m68k-elf only, update " \
+                   "developer/amix/kernel-kit-tools (0.3 rev 1 takes m68k-elf)" % K040_TOOL
+    return "no m68k-linux-gnu binutils + gcc for %s" % K040_TOOL
 
 
 def find_stamp(tools=None):
@@ -698,9 +724,9 @@ def make_040(base, variant, log=None, amix_sys=None, kit=None, root=None, progre
     if not tgz:
         log("NetBSD 10.1 %s: fetching it once (%s)" % (SYSSRC, SYSSRC_URL.split("/")[2]))
         tgz = fetch_syssrc(syssrc_pin(kit), progress)
-    elf = find_elf_tools()
+    elf = find_elf_tools(kit)
     if not elf:
-        raise KernelError("no m68k ELF binutils (m68k-linux-gnu or m68k-elf)")
+        raise KernelError(elf_tools_missing(kit))
     tmp = tempfile.mkdtemp(prefix="amix-k040-")
     try:
         bp, op = os.path.join(tmp, "unix.stock"), os.path.join(tmp, "unix.040")

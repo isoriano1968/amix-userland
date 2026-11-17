@@ -687,8 +687,8 @@ class DriverKernel(Action):
             why = "the core disk lacks Patch Disk 1-2a: apply it, then run the installer again"
         elif self.line == "040" and not k040:
             why = "%s is not installed (developer/amix/kernel-kit-tools 0.3)" % kernel.K040_TOOL
-        elif self.line == "040" and not kernel.find_elf_tools():
-            why = "no m68k ELF binutils (m68k-linux-gnu or m68k-elf) for %s" % kernel.K040_TOOL
+        elif self.line == "040" and not kernel.find_elf_tools(k040):
+            why = kernel.elf_tools_missing(k040)
         elif self.variant == "z3660" and kernel.k040_root_args("z3660", root, k040) is None:
             # an amix-kernel-040 before --root-unit roots the z3660 variant on c8d0
             why = "this %s roots the Z3660 kernel on the SD card's unit 0, the AMIX core disk " \

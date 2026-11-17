@@ -36,7 +36,7 @@ class Base(unittest.TestCase):
             f.write("#!/bin/sh\n# stand-in: takes --root-card --root-unit --root-stock\nexit 1\n")
         self._k040 = (kernel.find_kernel040, kernel.find_elf_tools)
         kernel.find_kernel040 = lambda: k040
-        kernel.find_elf_tools = lambda: "/bin"
+        kernel.find_elf_tools = lambda kit=None: "/bin"
         self.src = os.path.join(self.d, "core.hdf")
         with open(self.src, "wb") as f:
             f.write(os.urandom(3 << 20) + b"\0" * (1 << 20))
