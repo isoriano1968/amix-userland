@@ -286,6 +286,21 @@ class Picasso(unittest.TestCase):
         self.assertIn("/usr/sbin/slink addaen /dev/zz0 zz0 2>/dev/null &&", t)
         self.assertIn("ifconfig zz0 `uname -n` up -trailers", t)
 
+    def test_steps_further_network_cards(self):
+        """the install card gets the host name's address; the further cards
+        only their driver and device node"""
+        c = model.Config(sel={"mach": "a3000", "accel": "none", "kern": "stock", "boot": "pvmk",
+                              "gfx": "zz9000", "net": "nethydra", "desk": "cde"},
+                         on={"more_xsurf": True, "more_zz9000eth": True, "more_picasso2": True})
+        t = netinstall.steps_script(c, "10.0.2.2", kernel=(1490000, 777))
+        Scripts.sh_ok(self, t)
+        for node, major in (("zz9000", 49), ("rtgfb", 54), ("hya0", 47), ("xsf0", 56), ("zz0", 52)):
+            self.assertIn("/usr/sbin/mknod /dev/%s c %d 0" % (node, major), t)
+        self.assertIn("ifconfig hya0 `uname -n` up -trailers", t)
+        self.assertNotIn("ifconfig xsf0", t)
+        self.assertNotIn("ifconfig zz0", t)
+        self.assertIn("echo zz9000 > /etc/X11/amix-card", t)
+
     def test_sysv_sum(self):
         data = os.urandom(70000)
         with tempfile.NamedTemporaryFile(delete=False) as f:

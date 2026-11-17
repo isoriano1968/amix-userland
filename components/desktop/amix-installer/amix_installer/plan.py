@@ -255,7 +255,7 @@ def pvmk_conf(cfg, template=None):
         out.append(ln)
     if not entry_done:
         out.append("entry=AMIX,UNIX_Root:/stand/unix,native")
-    if kernel_drivers(cfg.sel):
+    if kernel_drivers(cfg):
         # the relinked kernel replaces /stand/unix; the stock one stays a choice
         i = out.index("entry=AMIX,UNIX_Root:/stand/unix,native")
         out.insert(i + 1, "entry=AMIX stock,UNIX_Root:/stand/unix.stock,native")
@@ -484,13 +484,21 @@ GFX_DRIVER = {"picasso2": "rtgfb", "zz9000": "zz9000", "va2000": "va2000"}
 NET_DRIVER = {"nethydra": "hydra", "netxsurf": "xsurf100", "netzz9000": "zz9000eth"}
 
 
-def kernel_drivers(sel):
-    """The driver ids the chosen cards need in the kernel, graphics first."""
+def kernel_drivers(cfg):
+    """The driver ids the chosen cards need in the kernel, graphics first:
+    the main display and the further graphics cards, then the install network
+    card and the further network cards.  cfg: a model.Config (or, for the
+    main choices alone, its sel dict)."""
+    sel = cfg.sel if hasattr(cfg, "sel") else cfg
+    gfx = [sel.get("gfx")] + (cfg.further("gfxmore") if hasattr(cfg, "further") else [])
+    net = [sel.get("net")] + (cfg.further("netmore") if hasattr(cfg, "further") else [])
     out = []
-    if sel.get("gfx") in GFX_DRIVER:
-        out.append(GFX_DRIVER[sel["gfx"]])
-    if sel.get("net") in NET_DRIVER:
-        out.append(NET_DRIVER[sel["net"]])
+    for c in gfx:
+        if c in GFX_DRIVER and GFX_DRIVER[c] not in out:
+            out.append(GFX_DRIVER[c])
+    for c in net:
+        if c in NET_DRIVER and NET_DRIVER[c] not in out:
+            out.append(NET_DRIVER[c])
     return out
 
 
@@ -737,7 +745,7 @@ def make_plan(cfg, paths, fs=None, written=False):
                 pl.problems.append("pvmk not found (package developer/amix/pvmk): "
                                    "%s cannot be written; choose the stock boot, install "
                                    "developer/amix/pvmk or set AMIX_PVMK_DIR" % names["pvmk"])
-    ids = kernel_drivers(sel)
+    ids = kernel_drivers(cfg)
     if ids:
         dk = DriverKernel(src, ids, sel.get("kern", "stock"),
                           cfg.source is not None and not cfg.source.patch)
@@ -766,16 +774,16 @@ def make_plan(cfg, paths, fs=None, written=False):
     for s in model.STEPS:
         for g in s.groups:
             if g.id in ("pkgclient", "kern", "boot", "src", "target", "mach", "accel", "cpu",
-                        "layout", "dsize", "net", "keymap", "gfx"):
+                        "layout", "dsize", "net", "keymap", "gfx", "gfxmore", "netmore"):
                 continue
             for o in g.options:
                 if cfg.chosen(g, o) and o.mb and not cfg.installed(o):
                     pkgs.append(o.title)
     if pkgs:
         inside.append("installs %d packages (%s)" % (len(pkgs), ", ".join(pkgs)))
-    if kernel_drivers(sel):
+    if kernel_drivers(cfg):
         from . import kernel
-        ids = kernel_drivers(sel)
+        ids = kernel_drivers(cfg)
         inside.append("installs the kernel with the %s driver%s, %s and the card setting"
                       % (" and ".join(kernel.DRIVERS[i].card for i in ids),
                          "s" if len(ids) > 1 else "",

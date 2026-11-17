@@ -185,7 +185,7 @@ def packages_for(cfg):
     for s in model.STEPS:
         for g in s.groups:
             if g.id in ("pkgclient", "kern", "boot", "src", "target", "mach", "accel", "cpu",
-                        "layout", "dsize", "net", "keymap", "desk", "gfx"):
+                        "layout", "dsize", "net", "keymap", "desk", "gfx", "gfxmore", "netmore"):
                 continue
             for o in g.options:
                 if not cfg.chosen(g, o) or cfg.installed(o) or o.id == "headers":
@@ -519,7 +519,7 @@ def kernel_lines(cfg, kernel_file):
     (size, sysv sum) or None), its device nodes, a HydraNet's network line."""
     from . import kernel as kmod
     from .plan import kernel_drivers
-    ids = kernel_drivers(cfg.sel)
+    ids = kernel_drivers(cfg)
     if not ids:
         return []
     drvs = [kmod.DRIVERS[i] for i in ids]
@@ -544,8 +544,11 @@ def kernel_lines(cfg, kernel_file):
         lines += ["[ -c /dev/%s ] || /usr/sbin/mknod /dev/%s c %d 0 || fail 'mknod /dev/%s'"
                   % (d.node, d.node, d.major, d.node),
                   "/usr/bin/chmod %s /dev/%s" % ("666" if d.kind == "graphics" else "600", d.node)]
+    # only the card the install runs over gets the host name's address; the
+    # further network cards have their driver and device node, set up on AMIX
+    from .plan import NET_DRIVER
     for d in drvs:
-        if d.kind != "network":
+        if d.kind != "network" or NET_DRIVER.get(cfg.sel.get("net")) != d.id:
             continue
         N, ifc = "/etc/inet/network-config", d.node
         lines += ["if /usr/bin/grep %s %s >/dev/null; then report '%s is in %s already'; else"

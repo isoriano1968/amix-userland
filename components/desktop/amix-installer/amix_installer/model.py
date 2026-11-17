@@ -7,7 +7,16 @@ An option's "needs" says when it is available:
   ("a", "b")                one of the tags a or b is chosen
   (("a", "b"), ("c",))      (a or b) and c
 Tags are the chosen options of the radio groups in TAG_GROUPS, plus the
-derived tags of derived_tags().
+derived tags of derived_tags(), plus "card:<id>" for every graphics card the
+machine has: the main display and the further cards.
+
+A real Amiga can have several graphics and network cards.  The radio groups
+gfx (the main display: console and X) and net (the card the install runs over,
+with the host name's address) choose one each; the switch groups gfxmore and
+netmore add further cards, whose drivers are linked into the kernel too (a
+network card added so is not configured: its address is set on AMIX).  A
+further card is the "twin" of an option of the radio group, and is not
+offered while that option is the radio group's choice.
 """
 
 TAG_GROUPS = ("src", "target", "mach", "accel", "net", "layout", "kern", "boot", "gfx", "desk")
@@ -19,8 +28,10 @@ PKG_CLIENT_PROBES = ("/var/pkg", "/usr/bin/pkg")
 
 
 class Option(object):
-    def __init__(self, id, title, sub, needs=None, badge=None, mb=0, default=False, probe=()):
+    def __init__(self, id, title, sub, needs=None, badge=None, mb=0, default=False, probe=(),
+                 twin=None):
         self.id = id
+        self.twin = twin            # (radio group, option) this further card duplicates
         self.probe = tuple(probe)   # paths that show it is installed on a source disk
         self.title = title
         self.sub = sub
@@ -111,7 +122,7 @@ STEPS = [
           G("accopt", "CPU card options", options=[
               O("bigram", "BigRAM on the A2630", "More fast RAM on the card, used by the kernel",
                 needs=("a2630",))]),
-          G("net", "Network", radio=True, options=[
+          G("net", "Network for the install", radio=True, options=[
               O("net2065", "A2065", "Commodore’s Ethernet card: the only network a stock "
                 "AMIX has", needs=("none", "gvp", "a2630", "a2620", "mercury", "uae")),
               O("netzen", "Z3660 Ethernet",
@@ -129,8 +140,17 @@ STEPS = [
               O("netzz9000", "ZZ9000 Ethernet",
                 "The MNT ZZ9000's Ethernet port. Only once a kernel from this installer "
                 "runs: its driver is linked into your kernel", needs=(("a3000", "a2500"),
-                                                                     ("zz9000",))),
+                                                                     ("card:zz9000",))),
               O("nonet", "None", "Install from HDF files prepared in FS-UAE")]),
+          # further network cards: driver and device node only, no address
+          G("netmore", "More network cards", options=[
+              O("more_hydra", "HydraNet", "Its driver and /dev/hya0; set its address on AMIX",
+                needs=("a3000", "a2500"), twin=("net", "nethydra")),
+              O("more_xsurf", "X-Surf 100", "Its driver and /dev/xsf0; set its address on AMIX",
+                needs=("a3000", "a2500"), twin=("net", "netxsurf")),
+              O("more_zz9000eth", "ZZ9000 Ethernet",
+                "Its driver and /dev/zz0; set its address on AMIX",
+                needs=(("a3000", "a2500"), ("card:zz9000",)), twin=("net", "netzz9000"))]),
           G("keymap", "Keyboard", radio=True, options=[
               O("us", "US", "Amiga keyboard with the US layout"),
               O("de", "German", "Amiga keyboard with the German layout"),
@@ -171,13 +191,11 @@ STEPS = [
                 needs=("z3opt", "k040")),
               O("mem", "Memory above 256 MB", "Uses all of the Z3660’s RAM",
                 needs=(("z3660",), ("z3opt",))),
-              O("dlm", "Loadable modules", "Load drivers at run time instead of relinking",
-                needs=("z3opt", "k040")),
               O("syslog", "System log", "syslogd at boot, faults in /var/log/bus-errors")])]),
     Step("drivers", "Drivers", "Network, graphics, sound",
          "Only drivers for hardware the machine has are installed; each one is its own package "
          "and can be removed later.",
-         [G("gfx", "Graphics card", radio=True, options=[
+         [G("gfx", "Main display", radio=True, options=[
              O("rtg", "Z3660 RTG", "16-bit RTG modes for X", needs=("z3660",), mb=2),
              # 68030 only: the rtgfb driver is relinked into the stock kernel
              O("picasso2", "Picasso II", "Cirrus 8-bit RTG, 640\u00d7480 to 1024\u00d7768; FS-UAE "
@@ -192,6 +210,15 @@ STEPS = [
              O("va2000", "VA2000", "MNT VA2000 RTG; its driver is linked into your kernel, "
                "X support comes later", needs=(("a3000", "a2500"), ("stock", "k040")), mb=1),
              O("chipset", "Amiga chipset", "No graphics card: the console and OPEN LOOK")]),
+          # further graphics cards: driver and device node; X and the console stay
+          # on the main display until X spans several cards
+          G("gfxmore", "More graphics cards", options=[
+             O("more_picasso2", "Picasso II", "Its driver and /dev/rtgfb, beside the main display",
+               needs=(("a3000", "a2500"), ("stock",)), twin=("gfx", "picasso2")),
+             O("more_zz9000", "ZZ9000", "Its driver and /dev/zz9000, beside the main display",
+               needs=(("a3000", "a2500"), ("stock",)), twin=("gfx", "zz9000")),
+             O("more_va2000", "VA2000", "Its driver and /dev/va2000, beside the main display",
+               needs=(("a3000", "a2500"), ("stock", "k040")), twin=("gfx", "va2000"))]),
           G("drv", "Hardware", options=[
              O("zen", "Z3660 Ethernet", "zen0 with interrupt-driven receive", needs=("z3660",), mb=1),
              O("paula", "Paula audio", "/dev/paula for players and games", mb=1),
@@ -257,7 +284,9 @@ DEFAULT_SEL = {"src": "hdf", "target": "sd", "mach": "a3000", "accel": "z3660", 
                "desk": "cde",
                "keymap": "us", "net": "netzen"}
 
-DEFAULT_ON = {"pkg": True, "bigram": True, "vt": True, "syslog": True, "dlm": False, "mem": True,
+DEFAULT_ON = {"pkg": True, "bigram": True, "vt": True, "syslog": True, "mem": True,
+              "more_hydra": False, "more_xsurf": False, "more_zz9000eth": False,
+              "more_picasso2": False, "more_zz9000": False, "more_va2000": False,
               "zen": True, "paula": True, "a2065": False, "random": True,
               "gpu": True, "video": True, "crypto": True, "netsurf": True, "media": True,
               "grafx2": False, "sysmon": True, "games": False, "gcc14": True, "gcc27": False,
@@ -332,13 +361,31 @@ class Config(object):
         t = set(self.sel.get(g) for g in TAG_GROUPS)
         t.discard(None)
         t |= derived_tags(self.sel)
+        # the graphics cards the machine has: the main display, then every
+        # further card that is on and fits (judged without card tags)
+        if self.sel.get("gfx") not in (None, "chipset"):
+            t.add("card:" + self.sel["gfx"])
+        base = set(t)
+        for o in find_group("gfxmore").options:
+            if self.on.get(o.id) and self._fits(o, base):
+                t.add("card:" + o.twin[1])
         return t
 
-    def available(self, opt, tags=None):
+    def _fits(self, opt, tags):
+        if opt.twin is not None and self.sel.get(opt.twin[0]) == opt.twin[1]:
+            return False             # it is the radio group's choice already
         if opt.needs is None:
             return True
-        tags = self.tags() if tags is None else tags
         return all(any(n in tags for n in alt) for alt in opt.needs)
+
+    def available(self, opt, tags=None):
+        return self._fits(opt, self.tags() if tags is None else tags)
+
+    def further(self, gid):
+        """The twins (radio option ids) of the chosen further cards of a switch
+        group (gfxmore, netmore)."""
+        g = find_group(gid)
+        return [o.twin[1] for o in g.options if self.chosen(g, o)]
 
     def missing(self, opt):
         """The alternatives the option still needs, for a tooltip."""

@@ -37,11 +37,34 @@ class Rules(unittest.TestCase):
         for _, g in model.all_groups():
             if g.id in model.TAG_GROUPS:
                 known |= set(o.id for o in g.options)
+        known |= set("card:" + o.id for o in model.find_group("gfx").options if o.id != "chipset")
         for _, g in model.all_groups():
             for o in g.options:
                 for alt in o.needs or ():
                     for t in alt:
                         self.assertIn(t, known, "%s needs unknown tag %s" % (o.id, t))
+
+    def test_further_cards(self):
+        """Several graphics and network cards: one main display and one install
+        card (radio), the others switched on beside them."""
+        c = model.Config(sel={"mach": "a3000", "accel": "none", "kern": "stock", "boot": "pvmk",
+                              "gfx": "picasso2", "net": "net2065", "desk": "cde"},
+                         on={"more_zz9000": True, "more_va2000": True, "more_hydra": True,
+                             "more_xsurf": True})
+        self.assertEqual(c.further("gfxmore"), ["zz9000", "va2000"])
+        self.assertEqual(c.further("netmore"), ["nethydra", "netxsurf"])
+        # the main display is not offered again as a further card
+        self.assertFalse(c.available(model.find_group("gfxmore").option("more_picasso2")))
+        # a further ZZ9000 makes its Ethernet port available
+        self.assertIn("card:zz9000", c.tags())
+        self.assertTrue(c.available(model.find_group("netmore").option("more_zz9000eth")))
+        c.set_on("more_zz9000", False)
+        self.assertFalse(c.available(model.find_group("netmore").option("more_zz9000eth")))
+        # FS-UAE has one card of each: no further cards
+        u = model.Config(sel={"mach": "uae"}, on={"more_hydra": True, "more_zz9000": True})
+        self.assertEqual((u.further("gfxmore"), u.further("netmore")), ([], []))
+        # the loadable-modules switch is gone: no kernel of ours has a loader
+        self.assertIsNone(model.find_group("kopt").option("dlm"))
 
     def test_a2500_moves_card_and_kernel(self):
         c = model.Config()

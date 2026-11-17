@@ -347,6 +347,13 @@ class Cards(Base):
         self.assertEqual((z.sel["gfx"], z.sel["net"]), ("zz9000", "netzz9000"))
         self.assertNotEqual(self.cfg(gfx="picasso2", net="netzz9000").sel["net"], "netzz9000")
         self.assertEqual(plan.kernel_drivers(z.sel), ["zz9000", "zz9000eth"])
+        # every card of a machine with several: graphics first, no driver twice
+        m = model.Config(sel={"mach": "a3000", "accel": "none", "kern": "stock", "boot": "pvmk",
+                              "gfx": "zz9000", "net": "nethydra"},
+                         on={"more_picasso2": True, "more_xsurf": True, "more_zz9000eth": True,
+                             "more_hydra": True})
+        self.assertEqual(plan.kernel_drivers(m), ["zz9000", "rtgfb", "hydra", "xsurf100",
+                                                  "zz9000eth"])
         # the VA2000 has a kit for both kernel lines, and X has no va2000
         # driver yet: no X desktop with it
         v = self.cfg(accel="mercury", kern="k040", gfx="va2000", desk="cde")
