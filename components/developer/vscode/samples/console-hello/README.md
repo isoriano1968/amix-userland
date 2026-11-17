@@ -21,12 +21,16 @@ toolchain's `bin` directory must be on `PATH`. From VS Code, run
 sysroots for the toolchain shown in the status bar.
 
 curses is ncurses 6.6 (amix-userland `library/ncurses`), linked shared from
-the gcc 14 sysroot's `usr/local` for both compilers (`LIB_SYSROOT=` to change
-it):
+the gcc 14 sysroot for both compilers (`LIB_SYSROOT=` to change it). The
+Makefile asks `pkg-config --cflags --libs ncurses`, reading only the
+sysroot's `.pc` files; `ncurses.pc` requires `amixc99.pc`, so it gives:
 
 ```text
--I<sysroot>/usr/local/include  -L<sysroot>/usr/local/lib -lncurses -lamixc99
+-I<sysroot>/usr/local/include  -L<sysroot>/usr/local/lib -lncurses
+-L<sysroot>/usr/lib -lamixc99 -lgen -lm
 ```
+
+The program needs `libncurses.so.6` and `libamixc99.so.1`, both shared.
 
 with the runpath `/usr/local/lib`. After linking, `amix-fix-needed` moves the
 NEEDED names to the front of `.dynstr`, where AMIX's `ld.so.1` looks for them.

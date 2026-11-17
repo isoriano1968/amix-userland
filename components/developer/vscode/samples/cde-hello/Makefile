@@ -27,9 +27,10 @@ X = $(MOTIF_SYSROOT)/usr/x11r6
 CPPFLAGS += -DFUNCPROTO=15 -I$(M)/include -I$(X)/include
 
 # the libraries of ztopcde (amix-userland components/desktop/cde-apps);
-# libamixc99.a gives libXm its snprintf
+# libamixc99 (shared, /usr/lib/libamixc99.so.1) gives libXm its snprintf;
+# gcc 2.7.2.3's own sysroot has none, so -L names the library sysroot's usr/lib
 XLIBS = -lXm -lXmu -lXt -lSM -lICE -lXext -lX11 \
-	-lsocket -lnsl -L$(MOTIF_SYSROOT)/usr/local/lib -lamixc99 -lgen -lm
+	-lsocket -lnsl -L$(MOTIF_SYSROOT)/usr/lib -lamixc99 -lgen -lm
 
 PYTHON ?= python3
 

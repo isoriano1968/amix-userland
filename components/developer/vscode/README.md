@@ -264,11 +264,14 @@ with the system name, a ticking clock and a small menu (arrow keys, Enter,
 
 It builds like the CDE sample (`make`, `make TOOLCHAIN=gcc272`, or
 `AMIX: Run Make in AMIX Project`). curses is ncurses 6.6 (amix-userland
-`library/ncurses`), shared from the gcc 14 sysroot's `usr/local` for both
-compilers:
+`library/ncurses`), shared from the gcc 14 sysroot for both compilers, with
+the flags `pkg-config --cflags --libs ncurses` reads from the sysroot's
+`.pc` files (`ncurses.pc` requires `amixc99.pc`, the shared
+`/usr/lib/libamixc99.so.1`):
 
 ```text
--I<sysroot>/usr/local/include  -L<sysroot>/usr/local/lib -lncurses -lamixc99
+-I<sysroot>/usr/local/include  -L<sysroot>/usr/local/lib -lncurses
+-L<sysroot>/usr/lib -lamixc99 -lgen -lm
 ```
 
 with the runpath `/usr/local/lib`. The A3000 needs the `library/ncurses`

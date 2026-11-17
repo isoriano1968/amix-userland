@@ -11,9 +11,11 @@
 #
 # curses is ncurses 6.6, amix-userland library/ncurses, shared in
 # /usr/local/lib on AMIX (with its terminfo in /usr/share/terminfo).  It is
-# taken from the gcc 14 sysroot for both compilers; the flags are those of its
-# ncurses.pc (Requires: amixc99).  The sysroots' usr/include/curses.h is an
-# older ncurses 5.4 header without a library, so usr/local/include comes first.
+# taken from the gcc 14 sysroot for both compilers, with the flags pkg-config
+# reads from its ncurses.pc there; that requires amixc99.pc, the shared
+# /usr/lib/libamixc99.so.1 with -lgen -lm.  The sysroots' usr/include/curses.h
+# is an older ncurses 5.4 header without a library, so usr/local/include,
+# from ncurses.pc, comes first.
 
 TOOLCHAIN ?= $(or $(AMIX_TOOLCHAIN),gcc14)
 
@@ -22,10 +24,23 @@ TOOLCHAIN ?= $(or $(AMIX_TOOLCHAIN),gcc14)
 PKG_SYSROOT := $(patsubst %/etc/amix-sysroot.release,%,$(wildcard /opt/m68k-amix-sysroot/etc/amix-sysroot.release))
 LIB_SYSROOT ?= $(or $(AMIX_MOTIF_SYSROOT),$(PKG_SYSROOT),$(HOME)/opt/m68k-amix-sysroot)
 
-L = $(LIB_SYSROOT)/usr/local
+# pkg-config reads only the sysroot's .pc files (never the build host's) and
+# prefixes their paths with the sysroot.  -L<sysroot>/usr/lib is kept
+# (ALLOW_SYSTEM_LIBS): gcc 2.7.2.3's own sysroot has no libamixc99.
+PKG_CONFIG ?= pkg-config
+PC = PKG_CONFIG_PATH= \
+	PKG_CONFIG_LIBDIR=$(LIB_SYSROOT)/usr/local/lib/pkgconfig:$(LIB_SYSROOT)/usr/lib/pkgconfig \
+	PKG_CONFIG_SYSROOT_DIR=$(LIB_SYSROOT) PKG_CONFIG_ALLOW_SYSTEM_LIBS=1 $(PKG_CONFIG)
 
-CPPFLAGS += -I$(L)/include
-LIBS      = -L$(L)/lib -lncurses -lamixc99
+NCURSES_CFLAGS := $(shell $(PC) --cflags ncurses)
+NCURSES_LIBS   := $(shell $(PC) --libs ncurses)
+ifeq ($(NCURSES_LIBS),)
+$(error pkg-config finds no ncurses.pc in $(LIB_SYSROOT): install library/ncurses into the sysroot)
+endif
+
+CPPFLAGS += $(NCURSES_CFLAGS)
+# libncurses.so.6 needs libamixc99.so.1: ld finds it through -rpath-link
+LIBS      = $(NCURSES_LIBS) -Wl,-rpath-link,$(LIB_SYSROOT)/usr/lib
 
 PYTHON ?= python3
 
