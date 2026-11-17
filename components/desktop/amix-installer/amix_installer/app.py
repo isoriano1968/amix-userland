@@ -668,7 +668,11 @@ class Window(Adw.ApplicationWindow):
         nxt.add_css_class("amix-next")
         nxt.append(label("What happens", ("heading",)))
         pl = plan.make_plan(self.cfg, self.paths)
+        if pl.existing:
+            nxt.append(self._existing_box(pl))
         for p in pl.problems:
+            if pl.existing and "not written by the installer" in p:
+                continue                # the box above says it, Create disks asks
             r = Gtk.Box(spacing=8)
             ic = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
             ic.add_css_class("warning")
@@ -703,6 +707,65 @@ class Window(Adw.ApplicationWindow):
         nxt.append(btns)
         box.append(nxt)
         return box
+
+    def _existing_box(self, pl):
+        """The files of the same name in the output folder, and what becomes
+        of them: overwritten (asked first for a file the installer did not
+        write) or kept as .bak; or another folder."""
+        out = pl.paths["out_dir"]
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.add_css_class("card")
+        for m in ("top", "bottom", "start", "end"):
+            getattr(box, "set_margin_" + m)(0)
+        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        for m in ("top", "bottom", "start", "end"):
+            getattr(inner, "set_margin_" + m)(12)
+        box.append(inner)
+        inner.append(label("Files that exist already in %s" % out, ("heading",)))
+        for n, mine in pl.existing:
+            r = Gtk.Box(spacing=8)
+            ic = Gtk.Image.new_from_icon_name("document-save-symbolic" if mine else
+                                              "dialog-warning-symbolic")
+            if not mine:
+                ic.add_css_class("warning")
+            r.append(ic)
+            r.append(label(n + ("" if mine else "  \u2014 not written by the installer"),
+                           wrap=False))
+            inner.append(r)
+        backup = self.cfg.sel.get("existing") == "backup"
+        mb = pl.existing_bytes() >> 20
+        inner.append(label(
+            ("Each is renamed to NAME.YYYYMMDD-HHMMSS.bak when the new files are written; "
+             "the backups keep %d MB." % mb) if backup else
+            ("They are replaced only when every new file is written and checked; a failed "
+             "run leaves them as they are."), ("caption", "dim-label")))
+        row = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        ow = Gtk.ToggleButton(label="Overwrite", active=not backup)
+        bk = Gtk.ToggleButton(label="Keep a Backup", active=backup, group=ow)
+        seg = Gtk.Box(css_classes=["linked"])
+        seg.append(ow)
+        seg.append(bk)
+
+        def pick(btn, choice):
+            if btn.get_active() and self.cfg.sel.get("existing") != choice:
+                self.cfg.select("existing", choice)
+                GLib.idle_add(self._refresh_summary)
+        ow.connect("toggled", pick, "overwrite")
+        bk.connect("toggled", pick, "backup")
+        other = Gtk.Button(label="Choose Another Folder\u2026")
+        other.connect("clicked", lambda b: self._choose("out_dir", "Folder for the new disks",
+                                                        [], True))
+        row.append(other)
+        row.append(seg)
+        inner.append(row)
+        return box
+
+    def _refresh_summary(self):
+        adj = self.scroller.get_vadjustment()
+        pos = adj.get_value()
+        self.show_step(self.step)
+        GLib.idle_add(lambda: adj.set_value(pos) and False)
+        return False
 
     # -- state -------------------------------------------------------------
     def _sync(self):
@@ -780,9 +843,13 @@ class Window(Adw.ApplicationWindow):
             except GLib.Error:
                 return
             self.paths[key] = f.get_path()
+            if key == "out_dir":
+                self.paths.pop("overwrite_confirmed", None)
             if key == "core_hdf":
                 self.read_source(f.get_path())
             self._sync()
+            if model.STEPS[self.step].summary:
+                self._refresh_summary()
         if folder:
             dlg.select_folder(self, None, done)
         else:
@@ -858,6 +925,33 @@ class Window(Adw.ApplicationWindow):
             d.present(self)
             return
         pl = plan.make_plan(self.cfg, self.paths)
+        foreign = [n for n, mine in pl.existing if not mine]
+        if foreign and pl.problems and self.cfg.sel.get("existing") != "backup":
+            # the only thing in the way may be those files: ask, by name
+            ok = plan.make_plan(self.cfg, dict(self.paths, overwrite_confirmed=True))
+            if not ok.problems:
+                d = Adw.AlertDialog(
+                    heading="Overwrite files the installer did not write?",
+                    body="In %s:\n%s\n\nThey are replaced by the new disks and cannot be "
+                         "brought back. Keep a backup instead, or choose another folder, "
+                         "to keep them." % (self.paths["out_dir"],
+                                            "\n".join("\u2022 " + n for n in foreign)))
+                d.add_response("cancel", "Cancel")
+                d.add_response("backup", "Keep a Backup")
+                d.add_response("overwrite", "Overwrite")
+                d.set_response_appearance("overwrite", Adw.ResponseAppearance.DESTRUCTIVE)
+                d.set_default_response("cancel")
+
+                def answer(_d, r):
+                    if r == "overwrite":
+                        self.paths["overwrite_confirmed"] = sorted(foreign)
+                    elif r == "backup":
+                        self.cfg.select("existing", "backup")
+                    if r in ("overwrite", "backup"):
+                        self._apply()
+                d.connect("response", answer)
+                d.present(self)
+                return
         if pl.problems and self._offer_written():
             return
         if pl.problems:
@@ -894,6 +988,11 @@ class Window(Adw.ApplicationWindow):
         files = [n for a in runs for n in a.outputs]
         body = "In %s, %d MB:\n%s" % (out, pl.write_bytes() >> 20,
                                        "\n".join("\u2022 " + n for n in files))
+        if pl.existing:
+            names = ", ".join(n for n, _ in pl.existing)
+            body += ("\n\nKept as .bak (%d MB): %s." % (pl.existing_bytes() >> 20, names)
+                     if self.cfg.sel.get("existing") == "backup" else
+                     "\n\nReplaced when all new files are written and checked: %s." % names)
         if not pl.complete:
             body += ("\n\nThis version does only part of the plan; not yet: %s."
                      % ", ".join(a.title.lower() for a in pl.actions if not a.available))
@@ -1206,7 +1305,16 @@ class Window(Adw.ApplicationWindow):
                             website="https://github.com/isoriano1968/amix-userland",
                             comments="Makes an Amiga UNIX disk for your machine from your own "
                                      "AMIX 2.1c core system.")
+
+        def link(dlg, uri):
+            # the browser opens on its own; the dialog closes, so it never
+            # stays over the page the user comes back to
+            Gtk.UriLauncher(uri=uri).launch(self, None, None)
+            dlg.close()
+            return True
+        a.connect("activate-link", link)
         a.present(self)
+        self._about_dialog = a
 
 
 class App(Adw.Application):

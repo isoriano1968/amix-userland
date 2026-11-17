@@ -99,6 +99,13 @@ STEPS = [
                 needs=("hdf", "tape")),
               O("inplace", "The running system", "Its own disks, after a check of free space",
                 needs=("run",))]),
+          # what happens to files of the same name in the output folder
+          G("existing", "Files that exist already", radio=True, options=[
+              O("overwrite", "Overwrite",
+                "Replaced when the new ones are written and checked; a file the installer "
+                "did not write is named and asked about first", needs=("hdf", "tape")),
+              O("backup", "Keep a backup",
+                "Each one renamed to NAME.YYYYMMDD-HHMMSS.bak first", needs=("hdf", "tape"))]),
           G("pkgclient", "Package client", options=[
               O("pkg", "AMIX package client",
                 "pkg and /var/pkg: installs, updates and removes packages, each file checked; "
@@ -282,7 +289,7 @@ FALLBACK = {"gfx": "chipset"}
 DEFAULT_SEL = {"src": "hdf", "target": "sd", "mach": "a3000", "accel": "z3660", "cpu": "m020",
                "layout": "split", "dsize": "d2g", "kern": "z3opt", "boot": "pvmk", "gfx": "rtg",
                "desk": "cde",
-               "keymap": "us", "net": "netzen"}
+               "keymap": "us", "net": "netzen", "existing": "overwrite"}
 
 DEFAULT_ON = {"pkg": True, "bigram": True, "vt": True, "syslog": True, "mem": True,
               "more_hydra": False, "more_xsurf": False, "more_zz9000eth": False,

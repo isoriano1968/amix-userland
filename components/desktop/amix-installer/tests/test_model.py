@@ -226,3 +226,11 @@ class Version(unittest.TestCase):
         with open(os.path.join(top, "amix-installer.manifest")) as f:
             mf = re.search(r"^version\s+(\S+)", f.read(), re.M).group(1)
         self.assertEqual((amix_installer.__version__, mk), (mf, mf))
+
+
+class Texts(unittest.TestCase):
+    def test_no_markup_in_option_texts(self):
+        """Adw rows parse titles and subtitles as markup: a "<" hides the text"""
+        bad = [(o.id, t) for _, g in model.all_groups() for o in g.options
+               for t in (o.title, o.sub) if t and any(c in t for c in "<>&")]
+        self.assertEqual(bad, [])

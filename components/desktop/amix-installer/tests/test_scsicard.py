@@ -205,7 +205,11 @@ class Plans(Base):
         card = scsicard.read_card(self.out)
         new = scsicard.ini_with_amix(card, IDS, NAMES)
         a = plan.CardConfig(p, ZULU_INI, new, "t", "d")
-        a.run(plan.Context(self.out))
+        ctx = plan.Context(self.out)
+        a.run(ctx)
+        with open(p) as f:
+            self.assertEqual(f.read(), ZULU_INI)     # not in place before the commit
+        plan.commit(ctx.pending, "backup")          # its own copy is the backup
         with open(p) as f:
             self.assertEqual(f.read(), new)
         with open(p + ".amix-installer") as f:

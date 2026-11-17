@@ -55,6 +55,17 @@ and pycairo to make the icons.
     ./amix-installer --source core.hdf   # start with a core HDF read
     ./amix-installer --source core.hdf --out DIR --plan    # print the plan
     ./amix-installer --source core.hdf --out DIR --kickstart A3000.rom --apply
+    ./amix-installer ... --apply --backup      # keep files of the same name as .bak
+    ./amix-installer ... --apply --overwrite   # replace them, also ones not ours
+
+Files of the same name in the output folder: the choice "Files that exist
+already" (Base system page, saved in profiles), shown again on the Summary.
+Overwrite replaces them; a file the installer did not write (not in its
+amix-installer.json or SHA256SUMS) is named and asked about first. Keep a
+backup renames each to NAME.YYYYMMDD-HHMMSS.bak. Either way the new files are
+written as .part and checked, and only when the whole run has succeeded are
+they renamed into place: a failed run leaves every old file as it was. The
+source HDF is never written.
 
 Your Kickstart ROM is only referred to by its path in the FS-UAE
 configuration, never copied.

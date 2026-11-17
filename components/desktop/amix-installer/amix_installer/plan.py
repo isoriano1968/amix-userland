@@ -58,6 +58,12 @@ class Plan(object):
         self.paths = dict(paths)
         self.actions = []
         self.problems = []              # stop the whole plan
+        self.existing = []              # [(name, written by the installer)] in the output folder
+
+    def existing_bytes(self):
+        out = self.paths.get("out_dir")
+        return sum(os.path.getsize(os.path.join(out, n)) for n, _ in self.existing
+                   if os.path.exists(os.path.join(out, n)))
 
     @property
     def complete(self):
@@ -91,6 +97,10 @@ class Context(object):
         self._log = log or (lambda t: None)
         self._cancel = cancel or (lambda: False)
         self.results = {}               # name -> sha256
+        # (.part, final) of every file written and checked: renamed into place
+        # only when the whole run has succeeded (commit), so a failed run
+        # leaves every old file as it was
+        self.pending = []
 
     def progress(self, fraction, text=""):
         if self._cancel():
@@ -105,6 +115,11 @@ class Context(object):
 
     def final(self, name):
         return os.path.join(self.out_dir, name)
+
+    def current(self, name):
+        """Where a file of this run is now: its checked .part until the commit."""
+        part = self.part(name)
+        return part if any(e[0] == part for e in self.pending) else self.final(name)
 
 
 def sha256_file(path, ctx=None, what=""):
@@ -124,14 +139,13 @@ def sha256_file(path, ctx=None, what=""):
 
 
 def finish(ctx, name, expect_sha=None):
-    """Read the .part back, compare, fsync, rename to its name."""
+    """Read the .part back and compare; it is renamed to its name when the
+    whole run has succeeded (commit)."""
     part, final = ctx.part(name), ctx.final(name)
     got = sha256_file(part, ctx, "checking %s" % name)
     if expect_sha and got != expect_sha:
         raise IOError("%s: read back %s, expected %s" % (name, got[:16], expect_sha[:16]))
-    if os.path.exists(final):
-        raise safety.Refused("%s appeared while writing; not overwritten" % final)
-    os.rename(part, final)
+    ctx.pending.append((part, final))
     ctx.results[name] = got
     ctx.log("%s  %s" % (got, name))
     return got
@@ -352,9 +366,7 @@ class Checksums(Action):
                 f.write(text)
                 f.flush()
                 os.fsync(f.fileno())
-            if os.path.exists(ctx.final(name)):
-                raise safety.Refused("%s exists; not overwritten" % ctx.final(name))
-            os.rename(ctx.part(name), ctx.final(name))
+            ctx.pending.append((ctx.part(name), ctx.final(name)))
         ctx.progress(1.0, "done")
 
 
@@ -389,8 +401,9 @@ class CardConfig(Action):
         with open(part) as f:
             if f.read() != self.new:
                 raise IOError("%s: read back differs" % part)
-        os.replace(part, self.path)
-        ctx.log("%s written (the old one kept as %s)" % (self.path, os.path.basename(keep)))
+        # its own copy (.amix-installer) is the backup: always replaced
+        ctx.pending.append((part, self.path, "replace"))
+        ctx.log("%s checked (the old one kept as %s)" % (part, os.path.basename(keep)))
         ctx.progress(1.0, "done")
 
 
@@ -460,7 +473,7 @@ class FragCheck(Action):
     def run(self, ctx):
         bad, unknown = [], []
         for n in self.names:
-            p = ctx.final(n)
+            p = ctx.current(n)
             if not os.path.exists(p):
                 continue
             r = subprocess.run(["filefrag", p], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -922,27 +935,94 @@ def make_plan(cfg, paths, fs=None, written=False):
                                % (free >> 20, need >> 20))
     except OSError as e:
         pl.problems.append("cannot check free space in %s: %s" % (out, e))
+    existing_files(pl, out, src)
+    return pl
+
+
+def installer_files(out):
+    """The names an earlier run of the installer wrote in out: its record
+    (amix-installer.json, SHA256SUMS) and the record files themselves."""
+    names = set()
+    try:
+        with open(os.path.join(out, "amix-installer.json")) as f:
+            names |= set((json.load(f).get("files") or {}).keys())
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        with open(os.path.join(out, "SHA256SUMS")) as f:
+            names |= set(ln.split(None, 1)[1].strip() for ln in f if len(ln.split(None, 1)) == 2)
+    except OSError:
+        pass
+    if names:
+        names |= {"SHA256SUMS", "amix-installer.json", README}
+    return names
+
+
+def existing_files(pl, out, src):
+    """The plan's output names that exist in out already: pl.existing, as
+    [(name, written by the installer before)].  The choice "existing"
+    (overwrite, backup) says what happens to them; overwriting a file the
+    installer did not write needs paths["overwrite_confirmed"].  The source
+    image and a .part left behind always stop the plan."""
+    ours = installer_files(out)
+    pl.existing = []
     for a in pl.runnable():
         for name in a.outputs:
-            for p in (os.path.join(out, name), os.path.join(out, name + ".part")):
-                if os.path.exists(p):
-                    pl.problems.append("%s exists; the installer writes new files only" % p)
-                elif src and os.path.realpath(p) == os.path.realpath(src):
-                    pl.problems.append("%s is the source image" % p)
-    return pl
+            p = os.path.join(out, name)
+            if src and os.path.exists(p) and os.path.realpath(p) == os.path.realpath(src):
+                pl.problems.append("%s is the source image: it is never written; choose "
+                                   "another folder" % p)
+                continue
+            if os.path.exists(p + ".part"):
+                pl.problems.append("%s.part is left from an earlier run; remove it" % p)
+            if os.path.exists(p):
+                pl.existing.append((name, name in ours))
+    foreign = [n for n, mine in pl.existing if not mine]
+    ok = pl.paths.get("overwrite_confirmed")
+    # True (--overwrite), or the names the user confirmed in the window
+    confirmed = ok is True or (isinstance(ok, (list, tuple, set)) and set(foreign) <= set(ok))
+    if foreign and pl.cfg.sel.get("existing") != "backup" and not confirmed:
+        pl.problems.append("%s in %s %s not written by the installer: confirm overwriting %s, "
+                           "keep a backup, or choose another folder"
+                           % (", ".join(foreign), out, "was" if len(foreign) == 1 else "were",
+                              "it" if len(foreign) == 1 else "them"))
+
+
+def backup_name(path, stamp):
+    return "%s.%s.bak" % (path, stamp)
+
+
+def commit(pending, policy, log=None, stamp=None):
+    """Rename the run's checked .part files into place: an existing file is
+    renamed to <name>.<YYYYMMDD-HHMMSS>.bak first (policy "backup"), or
+    replaced (policy "overwrite", or an entry marked "replace").  Returns the
+    backups made."""
+    stamp = stamp or time.strftime("%Y%m%d-%H%M%S")
+    backups = []
+    for e in pending:
+        part, final = e[0], e[1]
+        if policy == "backup" and len(e) < 3 and os.path.exists(final):
+            bak = backup_name(final, stamp)
+            os.rename(final, bak)
+            backups.append(bak)
+            if log:
+                log("%s kept as %s" % (os.path.basename(final), os.path.basename(bak)))
+        os.replace(part, final)
+    return backups
 
 
 # --- running ---------------------------------------------------------------
 
 def leftover(out_dir):
-    """Files an interrupted run left behind (from its journal): its .part files
-    and the disks it had finished; the plan had refused every existing name."""
+    """Files an interrupted run left behind (from its journal): its .part
+    files.  Old files are only replaced by the commit at the very end, so the
+    journal never names one."""
     j = os.path.join(out_dir, JOURNAL)
     if not os.path.exists(j):
         return []
     with open(j) as f:
         names = [ln.strip() for ln in f if ln.strip()]
-    return [n for n in names if "/" not in n and n not in (".", "..")]
+    return [n for n in names if "/" not in n and n not in (".", "..") and n.endswith(".part")]
 
 
 def clean_leftover(out_dir):
@@ -957,9 +1037,10 @@ def clean_leftover(out_dir):
 
 def execute(pl, progress=None, log=None, cancel=None):
     """Run the plan's available actions in order.  Returns {name: sha256}.
-    On error or cancel everything this run created is removed again (its .part
-    files and the files it finished): they are new files, and half a set of
-    disks is of no use."""
+    Every file is written as .part and checked; only when all actions have
+    succeeded are they renamed into place (commit), existing files replaced or
+    kept as .bak by the choice "existing".  On error or cancel the .part files
+    are removed and every old file is as it was."""
     if pl.problems:
         raise safety.Refused("; ".join(pl.problems))
     out = pl.paths["out_dir"]
@@ -970,12 +1051,13 @@ def execute(pl, progress=None, log=None, cancel=None):
     parts = [n + ".part" for n in names]
     j = os.path.join(out, JOURNAL)
     with open(j, "x") as f:
-        f.write("\n".join(parts + names) + "\n")
+        f.write("\n".join(parts) + "\n")
         f.flush()
         os.fsync(f.fileno())
     total = float(sum(max(a.size, 1) for a in acts))
     base = [0.0]
     results = {}
+    pending = []
 
     def prog(fr, text, a=None):
         if progress:
@@ -985,18 +1067,25 @@ def execute(pl, progress=None, log=None, cancel=None):
         for a in acts:
             ctx = Context(out, lambda f, t, a=a: prog(f, t, a), log, cancel)
             ctx.results = results
+            ctx.pending = pending
             if log:
                 log("== %s" % a.title)
             ctx.progress(0.0, "")
             a.run(ctx)
             base[0] += max(a.size, 1)
     except BaseException:
-        # the plan refused existing names, so each of these is this run's own
-        for n in parts + names:
+        # nothing is in place yet: only this run's .part files go
+        for e in pending:
+            if os.path.exists(e[0]):
+                os.remove(e[0])
+        for n in parts:
             p = os.path.join(out, n)
             if os.path.exists(p):
                 os.remove(p)
         os.remove(j)
         raise
+    backups = commit(pending, pl.cfg.sel.get("existing", "overwrite"), log)
+    if backups and log:
+        log("%d old file%s kept as .bak" % (len(backups), "" if len(backups) == 1 else "s"))
     os.remove(j)
     return results

@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -110,10 +111,12 @@ class MakePlan(Base):
         self.assertIn("kernel last", inst.detail)
         self.assertFalse(inst.available)
 
-    def test_existing_output_refused(self):
+    def test_existing_output_listed(self):
         open(os.path.join(self.out, "core-core.hdf"), "w").close()
         pl = plan.make_plan(self.cfg(), self.paths())
-        self.assertTrue(any("exists" in p for p in pl.problems))
+        self.assertIn(("core-core.hdf", False), pl.existing)
+        # a hand-made file of that name: asked about first, never silently
+        self.assertTrue(any("not written by the installer" in p for p in pl.problems))
 
     def test_out_dir_is_source_dir_ok_but_never_source(self):
         pl = plan.make_plan(self.cfg(), {"core_hdf": self.src, "out_dir": self.d})
@@ -264,9 +267,77 @@ class Execute(Base):
         pl = self.only(plan.make_plan(self.cfg(), self.paths()), "copy-core", "sums")
         with self.assertRaises(safety.Refused):
             plan.execute(pl)
-        self.assertEqual(plan.leftover(self.out), ["core-core.hdf.part", "core-core.hdf"])
+        # a journal of 0.4.6 also names finished files: only .part files count
+        self.assertEqual(plan.leftover(self.out), ["core-core.hdf.part"])
         plan.clean_leftover(self.out)
         self.assertEqual(os.listdir(self.out), [])
+
+    def write_old(self, *names, ours=False):
+        for n in names:
+            with open(os.path.join(self.out, n), "w") as f:
+                f.write("old " + n)
+        if ours:
+            with open(os.path.join(self.out, "amix-installer.json"), "w") as f:
+                json.dump({"files": dict((n, "0" * 64) for n in names)}, f)
+
+    def read(self, n):
+        with open(os.path.join(self.out, n)) as f:
+            return f.read()
+
+    def test_overwrite_replaces_at_the_end(self):
+        self.write_old("core-core.hdf", ours=True)
+        pl = self.only(plan.make_plan(self.cfg(), self.paths()), "copy-core", "sums")
+        self.assertEqual(pl.problems, [])
+        self.assertIn(("core-core.hdf", True), pl.existing)
+        plan.execute(pl)
+        self.assertEqual(plan.sha256_file(os.path.join(self.out, "core-core.hdf")),
+                         plan.sha256_file(self.src))
+        self.assertFalse([n for n in os.listdir(self.out) if n.endswith((".bak", ".part"))])
+
+    def test_backup_keeps_the_old_files(self):
+        self.write_old("core-core.hdf", "README-amix-installer.txt")
+        pl = self.only(plan.make_plan(self.cfg(existing="backup"), self.paths()),
+                       "copy-core", "sums")
+        self.assertEqual(pl.problems, [])
+        plan.execute(pl)
+        baks = sorted(n for n in os.listdir(self.out) if n.endswith(".bak"))
+        self.assertEqual(len(baks), 2)
+        self.assertTrue(baks[0].startswith("README-amix-installer.txt."))
+        self.assertEqual(self.read(baks[1]), "old core-core.hdf")
+        self.assertRegex(baks[1], r"^core-core\.hdf\.[0-9]{8}-[0-9]{6}\.bak$")
+
+    def test_foreign_file_needs_confirmation(self):
+        self.write_old("core-core.hdf")              # a hand-made disk of that name
+        pl = plan.make_plan(self.cfg(), self.paths())
+        self.assertTrue(any("core-core.hdf" in p and "not written by the installer" in p
+                            for p in pl.problems), pl.problems)
+        ok = plan.make_plan(self.cfg(), dict(self.paths(), overwrite_confirmed=True))
+        self.assertEqual(ok.problems, [])
+        self.assertEqual(plan.make_plan(self.cfg(existing="backup"), self.paths()).problems, [])
+
+    def test_failed_run_leaves_old_files(self):
+        self.write_old("core-core.hdf", ours=True)
+
+        class Boom(plan.Action):
+            def __init__(self):
+                super(Boom, self).__init__("boom", "fails", "", 1, [])
+
+            def run(self, ctx):
+                raise IOError("disk full")
+        pl = self.only(plan.make_plan(self.cfg(), self.paths()), "copy-core")
+        pl.actions.append(Boom())
+        with self.assertRaises(IOError):
+            plan.execute(pl)
+        self.assertEqual(self.read("core-core.hdf"), "old core-core.hdf")
+        self.assertEqual(sorted(os.listdir(self.out)), ["amix-installer.json", "core-core.hdf"])
+
+    def test_source_is_never_written(self):
+        pl = plan.make_plan(self.cfg(existing="backup"), dict(self.paths(), out_dir=self.d))
+        self.assertNotIn(self.src, [os.path.join(self.d, n) for a in pl.actions
+                                    for n in a.outputs])
+        os.symlink(self.src, os.path.join(self.out, "core-core.hdf"))
+        pl = plan.make_plan(self.cfg(existing="backup"), self.paths())
+        self.assertTrue(any("is the source image" in p for p in pl.problems), pl.problems)
 
     @unittest.skipUnless(os.path.exists(os.path.expanduser(
         "~/Documents/FS-UAE/Hard Drives/AMIGA_UNIX.hdf")), "no AMIX core HDF here")

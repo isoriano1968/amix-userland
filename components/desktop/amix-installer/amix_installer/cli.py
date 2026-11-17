@@ -26,6 +26,12 @@ def main(argv=None):
                     "needs --source and --out, runs until AMIX reports DONE or Ctrl-C")
     ap.add_argument("--screenshot", metavar="DIR",
                     help="render every step to DIR/*.png and quit (tests)")
+    ex = ap.add_mutually_exclusive_group()
+    ex.add_argument("--overwrite", action="store_true",
+                    help="replace files of the same name in --out, also ones the installer did "
+                         "not write (never the source HDF)")
+    ex.add_argument("--backup", action="store_true",
+                    help="keep files of the same name in --out as <name>.<date>-<time>.bak")
     ap.add_argument("--version", action="version", version="%(prog)s " + __version__)
     args = ap.parse_args(argv)
     if args.plan or args.apply or args.net:
@@ -64,10 +70,21 @@ def run_plan(args):
         paths["repo"] = os.path.abspath(args.repo)
     if args.no_fs_uae_list:
         paths["fsuae_add"] = False
+    # files that exist in --out: the profile's choice, or the flag's
+    if getattr(args, "backup", False):
+        cfg.sel["existing"] = "backup"
+    if getattr(args, "overwrite", False):
+        cfg.sel["existing"] = "overwrite"
+        paths["overwrite_confirmed"] = True
     pl = plan.make_plan(cfg, paths, written=args.net)
     if args.net:
         return run_net(cfg, pl, paths)
     print(pl.text())
+    if pl.existing:
+        print("\nIn %s already (%s):" % (paths.get("out_dir"), "kept as .bak" if
+                                         cfg.sel.get("existing") == "backup" else "replaced"))
+        for n, mine in pl.existing:
+            print("  %s%s" % (n, "" if mine else "  (not written by the installer)"))
     if pl.problems:
         return 1
     if not args.apply:
