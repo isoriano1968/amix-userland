@@ -597,6 +597,11 @@ class Cards(Base):
         from amix_installer import kernel
         old, kernel.find_stamp = kernel.find_stamp, lambda: "/bin/true"   # kit-tools' stand-in
         self.addCleanup(setattr, kernel, "find_stamp", old)
+        # the kit package (or an amix-gate checkout) need not be here: a stand-in
+        oldkit, real = kernel.find_kit, kernel.find_kit
+        kernel.find_kit = lambda drv="rtgfb", line="030": (
+            "/nonexistent/buddha-kit" if getattr(drv, "id", drv) == "buddha" else real(drv, line))
+        self.addCleanup(setattr, kernel, "find_kit", oldkit)
         c = Base.cfg(self, mach="a3000", accel="none", kern="stock", boot="pvmk")
         c.set_on("hw_buddha", True)
         self.assertTrue(c.select("diskon", "on_buddha"))
