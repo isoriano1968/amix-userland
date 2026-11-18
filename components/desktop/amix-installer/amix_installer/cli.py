@@ -120,7 +120,11 @@ def run_net(cfg, pl, paths=None):
         return 1
     net = [a for a in pl.actions if isinstance(a, plan.NetInstall)]
     if not net or not net[0].repo:
-        print("amix-installer: no package repository (make repo, or AMIX_REPO)", file=sys.stderr)
+        print("amix-installer: %s (or --repo DIR)" % plan.NO_REPO, file=sys.stderr)
+        return 1
+    why = netinstall.not_ready(net[0].repo)
+    if why:
+        print("amix-installer: %s" % why, file=sys.stderr)
         return 1
     real = cfg.in_place()
     try:

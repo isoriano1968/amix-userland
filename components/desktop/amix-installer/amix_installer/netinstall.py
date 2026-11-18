@@ -101,6 +101,28 @@ def payload(repo, manifest, path):
     raise KeyError(path)
 
 
+def _ready(repo):
+    """(why AMIX could not install from repo or None, the bootstrap made from it)."""
+    from . import plan
+    if not repo:
+        return plan.NO_REPO, None
+    why = plan.repo_problem(repo)
+    if why:
+        return why, None
+    try:
+        return None, bootstrap(repo)
+    except (KeyError, OSError, ValueError) as e:
+        return ("the bootstrap (%s) cannot be made from %s: %s is missing"
+                % (BOOT_PKG, repo, e), None)
+
+
+def not_ready(repo):
+    """Why a network install from repo cannot start, or None: a usable
+    repository, and the bootstrap made from it before any server starts, so
+    "go" never waits on a file that cannot be made."""
+    return _ready(repo)[0]
+
+
 def bootstrap(repo):
     """The SVR4 datastream AMIXboot, made of files from the repository."""
     E = svr4.Entry
@@ -462,7 +484,7 @@ def foundation_lines(have, now, sizes=None):
         "  report 'foundation syslogd missing: no /etc/init.d/syslogd (Patch Disk 1-2a)'",
         "fi",
         "if [ -c /dev/urandom ]; then report 'foundation random present'; else",
-        "  report 'foundation random missing: /dev/random is not packaged yet (a kernel relink)'",
+        "  report 'foundation random: not in this release'",
         "fi"]
     return lines
 
@@ -771,7 +793,17 @@ class TftpServer(threading.Thread):
                     self.sock.sendto(struct.pack("!HH", 5, 1) + b"file not found\0", addr)
                     self.log("tftp: %s asked for %s: not here" % (addr[0], name))
                     continue
-                self.sessions[addr] = data() if callable(data) else data
+                try:
+                    data = data() if callable(data) else data
+                except Exception as e:  # noqa: BLE001 -- the server must keep answering
+                    # a file that cannot be made: an ERROR, so the client stops
+                    # waiting, and the thread lives on for the next request
+                    self.sock.sendto(struct.pack("!HH", 5, 0) + ("%s cannot be made: %s"
+                                     % (name, e))[:200].encode("latin-1", "replace") + b"\0",
+                                     addr)
+                    self.log("tftp: %s asked for %s: it cannot be made (%s)" % (addr[0], name, e))
+                    continue
+                self.sessions[addr] = data
                 self.progress[addr] = [name, time.time(), 10]
                 self.log("tftp: sending %s to %s (%d bytes)" % (name, addr[0],
                                                                len(self.sessions[addr])))
@@ -887,6 +919,7 @@ class Session(object):
         self._lock = threading.Lock()
         self.done = False
         self.failed = False
+        self.failure = None             # the reason of the FAILED line
         self._boot = None
         self.http = _HttpServer((bind, http_port), _Handler)
         self.http.state = self
@@ -959,6 +992,7 @@ class Session(object):
                 self.done = True
             if line.startswith("FAILED"):
                 self.failed = True
+                self.failure = line[len("FAILED"):].lstrip(": ") or None
             self.log("%s amix: %s" % (t, line) if kind == "msg" else "%s amix log: %s" % (t, line))
 
     def start(self):

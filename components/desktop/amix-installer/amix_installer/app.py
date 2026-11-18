@@ -418,10 +418,12 @@ class Window(Adw.ApplicationWindow):
 
             def upd():
                 p = self.paths.get(key)
-                if not p and key == "repo":
-                    d = plan.default_repo()
-                    row.set_subtitle(d if d else "None yet: \u201cmake repo\u201d in "
-                                     "components/desktop/amix-installer publishes one")
+                if key == "repo":
+                    d = p or plan.default_repo()
+                    why = plan.repo_problem(d) if d else None
+                    row.set_subtitle(why if why else d if d else
+                                     "None found. Install the package %s, or choose a folder "
+                                     "that holds an AMIX package repository" % plan.REPO_PKG)
                     return
                 if not p and key == "kickstart" and plan.fs_uae().a3000_kickstarts():
                     row.set_subtitle("From FS-UAE\u2019s Kickstarts: %s" % os.path.basename(
@@ -846,6 +848,9 @@ class Window(Adw.ApplicationWindow):
                 f = d.select_folder_finish(res) if folder else d.open_finish(res)
             except GLib.Error:
                 return
+            if key == "repo" and plan.repo_problem(f.get_path()):
+                self.toast(plan.repo_problem(f.get_path()))
+                return
             self.paths[key] = f.get_path()
             if key == "out_dir":
                 self.paths.pop("overwrite_confirmed", None)
@@ -1219,6 +1224,10 @@ class Window(Adw.ApplicationWindow):
                 return
         emu = emu or not real           # AMIX in FS-UAE: this computer is 10.0.2.2
         host = netinstall.FS_UAE_HOST if emu else netinstall.lan_address()
+        why = net.missing or netinstall.not_ready(net.repo)
+        if why:
+            self._alert("Not ready to install over the network", why[0].upper() + why[1:])
+            return
         try:
             self.net = netinstall.Session(self.cfg, net.repo, host=host, data_disk=data_disk,
                                           kernel=netinstall.plan_kernel(pl) if pl else None,
@@ -1296,7 +1305,8 @@ class Window(Adw.ApplicationWindow):
         if n.done:
             self.run_title.set_text("Done: AMIX is installed")
         elif n.failed:
-            self.run_title.set_text("Stopped on AMIX: see the log")
+            self.run_title.set_text("Stopped on AMIX: %s (AMIX's own log is below)"
+                                    % (n.failure or "no reason given"))
         elif n.messages:
             self.run_title.set_text(n.messages[-1][2])
         from . import netinstall

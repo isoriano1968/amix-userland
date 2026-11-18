@@ -10,7 +10,7 @@
 #                     never opens a window on a real display
 #   make run          start it from the source tree (on your own display)
 COMPONENT_NAME    = amix-installer
-COMPONENT_VERSION = 0.6.3
+COMPONENT_VERSION = 0.6.4
 
 include ../../../make-rules/shared.mk
 
@@ -65,4 +65,13 @@ STOCK_CONTENTS ?=
 repo:
 	sh tools/mkrepo.sh $(REPO) $(STOCK_CONTENTS)
 
-.PHONY: build test host-stage install deb screenshots run repo
+# the repository as the source archive of the package
+# desktop/amix-installer/repository (AMIX binaries: kept local, never pushed)
+REPO_DATE ?= $(shell date -u +%Y.%m.%d)
+repo-archive:
+	test -f $(REPO)/pkg5.repository
+	tar -C $(dir $(abspath $(REPO))) -cf - $(notdir $(abspath $(REPO))) | gzip -9n \
+		> $(BUILD_DIR)/amix-installer-repository-$(REPO_DATE).tar.gz
+	sha256sum $(BUILD_DIR)/amix-installer-repository-$(REPO_DATE).tar.gz
+
+.PHONY: build test host-stage install deb screenshots run repo repo-archive

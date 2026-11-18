@@ -517,16 +517,50 @@ NO_PKG = "AMIX does this with its package client (0.4)"
 NO_NET = "the network install comes in version 0.4"
 
 
+# what the package desktop/amix-installer/repository installs: the AMIX packages
+REPO_PKG = "desktop/amix-installer/repository"
+NO_REPO = ("no AMIX package repository: install the package %s, or choose a folder "
+           "that holds one" % REPO_PKG)
+
+
+def repo_problem(d):
+    """Why folder d cannot serve the network install, or None: an IPS
+    repository with publisher amix, the bootstrap's and the foundation packages."""
+    from . import netinstall
+    if not os.path.isfile(os.path.join(d, "pkg5.repository")):
+        return "%s is not a package repository (it has no pkg5.repository)" % d
+    if not os.path.isdir(os.path.join(d, "publisher", "amix", "pkg")):
+        return "%s holds no AMIX packages (no publisher amix)" % d
+    gone = [p for p in list(netinstall.BOOT_FILES) + netinstall.FOUNDATION_PKGS
+            if netinstall.missing_in_repo(d, p)]
+    if gone:
+        return ("the package repository %s is older than this installer: it lacks %s"
+                % (d, ", ".join(gone)))
+    return None
+
+
+def repo_candidates():
+    """Where the package repository is looked for, in order: $AMIX_REPO; what
+    "make repo" publishes into the source tree; the user's own
+    (~/.local/share/amix-installer/repo); the one the package REPO_PKG installs
+    next to the installer (<prefix>/share/amix-installer/repo)."""
+    env = os.environ.get("AMIX_REPO")
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    prefix = os.path.dirname(os.path.dirname(here))
+    return ([env] if env else []) + [
+        os.path.join(here, "build", "repo"),
+        os.path.expanduser("~/.local/share/amix-installer/repo"),
+        os.path.join(prefix, "share", "amix-installer", "repo")]
+
+
 def default_repo():
-    """The package repository: $AMIX_REPO, else what "make repo" publishes
-    into the installer's build folder, else ~/.local/share/amix-installer/repo."""
+    """The first usable repository of repo_candidates(), else None;
+    $AMIX_REPO is taken as it is, so its problem shows."""
     env = os.environ.get("AMIX_REPO")
     if env:
         return env
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    for d in (os.path.join(here, "build", "repo"),
-              os.path.expanduser("~/.local/share/amix-installer/repo")):
-        if os.path.isfile(os.path.join(d, "pkg5.repository")):
+    for d in repo_candidates():
+        if os.path.isfile(os.path.join(d, "pkg5.repository")) and not repo_problem(d):
             return d
     return None
 
@@ -967,8 +1001,7 @@ def make_plan(cfg, paths, fs=None, written=False):
     stem = os.path.splitext(os.path.basename(src))[0] if src else "amix"
 
     repo = paths.get("repo") or default_repo()
-    no_repo = None if repo else ("no package repository: run \u201cmake repo\u201d in "
-                                 "components/desktop/amix-installer, or choose one")
+    no_repo = repo_problem(repo) if repo else NO_REPO
     if sel["src"] == "run":
         pl.actions.append(NetInstall("the running system fetches the bootstrap with tftp; "
                                      "its own pkgadd and pkg install the rest", repo, no_repo))

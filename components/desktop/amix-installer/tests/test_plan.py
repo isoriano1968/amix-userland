@@ -74,8 +74,10 @@ class MakePlan(Base):
         pl = plan.make_plan(self.cfg(), {"core_hdf": self.src})
         self.assertTrue(any("folder" in p for p in pl.problems))
         # a running system: only the network install, no disks
+        repo = os.path.join(self.d, "repo")
+        good_repo(repo)
         pl = plan.make_plan(model.Config(sel={"src": "run", "mach": "a2500", "accel": "gvp"}),
-                            {"repo": self.d})
+                            {"repo": repo})
         self.assertEqual([a.id for a in pl.actions], ["install"])
         self.assertTrue(pl.actions[0].available)
         self.assertEqual(pl.problems, [])
@@ -85,7 +87,7 @@ class MakePlan(Base):
             nr = plan.make_plan(model.Config(sel={"src": "run", "mach": "a2500", "accel": "gvp"}),
                                 {}, fsuae.FsUae())
             if plan.default_repo() is None:
-                self.assertIn("make repo", nr.actions[0].missing)
+                self.assertIn(plan.REPO_PKG, nr.actions[0].missing)
         finally:
             if old is None:
                 del os.environ["AMIX_REPO"]
@@ -374,6 +376,59 @@ class Execute(Base):
             parts = im.read_rdb()
         self.assertEqual([(p.name, p.kind, p.start) for p in parts], [("PVMK", "pvmk", 64)])
 
+
+
+def good_repo(d, leave_out=()):
+    """A package repository with the foundation packages (but leave_out)."""
+    import urllib.parse
+    from amix_installer import netinstall
+    os.makedirs(os.path.join(d, "publisher", "amix", "pkg"))
+    with open(os.path.join(d, "pkg5.repository"), "w") as f:
+        f.write("[publisher]\nprefix = amix\n")
+    for stem in sorted(set(netinstall.BOOT_FILES) | set(netinstall.FOUNDATION_PKGS)):
+        if stem in leave_out:
+            continue
+        pd = os.path.join(d, "publisher", "amix", "pkg", urllib.parse.quote(stem, safe=""))
+        os.makedirs(pd)
+        with open(os.path.join(pd, "1%2C2.1-1%3A20261118T000000Z"), "w") as f:
+            f.write("set name=pkg.fmri value=pkg://amix/%s@1,2.1-1:20261118T000000Z\n" % stem)
+
+
+class Repository(unittest.TestCase):
+    """Where the package repository comes from, and what makes one usable."""
+
+    def test_problem(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIn("not a package repository", plan.repo_problem(d))
+            good = os.path.join(d, "good")
+            good_repo(good)
+            self.assertIsNone(plan.repo_problem(good))
+            old = os.path.join(d, "old")
+            good_repo(old, leave_out=("sysutils/setclk",))
+            self.assertIn("older than this installer: it lacks sysutils/setclk",
+                          plan.repo_problem(old))
+
+    def test_installed_package_found(self):
+        """A pkg-installed installer finds the repository the package
+        desktop/amix-installer/repository put next to it, past unusable ones."""
+        with tempfile.TemporaryDirectory() as d:
+            old, share = os.path.join(d, "old"), os.path.join(d, "share")
+            good_repo(old, leave_out=("sysutils/setclk",))
+            good_repo(share)
+            saved, env = plan.repo_candidates, os.environ.pop("AMIX_REPO", None)
+            plan.repo_candidates = lambda: [os.path.join(d, "none"), old, share]
+            try:
+                self.assertEqual(plan.default_repo(), share)
+                plan.repo_candidates = lambda: [old]
+                self.assertIsNone(plan.default_repo())
+            finally:
+                plan.repo_candidates = saved
+                if env is not None:
+                    os.environ["AMIX_REPO"] = env
+
+    def test_candidates_end_at_the_prefix_share(self):
+        self.assertTrue(plan.repo_candidates()[-1].endswith(
+            os.path.join("share", "amix-installer", "repo")))
 
 if __name__ == "__main__":
     unittest.main()

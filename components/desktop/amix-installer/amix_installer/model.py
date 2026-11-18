@@ -403,7 +403,7 @@ DEFAULT_ON = {"pkg": True, "bigram": True, "vt": True, "syslog": True, "mem": Tr
               "hw_a2065": True, "hw_zen": True, "hw_hydra": False, "hw_xsurf": False,
               "hw_zz9000eth": False,
               "hw_rtg": True, "hw_picasso2": False, "hw_zz9000": False, "hw_va2000": False,
-              "zen": True, "paula": True, "a2065": False, "random": True,
+              "zen": True, "paula": True, "a2065": False, "random": False,
               "gpu": True, "video": True, "crypto": True, "netsurf": True, "media": True,
               "grafx2": False, "sysmon": True, "games": False, "gcc14": True, "gcc27": False,
               "headers": True, "pkgconf": True, "gnu": True, "python": False, "vim": True}

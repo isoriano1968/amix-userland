@@ -213,6 +213,39 @@ class Bootstrap(unittest.TestCase):
         self.assertIn(b"BASEDIR=/opt/amixboot", files["pkginfo"])
 
 
+
+class NotReady(unittest.TestCase):
+    """The network page starts only with a repository and a bootstrap; the TFTP
+    server answers every request, also for a file it cannot make."""
+
+    def test_not_ready(self):
+        from test_plan import good_repo
+        self.assertIn("desktop/amix-installer/repository", netinstall.not_ready(None))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIn("not a package repository", netinstall.not_ready(d))
+            good_repo(os.path.join(d, "r"))
+            # the packages are there, but amix-pkg's manifest has no usr/bin/pkg
+            why = netinstall.not_ready(os.path.join(d, "r"))
+            self.assertIn("the bootstrap (AMIXboot) cannot be made", why)
+
+    def test_tftp_error_and_lives_on(self):
+        def broken():
+            raise KeyError("sysutils/amix-pkg")
+        t = netinstall.TftpServer({"amixboot.pkg": broken, "go": b"echo go\n"}, port=0,
+                                  bind="127.0.0.1")
+        t.start()
+        c = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        c.settimeout(3)
+        try:
+            for name, op in ((b"amixboot.pkg", 5), (b"nothere", 5), (b"go", 3)):
+                c.sendto(struct.pack("!H", 1) + name + b"\0octet\0", ("127.0.0.1", t.port))
+                pkt, _ = c.recvfrom(1024)
+                self.assertEqual(struct.unpack("!H", pkt[:2])[0], op, name)
+            self.assertEqual(pkt[4:], b"echo go\n")
+        finally:
+            c.close()
+            t.stop()
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -439,6 +472,10 @@ class Progress(unittest.TestCase):
             self.assertIn("step 5 of 8", text)
             s.reported("msg", "foundation gnu/gnu-tools installed")
             self.assertIsNone(s.activity()[2])
+            self.assertIsNone(s.failure)
+            s.reported("msg", "FAILED: the foundation needs sysutils/setclk: not in the repository")
+            self.assertTrue(s.failed)
+            self.assertEqual(s.failure, "the foundation needs sysutils/setclk: not in the repository")
         finally:
             s.stop()
 
@@ -482,7 +519,7 @@ class Foundation(unittest.TestCase):
                         t.index("install sysutils/setclk"))
         self.assertIn("/etc/clkzone", t)
         self.assertIn("/etc/init.d/syslogd.stock", t)
-        self.assertIn("foundation random missing", t)
+        self.assertIn("foundation random: not in this release", t)
         # without the patch disk a missing patch stops the install
         self.assertIn("fail 'apply Patch Disk 1-2a", t)
         self.assertNotIn("$W/patch", t)

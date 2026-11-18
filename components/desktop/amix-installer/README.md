@@ -19,6 +19,17 @@ It runs on the host, not on AMIX: OpenIndiana first, Linux too.
   `sudo apt install ./amix-installer_<version>-1_all.deb`, which also pulls
   in GTK 4, libadwaita and PyGObject
 
+The AMIX packages the network install serves come as a package of their
+own, `desktop/amix-installer/repository` (an IPS repository of every
+amix-userland package, under `/usr/share/amix-installer/repo`);
+`desktop/amix-installer` requires it, so a first run needs no source tree.
+The installer takes the first usable repository of: `$AMIX_REPO`, a "make
+repo" in the source tree (`build/repo`), your own
+(`~/.local/share/amix-installer/repo`), the package's. "Choose…" on the
+Base system page takes any other folder; a folder that is not an AMIX
+package repository, or one older than the installer (without the foundation
+packages), is refused with the reason.
+
 Both put the same files under `/usr`. The driver kits, pvmk and the m68k
 cross assembler and linker are their own packages; without them the
 installer still runs, and its plan names what is missing.
@@ -49,6 +60,9 @@ and pycairo to make the icons.
     make build          # icons from the AMIX logo
     make test           # model, profiles, safety checks
     make deb            # the Debian package, under build/
+    make repo           # the AMIX package repository, build/repo
+    make repo-archive   # it as build/amix-installer-repository-<date>.tar.gz,
+                        # the source of desktop/amix-installer/repository
     make run            # from the source tree
     make screenshots    # every step, light and dark, under Xvfb, to build/shots
                         # (AMIX_SHOT_SOURCE=core.hdf: also with that image read)
