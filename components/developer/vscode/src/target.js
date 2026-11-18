@@ -258,8 +258,14 @@ function make(dir) {
   });
 }
 
-async function runOnTarget() {
+// over: a launch configuration's program, args, env, display, files,
+// buildFirst, cwd (they win over the settings).  Returns { done, kill } for
+// the program started, or undefined when nothing was started.
+async function runOnTarget(over = {}) {
   const s = settings();
+  for (const k of ['program', 'args', 'env', 'display', 'files', 'buildFirst', 'fetchCore']) {
+    if (over[k] !== undefined && over[k] !== null) s[k] = over[k];
+  }
   if (!server && !(await startListener(false))) return;
   if (current && current.closed) current = null;
   if (!current) {
@@ -274,7 +280,8 @@ async function runOnTarget() {
   try {
     const root = hooks.workspaceRoot();
     const ed = vscode.window.activeTextEditor;
-    dir = hooks.findMakeDir(ed ? path.dirname(ed.document.uri.fsPath) : root, root) || root;
+    dir = over.cwd ? path.resolve(root, over.cwd)
+      : hooks.findMakeDir(ed ? path.dirname(ed.document.uri.fsPath) : root, root) || root;
   } catch (e) {
     vscode.window.showErrorMessage(e.message);
     return;
@@ -314,7 +321,7 @@ async function runOnTarget() {
     vscode.window.showErrorMessage(`AMIX: ${name} was not sent: ${e.message}`);
     return;
   }
-  openTerminal(agent, name, [name, ...s.args], s, dir);
+  return openTerminal(agent, name, [name, ...s.args], s, dir);
 }
 
 function openTerminal(agent, name, argv, s, dir) {
@@ -322,6 +329,8 @@ function openTerminal(agent, name, argv, s, dir) {
   const closeEv = new vscode.EventEmitter();
   let run = null;
   let done = false;
+  let finish;
+  const finished = new Promise((res) => { finish = res; });
   const env = { ...s.env };
   if (s.display) env.DISPLAY = s.display;
 
@@ -336,6 +345,7 @@ function openTerminal(agent, name, argv, s, dir) {
         done = true;
         if (e.lost) {
           write.fire('\r\n\x1b[31m[the connection to the target was lost]\x1b[0m\r\n');
+          finish(e);
           return;
         }
         if (e.signal) {
@@ -355,10 +365,12 @@ function openTerminal(agent, name, argv, s, dir) {
         } else {
           write.fire(`\r\n\x1b[2m[${name} exited with ${e.code}]\x1b[0m\r\n`);
         }
+        finish(e);
       });
       run.started.catch((err) => {
         done = true;
         write.fire(`\x1b[31m${name} did not start: ${err.message}\x1b[0m\r\n`);
+        finish({ error: err.message });
       });
     },
     handleInput(data) {
@@ -373,6 +385,12 @@ function openTerminal(agent, name, argv, s, dir) {
   };
   const term = vscode.window.createTerminal({ name: `AMIX: ${name} @ ${agent.name}`, pty });
   term.show();
+  return {
+    name,
+    agent: agent.name,
+    done: finished,
+    kill: (sig = 15) => { if (run && !done) run.kill(sig); }
+  };
 }
 
 function activate(context, h) {
@@ -396,6 +414,8 @@ function activate(context, h) {
     { dispose: stopListener }
   );
   if (settings().autoStart) startListener(true);
+  // launch.json: "type": "amix" (src/launch.js)
+  require('./launch').activate(context, (config) => runOnTarget(config));
 }
 
 module.exports = { activate, isAmixExecutable, configText };

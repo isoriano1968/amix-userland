@@ -60,8 +60,15 @@ const vscode = {
     getConfiguration: () => ({ get: (k) => config[k] }),
     onDidChangeConfiguration: () => ({ dispose() {} })
   },
-  commands: { registerCommand: (n, f) => { commands[n] = f; return { dispose() {} }; } }
+  commands: { registerCommand: (n, f) => { commands[n] = f; return { dispose() {} }; } },
+  debug: {
+    registerDebugConfigurationProvider: (t, p) => { debugProviders[t] = p; return { dispose() {} }; },
+    registerDebugAdapterDescriptorFactory: (t, f) => { debugFactories[t] = f; return { dispose() {} }; }
+  },
+  DebugAdapterInlineImplementation: class { constructor(a) { this.implementation = a; } }
 };
+const debugProviders = {};
+const debugFactories = {};
 const realLoad = Module._load;
 Module._load = function (req, ...rest) {
   return req === 'vscode' ? vscode : realLoad.call(this, req, ...rest);
@@ -127,10 +134,44 @@ function waitFor(cond, ms, what) {
     assert.ok(t.text.includes('you typed fine'), t.text);
     console.log('ok   build, send, run in a pseudo terminal, input, exit code');
 
+    // launch.json: type amix, through the inline adapter (F5 = with debugging)
+    assert.ok(debugProviders.amix && debugFactories.amix, 'amix launch type registered');
+    const cfg = debugProviders.amix.resolveDebugConfiguration(undefined, {});
+    assert.strictEqual(cfg.type, 'amix');
+    const ad = debugFactories.amix.createDebugAdapterDescriptor({}).implementation;
+    const msgs = [];
+    ad.onDidSendMessage((m) => msgs.push(m));
+    ad.handleMessage({ seq: 1, type: 'request', command: 'initialize', arguments: {} });
+    ad.handleMessage({ seq: 2, type: 'request', command: 'launch',
+      arguments: { type: 'amix', request: 'launch', program: 'hello', args: ['launch'], cwd: proj } });
+    await waitFor(() => terminals.length === 2, 10000, 'launch terminal');
+    const t2 = terminals[1];
+    await waitFor(() => t2.text.includes('hello launch'), 10000, 'launch output');
+    t2.pty.handleInput('x\r');
+    await waitFor(() => msgs.some((m) => m.event === 'terminated'), 10000, 'terminated');
+    const ev = (n) => msgs.find((m) => m.event === n);
+    assert.ok(ev('initialized'));
+    assert.ok(msgs.find((m) => m.command === 'launch' && m.success), JSON.stringify(msgs));
+    assert.strictEqual(ev('exited').body.exitCode, 4);
+    assert.ok(msgs.some((m) => m.event === 'output' && /without debugging/.test(m.body.output)));
+    console.log('ok   launch.json type amix: initialize, launch, output, exit code 4, terminated');
+
+    // Ctrl+F5 (noDebug) and a disconnect stop the program
+    const ad2 = debugFactories.amix.createDebugAdapterDescriptor({}).implementation;
+    const m2 = [];
+    ad2.onDidSendMessage((m) => m2.push(m));
+    ad2.handleMessage({ seq: 1, type: 'request', command: 'launch',
+      arguments: { program: 'hello', args: ['stop'], noDebug: true, buildFirst: false } });
+    await waitFor(() => terminals.length === 3 && terminals[2].text.includes('hello stop'), 10000, 'run 3');
+    ad2.handleMessage({ seq: 2, type: 'request', command: 'disconnect', arguments: {} });
+    await waitFor(() => terminals[2].text.includes('ended by signal 1'), 10000, 'stopped');
+    assert.ok(!m2.some((m) => m.event === 'output' && /without debugging/.test(m.body.output)));
+    console.log('ok   Ctrl+F5 runs without the debugging note; disconnect stops the program');
+
     // a broken build sends nothing
     fs.writeFileSync(path.join(proj, 'Makefile'), 'all:\n\tfalse\n');
     await commands['amix.runOnTarget']();
-    assert.strictEqual(terminals.length, 1);
+    assert.strictEqual(terminals.length, 3);
     assert.ok(messages.some((m) => m.includes('the build failed')));
     console.log('ok   a failed build sends nothing');
     console.log('all passed');

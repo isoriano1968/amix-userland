@@ -2,7 +2,7 @@
   "name": "vscode-amix",
   "displayName": "AMIX Development Tools",
   "description": "VS Code helpers for building AMIX m68k programs with gcc 2.7.2.3 (m68k-cbm-sysv4) or gcc 14 (gcc14-cross-amix).",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "publisher": "isoriano1968",
   "license": "MIT",
   "icon": "images/amix-logo.png",
@@ -35,7 +35,10 @@
     "onCommand:amix.makeGcc14",
     "onCommand:amix.makeCleanGcc272",
     "onCommand:amix.makeCleanGcc14",
-    "onCommand:amix.checkSetup"
+    "onCommand:amix.checkSetup",
+    "onDebugResolve:amix",
+    "onDebugDynamicConfigurations:amix",
+    "onDebugInitialConfigurations"
   ],
   "main": "./src/extension.js",
   "contributes": {
@@ -381,6 +384,90 @@
           "group": "navigation"
         }
       ]
-    }
+    },
+    "debuggers": [
+      {
+        "type": "amix",
+        "label": "AMIX Target",
+        "languages": [
+          "c"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "The program to send and run, relative to cwd. Empty: the AMIX executable there (asked when there are several)."
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Its arguments."
+              },
+              "cwd": {
+                "type": "string",
+                "description": "The folder with the Makefile and the program. Empty: the active file's Makefile folder.",
+                "default": "${workspaceFolder}"
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "More environment variables on AMIX."
+              },
+              "display": {
+                "type": "string",
+                "description": "DISPLAY on AMIX; :0 is the Amiga's own screen. Empty: none.",
+                "default": ":0"
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "More files to send with it (data, resources), relative to cwd."
+              },
+              "buildFirst": {
+                "type": "boolean",
+                "description": "Run make first; a failed build sends nothing.",
+                "default": true
+              },
+              "fetchCore": {
+                "type": "boolean",
+                "description": "Bring a core file back as core.<program>.",
+                "default": true
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "amix",
+            "request": "launch",
+            "name": "Run on AMIX target",
+            "cwd": "${workspaceFolder}",
+            "program": "hello",
+            "args": []
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "AMIX: Run on AMIX target",
+            "description": "Build with make, send the program to the AMIX target (vscode-agent) and run it there",
+            "body": {
+              "type": "amix",
+              "request": "launch",
+              "name": "Run on AMIX target",
+              "cwd": "^\"\\${workspaceFolder}\"",
+              "program": "${1:hello}",
+              "args": []
+            }
+          }
+        ]
+      }
+    ]
   }
 }

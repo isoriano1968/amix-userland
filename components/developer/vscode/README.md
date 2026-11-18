@@ -329,6 +329,38 @@ Setting it up:
       `user` line to your login, then run:
       `chmod 600 /etc/vscode-agent.conf; /etc/init.d/vscode-agent start`.
 
+### launch.json
+
+The launch type `amix` puts Run on Target into VS Code's **Run and Debug**
+view. **Ctrl+F5** (Run Without Debugging) and **F5** then start the
+program on the target. New sample projects come with the entry, and
+**AMIX: Configure Workspace** adds a `launch.json` when there is none.
+With **Add Configuration…** the snippet is called "AMIX: Run on AMIX
+target".
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [{
+    "type": "amix",
+    "request": "launch",
+    "name": "Run on AMIX target",
+    "cwd": "${workspaceFolder}",
+    "program": "hello",
+    "args": [],
+    "env": { "LANG": "C" },
+    "display": ":0",
+    "files": [],
+    "buildFirst": true
+  }]
+}
+```
+
+Each attribute overrides the `amix.run.*` setting of the same name. The
+program runs in its own terminal, and **Stop** ends it. F5 does not stop
+at breakpoints yet: that needs gdb on AMIX. Until then it runs the
+program like Ctrl+F5 and says so in the Debug Console.
+
 The status bar shows the connected target. With several targets, **AMIX:
 Select Target** chooses one.
 

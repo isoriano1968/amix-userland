@@ -378,6 +378,10 @@ async function configureWorkspace() {
 
   writeJson(path.join(settingsDir, 'settings.json'), mergeSettings(path.join(settingsDir, 'settings.json'), settings));
   writeJson(path.join(settingsDir, 'tasks.json'), tasks);
+  // F5 / Ctrl+F5 on the AMIX target; an existing launch.json is the user's
+  if (!fs.existsSync(path.join(settingsDir, 'launch.json'))) {
+    writeJson(path.join(settingsDir, 'launch.json'), launchJson(''));
+  }
 
   vscode.window.showInformationMessage(`AMIX workspace settings (${c.label}) and tasks for gcc 2.7.2.3 and gcc 14 written.`);
 }
@@ -530,6 +534,19 @@ async function newSampleProject(which) {
     fs.copyFileSync(path.join(src, f), path.join(dest, f));
   }
   fs.chmodSync(path.join(dest, 'amix-fix-needed'), 0o755);
+  // F5 / Ctrl+F5 run it on the AMIX target (the "amix" launch type): its own
+  // launch.json when it opens as the workspace, else an entry in the open
+  // workspace's launch.json
+  if (folders.length === 0) {
+    fs.mkdirSync(path.join(dest, '.vscode'));
+    writeJson(path.join(dest, '.vscode', 'launch.json'), launchJson('hello'));
+  } else {
+    addLaunchConfig(path.join(parent, '.vscode', 'launch.json'), {
+      ...launchJson('hello').configurations[0],
+      name: `Run ${name} on AMIX target`,
+      cwd: `\${workspaceFolder}/${name}`
+    });
+  }
 
   if (folders.length === 0) {
     await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(dest));
@@ -680,6 +697,40 @@ function mergeSettings(file, settings) {
   } catch {
     return settings;
   }
+}
+
+// a launch.json with the "amix" launch type (src/launch.js)
+function launchJson(program) {
+  return {
+    version: '0.2.0',
+    configurations: [{
+      type: 'amix',
+      request: 'launch',
+      name: 'Run on AMIX target',
+      cwd: '${workspaceFolder}',
+      program: program || '',
+      args: []
+    }]
+  };
+}
+
+// a configuration into launch.json, which may hold others (kept when it
+// parses as JSON; a launch.json with comments is left alone)
+function addLaunchConfig(file, config) {
+  let data = { version: '0.2.0', configurations: [] };
+  if (fs.existsSync(file)) {
+    try {
+      data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      vscode.window.showWarningMessage(`AMIX: ${file} is not plain JSON; add "${config.name}" (type amix) by hand.`);
+      return;
+    }
+    if (!Array.isArray(data.configurations)) data.configurations = [];
+    if (data.configurations.some((c) => c.name === config.name)) return;
+  }
+  data.configurations.push(config);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  writeJson(file, data);
 }
 
 function writeJson(file, value) {
