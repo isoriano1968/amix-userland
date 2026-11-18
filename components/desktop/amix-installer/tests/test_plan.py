@@ -630,6 +630,49 @@ class Cards(Base):
         self.assertTrue(any("cannot be linked into one kernel" in p for p in pl.problems),
                         pl.problems)
 
+    def test_a4091(self):
+        """the A4091 and A4092: the a4091 kit with the stock and port kernels,
+        the disks at their SCSI IDs on the card's place among dd/sd's controllers"""
+        from amix_installer import kernel
+        old, kernel.find_stamp = kernel.find_stamp, lambda: "/bin/true"   # kit-tools' stand-in
+        self.addCleanup(setattr, kernel, "find_stamp", old)
+        oldkit, real = kernel.find_kit, kernel.find_kit
+        kernel.find_kit = lambda drv="rtgfb", line="030": (
+            "/nonexistent/a4091-kit" if getattr(drv, "id", drv) == "a4091" else real(drv, line))
+        self.addCleanup(setattr, kernel, "find_kit", oldkit)
+        # an A3000: its own SCSI is card 0, the A4091 card 1
+        c = Base.cfg(self, mach="a3000", accel="none", kern="stock", boot="pvmk")
+        c.set_on("hw_a4091", True)
+        self.assertTrue(c.select("diskon", "on_a4091"))
+        self.assertEqual(plan.scsi_controllers(c), ["the A3000's own SCSI", "the A4091"])
+        self.assertEqual(plan.kernel_drivers(c), ["a4091"])
+        self.assertEqual(plan.disk_device(c, "core", 1), "/dev/rdsk/ced0s1")
+        self.assertEqual(plan.disk_device(c, "data", 1), "/dev/rdsk/c9d0s1")
+        pl = plan.make_plan(c, self.paths())
+        self.assertFalse([p for p in pl.problems if "a4091" in p.lower()], pl.problems)
+        self.assertFalse([a for a in pl.actions if a.id == "disk-driver"])
+        dk = [a for a in pl.actions if a.id == "kernel"][0]
+        self.assertEqual((dk.line, dk.root), ("030", (1, 6)))
+        # an A4000 with an A4092 and the port kernel: card 0
+        k = Base.cfg(self, mach="a4000", accel="a3640", kern="k040", boot="pvmk")
+        k.set_on("hw_a4092", True)
+        self.assertTrue(k.select("diskon", "on_a4092"))
+        self.assertEqual(plan.kernel_drivers(k)[0], "a4091")
+        self.assertEqual(plan.disk_device(k, "core", 1), "/dev/rdsk/c6d0s1")
+        # the Z3660 kernel takes no kits: no disks on the A4091 there
+        z = model.Config(sel={"mach": "a3000", "accel": "z3660", "kern": "z3opt"},
+                         on={"hw_a4091": True})
+        self.assertFalse(z.available(model.find_group("diskon").option("on_a4091")))
+        self.assertNotIn("a4091", plan.kernel_drivers(z))
+        # with the Buddha's kit too: refused (two controller tables)
+        b = Base.cfg(self, mach="a4000", accel="a3640", kern="k040", boot="pvmk")
+        b.set_on("hw_a4091", True)
+        b.set_on("hw_buddha", True)
+        self.assertTrue({"a4091", "buddha"} <= set(plan.kernel_drivers(b)))
+        pl = plan.make_plan(b, self.paths())
+        self.assertTrue(any("the Buddha's and the A4091's drivers cannot be linked" in p
+                            for p in pl.problems), pl.problems)
+
     def test_kernel_drivers(self):
         self.assertEqual(plan.kernel_drivers({"gfx": "zz9000", "net": "nethydra"}),
                          ["zz9000", "hydra"])

@@ -151,6 +151,12 @@ DRIVERS = {
     "buddha": Driver("buddha", "Buddha IDE", "storage", None, None,
                      ("buddhainit", "budqueue", "cwqueue", "buddha_scsicard"),
                      lines=("030", "040"), init="buddhainit", bmajor=18, cmajor=40),
+    # the NCR 53C710 Zorro III SCSI boards (A4091, A4092, A4770) as controllers
+    # of AMIX's dd/sd: amigaux's A4091 driver, polled; kit patch_a4091_card.py
+    # widens sd.c's controller table (its own table: one table kit a kernel)
+    "a4091": Driver("a4091", "A4091 SCSI", "storage", None, None,
+                    ("a4091q", "a4092q", "a4770q", "a4091queue", "a4091_scsicard"),
+                    lines=("030", "040"), bmajor=18, cmajor=40),
 }
 # the stub calls graphics before network
 KIND_ORDER = ("storage", "graphics", "network")

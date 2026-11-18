@@ -553,11 +553,18 @@ SCSI_ID = {"core": 6, "pvmk": 5, "data": 1}
 SDCARDS = 2
 
 
-# dd/sd's controllers in its probe order: the Amiga's own, a Zorro card, a
-# CPU card's, the Z3660's SD card
+# dd/sd's controllers in its probe order (sd.c sorts them by board address):
+# the Amiga's own, the Zorro II cards, a CPU card's, the Zorro III cards, the
+# Z3660's SD card
 DD_SD = (("hw_a3000scsi", "the A3000's own SCSI"), ("hw_a2091", "the A2091"),
          ("hw_buddha", "the Buddha"), ("hw_catweasel", "the Catweasel Z-II"),
-         ("hw_gvpscsi", "the GVP card's SCSI"), ("hw_z3660sd", "the Z3660's SD card"))
+         ("hw_gvpscsi", "the GVP card's SCSI"), ("hw_a4091", "the A4091"),
+         ("hw_a4092", "the A4092"), ("hw_z3660sd", "the Z3660's SD card"))
+# the 53C710 Zorro III cards of the a4091 kit (disks at their SCSI IDs)
+NCR710_HW = ("hw_a4091", "hw_a4092")
+# the kits that each bring sd.c a controller table of their own: one a kernel
+TABLE_KITS = (("buddha", "the Buddha's"), ("a4091", "the A4091's"),
+              ("z3660scsi", "the Z3660 SD card's"))
 # IDE controllers of the buddha kit: the driver's fixed units per port and
 # drive (port 0 master 6, slave 5; port 1 master 3): the core disk on port
 # 0's master, pvmk on its slave, the data disk on port 1's master
@@ -694,6 +701,9 @@ def kernel_drivers(cfg):
     # the Buddha and Catweasel Z-II: the buddha kit, storage first
     if kits and any(h in cfg.tags() for h in IDE_HW):
         out.insert(0, "buddha")
+    # the A4091 and A4092: the a4091 kit, storage first
+    if kits and any(h in cfg.tags() for h in NCR710_HW):
+        out.insert(0, "a4091")
     # the port kernel takes the Z3660's SD card and Ethernet from kits; the
     # Z3660 kernel has both built in
     if sel.get("kern") == "k040" and sel.get("accel") == "z3660":
@@ -1040,11 +1050,11 @@ def make_plan(cfg, paths, fs=None, written=False):
                                    "%s cannot be written; choose the stock boot, install "
                                    "developer/amix/pvmk or set AMIX_PVMK_DIR" % names["pvmk"])
     ids = kernel_drivers(cfg)
-    if "buddha" in ids and "z3660scsi" in ids:
-        # each brings its own controller table for sd.c (patch_buddha_card.py)
-        pl.problems.append("the Buddha's driver and the Z3660 SD card's cannot be linked into one "
-                           "kernel yet: untick one of them on the Machine page, or choose the "
-                           "stock kernel")
+    tables = [name for k, name in TABLE_KITS if k in ids]
+    if len(tables) > 1:
+        # each brings its own controller table for sd.c (patch_*_card.py)
+        pl.problems.append("%s drivers cannot be linked into one kernel yet: untick all but one "
+                           "of them on the Machine page" % " and ".join(tables))
     if kernel_built(cfg):
         dk = DriverKernel(src, ids, sel.get("kern", "stock"),
                           cfg.source is not None and not cfg.source.patch,

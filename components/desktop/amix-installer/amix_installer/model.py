@@ -148,10 +148,12 @@ MACHINE = Step("machine", "Machine", "Amiga, CPU card and hardware",
           O("hw_gvpscsi", "GVP SCSI", "The SCSI of the GVP G-Force card", needs=("gvp",)),
           O("hw_z3660sd", "Z3660 SD card", "Disk images on the board’s SD card: in the Z3660 "
             "kernel, a kit for the 68040/060 port", needs=("z3660",)),
-          O("hw_a4091", "A4091", "Commodore’s Zorro III SCSI-2 card (53C710)", needs=(ZORRO3,),
-            badge=NODRV, nodriver=_amigaux("a4091")),
-          O("hw_a4092", "A4092", "The new Zorro III SCSI-2 card (53C710)", needs=(ZORRO3,),
-            badge=NODRV, nodriver=_amigaux("a4091")),
+          # amigaux's A4091 driver (MIT) as our a4091 kit, polled, with the
+          # stock and 68040/060 port kernels
+          O("hw_a4091", "A4091", "Commodore’s Zorro III SCSI-2 card (53C710): its driver is "
+            "linked into your kernel", needs=(ZORRO3,)),
+          O("hw_a4092", "A4092", "The new Zorro III SCSI-2 card (53C710): the A4091’s driver, "
+            "linked into your kernel", needs=(ZORRO3,)),
           O("hw_a4kt710", "A4000T SCSI", "The A4000T’s own SCSI (53C710)", needs=("a4000",),
             badge=NODRV, nodriver=_amigaux("a4kt710")),
           O("hw_gayle", "IDE port", "The A4000’s or A1200’s own IDE (Gayle)",
@@ -256,10 +258,10 @@ STEPS = [
                needs=("hw_gvpscsi",)),
              O("on_z3660sd", "Z3660 SD card", "HDF files at units 6, 5 and 1 of the board",
                needs=("hw_z3660sd",)),
-             O("on_a4091", "A4091", "No AMIX driver yet: the disks are written, AMIX boots "
-               "from them once it has one", needs=("hw_a4091",), badge=NODRV),
-             O("on_a4092", "A4092", "No AMIX driver yet: the disks are written, AMIX boots "
-               "from them once it has one", needs=("hw_a4092",), badge=NODRV),
+             O("on_a4091", "A4091", "Core disk at SCSI ID 6, pvmk at 5, data at 1",
+               needs=(("hw_a4091",), ("stock", "k040"))),
+             O("on_a4092", "A4092", "Core disk at SCSI ID 6, pvmk at 5, data at 1",
+               needs=(("hw_a4092",), ("stock", "k040"))),
              O("on_a4kt710", "A4000T SCSI", "No AMIX driver yet: the disks are written, AMIX "
                "boots from them once it has one", needs=("hw_a4kt710",), badge=NODRV),
              O("on_gayle", "IDE port", "No AMIX driver yet: the disks are written, AMIX boots "
