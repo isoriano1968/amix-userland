@@ -18,6 +18,7 @@ import gzip
 import http.server
 import json
 import os
+import re
 import socket
 import socketserver
 import struct
@@ -289,6 +290,53 @@ def missing_in_repo(repo, stem, _seen=None):
     return None
 
 
+def fetch_size(repo, stems, skip=None):
+    """(files, bytes) pkg fetches from repo to install stems: their files and
+    their requirements', without the packages in skip (installed before; the
+    set grows by what stems bring in).  Bytes: the files as the repository
+    serves them (pkg.csize)."""
+    skip = set() if skip is None else skip
+    files = size = 0
+    todo = list(stems)
+    while todo:
+        stem = todo.pop()
+        if stem in skip:
+            continue
+        skip.add(stem)
+        try:
+            _, man = _newest(repo, stem)
+        except KeyError:
+            continue
+        for line in man.splitlines():
+            w = line.split()
+            if not w:
+                continue
+            if w[0] == "file":
+                files += 1
+                cs = [x for x in w if x.startswith("pkg.csize=")]
+                sz = [x for x in w if x.startswith("pkg.size=")]
+                size += int((cs or sz or ["=0"])[0].split("=", 1)[1])
+            elif w[0] == "depend" and "type=require" in w:
+                fmri = [x[5:] for x in w if x.startswith("fmri=")]
+                if fmri:
+                    todo.append(fmri[0].replace("pkg://amix/", "").replace("pkg:/", "")
+                                .split("@")[0])
+    return files, size
+
+
+def fetching(what, size):
+    """The report line before pkg fetches: what, its files and kilobytes;
+    Session.reported parses it for the progress bar."""
+    files, nbytes = size
+    return "report 'installing %s: %d files, %d KB from this computer'" % (
+        what, files, (nbytes + 1023) // 1024)
+
+
+FETCH_RE = re.compile(r"^installing (.+): (\d+) files, (\d+) KB from this computer$")
+# the steps of the go script (step 4, the data disk, and 7, the kernel, may be left out)
+NSTEPS = 8
+
+
 # --- the foundation -------------------------------------------------------------
 # What every AMIX gets, on FS-UAE and on a real Amiga alike, before any optional
 # set; each item is reported as "foundation <item> present|installed|missing|
@@ -335,10 +383,12 @@ def patch_check_lines(patch):
     return lines
 
 
-def foundation_lines(have, now):
+def foundation_lines(have, now, sizes=None):
     """Shell lines: the clock, the base set, syslogd, the random driver.
     have: the foundation packages the repository holds (the others fail the
-    install). now: the host's time (UTC, a time.struct_time)."""
+    install). now: the host's time (UTC, a time.struct_time).  sizes: package
+    -> (files, bytes) to fetch, for a report line before each install."""
+    sizes = sizes or {}
     stamp = "%02d%02d%02d%02d%04d" % (now.tm_mon, now.tm_mday, now.tm_hour, now.tm_min,
                                       now.tm_year)
     gone = [p for p in FOUNDATION_PKGS if p not in have]
@@ -378,8 +428,10 @@ def foundation_lines(have, now):
                       "# install only, back if it fails, gone when the package has its own",
                       "[ ! -f %s ] || $PKG list %s >/dev/null 2>&1 || /usr/bin/mv %s %s.core || "
                       "fail 'moving %s aside'" % (path, p, path, path, path)]
-        lines += ["if $PKG list %s >/dev/null 2>&1; then report 'foundation %s present'; else" % (p, p),
-                  "  $PKG --min-free $M install %s >>$LOG 2>&1 || "
+        lines += ["if $PKG list %s >/dev/null 2>&1; then report 'foundation %s present'; else" % (p, p)]
+        if p in sizes:
+            lines += ["  " + fetching(p, sizes[p])]
+        lines += ["  $PKG --min-free $M install %s >>$LOG 2>&1 || "
                   "{ %sreport 'foundation %s failed'; fail 'installing %s'; }"
                   % (p, ("[ ! -f %s.core ] || /usr/bin/mv %s.core %s; " % ((HANDOVER[p],) * 3))
                      if p in HANDOVER else "", p, p),
@@ -433,6 +485,12 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
                              for p, m in gone if m]
         pkgs = [p for p, m in gone if not m]
         have = [p for p in FOUNDATION_PKGS if not missing_in_repo(repo, p)]
+    sizes = {}
+    if repo:
+        # what each install fetches, in the order the script installs them
+        done = set()
+        for p in ["sysutils/amix-pkg"] + have + (["\0options"] if pkgs else []):
+            sizes[p] = fetch_size(repo, pkgs if p == "\0options" else [p], done)
     W = "http://%s:%d" % (host, http_port)
     lines = ["#!/bin/sh",
              "# AMIX Installer: the install steps, fetched from %s/steps" % W,
@@ -458,7 +516,10 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
     lines += ["",
               "step 3 \"the package client\"",
               "$B/bin/pkg set-publisher -O $W/repo amix >>$LOG 2>&1 || fail set-publisher",
-              "$B/bin/pkg refresh >>$LOG 2>&1 || fail refresh",
+              "$B/bin/pkg refresh >>$LOG 2>&1 || fail refresh"]
+    if "sysutils/amix-pkg" in sizes:
+        lines += [fetching("sysutils/amix-pkg", sizes["sysutils/amix-pkg"])]
+    lines += [
               "$B/bin/pkg --min-free $M install sysutils/amix-pkg >>$LOG 2>&1 || fail 'installing the package client'",
               "$B/bin/pkg --min-free $M update sysutils/amix-pkg >>$LOG 2>&1 || fail 'updating the package client'",
               "PKG=/usr/bin/pkg",
@@ -497,10 +558,12 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
                   "  /usr/bin/mv /$d /$d.moved && /usr/bin/ln -s /amixdata/$n /$d && /usr/bin/rm -rf /$d.moved || fail \"link /$d\"",
                   "done"]
     lines += ["", "step 5 \"foundation: clock, base packages, syslogd\""]
-    lines += foundation_lines(have, now or time.gmtime())
+    lines += foundation_lines(have, now or time.gmtime(), sizes)
     lines += ["report 'foundation DONE'",
               "", "step 6 \"packages: %s\"" % (" ".join(pkgs) or "none")]
     if pkgs:
+        if "\0options" in sizes:
+            lines += [fetching("%d packages" % len(pkgs), sizes["\0options"])]
         lines += ["$PKG --min-free $M install %s >>$LOG 2>&1 || fail 'installing packages'"
                   % " ".join(pkgs)]
     if missing:
@@ -607,6 +670,44 @@ def unboot_lines():
 
 
 # --- the servers --------------------------------------------------------------
+
+def _mb(n):
+    return "%.1f MB" % (n / 1048576.0) if n >= 1048576 else "%d KB" % ((n + 1023) // 1024)
+
+
+def net_progress(step, nsteps, fetch, got, t_fetch, quiet, done=False, failed=False,
+                 started=True):
+    """The network install's bar: (fraction, bar text, line under it), from
+    Session.activity().  While pkg fetches, the bar is its bytes served; else
+    the step.  quiet: seconds without a report or a file served."""
+    if done:
+        return 1.0, "Done", ""
+    if not started:
+        return 0.0, "Waiting for AMIX", "Nothing yet: type the lines above at the AMIX console"
+    where = "step %d of %d" % (step, nsteps) if step else "starting"
+    if failed:
+        return max(0.0, (step - 1) / float(nsteps)), "Stopped at %s" % where, ""
+    if fetch:
+        what, files, total = fetch
+        frac = min(got[1] / float(total), 0.99) if total else 0.0
+        rate = got[1] / 1024.0 / max(t_fetch, 1.0)
+        if got[0] >= files:
+            frac, bar = 0.99, "%s: fetched, unpacking on AMIX" % what
+        else:
+            bar = "%s: %s of %s" % (what, _mb(got[1]), _mb(total))
+        text = "%d of %d files fetched, %d KB/s, %s" % (min(got[0], files), files, rate, where)
+    else:
+        frac = max(0.0, (step - 1) / float(nsteps))
+        bar = where[0].upper() + where[1:]
+        text = ""
+    if quiet >= 120:
+        text = ("No report or download from AMIX for %d min %02d s: it may still be working, "
+                "or waiting at its console" % (quiet // 60, quiet % 60))
+    elif quiet >= 5:
+        text = (text + ", " if text else "") + "last sign of AMIX %d s ago" % quiet
+    return frac, bar, text
+
+
 
 class TftpServer(threading.Thread):
     """Read-only TFTP (RFC 1350, octet) from one socket, files from a dict."""
@@ -719,7 +820,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             f = os.path.join(st.repo, rel)
             if os.path.isfile(f):
                 with open(f, "rb") as fh:
-                    return self._reply(200, fh.read(), "application/octet-stream")
+                    data = fh.read()
+                self._reply(200, data, "application/octet-stream")
+                if self.command == "GET":
+                    st.served(len(data))
+                return
         return self._reply(404, b"not found\n")
 
     do_HEAD = do_GET
@@ -774,6 +879,12 @@ class Session(object):
         self.data_disk = data_disk
         self.log = log or (lambda t: None)
         self.messages = []
+        self.step = 0               # the go script's step, from its "step N: ..." reports
+        self.fetch = None           # [what, files, bytes] of the install pkg is fetching
+        self.got = [0, 0]           # files and bytes served from the repository since then
+        self.last = time.time()     # the last sign of AMIX: a report or a file served
+        self.t_fetch = self.last
+        self._lock = threading.Lock()
         self.done = False
         self.failed = False
         self._boot = None
@@ -810,8 +921,35 @@ class Session(object):
         """What to type at the AMIX console, as root."""
         return ["tftp %s %d" % (self.host, self.tftp.port), "binary", "get go", "quit", "sh go"]
 
+    def served(self, nbytes):
+        """A repository file sent to AMIX: progress of the current fetch."""
+        with self._lock:
+            self.got[0] += 1
+            self.got[1] += nbytes
+            self.last = time.time()
+
+    def activity(self):
+        """What the window shows: (step, NSTEPS, fetch or None, files and bytes
+        served for it, seconds since it began, seconds since AMIX's last sign)."""
+        now = time.time()
+        with self._lock:
+            return (self.step, NSTEPS, self.fetch, tuple(self.got), now - self.t_fetch,
+                    now - self.last)
+
     def reported(self, kind, text):
         for line in text.splitlines() or [""]:
+            with self._lock:
+                self.last = time.time()
+                if kind == "msg":
+                    m = re.match(r"^step (\d+)", line)
+                    f = FETCH_RE.match(line)
+                    if m:
+                        self.step, self.fetch = int(m.group(1)), None
+                    elif f:
+                        self.fetch = [f.group(1), int(f.group(2)), int(f.group(3)) * 1024]
+                        self.got, self.t_fetch = [0, 0], self.last
+                    elif self.fetch and (" installed" in line or "FAILED" in line):
+                        self.fetch = None
             t = time.strftime("%H:%M:%S")
             self.messages.append((t, kind, line))
             if kind == "msg" and line.startswith("foundation "):

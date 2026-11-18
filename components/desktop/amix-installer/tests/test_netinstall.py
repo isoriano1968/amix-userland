@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -372,6 +373,83 @@ class Picasso(unittest.TestCase):
                 s.stop()
         finally:
             os.unlink(f.name)
+
+
+def fake_repo(d, pkgs):
+    """A repository with pkgs: stem -> (requirements, file sizes)."""
+    for stem, (reqs, sizes) in pkgs.items():
+        pd = os.path.join(d, "publisher", "amix", "pkg", urllib.parse.quote(stem, safe=""))
+        os.makedirs(pd)
+        lines = ["set name=pkg.fmri value=pkg://amix/%s@1,2.1-1:20261118T000000Z" % stem]
+        lines += ["depend fmri=pkg:/%s@1 type=require" % r for r in reqs]
+        lines += ["file %d path=f%d pkg.size=%d pkg.csize=%d" % (i, i, 3 * n, n)
+                  for i, n in enumerate(sizes)]
+        with open(os.path.join(pd, urllib.parse.quote("1,2.1-1:20261118T000000Z", safe="")),
+                  "w") as f:
+            f.write("\n".join(lines) + "\n")
+
+
+class Progress(unittest.TestCase):
+    """The fetch sizes in the go script and the window's progress bar."""
+
+    def test_fetch_size(self):
+        with tempfile.TemporaryDirectory() as d:
+            fake_repo(d, {"gnu/gnu-tools": (["gnu/bash", "gnu/grep"], []),
+                          "gnu/bash": (["library/zlib"], [400000, 1000]),
+                          "gnu/grep": ([], [200000]),
+                          "library/zlib": ([], [50000])})
+            self.assertEqual(netinstall.fetch_size(d, ["gnu/gnu-tools"]), (4, 651000))
+            # what an earlier install brought is not fetched again
+            done = set()
+            self.assertEqual(netinstall.fetch_size(d, ["library/zlib"], done), (1, 50000))
+            self.assertEqual(netinstall.fetch_size(d, ["gnu/gnu-tools"], done), (3, 601000))
+            self.assertEqual(netinstall.fetch_size(d, ["gnu/grep"], done), (0, 0))
+            self.assertEqual(netinstall.fetch_size(d, ["nothing/here"]), (0, 0))
+
+    def test_steps_report_before_each_fetch(self):
+        with tempfile.TemporaryDirectory() as d:
+            fake_repo(d, {p: ([], [2048]) for p in netinstall.FOUNDATION_PKGS +
+                          ["sysutils/amix-pkg"]})
+            t = netinstall.steps_script(model.Config(sel={"desk": "cde"}), "10.0.2.2", repo=d)
+        Scripts.sh_ok(self, t)
+        line = "report 'installing gnu/gnu-tools: 1 files, 2 KB from this computer'"
+        self.assertIn(line, t)
+        self.assertLess(t.index(line), t.index("$PKG --min-free $M install gnu/gnu-tools"))
+        self.assertLess(t.index("report 'installing sysutils/amix-pkg: 1 files"),
+                        t.index("install sysutils/amix-pkg"))
+        self.assertTrue(netinstall.FETCH_RE.match(line[8:-1]))
+
+    def test_session_activity(self):
+        s = netinstall.Session(model.Config(), "/nonexistent", host="127.0.0.1",
+                               tftp_port=0, http_port=0, bind="127.0.0.1")
+        s.start()
+        try:
+            self.assertEqual(s.activity()[:4], (0, netinstall.NSTEPS, None, (0, 0)))
+            s.reported("msg", "step 5: foundation: clock, base packages, syslogd")
+            s.reported("msg", "installing gnu/gnu-tools: 44 files, 2400 KB from this computer")
+            s.served(1000)
+            s.served(2000)
+            step, n, fetch, got, t_fetch, quiet = s.activity()
+            self.assertEqual((step, fetch, got), (5, ["gnu/gnu-tools", 44, 2400 * 1024],
+                                                   (2, 3000)))
+            frac, bar, text = netinstall.net_progress(step, n, fetch, got, 10, quiet)
+            self.assertTrue(0 < frac < 0.01)
+            self.assertIn("gnu/gnu-tools: 3 KB of 2.3 MB", bar)
+            self.assertIn("2 of 44 files fetched", text)
+            self.assertIn("step 5 of 8", text)
+            s.reported("msg", "foundation gnu/gnu-tools installed")
+            self.assertIsNone(s.activity()[2])
+        finally:
+            s.stop()
+
+    def test_net_progress(self):
+        p = netinstall.net_progress
+        self.assertEqual(p(0, 8, None, (0, 0), 0, 0, started=False)[1], "Waiting for AMIX")
+        self.assertEqual(p(3, 8, None, (0, 0), 0, 1)[:2], (0.25, "Step 3 of 8"))
+        self.assertEqual(p(5, 8, ["x", 2, 100], (2, 100), 5, 1)[1], "x: fetched, unpacking on AMIX")
+        self.assertIn("last sign of AMIX 30 s ago", p(5, 8, None, (0, 0), 0, 30)[2])
+        self.assertIn("for 2 min 05 s", p(5, 8, None, (0, 0), 0, 125)[2])
+        self.assertEqual(p(5, 8, None, (0, 0), 0, 0, done=True)[:2], (1.0, "Done"))
 
 
 class Foundation(unittest.TestCase):

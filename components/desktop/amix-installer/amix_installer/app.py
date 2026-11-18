@@ -1261,6 +1261,12 @@ class Window(Adw.ApplicationWindow):
         page.append(info)
         self.run_title = label("Waiting for AMIX\u2026", ("heading",))
         page.append(self.run_title)
+        # the step and, while pkg fetches, its files as they are served: a
+        # long download shows it is moving, a silent AMIX shows it is not
+        self.net_bar = Gtk.ProgressBar(show_text=True)
+        page.append(self.net_bar)
+        self.net_text = label("", ("caption", "dim-label"))
+        page.append(self.net_text)
         self.run_log = Gtk.TextView(editable=False, monospace=True, cursor_visible=False)
         self.run_log.set_wrap_mode(Gtk.WrapMode.CHAR)
         sw = Gtk.ScrolledWindow(min_content_height=200, vexpand=True)
@@ -1293,6 +1299,12 @@ class Window(Adw.ApplicationWindow):
             self.run_title.set_text("Stopped on AMIX: see the log")
         elif n.messages:
             self.run_title.set_text(n.messages[-1][2])
+        from . import netinstall
+        frac, bar, text = netinstall.net_progress(*n.activity(), done=n.done, failed=n.failed,
+                                       started=bool(n.messages))
+        self.net_bar.set_fraction(frac)
+        self.net_bar.set_text(bar)
+        self.net_text.set_text(text)
         return True
 
     def _net_stop(self):

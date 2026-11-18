@@ -69,7 +69,8 @@ def run(win, outdir):
     if os.environ.get("AMIX_SHOT_NET"):
         from . import plan
         if plan.default_repo():
-            scenes = [("n-net", {"src": "run"}, {}, 0), ("n-fsuae-net", {"src": "run"}, {}, 0)]
+            scenes = [("n-net", {"src": "run"}, {}, 0), ("n-fsuae-net", {"src": "run"}, {}, 0),
+                      ("n-fetch-net", {"src": "run"}, {}, 0)]
     out = os.environ.get("AMIX_SHOT_OUT")
     if out and getattr(win, "source_state", None):
         win.paths["out_dir"] = out
@@ -103,7 +104,17 @@ def run(win, outdir):
             from . import plan
             win._net_page(plan.NetInstall("", plan.default_repo()), real=True,
                           emu=name.endswith("fsuae-net"))
-            GLib.timeout_add(300, lambda: after_paint(net_grab) and False)
+            if name.endswith("fetch-net"):
+                # AMIX in the middle of the base set: the bar while pkg fetches
+                for m in ("step 5: foundation: clock, base packages, syslogd",
+                          "foundation sysutils/setclk installed",
+                          "installing gnu/gnu-tools: 44 files, 2401 KB from this computer"):
+                    win.net.reported("msg", m)
+                for n in range(17):
+                    win.net.served(23000)
+                GLib.timeout_add(700, lambda: after_paint(net_grab) and False)
+            else:
+                GLib.timeout_add(300, lambda: after_paint(net_grab) and False)
         else:
             after_paint(grab)
         return False
