@@ -308,6 +308,8 @@ class Window(Adw.ApplicationWindow):
             page.append(self._running_note())
         if s.id == "disks":
             page.append(self._space_card())
+        if s.id == "dev":
+            page.append(self._vscode_card())
         for g in s.groups:
             page.append(self._group(g))
         if s.id == "base":
@@ -388,6 +390,32 @@ class Window(Adw.ApplicationWindow):
             pg.add(row)
             self._rows.append((g, o, row, ctl, size, inst))
         return pg
+
+    def _vscode_card(self):
+        """Only the VS Code agent: a console system VS Code on the PC develops for."""
+        box = Gtk.Box(spacing=14)
+        box.add_css_class("amix-info")
+        img = Gtk.Image.new_from_icon_name("computer-symbolic")
+        img.set_pixel_size(22)
+        img.set_valign(Gtk.Align.START)
+        box.append(img)
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        col.set_hexpand(True)
+        col.append(label("Developing on a PC with VS Code?", ("heading",)))
+        col.append(label("The compilers stay on the PC: the Amiga needs only the VS Code agent, "
+                         "which runs what VS Code builds. This keeps your machine, kernel and "
+                         "disks and leaves out the desktop, the applications and the compilers."))
+        box.append(col)
+        btn = Gtk.Button(label="Only the VS Code agent", valign=Gtk.Align.CENTER)
+        btn.add_css_class("pill")
+
+        def only(_b):
+            model.vscode_only(self.cfg)
+            self.show_step(self.step)
+            self.toast("Console system with the VS Code agent")
+        btn.connect("clicked", only)
+        box.append(btn)
+        return box
 
     def _running_note(self):
         box = Gtk.Box(spacing=14)
@@ -1303,7 +1331,9 @@ class Window(Adw.ApplicationWindow):
         if n is None:
             return False
         if n.done:
-            self.run_title.set_text("Done: AMIX is installed")
+            self.run_title.set_text("Done: AMIX is installed" + (
+                ". VS Code: AMIX: Set Agent Key, the key is in %s" % n.agent_key_file
+                if getattr(n, "agent_key_file", None) else ""))
         elif n.failed:
             self.run_title.set_text("Stopped on AMIX: %s (AMIX's own log is below)"
                                     % (n.failure or "no reason given"))

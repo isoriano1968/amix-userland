@@ -379,7 +379,11 @@ STEPS = [
                probe=("/usr/gnu/bin/bash",)),
               O("python", "Python 3", "With pip for user installs", mb=90,
                probe=("/usr/local/bin/python3",)),
-              O("vim", "vim", "Editor", mb=10, probe=("/usr/local/bin/vim",))])]),
+              O("vim", "vim", "Editor", mb=10, probe=("/usr/local/bin/vim",))]),
+          G("remote", "Develop from a PC", options=[
+              O("vscode", "VS Code agent",
+                "Runs the programs VS Code builds on the PC: starts at boot and dials the PC, "
+                "no compilers needed on the Amiga", mb=1, probe=("/usr/local/bin/vscode-agent",))])]),
     Step("summary", "Summary", "Check and create",
          "Check your choices, then create the disks. A profile keeps them for the next machine.",
          summary=True),
@@ -406,7 +410,8 @@ DEFAULT_ON = {"pkg": True, "bigram": True, "vt": True, "syslog": True, "mem": Tr
               "zen": True, "paula": True, "a2065": False, "random": False,
               "gpu": True, "video": True, "crypto": True, "netsurf": True, "media": True,
               "grafx2": False, "sysmon": True, "games": False, "gcc14": True, "gcc27": False,
-              "headers": True, "pkgconf": True, "gnu": True, "python": False, "vim": True}
+              "headers": True, "pkgconf": True, "gnu": True, "python": False, "vim": True,
+              "vscode": False}
 
 # what each Amiga comes with: set when it is chosen (A3000UX and A2500UX
 # shipped with an A2065; the A2500's disks are on its A2091)
@@ -425,6 +430,23 @@ NET_HW = {"net2065": "hw_a2065", "netzen": "hw_zen", "nethydra": "hw_hydra",
 DISK_HW = {"on_" + h[3:]: h for h in ("hw_a3000scsi", "hw_a2091", "hw_gvpscsi", "hw_z3660sd",
                                       "hw_a4091", "hw_a4092", "hw_a4kt710", "hw_gayle",
                                       "hw_buddha", "hw_catweasel", "hw_blizscsi")}
+
+
+# "Only the VS Code agent": a console system that VS Code on the PC develops
+# for, without desktop, applications or compilers on the Amiga; the machine,
+# kernel and disk choices stay
+VSCODE_ONLY_OFF = ("apps", "core1", "tc", "tools")
+
+
+def vscode_only(cfg):
+    cfg.sel["desk"] = "console"
+    for gid in VSCODE_ONLY_OFF:
+        for o in find_group(gid).options:
+            cfg.on[o.id] = False
+    cfg.on["vscode"] = True
+    cfg.on["pkg"] = True
+    cfg.normalize()
+    return cfg
 
 
 def implied_on(sel):

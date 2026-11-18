@@ -140,6 +140,44 @@ class Scripts(unittest.TestCase):
         self.assertLess(t.index("fail 'the installed client'"), t.index("RPKG=$PKG; RLD="))
         self.assertNotIn("the data disk", netinstall.steps_script(cfg, "10.0.2.2"))
 
+    def test_steps_vscode_agent(self):
+        """The VS Code agent: its package, then a root-only configuration that
+        dials the PC with the session's key; an existing one is kept."""
+        cfg = model.vscode_only(model.Config(sel={"mach": "uae", "accel": "none"}))
+        self.assertEqual(cfg.sel["desk"], "console")
+        self.assertFalse(cfg.on["gcc14"] or cfg.on["netsurf"] or cfg.on["gnu"])
+        pkgs, _ = netinstall.packages_for(cfg)
+        self.assertEqual(pkgs, ["developer/vscode-agent"])
+        key = "0f" * 32
+        t = netinstall.steps_script(cfg, "10.0.2.2", agent_key=key)
+        self.sh_ok(t)
+        self.assertNotIn("$(", t)
+        self.assertIn("echo 'connect 10.0.2.2:%d'" % netinstall.AGENT_PORT, t)
+        self.assertIn("echo 'secret %s'" % key, t)
+        self.assertIn("/usr/bin/chmod 600 /etc/vscode-agent.conf", t)
+        self.assertIn("if [ -f /etc/vscode-agent.conf ]; then report", t)
+        self.assertIn("useradd -d /home/developer", t)
+        self.assertIn("/etc/init.d/vscode-agent start", t)
+        self.assertLess(t.index("install developer/vscode-agent"), t.index("vscode-agent.conf"))
+        # no key, or no agent chosen: no configuration
+        self.assertNotIn("vscode-agent.conf", netinstall.steps_script(cfg, "10.0.2.2"))
+        plain = model.Config(sel={"mach": "uae", "accel": "none"})
+        self.assertNotIn("vscode-agent.conf", netinstall.steps_script(plain, "10.0.2.2", agent_key=key))
+
+    def test_session_agent_key_file(self):
+        cfg = model.vscode_only(model.Config(sel={"mach": "uae", "accel": "none"}))
+        with tempfile.TemporaryDirectory() as d:
+            n = netinstall.Session(cfg, None, report=os.path.join(d, "foundation-report.txt"),
+                                      tftp_port=0, http_port=0, bind="127.0.0.1")
+            try:
+                self.assertEqual(len(n.agent_key), 64)
+                with open(n.agent_key_file) as f:
+                    self.assertEqual(f.read().strip(), n.agent_key)
+                self.assertEqual(os.stat(n.agent_key_file).st_mode & 0o777, 0o600)
+            finally:
+                n.tftp.stop()
+                n.http.server_close()
+
     def test_unboot(self):
         """pkgrm stops at a contents line it cannot parse: only AMIXboot's
         lines go, the rest stays as it was, the old file is kept."""

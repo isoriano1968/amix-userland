@@ -47,6 +47,18 @@ system use, AMIX packages, kernels, what is installed already, a pvmk boot
 partition and the package client; the Disks page then shows its real sizes. Disk writing and package installs come next; see
 [the plan](../../../doc/plans/AMIX-INSTALLER-APP-PLAN.md).
 
+**Developing from a PC with VS Code** (0.6.5): the Development step has a
+**VS Code agent** switch (developer/vscode-agent) and a button, **Only the
+VS Code agent**, that makes a console system with just the agent: no
+desktop, applications or compilers on the Amiga, because they stay on the
+PC. The network install writes `/etc/vscode-agent.conf` (root only):
+- the agent dials the PC on port 7777;
+- it runs programs as the first login user, or as a new user `developer`;
+- it signs in with a new key.
+
+That key is also left in `vscode-agent.key` (mode 600) beside the
+foundation report. In VS Code, run **AMIX: Set Agent Key** and paste it.
+
 ## Needs
 
 Python 3.9 or later, PyGObject, GTK 4.12 or later, libadwaita 1.4 or later,

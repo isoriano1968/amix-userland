@@ -19,6 +19,7 @@ import http.server
 import json
 import os
 import re
+import secrets
 import socket
 import socketserver
 import struct
@@ -31,6 +32,7 @@ from . import model, svr4
 TFTP_PORT = 1069
 HTTP_PORT = 8069
 FS_UAE_HOST = "10.0.2.2"            # the PC as FS-UAE's slirp NAT shows it to AMIX
+AGENT_PORT = 7777                   # where VS Code's agent listener waits (amix.agent.port)
 BOOT_PKG = "AMIXboot"
 BOOT_DIR = "/opt/amixboot"
 
@@ -43,7 +45,7 @@ PACKAGES = {
     # gcc14/gcc27: developer/gcc-14 and gcc-27 are cross compilers on the PC; a
     # compiler that runs on AMIX is not packaged yet (reported as such)
     "pkgconf": ["developer/pkgconf"], "gnu": ["gnu/gnu-tools"], "python": ["runtime/python3"],
-    "vim": ["editor/vim"],
+    "vim": ["editor/vim"], "vscode": ["developer/vscode-agent"],
 }
 # what the bootstrap carries, from these packages of the repository
 BOOT_FILES = {
@@ -489,13 +491,40 @@ def foundation_lines(have, now, sizes=None):
     return lines
 
 
+def agent_lines(host, key, port=AGENT_PORT):
+    """vscode-agent's configuration, once its package is installed: it dials
+    the PC (host) and signs in with key; the programs run as the first login
+    user, or as a new user developer.  An existing configuration is kept."""
+    C = "/etc/vscode-agent.conf"
+    return ["",
+            "if [ -x /usr/local/bin/vscode-agent ]; then",
+            "  if [ -f %s ]; then report 'VS Code agent: %s kept as it is'; else" % (C, C),
+            "    U=`/usr/bin/awk -F: '$3 >= 101 && $3 < 60000 && $1 != \"vmsys\" && $1 != \"oasys\" {print $1; exit}' /etc/passwd`",
+            "    if [ -z \"$U\" ]; then",
+            "      [ -d /home ] || /usr/bin/mkdir /home",
+            "      /usr/sbin/useradd -d /home/developer -s /sbin/sh -c 'VS Code programs' developer >>$LOG 2>&1 || fail 'useradd developer'",
+            "      [ -d /home/developer ] || /usr/bin/mkdir /home/developer",
+            "      /usr/bin/chown developer /home/developer",
+            "      U=developer",
+            "      report 'VS Code agent: new user developer (no password yet: passwd developer)'",
+            "    fi",
+            "    (umask 077; { echo 'connect %s:%d'; echo \"user $U\"; echo 'secret %s';" % (host, port, key),
+            "      echo 'log /var/log/vscode-agent.log'; } > %s) || fail 'writing %s'" % (C, C),
+            "    /usr/bin/chown root %s; /usr/bin/chmod 600 %s" % (C, C),
+            "    report \"VS Code agent: runs programs as $U, dials %s:%d\"" % (host, port),
+            "  fi",
+            "  /etc/init.d/vscode-agent start >>$LOG 2>&1",
+            "fi"]
+
+
 def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kernel=None,
-                 patch=False, now=None):
+                 patch=False, now=None, agent_key=None):
     """The steps AMIX runs after the bootstrap. data_disk: (raw slice, sectors)
     of the empty data disk partition to make a file system on, or None.
     With repo, packages it does not hold are left out and reported.
     kernel: (size, System V sum) of the kernel served at /kernel, or None.
-    patch: the user's patch disk is served at /patch. now: the host's UTC time."""
+    patch: the user's patch disk is served at /patch. now: the host's UTC time.
+    agent_key: the VS Code agent's key, when its package is chosen."""
     pkgs, missing = packages_for(cfg)
     pkgs = [p for p in pkgs if p not in FOUNDATION_PKGS]
     reserve = model.RESERVE_MB
@@ -590,6 +619,8 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
                   % " ".join(pkgs)]
     if missing:
         lines += ["report 'not packaged yet, left out: %s'" % ", ".join(missing).replace("'", "")]
+    if agent_key and "developer/vscode-agent" in pkgs:
+        lines += agent_lines(host, agent_key)
     card = X_CARD.get(cfg.sel.get("gfx")) if "x11" in cfg.tags() else None
     if card:
         lines += ["", "[ -d /etc/X11 ] || /usr/bin/mkdir /etc/X11 || fail 'mkdir /etc/X11'",
@@ -921,6 +952,18 @@ class Session(object):
         self.failed = False
         self.failure = None             # the reason of the FAILED line
         self._boot = None
+        # the VS Code agent's key: in AMIX's /etc/vscode-agent.conf and, for
+        # AMIX: Set Agent Key in VS Code, in vscode-agent.key beside the report
+        self.agent_key = None
+        self.agent_key_file = None
+        if cfg.on.get("vscode"):
+            self.agent_key = secrets.token_hex(32)
+            if report:
+                self.agent_key_file = os.path.join(os.path.dirname(report), "vscode-agent.key")
+                fd = os.open(self.agent_key_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w") as f:
+                    f.write(self.agent_key + "\n")
+                self.log("VS Code agent key in %s: AMIX: Set Agent Key in VS Code" % self.agent_key_file)
         self.http = _HttpServer((bind, http_port), _Handler)
         self.http.state = self
         self.http_port = self.http.server_address[1]
@@ -936,7 +979,8 @@ class Session(object):
 
     def steps(self):
         return steps_script(self.cfg, self.host, self.http_port, self.data_disk, self.repo,
-                            self.kernel[1:] if self.kernel else None, bool(self.patch))
+                            self.kernel[1:] if self.kernel else None, bool(self.patch),
+                            agent_key=self.agent_key)
 
     def _write_report(self):
         """foundation-report.txt: one line per item, the same on every machine."""
