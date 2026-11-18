@@ -1,0 +1,56 @@
+#!/sbin/sh
+# /etc/init.d/vscode-agent: the VS Code agent at boot, after the network (rc2.d)
+#   start | stop | restart
+# Without /etc/vscode-agent.conf it does nothing and says nothing: the agent
+# runs only where someone set it up (AMIX Installer, or by hand from
+# /etc/vscode-agent.conf.example).
+PID=/var/run/vscode-agent.pid
+AGENT=/usr/local/bin/vscode-agent
+CONF=/etc/vscode-agent.conf
+
+agent_pid()
+{
+	if [ -f $PID ]; then
+		p=`cat $PID`
+		kill -0 $p 2>/dev/null && echo $p
+	fi
+}
+
+case "$1" in
+start)
+	[ -f $CONF ] || exit 0
+	[ -x $AGENT ] || exit 0
+	p=`agent_pid`
+	if [ -n "$p" ]; then
+		echo "vscode-agent: already running ($p)"
+		exit 0
+	fi
+	[ -d /var/run ] || mkdir /var/run
+	# the kernel's default soft limits (16 MB of data) would be every
+	# program's: too small for X and GL programs
+	ulimit -d unlimited
+	ulimit -v unlimited
+	$AGENT -c $CONF
+	;;
+stop)
+	p=`agent_pid`
+	[ -z "$p" ] && { rm -f $PID; exit 0; }
+	kill $p 2>/dev/null
+	n=0
+	while [ $n -lt 5 ] && kill -0 $p 2>/dev/null; do
+		sleep 1
+		n=`expr $n + 1`
+	done
+	kill -0 $p 2>/dev/null && kill -9 $p 2>/dev/null
+	rm -f $PID
+	;;
+restart)
+	$0 stop
+	$0 start
+	;;
+*)
+	echo "usage: /etc/init.d/vscode-agent start|stop|restart"
+	exit 1
+	;;
+esac
+exit 0

@@ -1,0 +1,22 @@
+# /etc/vscode-agent.conf: the VS Code agent (developer/vscode-agent)
+# Copy to /etc/vscode-agent.conf, then: chown root /etc/vscode-agent.conf;
+# chmod 600 /etc/vscode-agent.conf (it holds the secret; the agent refuses
+# a file others can read).  Start it: /etc/init.d/vscode-agent start
+#
+# Where VS Code listens (AMIX: Start Agent Listener).  The agent dials out,
+# so it works behind an emulator's NAT.  Several lines: tried in turn.
+#   FS-UAE: the host is 10.0.2.2
+#connect  10.0.2.2:7777
+#connect  192.168.1.10:7777
+#
+# The user the programs run as (never root)
+#user     yourname
+#
+# The key from VS Code (AMIX: Create Agent Key), 16 characters or more
+#secret   0123456789abcdef...
+#
+# Optional:
+#tmpdir      /tmp                       # session folders go here
+#reserve-mb  100                        # refuse a file that leaves less free
+#retry       10                         # seconds between dial attempts
+#log         /var/log/vscode-agent.log

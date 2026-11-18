@@ -71,6 +71,13 @@ function activate(context) {
     // for tasks.json: ${command:amix.fixNeededScript}
     vscode.commands.registerCommand('amix.fixNeededScript', fixNeededScript)
   );
+  // Run on Target: vscode-agent on AMIX dials in (src/target.js)
+  require('./target').activate(context, {
+    cfg: () => cfg(),
+    makeEnv,
+    findMakeDir,
+    workspaceRoot
+  });
 }
 
 function deactivate() {}

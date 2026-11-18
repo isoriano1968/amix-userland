@@ -2,7 +2,7 @@
   "name": "vscode-amix",
   "displayName": "AMIX Development Tools",
   "description": "VS Code helpers for building AMIX m68k programs with gcc 2.7.2.3 (m68k-cbm-sysv4) or gcc 14 (gcc14-cross-amix).",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "publisher": "isoriano1968",
   "license": "MIT",
   "icon": "images/amix-logo.png",
@@ -99,6 +99,35 @@
       {
         "command": "amix.fixNeededScript",
         "title": "AMIX: Path of amix-fix-needed (for tasks)"
+      },
+      {
+        "command": "amix.runOnTarget",
+        "title": "AMIX: Run on Target",
+        "icon": "$(play)"
+      },
+      {
+        "command": "amix.startAgentListener",
+        "title": "AMIX: Start Agent Listener"
+      },
+      {
+        "command": "amix.stopAgentListener",
+        "title": "AMIX: Stop Agent Listener"
+      },
+      {
+        "command": "amix.createAgentKey",
+        "title": "AMIX: Create Agent Key"
+      },
+      {
+        "command": "amix.setAgentKey",
+        "title": "AMIX: Set Agent Key"
+      },
+      {
+        "command": "amix.showAgentConfig",
+        "title": "AMIX: Show Agent Configuration (/etc/vscode-agent.conf)"
+      },
+      {
+        "command": "amix.selectTarget",
+        "title": "AMIX: Select Target"
       }
     ],
     "configuration": {
@@ -226,6 +255,65 @@
           },
           "default": [],
           "description": "Additional arguments passed to make for AMIX project builds."
+        },
+        "amix.agent.port": {
+          "type": "number",
+          "default": 7777,
+          "description": "Port the listener for vscode-agent uses. The agent on AMIX dials this port (connect lines in /etc/vscode-agent.conf)."
+        },
+        "amix.agent.listenAddress": {
+          "type": "string",
+          "default": "0.0.0.0",
+          "description": "Address the agent listener binds to. 0.0.0.0: every interface, so a real Amiga on the network and FS-UAE (via its NAT) both reach it."
+        },
+        "amix.agent.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start the agent listener when the extension starts, if an agent key exists."
+        },
+        "amix.run.program": {
+          "type": "string",
+          "default": "",
+          "description": "Program Run on Target sends and runs, relative to the Makefile's folder. Empty: the AMIX executable there (asked when there are several)."
+        },
+        "amix.run.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Arguments for the program."
+        },
+        "amix.run.display": {
+          "type": "string",
+          "default": ":0",
+          "description": "DISPLAY for the program: :0 is the Amiga's own screen (X and CDE programs open there while the agent's user is logged in). Empty: no DISPLAY."
+        },
+        "amix.run.env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "More environment variables for the program."
+        },
+        "amix.run.files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "More files to send with the program (data, resource files), relative to the Makefile's folder."
+        },
+        "amix.run.buildFirst": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run make before sending the program; a failed build sends nothing."
+        },
+        "amix.run.fetchCore": {
+          "type": "boolean",
+          "default": true,
+          "description": "When the program dumps core, fetch the core file into the project as core.<program>."
         }
       }
     },
@@ -284,6 +372,13 @@
         {
           "command": "amix.fixNeededScript",
           "when": "false"
+        }
+      ],
+      "editor/title/run": [
+        {
+          "command": "amix.runOnTarget",
+          "when": "resourceLangId == c || resourceFilename == Makefile",
+          "group": "navigation"
         }
       ]
     }

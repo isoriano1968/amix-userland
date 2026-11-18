@@ -14,7 +14,9 @@ VS Code helpers for AMIX C development with two cross toolchains: gcc 2.7.2.3
 - GCC 2.7 style problem matcher.
 - Basic m68k assembly highlighting for `.m68k`, `.68k`, and `.amixs`.
 - Small snippets for AMIX userland, driver and Motif/CDE code.
-- A CDE "Hello, world" sample project.
+- A CDE "Hello, world" sample project, and a console (curses) one.
+- Run on Target: builds the program, sends it to an AMIX machine (a real
+  Amiga or FS-UAE) and runs it there, in a VS Code terminal.
 
 ## Requirements
 
@@ -151,6 +153,11 @@ toolchain, the extension offers to rewrite `.vscode/settings.json` and
 - `AMIX: Run Make Clean in AMIX Project with gcc 2.7.2.3` / `with gcc 14`
 - `AMIX: New CDE Hello World Project`
 - `AMIX: New Console (curses) Hello World Project`
+- `AMIX: Run on Target` (also the ▷ button of a C file or Makefile)
+- `AMIX: Create Agent Key` / `AMIX: Set Agent Key`
+- `AMIX: Show Agent Configuration (/etc/vscode-agent.conf)`
+- `AMIX: Start Agent Listener` / `AMIX: Stop Agent Listener`
+- `AMIX: Select Target`
 
 ## Makefile Builds
 
@@ -286,6 +293,60 @@ default). Then, in any terminal:
 
 On the console `TERM` is already `amiga`; elsewhere any entry the package
 installs (`vt100`, `xterm`, `dtterm`).
+
+## Run on Target
+
+**AMIX: Run on Target** runs the program you build on an AMIX machine:
+1. It runs make in the project.
+2. It sends the program to the machine.
+3. It starts the program there, in a VS Code terminal.
+
+Console programs, curses ones included, get a real terminal on AMIX: keys,
+colours and resizing work. X and CDE programs open on the Amiga's own
+screen (`DISPLAY=:0`). When a program dumps core, the core file comes back
+into the project as `core.<program>`.
+
+The AMIX side is **vscode-agent**
+([developer/vscode-agent](../vscode-agent)). It starts at boot and dials
+out to VS Code, so it also works in FS-UAE, whose NAT lets nothing dial
+in, and on a stock AMIX without ssh. Both ends prove that they know a
+shared key before anything runs. The programs run as a normal user, never
+as root, each in a session folder under `/tmp` that is removed when VS
+Code goes away.
+
+Setting it up:
+1. **With the AMIX Installer:** in its Development step, switch on **VS
+   Code agent**, or click **Only the VS Code agent** for a console system
+   that is only a target. The installer writes `/etc/vscode-agent.conf`
+   with a new key and leaves the key in `vscode-agent.key` beside its
+   report. In VS Code, run **AMIX: Set Agent Key** and paste it.
+2. **By hand:**
+   1. Install the agent on AMIX: `pkg install developer/vscode-agent`.
+   2. In VS Code, run **AMIX: Create Agent Key**. It opens the
+      configuration to use, with the key and this computer's addresses
+      (FS-UAE sees this computer as `10.0.2.2`).
+   3. On AMIX, as root, save it as `/etc/vscode-agent.conf`, set the
+      `user` line to your login, then run:
+      `chmod 600 /etc/vscode-agent.conf; /etc/init.d/vscode-agent start`.
+
+The status bar shows the connected target. With several targets, **AMIX:
+Select Target** chooses one.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `amix.run.program` | found | the program, relative to the Makefile's folder; empty: the AMIX executable there |
+| `amix.run.args` | `[]` | its arguments |
+| `amix.run.display` | `:0` | `DISPLAY` for X and CDE programs; empty: none |
+| `amix.run.env` | `{}` | more environment variables |
+| `amix.run.files` | `[]` | more files to send (data, resources) |
+| `amix.run.buildFirst` | `true` | run make first; a failed build sends nothing |
+| `amix.run.fetchCore` | `true` | fetch a core file |
+| `amix.agent.port` | `7777` | the port the agent dials |
+| `amix.agent.listenAddress` | `0.0.0.0` | where the listener binds |
+| `amix.agent.autoStart` | `true` | listen as soon as a key exists |
+
+Use the agent on your own network or in an emulator. After the sign-in
+the connection is not encrypted.
 
 ## Notes
 
