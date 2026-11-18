@@ -145,6 +145,12 @@ DRIVERS = {
     "z3660scsi": Driver("z3660scsi", "Z3660 SD card", "storage", None, None,
                         ("z3660queue", "z3660_scsicard", "z3660scsi_kvmap",
                          "z3660scsi_kvunmap"), lines=("040",), bmajor=18, cmajor=40),
+    # the Buddha and Catweasel Z-II (Zorro II IDE) as controllers of AMIX's
+    # dd/sd: amix-gayle-ide's Buddha driver, polled; kit patch_buddha_card.py
+    # widens sd.c's controller table (its own table: not with z3660scsi)
+    "buddha": Driver("buddha", "Buddha IDE", "storage", None, None,
+                     ("buddhainit", "budqueue", "cwqueue", "buddha_scsicard"),
+                     lines=("030", "040"), init="buddhainit", bmajor=18, cmajor=40),
 }
 # the stub calls graphics before network
 KIND_ORDER = ("storage", "graphics", "network")

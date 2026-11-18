@@ -142,7 +142,7 @@ class Rules(unittest.TestCase):
         self.assertEqual(sorted(model.DISK_HW.values()),
                          sorted(o.id for o in model.find_group("dctl").options))
         for oid, h in model.DISK_HW.items():
-            self.assertEqual(model.find_group("diskon").option(oid).needs, ((h,),))
+            self.assertEqual(model.find_group("diskon").option(oid).needs[0], (h,))
         # greyed out: not ticked, or not in this machine at all
         c = model.Config()
         on = model.find_group("diskon")

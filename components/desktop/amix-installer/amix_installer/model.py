@@ -156,10 +156,12 @@ MACHINE = Step("machine", "Machine", "Amiga, CPU card and hardware",
             badge=NODRV, nodriver=_amigaux("a4kt710")),
           O("hw_gayle", "IDE port", "The A4000’s or A1200’s own IDE (Gayle)",
             needs=("a4000", "a1200"), badge=NODRV, nodriver=_amigaux("gayle")),
-          O("hw_buddha", "Buddha IDE", "Zorro II, two IDE ports", needs=(ZORRO2,),
-            badge=NODRV, nodriver=_amigaux("buddha")),
-          O("hw_catweasel", "Catweasel Z-II IDE", "Zorro II, three IDE ports", needs=(ZORRO2,),
-            badge=NODRV, nodriver=_amigaux("catweasel")),
+          # amix-gayle-ide's Buddha driver (amigaux, MIT) as our buddha kit,
+          # polled I/O, with the stock and 68040/060 port kernels
+          O("hw_buddha", "Buddha IDE", "Zorro II, two IDE ports: its driver is linked into "
+            "your kernel (polled I/O)", needs=(ZORRO2,)),
+          O("hw_catweasel", "Catweasel Z-II IDE", "Zorro II, three IDE ports: the Buddha's "
+            "driver, linked into your kernel (polled I/O)", needs=(ZORRO2,)),
           O("hw_blizscsi", "Blizzard SCSI kit", "The SCSI module of a Blizzard trapdoor card",
             needs=("a1200",), badge=NODRV,
             nodriver="No AMIX driver exists for it yet: tick it to record it, AMIX's disks "
@@ -262,11 +264,13 @@ STEPS = [
                "boots from them once it has one", needs=("hw_a4kt710",), badge=NODRV),
              O("on_gayle", "IDE port", "No AMIX driver yet: the disks are written, AMIX boots "
                "from them once it has one", needs=("hw_gayle",), badge=NODRV),
-             O("on_buddha", "Buddha IDE", "No AMIX driver yet: the disks are written, AMIX "
-               "boots from them once it has one", needs=("hw_buddha",), badge=NODRV),
-             O("on_catweasel", "Catweasel Z-II IDE", "No AMIX driver yet: the disks are "
-               "written, AMIX boots from them once it has one", needs=("hw_catweasel",),
-               badge=NODRV),
+             # the driver gives each port's drives fixed units: port 0 6/5,
+             # port 1 3/2 (plan.IDE_UNIT)
+             O("on_buddha", "Buddha IDE", "Core disk on port 0's master, pvmk on its slave, "
+               "data on port 1's master", needs=(("hw_buddha",), ("stock", "k040"))),
+             O("on_catweasel", "Catweasel Z-II IDE", "Core disk on port 0's master, pvmk on "
+               "its slave, data on port 1's master", needs=(("hw_catweasel",),
+                                                             ("stock", "k040"))),
              O("on_blizscsi", "Blizzard SCSI kit", "No AMIX driver yet: the disks are "
                "written, AMIX boots from them once it has one", needs=("hw_blizscsi",),
                badge=NODRV)]),

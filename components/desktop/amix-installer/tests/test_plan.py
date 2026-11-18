@@ -590,6 +590,41 @@ class Cards(Base):
         self.assertEqual(plan.kernel_drivers(c), ["z3660scsi", "z3660rtg", "zz9000", "xsurf100",
                                                   "z3660eth"])
 
+    def test_buddha(self):
+        """the Buddha and Catweasel Z-II: the buddha kit with the stock and port
+        kernels, the disks at the driver's fixed units (port 0 master 6,
+        slave 5; port 1 master 3)"""
+        from amix_installer import kernel
+        old, kernel.find_stamp = kernel.find_stamp, lambda: "/bin/true"   # kit-tools' stand-in
+        self.addCleanup(setattr, kernel, "find_stamp", old)
+        c = Base.cfg(self, mach="a3000", accel="none", kern="stock", boot="pvmk")
+        c.set_on("hw_buddha", True)
+        self.assertTrue(c.select("diskon", "on_buddha"))
+        self.assertEqual(plan.scsi_controllers(c), ["the A3000's own SCSI", "the Buddha"])
+        self.assertEqual(plan.kernel_drivers(c), ["buddha"])
+        self.assertEqual(plan.disk_device(c, "core", 1), "/dev/rdsk/ced0s1")
+        self.assertEqual(plan.disk_device(c, "data", 1), "/dev/rdsk/cbd0s1")
+        self.assertEqual(plan.disk_device(c, "data", 1, fs_uae=True), "/dev/rdsk/c1d0s1")
+        pl = plan.make_plan(c, self.paths())
+        self.assertEqual(pl.problems, [])
+        self.assertFalse([a for a in pl.actions if a.id == "disk-driver"])
+        dk = [a for a in pl.actions if a.id == "kernel"][0]
+        self.assertEqual((dk.line, dk.root), ("030", (1, 6)))
+        text = plan.readme(c, {"core": "a-core.hdf", "pvmk": "pvmk.hdf", "data": "a-data.hdf"})
+        self.assertIn("IDE port 1 master", text)
+        # the Z3660 kernel takes no kits: no disks on the Buddha there
+        z = model.Config(sel={"mach": "a3000", "accel": "z3660", "kern": "z3opt"},
+                         on={"hw_buddha": True})
+        self.assertFalse(z.available(model.find_group("diskon").option("on_buddha")))
+        self.assertNotIn("buddha", plan.kernel_drivers(z))
+        # with the Z3660 SD card's kit in the port kernel: refused (two tables)
+        k = Base.cfg(self, mach="a3000", accel="z3660", kern="k040", boot="pvmk")
+        k.set_on("hw_buddha", True)
+        self.assertTrue({"z3660scsi", "buddha"} <= set(plan.kernel_drivers(k)))
+        pl = plan.make_plan(k, self.paths())
+        self.assertTrue(any("cannot be linked into one kernel" in p for p in pl.problems),
+                        pl.problems)
+
     def test_kernel_drivers(self):
         self.assertEqual(plan.kernel_drivers({"gfx": "zz9000", "net": "nethydra"}),
                          ["zz9000", "hydra"])

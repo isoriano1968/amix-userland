@@ -556,7 +556,14 @@ SDCARDS = 2
 # dd/sd's controllers in its probe order: the Amiga's own, a Zorro card, a
 # CPU card's, the Z3660's SD card
 DD_SD = (("hw_a3000scsi", "the A3000's own SCSI"), ("hw_a2091", "the A2091"),
+         ("hw_buddha", "the Buddha"), ("hw_catweasel", "the Catweasel Z-II"),
          ("hw_gvpscsi", "the GVP card's SCSI"), ("hw_z3660sd", "the Z3660's SD card"))
+# IDE controllers of the buddha kit: the driver's fixed units per port and
+# drive (port 0 master 6, slave 5; port 1 master 3): the core disk on port
+# 0's master, pvmk on its slave, the data disk on port 1's master
+IDE_HW = ("hw_buddha", "hw_catweasel")
+IDE_UNIT = {"core": 6, "pvmk": 5, "data": 3}
+IDE_PLACE = {"core": "port 0 master", "pvmk": "port 0 slave", "data": "port 1 master"}
 
 
 def hardware(cfg):
@@ -602,12 +609,22 @@ def disk_controller(cfg):
     return ids.index(h) if h in ids else 0
 
 
+def disk_unit(cfg, role, fs_uae=False):
+    """The unit of an AMIX disk on its controller: its SCSI ID, or on a
+    Buddha or Catweasel Z-II the driver's unit of its port and drive (in
+    FS-UAE every disk is on the emulated A3000 SCSI, at its SCSI ID)."""
+    if not fs_uae and disk_hw(cfg) in IDE_HW:
+        return IDE_UNIT[role]
+    return SCSI_ID[role]
+
+
 def disk_device(sel, role, slice_, raw=True, fs_uae=False):
     """/dev/rdsk/c<x>d0s<n> (or /dev/dsk) of an AMIX disk: on the machine,
     or in FS-UAE, where every disk is on the emulated A3000 SCSI.  AMIX writes
     x in hex (c0-cf): card 1 unit 6 is ced0s1."""
     card = 0 if fs_uae else disk_controller(sel)      # sel: a model.Config or its dict
-    return "/dev/%s/c%xd0s%d" % ("rdsk" if raw else "dsk", (card << 3) | SCSI_ID[role], slice_)
+    unit = disk_unit(sel, role, fs_uae)
+    return "/dev/%s/c%xd0s%d" % ("rdsk" if raw else "dsk", (card << 3) | unit, slice_)
 FSUAE_CONFIG = "amix-install.fs-uae"
 # the installer's graphics card -> FS-UAE's graphics_card
 FSUAE_CARD = {"picasso2": "picasso-ii"}
@@ -674,6 +691,9 @@ def kernel_drivers(cfg):
     for c in net:
         if c in NET_DRIVER and NET_DRIVER[c] not in out:
             out.append(NET_DRIVER[c])
+    # the Buddha and Catweasel Z-II: the buddha kit, storage first
+    if kits and any(h in cfg.tags() for h in IDE_HW):
+        out.insert(0, "buddha")
     # the port kernel takes the Z3660's SD card and Ethernet from kits; the
     # Z3660 kernel has both built in
     if sel.get("kern") == "k040" and sel.get("accel") == "z3660":
@@ -888,11 +908,13 @@ class FsUaeRegister(Action):
 def readme(cfg, names, card_done=False):
     sel = cfg.sel
     lines = ["Disks written by the AMIX Installer %s." % __version__, ""]
+    ide = disk_hw(cfg) in IDE_HW
     for role, what in (("core", "the core system (root, swap, boot)"),
                        ("pvmk", "pvmk, the boot loader (boots first)"),
                        ("data", hdf.MOVABLE_TEXT)):
         if role in names:
-            lines.append("  SCSI ID %d  %-22s %s" % (SCSI_ID[role], names[role], what))
+            where = ("IDE %s" % IDE_PLACE[role]) if ide else "SCSI ID %d" % SCSI_ID[role]
+            lines.append("  %-15s %-22s %s" % (where, names[role], what))
     lines.append("")
     if sel["target"] == "card" and card_done:
         lines += ["The .hda files are on the ZuluSCSI/BlueSCSI SD card, and its ini file",
@@ -1018,10 +1040,15 @@ def make_plan(cfg, paths, fs=None, written=False):
                                    "%s cannot be written; choose the stock boot, install "
                                    "developer/amix/pvmk or set AMIX_PVMK_DIR" % names["pvmk"])
     ids = kernel_drivers(cfg)
+    if "buddha" in ids and "z3660scsi" in ids:
+        # each brings its own controller table for sd.c (patch_buddha_card.py)
+        pl.problems.append("the Buddha's driver and the Z3660 SD card's cannot be linked into one "
+                           "kernel yet: untick one of them on the Machine page, or choose the "
+                           "stock kernel")
     if kernel_built(cfg):
         dk = DriverKernel(src, ids, sel.get("kern", "stock"),
                           cfg.source is not None and not cfg.source.patch,
-                          root=(disk_controller(cfg), SCSI_ID["core"]))
+                          root=(disk_controller(cfg), disk_unit(cfg, "core")))
         pl.actions.append(dk)
         if dk.missing:
             # never a system whose chosen card has no driver in its kernel
