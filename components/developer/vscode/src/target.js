@@ -14,6 +14,8 @@ const { AgentServer, newKey } = require('./agent-link');
 
 const KEY = 'amix.agentKey';
 const FS_UAE_HOST = '10.0.2.2';
+// where the AMIX Installer keeps the key of an agent it set up
+const INSTALLER_KEY = path.join(os.homedir(), '.local/share/amix-installer/vscode-agent.key');
 
 let ctx;
 let hooks;            // { cfg, makeEnv, findMakeDir, workspaceRoot }
@@ -169,7 +171,10 @@ function configText() {
 function statusLines() {
   const s = settings();
   const lines = [];
-  if (!key) lines.push('MISSING agent key: AMIX: Create Agent Key, or AMIX: Set Agent Key with the AMIX Installer\'s vscode-agent.key');
+  if (!key) {
+    lines.push('MISSING agent key: AMIX: Create Agent Key, or AMIX: Set Agent Key with the AMIX Installer\'s vscode-agent.key'
+      + (fs.existsSync(INSTALLER_KEY) ? ` (${INSTALLER_KEY} is there)` : ''));
+  }
   else lines.push('ok      agent key set');
   if (!server) lines.push(`absent  agent listener (port ${s.port}): AMIX: Start Agent Listener`);
   else lines.push(`ok      agent listener on ${s.address}:${s.port} (this computer: ${[FS_UAE_HOST + ' from FS-UAE', ...addresses()].join(', ')})`);
@@ -204,12 +209,19 @@ function setupGuide() {
     '   small system with just the base and the agent, without the desktop.',
     '3. Install. The installer writes `/etc/vscode-agent.conf` on AMIX with this computer\'s address and a new key,',
     '   and saves the key as `vscode-agent.key` beside its report (the last page names the file).',
-    '4. Here: **AMIX: Set Agent Key** and paste the key from that file. The listener starts and the status bar',
+    '4. Here: **AMIX: Set Agent Key**. It offers the installer\'s key file when it is on this computer',
+    '   (`' + INSTALLER_KEY + '`), else paste the key. The listener starts and the status bar',
     '   shows `AMIX target: <name>` once AMIX has booted.',
     '',
-    '## B. AMIX that is already installed',
+    'To install just the agent into an AMIX that is already running (FS-UAE or an Amiga, nothing else changed):',
+    '`amix-installer --running fs-uae --vscode-only --net`; it prints the key file and the address the agent dials.',
     '',
-    '1. As root on AMIX: `pkg install developer/vscode-agent` (from the amix publisher).',
+    '## B. Just the agent, by hand, on an installed AMIX',
+    '',
+    'The agent is one program that needs nothing beyond a stock AMIX 2.1.',
+    '',
+    '1. As root on AMIX: `pkg install developer/vscode-agent` (from the AMIX package repository the installer serves); without pkg, copy',
+    '   `/usr/local/bin/vscode-agent` and `/etc/init.d/vscode-agent` from the package (ftp, tftp) and make both executable.',
     '2. **AMIX: Show Agent Configuration** here gives the file to save as `/etc/vscode-agent.conf` on AMIX:',
     '   it has this key and the `connect` lines; set `user` to the AMIX login the programs run as (not root).',
     '3. On AMIX: `chmod 600 /etc/vscode-agent.conf && /etc/init.d/vscode-agent start`',
@@ -255,6 +267,23 @@ async function createKey() {
 }
 
 async function setKey() {
+  // the AMIX Installer's key, when it ran on this computer
+  if (fs.existsSync(INSTALLER_KEY)) {
+    const pick = await vscode.window.showQuickPick([
+      { label: 'Use the AMIX Installer\'s key', description: INSTALLER_KEY, file: true },
+      { label: 'Paste a key' }
+    ], { placeHolder: 'The agent key: the secret line of /etc/vscode-agent.conf on AMIX' });
+    if (!pick) return false;
+    if (pick.file) {
+      let v = '';
+      try { v = fs.readFileSync(INSTALLER_KEY, 'utf8').trim(); } catch (e) { /* unreadable */ }
+      if (v.length < 16 || /\s/.test(v)) {
+        vscode.window.showErrorMessage(`AMIX: ${INSTALLER_KEY} holds no agent key.`);
+        return false;
+      }
+      return useKey(v);
+    }
+  }
   const v = await vscode.window.showInputBox({
     prompt: 'The agent key (the secret line of /etc/vscode-agent.conf on AMIX)',
     password: true,
@@ -263,7 +292,11 @@ async function setKey() {
       : '16 characters or more, no spaces')
   });
   if (!v) return false;
-  key = v.trim();
+  return useKey(v.trim());
+}
+
+async function useKey(v) {
+  key = v;
   await ctx.secrets.store(KEY, key);
   stopListener();
   return startListener(false);

@@ -97,7 +97,12 @@ How a program starts:
 ## Building and testing
 
 `make build` makes the AMIX binary. It is built with gcc 14 for
-`-m68020-60`, so one binary runs on 68020 to 68060.
+`-m68020-60`, so one binary runs on 68020 to 68060. libamixc99 (only
+`snprintf` and `vsnprintf`) is linked in from its archive, so the agent
+needs nothing beyond a stock AMIX 2.1: for a quick test, the binary, the
+rc script and a configuration are all it takes. The archive comes from the
+sysroot (`usr/local/lib/libamixc99.a`, the OpenIndiana package
+`developer/amix/amixc99`) or from `library/amixc99`'s stage.
 
 `make test` builds the agent for the host and drives it with the
 extension's own protocol code (`../vscode/src/agent-link.js`). The test

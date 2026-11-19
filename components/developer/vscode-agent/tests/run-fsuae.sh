@@ -4,7 +4,7 @@
 # A2065 on slirp.
 #   1. copies of the two disks in WORKDIR; a boot hook in the core copy's
 #      /etc/rc2.d/S99zz9000 (`tftp get go; sh go`, the installer's e2e hook);
-#   2. go, as root at boot: libamixc99, the agent, its rc script and a
+#   2. go, as root at boot: the agent (libamixc99 linked in), its rc script and a
 #      configuration (user guest, a fresh key, connect 10.0.2.2:PORT), then
 #      /etc/init.d/vscode-agent start;
 #   3. tests/amix-e2e.js waits for the agent to dial in and runs its checks.
@@ -52,7 +52,6 @@ EOF
 python3 "$E2E/hookfile.py" "$W/core.hdf" /etc/rc2.d/S99zz9000 "$W/hook.sh"
 
 cp "$COMP/build/vscode-agent" "$COMP/files/vscode-agent.rc" "$W/tftp/"
-cp "$SYSROOT/usr/lib/libamixc99.so.1" "$W/tftp/"
 printf 'connect 10.0.2.2:%s\nuser guest\nsecret %s\nlog /var/log/vscode-agent.log\nretry 5\n' \
 	"$PORT" "$KEY" > "$W/tftp/vscode-agent.conf"
 cat > "$W/tftp/go" <<'EOF'
@@ -75,7 +74,6 @@ exec > /tmp/go.log 2>&1
 echo "=== vscode-agent e2e: `/usr/bin/date`"
 /usr/bin/uname -a
 /usr/bin/df -k /
-[ -f /usr/lib/libamixc99.so.1 ] || { get libamixc99.so.1 /usr/lib/libamixc99.so.1; chmod 755 /usr/lib/libamixc99.so.1; }
 [ -d /usr/local/bin ] || mkdir /usr/local/bin
 get vscode-agent /usr/local/bin/vscode-agent
 chmod 755 /usr/local/bin/vscode-agent
@@ -84,7 +82,7 @@ chmod 744 /etc/init.d/vscode-agent
 get vscode-agent.conf /etc/vscode-agent.conf
 chown root /etc/vscode-agent.conf
 chmod 600 /etc/vscode-agent.conf
-/usr/bin/ls -l /usr/local/bin/vscode-agent /etc/vscode-agent.conf /usr/lib/libamixc99.so.1
+/usr/bin/ls -l /usr/local/bin/vscode-agent /etc/vscode-agent.conf; /usr/bin/ls /usr/lib/libamixc99.so.1 2>/dev/null || echo 'no libamixc99.so.1 on this disk'
 /usr/local/bin/vscode-agent -V
 /etc/init.d/vscode-agent start
 echo "rc start: $?"

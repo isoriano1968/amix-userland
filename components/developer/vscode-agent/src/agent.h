@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define AGENT_VERSION	"0.1.0"
+#define AGENT_VERSION	"0.1.1"
 #define PROTO_VERSION	1
 
 struct sha256 {
