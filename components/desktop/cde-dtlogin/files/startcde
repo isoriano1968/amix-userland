@@ -1,0 +1,15 @@
+#!/bin/sh
+# startcde [X server arguments] -- a CDE session from the console, without
+# dtlogin: the X server on this machine's card (/usr/dt/bin/Xamix-dt, the
+# card in /etc/X11/amix-card) and CDE's session (/usr/dt/config/xinitrc.amix:
+# xhold, then Xsession).  RTG_MODE=WxH picks a mode where the card has
+# several, e.g.  RTG_MODE=800x600 startcde.  STARTX=program uses another X
+# starter, as CDE's own /usr/dt/bin/startcde.  Session log: $HOME/.dt/startlog
+XINITRC=/usr/dt/config/xinitrc.amix; export XINITRC
+PATH=/usr/dt/bin:/usr/x11r6/bin:$PATH:/usr/X/bin; export PATH
+[ -z "$STARTX" ] || exec /usr/dt/bin/startcde "$@"
+X=/usr/x11r6/bin/xinit
+[ -x $X ] || X=/usr/X/bin/xinit
+[ -x $X ] || { echo "startcde: no xinit (/usr/x11r6/bin, /usr/X/bin)" >&2; exit 1; }
+[ -x /usr/dt/bin/Xamix-dt ] || { echo "startcde: no /usr/dt/bin/Xamix-dt" >&2; exit 1; }
+exec $X $XINITRC -- /usr/dt/bin/Xamix-dt :0 "$@"

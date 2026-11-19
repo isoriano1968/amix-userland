@@ -61,8 +61,8 @@ difference to the last Xzz9000 build was the name (same sha256,
 | `/usr/x11r6/bin/Xamix` | the server |
 | `/usr/x11r6/bin/X` | link to `Xamix` |
 | `/usr/x11r6/man/man1/Xserver.1` | the DIX options (hw/amix's `Xamix.man` is still Xsun's page and is not installed) |
-| `/opt/amix/bin/Xamix-dt` | the server as dtlogin starts it: limits, library path, `-mode` from `/etc/dt/config/rtg-mode`, fonts; log `/var/dt/Xamix.log` (source: desktop/cde `files/dtlogin/`) |
-| `/etc/dt/config/Xservers` | `:0 Local local_uid@console root /opt/amix/bin/Xamix-dt :0` |
+| `/usr/dt/bin/Xamix-dt` | the server as dtlogin and startcde start it: limits, library path, `-mode` from `$RTG_MODE` or `/etc/dt/config/rtg-mode` (1920x1080 by default on the Z3660 only), fonts; log `/var/dt/Xamix.log` (the package desktop/cde-dtlogin) |
+| `/etc/dt/config/Xservers` | `:0 Local local_uid@console root /usr/dt/bin/Xamix-dt :0` |
 
 Stock AMIX's X11R5 server stays in `/usr/X/bin` and does not collide.
 
@@ -75,7 +75,7 @@ keep working until the new package is installed; the update does, in order:
 1. install `Xamix` as `/usr/x11r6/bin/Xamix.new`, check its sha256, `mv` it
    into place, then the `X` link;
 2. install `Xamix-dt` the same way, then rewrite `/etc/dt/config/Xservers`
-   to name it (desktop/cde `dtlogin-install.sh` does steps 2-3 and refuses
+   to name it (the package desktop/cde-dtlogin does steps 2-3 and refuses
    to run without `/usr/x11r6/bin/Xamix`);
 3. remove `/opt/amix/bin/Xzz9000-dt` and `/opt/amix/bin/Xzz9000`.  No
    backup copies: to go back, rebuild the old version from git.

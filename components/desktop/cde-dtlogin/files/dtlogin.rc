@@ -1,7 +1,8 @@
 #!/bin/sh
-# /etc/init.d/dtlogin -- CDE graphical login on the Z3660 RTG (AMIX).
-# Linked as /etc/rc2.d/S99dtlogin and /etc/rc[01].d/K10dtlogin by
-# "dtconfig -e"; "dtconfig -d" removes the links.  Skipped while
+# /etc/init.d/dtlogin -- CDE graphical login (AMIX) on the card in
+# /etc/X11/amix-card.  desktop/cde-dtlogin installs it off: linked as
+# /etc/rc2.d/S99dtlogin and /etc/rc[01].d/K10dtlogin by "/usr/dt/bin/dtconfig -e";
+# "dtconfig -d" removes the links.  Skipped while
 # /etc/dt/nodtlogin exists, so a broken X setup cannot lock the console out
 # (the serial login keeps working regardless).
 PIDFILE=/var/dt/Xpid

@@ -97,7 +97,9 @@ It does not edit `/etc/inetd.conf` or `/etc/services`. It prints the optional
 network services (`dtspcd`, `rpc.ttdbserver`, `rpc.cmsd`) for you to add by
 hand.
 
-Start a session with `startcde`, or set up dtlogin (below). `startcde` runs
+Start a session with `startcde` (`/usr/bin/startcde` from desktop/cde-dtlogin
+starts the X server on the machine's card), or turn on the graphical login
+with `/usr/dt/bin/dtconfig -e` (desktop/cde-dtlogin installs it off). `startcde` runs
 X with CDE's session. It uses `xhold` to keep the X server from resetting
 between the session's first clients, which an X server without `-noreset`
 otherwise does. `STARTX` chooses the program that starts X: `startx` by
@@ -109,7 +111,7 @@ their files in `/var/tmp`:
 
 | | |
 |---|---|
-| `target/dtlogin/` | dtlogin at boot through `/etc/init.d/dtlogin` and `dtconfig`. `/etc/dt/nodtlogin` skips it. Includes Motif, TWM and OPEN LOOK sessions next to CDE, and `Xamix-dt` as the server dtlogin starts. `mklogo.py` turns a picture of your choice into a dtlogin logo; none is included. |
+| `files/dtlogin/` | Motif, TWM and OPEN LOOK sessions for dtlogin next to CDE (dtlogin itself, `dtconfig`, `Xamix-dt` and `startcde` on the PATH are the package desktop/cde-dtlogin). `mklogo.py` turns a picture of your choice into a dtlogin logo; none is included. |
 | `target/keymap/` | The console's keyboard layout for X. `kmap2xmodmap.py` converts your machine's `/usr/amiga/lib/kmap/*` into xmodmap tables, and `xkeymap-amiga` loads the one that matches the console. |
 | `target/extra/XLC_LOCALE.C.amix` | A C locale for X11R6.3 with both halves of ISO 8859-1, so dtterm shows umlauts and other 8-bit characters. |
 

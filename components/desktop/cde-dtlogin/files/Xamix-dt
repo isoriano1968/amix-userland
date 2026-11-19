@@ -1,17 +1,23 @@
 #!/bin/sh
-# Xamix-dt -- the AMIX X server (Xamix) as dtlogin starts it (/etc/dt/config/
-# Xservers).  The limits and library path are startx-rtg's: the server maps
-# the whole 46 MB framebuffer and its heap is brk, so the 16 MB defaults make
-# it fail with "Not enough space" or "Out of memory".  exec, so that dtlogin's
-# signals (reset, terminate) reach the server itself.  Mode: $RTG_MODE, else
-# the first word of /etc/dt/config/rtg-mode, else 1920x1080.
+# Xamix-dt -- the AMIX X server (Xamix) as dtlogin (/etc/dt/config/Xservers)
+# and startcde start it.  The limits and library path are startx-rtg's: the
+# server maps the whole framebuffer and its heap is brk, so the 16 MB
+# defaults make it fail with "Not enough space" or "Out of memory".  exec, so
+# that dtlogin's signals (reset, terminate) reach the server itself.
+# The card is the server's choice: /etc/X11/amix-card (the AMIX Installer
+# writes it: cirrus for the Picasso II, zz9000, z3660).  Mode: $RTG_MODE, else
+# the first word of /etc/dt/config/rtg-mode, else 1920x1080 on the Z3660 RTG
+# and the card's own default on the others.
 ulimit -v 131072 2> /dev/null || ulimit -m 131072 2> /dev/null
 ulimit -d 65536 2> /dev/null
 MODE=${RTG_MODE-}
-[ -z "$MODE" ] && [ -r /etc/dt/config/rtg-mode ] && MODE=`sed -n 1p /etc/dt/config/rtg-mode`
-MODE=${MODE:-1920x1080}
+# the first word of line 1 only: the line may carry a comment after the mode
+[ -z "$MODE" ] && [ -r /etc/dt/config/rtg-mode ] && MODE=`awk 'NR == 1 { print $1; exit }' /etc/dt/config/rtg-mode`
+CARD=`cat /etc/X11/amix-card 2> /dev/null`
+[ -z "$MODE" ] && [ "$CARD" = z3660 ] && MODE=1920x1080
 LD_LIBRARY_PATH=/usr/lib:/usr/amiga/lib
 export LD_LIBRARY_PATH
-exec /usr/x11r6/bin/Xamix "$@" -mode $MODE \
+[ -d /var/dt ] || mkdir -p /var/dt
+exec /usr/x11r6/bin/Xamix "$@" ${MODE:+-mode $MODE} \
 	-fp /usr/X/lib/fonts/misc/,/usr/X/lib/fonts/Xol/,/usr/X/lib/fonts/75dpi/,/usr/X/lib/fonts/100dpi/,/usr/dt/config/xfonts/C/ \
 	-co /usr/X/lib/rgb -kb >> /var/dt/Xamix.log 2>&1
