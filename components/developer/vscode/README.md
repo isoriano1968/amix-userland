@@ -323,6 +323,9 @@ agent has signed in, and **AMIX: Check Development Setup** lists it):
    that is only a target. The installer writes `/etc/vscode-agent.conf`
    with a new key and leaves the key in `vscode-agent.key` beside its
    report. In VS Code, run **AMIX: Set Agent Key** and paste it.
+   For a quick test into an AMIX that is already running, **Just the
+   Agent** (`amix-installer --running fs-uae --agent-only --net`) installs
+   only the agent; Set Agent Key then offers the installer's key file.
 2. **By hand:**
    1. Install the agent on AMIX: `pkg install developer/vscode-agent`.
    2. In VS Code, run **AMIX: Create Agent Key**. It opens the
