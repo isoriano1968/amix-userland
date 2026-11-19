@@ -1,0 +1,18 @@
+# name, version and what building and running it needs
+# Runs on the host (OpenIndiana, Linux), not on AMIX: no AMIX files.  What it
+# installs under HOST_PREFIX (OpenIndiana: /usr, package developer/amix/pvmk):
+#   share/pvmk/bootblock.bin       the boot block (1024 bytes, 68020+)
+#   share/pvmk/pvmk.bin            the image (68030/040/060)
+#   share/pvmk/VERSION             the pvmk commit it is built from
+#   share/pvmk/conf/pvmk.conf      boot menu template (the installer fills in
+#                                  AMIX, keymap, z3reloc)
+#   share/pvmk/conf/README.disk    README on the boot volume
+#   lib/pvmk/mkadf                 makes and verifies the PVMK boot volume
+#   lib/pvmk/mkhdf                 makes the RDB disk around it (pvmk.hdf)
+# Build needs: the m68k-elf gcc 14 (below; OpenIndiana: developer/amix/gcc-14),
+# a host C compiler, GNU make, Python 3 (pvmk's instruction check).
+# Run needs: nothing; the AMIX Installer (desktop/amix-installer) uses it.
+name     system/pvmk
+version  2026.11.8
+summary  pvmk, the Amiga 3000 boot loader for AMIX: boot block, image and disk tools for the installer
+build    developer/gcc-14

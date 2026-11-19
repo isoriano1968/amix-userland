@@ -1,0 +1,98 @@
+From 9e85237ee9bee9e584392a5ed62f63457c6876df Mon Sep 17 00:00:00 2001
+From: isoriano1968 <81116077+isoriano1968@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 20:42:54 +0100
+Subject: [PATCH] build: the AMIX m68k-elf toolchain and non-GNU hosts
+
+pvmk builds with m68k-elf gcc 14 (developer/amix/gcc-14 on OpenIndiana)
+as well as with m68k-linux-gnu, for the same image:
+
+- -mno-align-int -mno-strict-align: m68k-elf aligns int/long to 32 bits
+  and reads unaligned-looking longwords by halves (pvmk.bin 141 KB, over
+  the 128 KB budget); m68k-linux-gnu has both off.  Structure layouts
+  and data/bss sizes now match object by object.
+- -U the OS macros a cross compiler predefines: the AMIX specs define
+  "amix", which broke the label in svc/shell.c.
+- wc -c and shell arithmetic in place of GNU stat -c and gawk strtonum.
+
+With m68k-linux-gnu the objects are unchanged (only __DATE__/__TIME__
+differ).  With m68k-elf the C code is the same; gas resolves branches
+and jsr to global symbols of the same section PC-relative instead of
+leaving relocations (2920 relocs instead of 2940, pvmk.bin 140 bytes
+smaller).  check-insns and size-check pass with both; the m68k-elf
+pvmk.hdf boots to the menu and into AMIX in FS-UAE (A3000, 68030).
+---
+ Makefile  | 21 +++++++++++++++------
+ README.md |  7 +++++++
+ 2 files changed, 22 insertions(+), 6 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index c67d0fd..b550d0c 100644
+--- a/Makefile
++++ b/Makefile
+@@ -26,13 +26,22 @@ VERSION		:= $(shell git describe --always --dirty 2>/dev/null || echo 0.0-dev)
+ B		:= build
+ 
+ # -m68020-60: runs on 68030/040/060 (no 64-bit MUL/DIV that the 060 lacks).
+-CPUFLAGS	:= -m68020-60 -msoft-float
+-CFLAGS		:= $(CPUFLAGS) -Os -std=gnu11 -ffreestanding -nostdinc -fno-pic \
++# -mno-align-int: 16-bit alignment of int and long, as AmigaOS and
++# m68k-linux-gnu lay out structures; -mno-strict-align: the 68020+ reads
++# longwords at any even address.  Both are the defaults of m68k-linux-gnu, and
++# m68k-elf (the AMIX toolchain: CROSS=/opt/m68k-amix/bin/m68k-elf-) needs
++# them for the same image.
++CPUFLAGS	:= -m68020-60 -msoft-float -mno-align-int -mno-strict-align
++# pvmk is no program of any OS: drop the OS macros a cross compiler predefines
++# (m68k-linux-gnu: linux, unix; the AMIX toolchain's specs: amix, __amix__ ...).
++NOOSDEFS	:= -Ulinux -U__linux -U__linux__ -Uunix -U__unix -U__unix__ \
++		   -Uamix -U__amix -U__amix__ -U__amix_cpu_baseline__
++CFLAGS		:= $(CPUFLAGS) $(NOOSDEFS) -Os -std=gnu11 -ffreestanding -nostdinc -fno-pic \
+ 		   -fno-pie -fno-builtin -fno-common -fno-asynchronous-unwind-tables \
+ 		   -fomit-frame-pointer -Wall -Wextra -Werror \
+ 		   -Wno-address-of-packed-member -fno-jump-tables -Iinclude \
+ 		   -MMD -MP -DPVMK_VERSION='"$(VERSION)"'
+-ASFLAGS		:= $(CPUFLAGS) -MMD -MP -Iinclude -D__ASSEMBLER__
++ASFLAGS		:= $(CPUFLAGS) $(NOOSDEFS) -MMD -MP -Iinclude -D__ASSEMBLER__
+ LDFLAGS		:= -T pvmk.ld --emit-relocs -nostdlib -no-pie --no-dynamic-linker --no-warn-rwx-segments
+ LIBGCC		:= $(shell $(CC) $(CPUFLAGS) -print-libgcc-file-name 2>/dev/null)
+ HOSTCFLAGS	:= -O2 -Wall -Wextra -Iinclude
+@@ -78,7 +87,7 @@ $(B)/bootblock.bin: $(B)/boot/bootblock.o
+ 		echo "bootblock.o has relocations (not position independent)"; \
+ 		$(READELF) -r $<; exit 1; fi
+ 	$(OBJCOPY) -O binary -j .text $< $@
+-	@test $$(stat -c %s $@) -eq 1024 || { echo "bootblock.bin is not 1024 bytes"; exit 1; }
++	@test $$(wc -c < $@) -eq 1024 || { echo "bootblock.bin is not 1024 bytes"; exit 1; }
+ 
+ # pvtest: conformance test guest for the virtual CPU, embedded in the image
+ # only with PVTEST=1 (make test needs it; the real machine's hole has no room)
+@@ -160,8 +169,8 @@ check-insns: $(B)/pvmk.elf $(B)/boot/bootblock.o
+ 	$(PYTHON) -I host/check-insns.py $(OBJDUMP) $^
+ 
+ size-check: $(B)/pvmk.bin $(B)/boot/bootblock.o
+-	@bb=$$($(READELF) -s $(B)/boot/bootblock.o | awk '$$8=="_bb_code_end"{print strtonum("0x"$$2)}'); \
+-	img=$$(stat -c %s $(B)/pvmk.bin); \
++	@bb=$$($(READELF) -s $(B)/boot/bootblock.o | awk '$$8=="_bb_code_end"{print $$2}'); bb=$$((0x$$bb)); \
++	img=$$(wc -c < $(B)/pvmk.bin); \
+ 	printf "boot block code %5d / %5d bytes\n" $$bb $(BUDGET_BOOTBLOCK); \
+ 	printf "pvmk image      %5d / %5d bytes\n" $$img $(BUDGET_IMAGE); \
+ 	test $$bb -le $(BUDGET_BOOTBLOCK) && test $$img -le $(BUDGET_IMAGE) || \
+diff --git a/README.md b/README.md
+index d2d2b0d..58ba11b 100644
+--- a/README.md
++++ b/README.md
+@@ -19,6 +19,13 @@ gdb-multiarch from the host's Debian/Ubuntu apt repositories into
+ `~/opt/m68k-cross`. (With root: `apt install gcc-m68k-linux-gnu` and
+ `make CROSS=m68k-linux-gnu-`.)
+ 
++The AMIX cross compiler (m68k-elf gcc 14, OpenIndiana's
++`developer/amix/gcc-14`) builds the same image:
++`make CROSS=/opt/m68k-amix/bin/m68k-elf- LIBGCC=` (pvmk needs no libgcc
++helper; with `LIBGCC=` the link fails if one is ever needed). The host
++tools (`mkimage`, `mkadf`, `mkhdf`) are plain C99 for any host compiler
++(`HOSTCC=`).
++
+ ```sh
+ make            # build/pvmk.adf, verified
+ make check      # 68060-safe instruction check, size budget, ADF verify
+-- 
+2.47.3
+
