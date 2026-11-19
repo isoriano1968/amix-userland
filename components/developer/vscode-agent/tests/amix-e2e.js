@@ -86,7 +86,12 @@ async function test(name, fn) {
     assert.strictEqual(ex.code, 0);
     assert.ok(new RegExp(`uid=\\d+\\(${user}\\)`).test(out), out);
     assert.ok(/\/dev\/pts\/?\d+/.test(out), out);
-    assert.ok(out.includes('TERM=xterm DISPLAY=:0'), out);
+    // xterm-256color with sysutils/terminfo, else stock xterm; AMIX_E2E_TERM
+    // requires one of them (and the sign-in must report the same)
+    const want = process.env.AMIX_E2E_TERM;
+    const term = (out.match(/TERM=(\S+) DISPLAY=:0/) || [])[1];
+    assert.ok(want ? term === want : /^xterm(-256color)?$/.test(term || ''), `TERM=${term}: ${out}`);
+    if (agent.info.term) assert.strictEqual(agent.info.term, term, 'sign-in term= and the program\'s TERM');
     assert.ok(/vscode-agent\.\d+(\.\d+)?\/run/.test(out), out);
   });
 
