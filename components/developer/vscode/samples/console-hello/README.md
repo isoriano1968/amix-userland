@@ -32,12 +32,19 @@ sysroot's `.pc` files; `ncurses.pc` requires `amixc99.pc`, so it gives:
 
 The program needs `libncurses.so.6` and `libamixc99.so.1`, both shared.
 
+Without `ncurses.pc` in the sysroot (the OpenIndiana package
+`developer/amix/sysroot` has no ncurses), the Makefile takes AMIX's own SVR4
+curses from the sysroot instead (`usr/include/curses.h`,
+`usr/ccs/lib/libcurses.a`) and links it statically; `make` says which with
+`curses: ncurses` or `curses: AMIX SVR4 curses`. That program needs nothing
+beyond the stock system on the A3000, and uses AMIX's terminfo.
+
 with the runpath `/usr/local/lib`. After linking, `amix-fix-needed` moves the
 NEEDED names to the front of `.dynstr`, where AMIX's `ld.so.1` looks for them.
 
 ## Run on the A3000
 
-The A3000 needs the `library/ncurses` package: `/usr/local/lib/libncurses.so.6`
+Built with ncurses, the A3000 needs the `library/ncurses` package: `/usr/local/lib/libncurses.so.6`
 and its terminfo, about 1900 small files under `/usr/share/terminfo` on the
 root file system. pkg keeps 200 MB free on root by default, so on a small root
 it refuses the install; `pkg --min-free 20 install library/ncurses` lowers

@@ -32,15 +32,25 @@ PC = PKG_CONFIG_PATH= \
 	PKG_CONFIG_LIBDIR=$(LIB_SYSROOT)/usr/local/lib/pkgconfig:$(LIB_SYSROOT)/usr/lib/pkgconfig \
 	PKG_CONFIG_SYSROOT_DIR=$(LIB_SYSROOT) PKG_CONFIG_ALLOW_SYSTEM_LIBS=1 $(PKG_CONFIG)
 
-NCURSES_CFLAGS := $(shell $(PC) --cflags ncurses)
-NCURSES_LIBS   := $(shell $(PC) --libs ncurses)
-ifeq ($(NCURSES_LIBS),)
-$(error pkg-config finds no ncurses.pc in $(LIB_SYSROOT): install library/ncurses into the sysroot)
-endif
+NCURSES_CFLAGS := $(shell $(PC) --cflags ncurses 2>/dev/null)
+NCURSES_LIBS   := $(shell $(PC) --libs ncurses 2>/dev/null)
 
+ifneq ($(NCURSES_LIBS),)
+CURSES    = ncurses
 CPPFLAGS += $(NCURSES_CFLAGS)
 # libncurses.so.6 needs libamixc99.so.1: ld finds it through -rpath-link
 LIBS      = $(NCURSES_LIBS) -Wl,-rpath-link,$(LIB_SYSROOT)/usr/lib
+else ifneq ($(wildcard $(LIB_SYSROOT)/usr/ccs/lib/libcurses.a),)
+# no ncurses.pc: AMIX's own SVR4 curses from the 2.1c sysroot, linked
+# statically (usr/include/curses.h, usr/ccs/lib/libcurses.a), so the program
+# runs on any AMIX without library/ncurses.  This needs the sysroot's own
+# SVR4 curses.h: a sysroot with ncurses' curses.h in usr/include has ncurses.pc.
+CURSES    = AMIX SVR4 curses
+LIBS      = -L$(LIB_SYSROOT)/usr/ccs/lib -lcurses
+else
+$(error neither ncurses.pc nor usr/ccs/lib/libcurses.a in $(LIB_SYSROOT): install developer/amix/sysroot)
+endif
+$(info curses: $(CURSES))
 
 PYTHON ?= python3
 

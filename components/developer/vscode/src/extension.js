@@ -34,7 +34,9 @@ const PKG = {
   gcc14: 'developer/amix/gcc-14',
   sysroot: 'developer/amix/sysroot',
   dlmkit: 'developer/amix/dlmkit',
-  all: 'metapackages/amix-cross-dev'
+  all: 'metapackages/amix-cross-dev',
+  // X11R6.3, Motif, CDE (and amixc99, libXp) for the CDE sample
+  desktop: 'metapackages/amix-cross-dev-desktop'
 };
 
 let extensionRoot = '';
@@ -496,7 +498,7 @@ const SAMPLES = {
   console: {
     dir: 'console-hello',
     title: 'Console (curses) Hello World',
-    run: 'copy hello to the A3000 and start it in any terminal (needs library/ncurses there)'
+    run: 'copy hello to the A3000 and start it in any terminal (built with ncurses it needs library/ncurses there)'
   }
 };
 
@@ -602,17 +604,34 @@ function checkSetup() {
 
   const lib = cfg('gcc14').sysroot;
   const libs = [
-    ['X11R6.3', 'usr/x11r6/lib', 'libX11.so'],
-    ['Motif', 'usr/motif/lib', 'libXm.so'],
-    ['CDE', 'usr/dt/lib', 'libDtSvc.so']
+    ['X11R6.3', 'usr/x11r6/lib', 'libX11.so', 'developer/amix/x11r6.3'],
+    ['Motif', 'usr/motif/lib', 'libXm.so', 'developer/amix/motif'],
+    ['CDE', 'usr/dt/lib', 'libDtSvc.so', 'developer/amix/cde']
   ];
-  lines.push('', `Shared libraries for X/Motif/CDE programs (in ${lib}):`);
-  for (const [name, dir, so] of libs) {
+  lines.push('', `Shared libraries for X/Motif/CDE programs and the CDE sample (in ${lib}):`);
+  const desktopMissing = [];
+  for (const [name, dir, so, pkg] of libs) {
     let has = false;
     try {
       has = fs.readdirSync(path.join(lib, dir)).some((f) => f.startsWith(so));
     } catch (e) { /* missing directory */ }
-    lines.push(`${ok(has)} ${name}: ${path.join(lib, dir)}/${so}*`);
+    lines.push(`${ok(has)} ${name}: ${path.join(lib, dir)}/${so}* (${pkg})`);
+    if (!has) desktopMissing.push(pkg);
+  }
+  if (desktopMissing.length > 0) missingPkgs.push(PKG.desktop);
+
+  // the console sample: ncurses through pkg-config when the sysroot has it,
+  // else AMIX's own SVR4 curses, linked statically
+  const ncPc = path.join(lib, 'usr/local/lib/pkgconfig/ncurses.pc');
+  const svr4 = path.join(lib, 'usr/ccs/lib/libcurses.a');
+  lines.push('', 'curses for console programs and the console sample:');
+  if (fs.existsSync(ncPc)) {
+    lines.push(`ok      ncurses: ${ncPc} (the program needs library/ncurses on AMIX)`);
+  } else if (fs.existsSync(svr4)) {
+    lines.push(`ok      AMIX SVR4 curses: ${svr4} (static; no ncurses.pc in the sysroot)`);
+  } else {
+    lines.push(`MISSING curses: neither ${ncPc} nor ${svr4}`);
+    missingPkgs.push(PKG.sysroot);
   }
   const dlm = '/opt/amix-dlmkit';
   lines.push(`${fs.existsSync(dlm) ? 'ok     ' : 'absent '} driver kit (dlmkit, optional): ${dlm}`);
@@ -621,7 +640,7 @@ function checkSetup() {
   if (uniq.length > 0) {
     lines.push('', process.platform === 'sunos'
       ? `To install the missing pieces (sudo, or pfexec with a pkg profile):\n  sudo pkg install ${uniq.join(' ')}\n  (or ${PKG.all} for everything)`
-      : 'Missing toolchain pieces: install gcc-cross-amix / gcc14-cross-amix, or set the amix.* paths.');
+      : `Missing pieces (OpenIndiana package names: ${uniq.join(' ')}): install the matching cross builds, or set the amix.* paths.`);
   }
   output.clear();
   output.appendLine(lines.join('\n'));
