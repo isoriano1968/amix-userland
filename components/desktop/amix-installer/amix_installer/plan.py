@@ -356,7 +356,8 @@ class Checksums(Action):
         from . import profile
         sums = "".join("%s  %s\n" % (h, n) for n, h in sorted(ctx.results.items()))
         rec = {"installer": __version__, "time": time.strftime("%Y-%m-%dT%H:%M:%S"),
-               "profile": profile.dump(self.cfg), "files": ctx.results}
+               "profile": profile.dump(self.cfg), "files": ctx.results,
+               "out_dir": os.path.abspath(ctx.out_dir)}
         files = [("SHA256SUMS", sums),
                  ("amix-installer.json", json.dumps(rec, indent=2, sort_keys=True) + "\n")]
         if self.readme:

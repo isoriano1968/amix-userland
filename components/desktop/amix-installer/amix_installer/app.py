@@ -733,6 +733,10 @@ class Window(Adw.ApplicationWindow):
         nxt.add_css_class("amix-next")
         nxt.append(label("What happens", ("heading",)))
         pl = plan.make_plan(self.cfg, self.paths)
+        if pl.paths.get("out_dir") and not self.cfg.in_place():
+            # where every new file goes, before Create: a folder dialog makes it
+            # easy to pick the parent of the folder meant
+            nxt.append(label("The new files go to %s" % pl.paths["out_dir"], ("caption",)))
         if pl.existing:
             nxt.append(self._existing_box(pl))
         for p in pl.problems:
@@ -909,6 +913,11 @@ class Window(Adw.ApplicationWindow):
                 return
             if key == "repo" and plan.repo_problem(f.get_path()):
                 self.toast(plan.repo_problem(f.get_path()))
+                return
+            if key == "out_dir" and self._crowded(f.get_path()):
+                # GTK's folder dialog stays in the parent after New Folder, and
+                # Select then takes the parent: ask before writing there
+                self._ask_crowded(f.get_path())
                 return
             self.paths[key] = f.get_path()
             if key == "out_dir":
@@ -1179,6 +1188,47 @@ class Window(Adw.ApplicationWindow):
         back.connect("clicked", lambda b: (self._busy(False), self.show_step(self.step)))
         self.run_btns.append(back)
         return False
+
+    def _crowded(self, d):
+        """A folder for new disks that holds other files already, or the core
+        HDF itself: likely the parent of the folder the user meant."""
+        try:
+            names = [n for n in os.listdir(d) if not n.startswith(".")]
+        except OSError:
+            return False
+        core = self.paths.get("core_hdf")
+        return bool(names) or bool(core and os.path.dirname(os.path.abspath(core)) == d)
+
+    def _ask_crowded(self, d):
+        try:
+            names = sorted(n for n in os.listdir(d) if not n.startswith("."))
+        except OSError:
+            names = []
+        core = self.paths.get("core_hdf")
+        dlg = Adw.AlertDialog(
+            heading="Write the new disks into %s?" % os.path.basename(d.rstrip("/")) or d,
+            body="%s already holds %d file%s (%s)%s. To use a new folder inside it, choose "
+                 "again and open that folder before Select."
+                 % (d, len(names), "" if len(names) == 1 else "s",
+                    ", ".join(names[:4]) + (", …" if len(names) > 4 else ""),
+                    ", among them the core HDF" if core and
+                    os.path.dirname(os.path.abspath(core)) == d else ""))
+        dlg.add_response("again", "Choose Again")
+        dlg.add_response("here", "Write Here")
+        dlg.set_default_response("again")
+
+        def answer(_d, r):
+            if r == "here":
+                self.paths["out_dir"] = d
+                self.paths.pop("overwrite_confirmed", None)
+                self._sync()
+                if model.STEPS[self.step].summary:
+                    self._refresh_summary()
+            elif r == "again":
+                GLib.idle_add(lambda: self._choose("out_dir", "Folder for the new disks", [],
+                                                   True) and False)
+        dlg.connect("response", answer)
+        dlg.present(self)
 
     def _ask_where(self, net):
         """A running system: on the Amiga itself, or in FS-UAE on this computer?

@@ -858,8 +858,8 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
                   "V=%s" % on_machine,
                   "if /usr/sbin/mount | /usr/bin/grep /amixdata >/dev/null; then report 'data disk mounted already'; else",
                   "  # never over a file system: only an empty disk is made",
-                  "  ! /usr/lib/fs/ufs/fstyp $D >/dev/null 2>&1 || fail \"$D has a file system already: "
-                  "the installer does not overwrite it (mount it on /amixdata, or give an empty disk)\"",
+                  "  if /usr/lib/fs/ufs/fstyp $D >/dev/null 2>&1; then fail \"$D has a file system already: "
+                  "the installer does not overwrite it (mount it on /amixdata, or give an empty disk)\"; fi",
                   "  /usr/sbin/mkfs -F ufs $D %d >>$LOG 2>&1 || fail mkfs" % sectors,
                   "  { [ -d /amixdata ] || /usr/bin/mkdir -p /amixdata; } && /usr/sbin/mount -F ufs `echo $D | /usr/bin/sed s/rdsk/dsk/` /amixdata >>$LOG 2>&1 || fail mount",
                   "  echo \"`echo $V | /usr/bin/sed s/rdsk/dsk/` $V /amixdata ufs 2 yes -\" >> /etc/vfstab",
