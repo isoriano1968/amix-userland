@@ -244,6 +244,14 @@ def fs_uae_data_disk(pl):
             plan.disk_device(pl.cfg, "data", 1))
 
 
+def data_disk_text(dd):
+    """The data disk from fs_uae_data_disk, for the user: where AMIX in FS-UAE
+    makes the file system, its size, and where the machine has it."""
+    raw, sectors, machine = dd
+    t = "%s, %d sectors" % (raw, sectors)
+    return t if machine == raw else "%s (on the machine: %s)" % (t, machine)
+
+
 def hdf_movable():
     from . import hdf
     return hdf.MOVABLE
@@ -258,9 +266,18 @@ def plan_kernel(pl):
     return p if os.path.isfile(p) else None
 
 
-def report_path(pl):
-    """foundation-report.txt in the plan's out folder (or the current one)."""
-    return os.path.join(pl.paths.get("out_dir") or os.getcwd(), "foundation-report.txt")
+STATE_DIR = os.path.join("~", ".local", "share", "amix-installer")
+
+
+def report_path(pl=None):
+    """foundation-report.txt in the plan's out folder; for a running system
+    (no out folder) in ~/.local/share/amix-installer, made if need be, where
+    vscode-agent.key goes too."""
+    out = pl.paths.get("out_dir") if pl is not None else None
+    if not out:
+        out = os.path.expanduser(STATE_DIR)
+        os.makedirs(out, mode=0o700, exist_ok=True)
+    return os.path.join(out, "foundation-report.txt")
 
 
 def sysv_sum(data):
@@ -493,28 +510,85 @@ def foundation_lines(have, now, sizes=None):
 
 def agent_lines(host, key, port=AGENT_PORT):
     """vscode-agent's configuration, once its package is installed: it dials
-    the PC (host) and signs in with key; the programs run as the first login
-    user, or as a new user developer.  An existing configuration is kept."""
+    the PC (host) and signs in with key, the one this install saved in
+    vscode-agent.key; the programs run as the user an existing configuration
+    names, else the first login user, else a new user developer."""
     C = "/etc/vscode-agent.conf"
     return ["",
             "if [ -x /usr/local/bin/vscode-agent ]; then",
-            "  if [ -f %s ]; then report 'VS Code agent: %s kept as it is'; else" % (C, C),
-            "    U=`/usr/bin/awk -F: '$3 >= 101 && $3 < 60000 && $1 != \"vmsys\" && $1 != \"oasys\" {print $1; exit}' /etc/passwd`",
-            "    if [ -z \"$U\" ]; then",
-            "      [ -d /home ] || /usr/bin/mkdir /home",
-            "      /usr/sbin/useradd -d /home/developer -s /sbin/sh -c 'VS Code programs' developer >>$LOG 2>&1 || fail 'useradd developer'",
-            "      [ -d /home/developer ] || /usr/bin/mkdir /home/developer",
-            "      /usr/bin/chown developer /home/developer",
-            "      U=developer",
-            "      report 'VS Code agent: new user developer (no password yet: passwd developer)'",
-            "    fi",
-            "    (umask 077; { echo 'connect %s:%d'; echo \"user $U\"; echo 'secret %s';" % (host, port, key),
-            "      echo 'log /var/log/vscode-agent.log'; } > %s) || fail 'writing %s'" % (C, C),
-            "    /usr/bin/chown root %s; /usr/bin/chmod 600 %s" % (C, C),
-            "    report \"VS Code agent: runs programs as $U, dials %s:%d\"" % (host, port),
+            "  U=",
+            "  [ -f %s ] && U=`/usr/bin/awk '$1 == \"user\" {print $2; exit}' %s`" % (C, C),
+            "  [ -n \"$U\" ] || U=`/usr/bin/awk -F: '$3 >= 101 && $3 < 60000 && $1 != \"vmsys\" && $1 != \"oasys\" {print $1; exit}' /etc/passwd`",
+            "  if [ -z \"$U\" ]; then",
+            "    [ -d /home ] || /usr/bin/mkdir /home",
+            "    /usr/sbin/useradd -d /home/developer -s /sbin/sh -c 'VS Code programs' developer >>$LOG 2>&1 || fail 'useradd developer'",
+            "    [ -d /home/developer ] || /usr/bin/mkdir /home/developer",
+            "    /usr/bin/chown developer /home/developer",
+            "    U=developer",
+            "    report 'VS Code agent: new user developer (no password yet: passwd developer)'",
             "  fi",
+            "  # the key and the PC's address are this install's: VS Code has them in",
+            "  # vscode-agent.key; the old file is kept as .old",
+            "  [ ! -f %s ] || /usr/bin/cp %s %s.old" % (C, C, C),
+            "  (umask 077; { echo 'connect %s:%d'; echo \"user $U\"; echo 'secret %s';" % (host, port, key),
+            "    echo 'log /var/log/vscode-agent.log'; } > %s) || fail 'writing %s'" % (C, C),
+            "  /usr/bin/chown root %s %s.old 2>/dev/null; /usr/bin/chmod 600 %s %s.old 2>/dev/null" % (C, C, C, C),
+            "  report \"VS Code agent: runs programs as $U, dials %s:%d\"" % (host, port),
+            "  /etc/init.d/vscode-agent stop >>$LOG 2>&1",
             "  /etc/init.d/vscode-agent start >>$LOG 2>&1",
             "fi"]
+
+
+AGENT_PKG = "developer/vscode-agent"
+
+
+def agent_only_script(host, http_port, repo, agent_key):
+    """The steps for model.agent_only: the bootstrap's pkg installs (or
+    updates) the VS Code agent and nothing else, its configuration is written
+    (an existing one kept), the agent started, the bootstrap removed."""
+    W = "http://%s:%d" % (host, http_port)
+    size = fetch_size(repo, [AGENT_PKG]) if repo else None
+    lines = ["#!/bin/sh",
+             "# AMIX Installer: the VS Code agent alone, fetched from %s/steps" % W,
+             "W=%s" % W, "B=%s" % BOOT_DIR,
+             "LD_LIBRARY_PATH=$B/lib; export LD_LIBRARY_PATH",
+             "LOG=/tmp/amix-install.log; : > $LOG",
+             "RPKG=$B/bin/pkg; RLD=$B/lib",
+             "report() { echo \"$*\"; echo \"$*\" | LD_LIBRARY_PATH=$RLD $RPKG http put \"$W/report/msg\" >/dev/null; }",
+             "fail() { report \"FAILED: $*\"; tail -20 $LOG | LD_LIBRARY_PATH=$RLD $RPKG http put \"$W/report/log\" >/dev/null; exit 1; }",
+             "step() { n=$1; shift; report \"step $n: $*\"; }",
+             "",
+             "step 1 \"the system: `uname -a`\"",
+             "report \"root: `/usr/bin/df -k / | /usr/bin/tail -1`\"",
+             "",
+             "step 6 \"packages: %s (alone)\"" % AGENT_PKG,
+             "$B/bin/pkg set-publisher -O $W/repo amix >>$LOG 2>&1 || fail set-publisher",
+             "$B/bin/pkg refresh >>$LOG 2>&1 || fail refresh"]
+    if size:
+        lines += [fetching(AGENT_PKG, size)]
+    lines += ["if $B/bin/pkg list %s >/dev/null 2>&1; then" % AGENT_PKG,
+              "  $B/bin/pkg update %s >>$LOG 2>&1 || fail 'updating the VS Code agent'" % AGENT_PKG,
+              "  report 'VS Code agent: %s updated'" % AGENT_PKG,
+              "else",
+              "  $B/bin/pkg install %s >>$LOG 2>&1 || fail 'installing the VS Code agent'" % AGENT_PKG,
+              "  report 'VS Code agent: %s installed'" % AGENT_PKG,
+              "fi"]
+    lines += agent_lines(host, agent_key)
+    lines += unboot_lines()
+    lines += ["",
+              "# no installed pkg reports here: the bootstrap's pkg and its lib/",
+              "# are copied out first, the bootstrap's removal takes them with it",
+              "R=/tmp/amixboot-report; /usr/bin/rm -rf $R",
+              "/usr/bin/mkdir $R && /usr/bin/cp $B/bin/pkg $B/lib/* $R/ && RPKG=$R/pkg RLD=$R || "
+              "fail 'copying the reporter to /tmp'",
+              "step 8 \"removing the bootstrap\"",
+              "cd / && /usr/sbin/pkgrm -n -a /tmp/amixboot.admin %s >>$LOG 2>&1 || unboot" % BOOT_PKG,
+              "rm -f /tmp/amixboot.admin /tmp/go /tmp/amix-steps",
+              "/usr/bin/sync",
+              "report DONE",
+              "/usr/bin/rm -rf $R",
+              ""]
+    return "\n".join(lines)
 
 
 def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kernel=None,
@@ -978,6 +1052,8 @@ class Session(object):
         return self._boot
 
     def steps(self):
+        if getattr(self.cfg, "agent_only", False):
+            return agent_only_script(self.host, self.http_port, self.repo, self.agent_key)
         return steps_script(self.cfg, self.host, self.http_port, self.data_disk, self.repo,
                             self.kernel[1:] if self.kernel else None, bool(self.patch),
                             agent_key=self.agent_key)

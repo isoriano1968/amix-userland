@@ -22,8 +22,17 @@ def main(argv=None):
     ap.add_argument("--apply", action="store_true",
                     help="write what this version can (no window); needs --source and --out")
     ap.add_argument("--net", action="store_true",
-                    help="serve the network install for the disks --apply wrote (no window); "
-                    "needs --source and --out, runs until AMIX reports DONE or Ctrl-C")
+                    help="serve the network install for the disks --apply wrote (no window; "
+                    "needs --source and --out), or for --running; runs until AMIX reports "
+                    "DONE or Ctrl-C")
+    ap.add_argument("--running", choices=("fs-uae", "amiga"),
+                    help="install into an AMIX that runs now, in FS-UAE on this computer or "
+                    "on an Amiga on the LAN (with --net: no disks are written)")
+    ap.add_argument("--vscode-only", action="store_true",
+                    help="only the VS Code agent: a console system VS Code develops for")
+    ap.add_argument("--agent-only", action="store_true",
+                    help="with --running: install or update the VS Code agent and nothing "
+                    "else (no base set, no package client)")
     ap.add_argument("--screenshot", metavar="DIR",
                     help="render every step to DIR/*.png and quit (tests)")
     ex = ap.add_mutually_exclusive_group()
@@ -52,6 +61,18 @@ def run_plan(args):
         for m in msgs:
             print("profile: %s" % m, file=sys.stderr)
     paths = {}
+    if args.running:
+        cfg.sel["src"] = "run"
+        paths["running"] = args.running
+        cfg.normalize()
+    if args.vscode_only:
+        model.vscode_only(cfg)
+    if args.agent_only:
+        if not args.running:
+            print("amix-installer: --agent-only needs --running fs-uae or --running amiga",
+                  file=sys.stderr)
+            return 1
+        model.agent_only(cfg)
     if args.source:
         paths["core_hdf"] = os.path.abspath(args.source)
         try:
@@ -132,7 +153,10 @@ def run_net(cfg, pl, paths=None):
     except (OSError, hdf.NotAnImage) as e:
         print("amix-installer: the data disk: %s (run --apply first)" % e, file=sys.stderr)
         return 1
-    host = netinstall.lan_address() if real else netinstall.FS_UAE_HOST
+    # AMIX in FS-UAE (disks written here, or a running one with --running
+    # fs-uae) reaches this computer as 10.0.2.2; an Amiga over the LAN
+    emu = not real or (paths or {}).get("running") == "fs-uae"
+    host = netinstall.FS_UAE_HOST if emu else netinstall.lan_address()
     try:
         s = netinstall.Session(cfg, net[0].repo, host=host, data_disk=data_disk, log=print,
                                kernel=None if real else netinstall.plan_kernel(pl),
@@ -144,11 +168,13 @@ def run_net(cfg, pl, paths=None):
         return 1
     print("repository: %s" % net[0].repo)
     if data_disk:
-        print("data disk: %s, %d sectors" % data_disk)
+        print("data disk: %s" % netinstall.data_disk_text(data_disk))
     print("\nAs root at the AMIX console, type:\n")
     for c in s.commands():
         print("    " + c)
     print("")
+    if s.agent_key_file:
+        print("VS Code agent key: %s (VS Code: AMIX: Set Agent Key)\n" % s.agent_key_file)
     sys.stdout.flush()
     try:
         while not (s.done or s.failed):

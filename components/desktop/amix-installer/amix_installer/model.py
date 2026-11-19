@@ -438,7 +438,19 @@ DISK_HW = {"on_" + h[3:]: h for h in ("hw_a3000scsi", "hw_a2091", "hw_gvpscsi", 
 VSCODE_ONLY_OFF = ("apps", "core1", "tc", "tools")
 
 
+def agent_only(cfg):
+    """The VS Code agent and its configuration, nothing else, into a running
+    AMIX: no foundation, no package client (the bootstrap's pkg installs or
+    updates the agent), for a quick test or an agent update."""
+    vscode_only(cfg)
+    cfg.sel["src"] = "run"
+    cfg.normalize()
+    cfg.agent_only = True
+    return cfg
+
+
 def vscode_only(cfg):
+    cfg.agent_only = False
     cfg.sel["desk"] = "console"
     for gid in VSCODE_ONLY_OFF:
         for o in find_group(gid).options:
@@ -521,6 +533,7 @@ class Config(object):
 
     def __init__(self, sel=None, on=None, source=None):
         self.source = source        # hdf.SourceInfo of the core image, or None
+        self.agent_only = False     # a running system gets the VS Code agent alone
         self.sel = dict(DEFAULT_SEL)
         self.on = dict(DEFAULT_ON)
         if sel:
@@ -643,6 +656,7 @@ class Config(object):
 
     # -- changes -----------------------------------------------------------
     def select(self, gid, oid):
+        self.agent_only = False     # any choice of the user's ends "the agent alone"
         g = find_group(gid)
         o = g.option(oid)
         if o is None or not g.radio:
@@ -662,6 +676,7 @@ class Config(object):
         return True
 
     def set_on(self, oid, value):
+        self.agent_only = False     # any choice of the user's ends "the agent alone"
         for _, g in all_groups():
             o = g.option(oid)
             if o is not None and not g.radio:

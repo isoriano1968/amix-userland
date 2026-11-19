@@ -81,6 +81,15 @@ and pycairo to make the icons.
     ./amix-installer --source core.hdf   # start with a core HDF read
     ./amix-installer --source core.hdf --out DIR --plan    # print the plan
     ./amix-installer --source core.hdf --out DIR --kickstart A3000.rom --apply
+    ./amix-installer --running fs-uae --vscode-only --net
+                        # into the AMIX running in FS-UAE here (it reaches this
+                        # computer as 10.0.2.2), only the VS Code agent; prints
+                        # what to type at the AMIX console and the agent key
+                        # file (~/.local/share/amix-installer/vscode-agent.key)
+    ./amix-installer --running fs-uae --agent-only --net
+                        # the VS Code agent alone, for a quick test: no
+                        # foundation, no other package; tests/e2e/agent-only-fsuae.sh
+                        # runs this from end to end in FS-UAE, headless
     ./amix-installer ... --apply --backup      # keep files of the same name as .bak
     ./amix-installer ... --apply --overwrite   # replace them, also ones not ours
 

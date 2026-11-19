@@ -155,7 +155,7 @@ class Scripts(unittest.TestCase):
         self.assertIn("echo 'connect 10.0.2.2:%d'" % netinstall.AGENT_PORT, t)
         self.assertIn("echo 'secret %s'" % key, t)
         self.assertIn("/usr/bin/chmod 600 /etc/vscode-agent.conf", t)
-        self.assertIn("if [ -f /etc/vscode-agent.conf ]; then report", t)
+        self.assertIn("/usr/bin/cp /etc/vscode-agent.conf /etc/vscode-agent.conf.old", t)
         self.assertIn("useradd -d /home/developer", t)
         self.assertIn("/etc/init.d/vscode-agent start", t)
         self.assertLess(t.index("install developer/vscode-agent"), t.index("vscode-agent.conf"))
@@ -283,6 +283,104 @@ class NotReady(unittest.TestCase):
         finally:
             c.close()
             t.stop()
+
+
+class Running(unittest.TestCase):
+    """A running system: the report and the agent key go to the user's state
+    folder; the CLI serves AMIX in FS-UAE at 10.0.2.2."""
+
+    def test_report_path_without_out_folder(self):
+        with tempfile.TemporaryDirectory() as d:
+            old = os.environ.get("HOME")
+            os.environ["HOME"] = d
+            try:
+                p = netinstall.report_path(None)
+            finally:
+                os.environ["HOME"] = old
+            self.assertEqual(p, os.path.join(d, ".local", "share", "amix-installer",
+                                             "foundation-report.txt"))
+            self.assertEqual(os.stat(os.path.dirname(p)).st_mode & 0o777, 0o700)
+
+    def test_cli_running_fs_uae_vscode_only(self):
+        from test_plan import good_repo
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as d:
+            good_repo(os.path.join(d, "r"))
+            env = dict(os.environ, HOME=d, PYTHONPATH=here)
+            r = subprocess.run([sys.executable, os.path.join(here, "amix-installer"), "--running",
+                                "fs-uae", "--vscode-only", "--plan", "--repo",
+                                os.path.join(d, "r")], env=env, capture_output=True,
+                               text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("Install over the network", r.stdout)
+
+
+class DataDiskText(unittest.TestCase):
+    """fs_uae_data_disk gives three fields; both front ends print them."""
+
+    def test_text(self):
+        self.assertEqual(netinstall.data_disk_text(("/dev/rdsk/c1d0s1", 2048, "/dev/rdsk/c1d0s1")),
+                         "/dev/rdsk/c1d0s1, 2048 sectors")
+        self.assertEqual(netinstall.data_disk_text(("/dev/rdsk/c1d0s1", 2048, "/dev/rdsk/c9d0s1")),
+                         "/dev/rdsk/c1d0s1, 2048 sectors (on the machine: /dev/rdsk/c9d0s1)")
+
+
+class AgentOnly(unittest.TestCase):
+    """The VS Code agent alone into a running AMIX: nothing else is installed."""
+
+    def test_script(self):
+        with tempfile.TemporaryDirectory() as d:
+            fake_repo(d, {"developer/vscode-agent": ([], [40000, 1000])})
+            cfg = model.agent_only(model.Config())
+            s = netinstall.Session(cfg, d, host="10.0.2.2", tftp_port=0, http_port=0,
+                                   bind="127.0.0.1")
+            try:
+                t = s.steps()
+            finally:
+                s.tftp.stop()
+                s.http.server_close()
+        Scripts.sh_ok(self, t)
+        self.assertIn("$B/bin/pkg install developer/vscode-agent", t)
+        self.assertIn("$B/bin/pkg update developer/vscode-agent", t)
+        self.assertIn("installing developer/vscode-agent: 2 files, 41 KB from this computer", t)
+        self.assertIn("connect 10.0.2.2:7777", t)
+        self.assertIn("secret %s" % s.agent_key, t)
+        self.assertIn("report DONE", t)
+        # the last reports go through a copy: removing the bootstrap takes its pkg
+        self.assertLess(t.index("RPKG=$R/pkg RLD=$R"), t.index("pkgrm -n"))
+        self.assertLess(t.index("report DONE"), t.rindex("/usr/bin/rm -rf $R\n"))
+        for other in ("foundation", "sysutils/amix-pkg", "setclk", "gnu-tools", "PATCH"):
+            self.assertNotIn(other, t)
+
+    def test_any_choice_ends_agent_only(self):
+        cfg = model.agent_only(model.Config())
+        self.assertTrue(cfg.agent_only)
+        self.assertEqual(cfg.sel["src"], "run")
+        cfg.set_on("vscode", True)
+        self.assertFalse(cfg.agent_only)
+        self.assertFalse(model.vscode_only(model.agent_only(model.Config())).agent_only)
+
+    def test_agent_key_renewed_user_kept(self):
+        t = "\n".join(netinstall.agent_lines("10.0.2.2", "k" * 64))
+        self.assertIn("$1 == \"user\" {print $2; exit}", t)
+        self.assertIn("/etc/vscode-agent.conf.old", t)
+        self.assertNotIn("kept as it is", t)
+
+    def test_cli_agent_only(self):
+        from test_plan import good_repo
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as d:
+            good_repo(os.path.join(d, "r"))
+            env = dict(os.environ, HOME=d)
+            cmd = [sys.executable, os.path.join(here, "amix-installer"), "--agent-only",
+                   "--plan", "--repo", os.path.join(d, "r")]
+            r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("needs --running", r.stderr)
+            r = subprocess.run(cmd + ["--running", "fs-uae"], env=env, capture_output=True,
+                               text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("the VS Code agent alone", r.stdout)
 
 if __name__ == "__main__":
     unittest.main()

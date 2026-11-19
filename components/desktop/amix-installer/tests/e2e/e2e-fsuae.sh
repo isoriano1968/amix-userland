@@ -14,6 +14,8 @@
 # disk copies until "e2e-fsuae.sh --clean WORKDIR".
 # FS-UAE runs at the A3000's own speed: the install is network-bound, and at
 # maximum CPU speed (E2E_FAST=1) slirp gets less time, so every step is slower.
+# E2E_AGENT=1: after boot 1, vscode-agent's tests/amix-e2e.js with the key
+# the installer wrote (a profile with the VS Code agent on).
 # E2E_BOOT2_ONLY=1 reuses WORKDIR's disks after a finished boot 1:
 # boot 2 again, with go2.sh (or WORKDIR/go2) as it is now.
 # Needs: Xvfb ($XVFB or on PATH), fs-uae, xwd, python3 with GTK not needed;
@@ -120,6 +122,17 @@ sleep 10
 shot boot1-end
 cp "$W/out/foundation-report.txt" "$W/" 2>/dev/null || true
 grep -q "amix: DONE" "$W/net.log" || { echo "e2e: boot 1 did not finish"; tail -30 "$W/net.log"; exit 1; }
+# E2E_AGENT=1 (a profile with the VS Code agent): its own checks, AMIX still up
+if [ -n "$E2E_AGENT" ]; then
+	KEY=$(cat "$W/out/vscode-agent.key" 2>/dev/null || true)
+	U=$(sed -n 's/.*VS Code agent: runs programs as \([^,]*\), dials.*/\1/p' "$W/net.log" | tail -1)
+	[ -n "$KEY" ] && [ -n "$U" ] || { echo "e2e: no agent key or user"; exit 1; }
+	E2E_TIMEOUT_MIN=${E2E_TIMEOUT_MIN:-15} node "$APP/../../developer/vscode-agent/tests/amix-e2e.js" \
+		"$KEY" 7777 "$U" > "$W/agent-e2e.log" 2>&1 || true
+	tail -3 "$W/agent-e2e.log"
+	grep -q "all passed" "$W/agent-e2e.log" || { echo "e2e: the agent checks FAILED"; exit 1; }
+	echo "e2e: the VS Code agent checks passed"
+fi
 kill $FSPID $NETPID 2>/dev/null || true
 wait $FSPID $NETPID 2>/dev/null || true
 echo "e2e: boot 1 DONE after ${t}s"

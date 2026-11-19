@@ -414,7 +414,22 @@ class Window(Adw.ApplicationWindow):
             self.show_step(self.step)
             self.toast("Console system with the VS Code agent")
         btn.connect("clicked", only)
-        box.append(btn)
+        btns = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, valign=Gtk.Align.CENTER)
+        btns.append(btn)
+        # a running AMIX: the agent alone, for a quick test or an agent update
+        alone = Gtk.Button(label="Just the Agent", valign=Gtk.Align.CENTER)
+        alone.add_css_class("pill")
+        alone.set_tooltip_text("Install or update only the VS Code agent on the running "
+                               "AMIX: no base set, no package client, nothing else")
+
+        def just(_b):
+            model.agent_only(self.cfg)
+            self.show_step(self.step)
+            self.toast("Only the VS Code agent: nothing else is installed")
+        alone.connect("clicked", just)
+        btns.append(alone)
+        self._extra.append(lambda: alone.set_visible(self.cfg.in_place()))
+        box.append(btns)
         return box
 
     def _running_note(self):
@@ -1260,7 +1275,7 @@ class Window(Adw.ApplicationWindow):
             self.net = netinstall.Session(self.cfg, net.repo, host=host, data_disk=data_disk,
                                           kernel=netinstall.plan_kernel(pl) if pl else None,
                                           patch=self.paths.get("patch_disk"),
-                                          report=netinstall.report_path(pl) if pl else None,
+                                          report=netinstall.report_path(pl),
                                           log=lambda t: GLib.idle_add(self._run_logline, t))
             self.net.start()
         except OSError as e:
@@ -1289,8 +1304,8 @@ class Window(Adw.ApplicationWindow):
         info.add(Adw.ActionRow(title="Package repository", subtitle=net.repo))
         if data_disk:
             info.add(Adw.ActionRow(title="Data disk",
-                                   subtitle="%s, %d sectors: AMIX makes its file system"
-                                   % data_disk))
+                                   subtitle="%s: AMIX makes its file system"
+                                   % netinstall.data_disk_text(data_disk)))
         if not emu:
             info.add(Adw.ActionRow(title="The Amiga\u2019s network",
                                    subtitle="Its A2065 must be up and reach %s (ping %s)"
