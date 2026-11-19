@@ -20,7 +20,7 @@ fs.mkdirSync(tmpdir);
 fs.writeFileSync(path.join(proj, 'Makefile'),
   'all: hello\nhello: hello.in\n\tcp hello.in hello\n\tchmod 755 hello\n');
 fs.writeFileSync(path.join(proj, 'hello.in'),
-  '#!/bin/sh\necho "hello $1 DISPLAY=$DISPLAY"\nread x\necho "you typed $x"\nexit 4\n');
+  '#!/bin/sh\necho "hello $1 DISPLAY=$DISPLAY size `stty size`"\nread x\necho "you typed $x"\nexit 4\n');
 
 // --- a small vscode -----------------------------------------------------------
 const messages = [];
@@ -52,7 +52,8 @@ const vscode = {
       o.pty.onDidWrite((d) => { t.text += d; });
       t.pty = o.pty;
       terminals.push(t);
-      setImmediate(() => o.pty.open({ columns: 90, rows: 25 }));
+      // as VS Code: open at one size, the settled size right after
+      setImmediate(() => { o.pty.open({ columns: 90, rows: 25 }); o.pty.setDimensions({ columns: 100, rows: 30 }); });
       return t;
     }
   },
@@ -73,6 +74,13 @@ const realLoad = Module._load;
 Module._load = function (req, ...rest) {
   return req === 'vscode' ? vscode : realLoad.call(this, req, ...rest);
 };
+
+// a home of its own: the AMIX Installer's key file lives there
+process.env.HOME = path.join(work, 'home');
+const instKeyDir = path.join(work, 'home', '.local', 'share', 'amix-installer');
+fs.mkdirSync(instKeyDir, { recursive: true });
+const instKey = require('../../vscode/src/agent-link.js').newKey();
+fs.writeFileSync(path.join(instKeyDir, 'vscode-agent.key'), instKey + '\n', { mode: 0o600 });
 
 const target = require('../../vscode/src/target.js');
 
@@ -135,6 +143,7 @@ function waitFor(cond, ms, what) {
     assert.strictEqual(terminals.length, 1, messages.join('\n'));
     const t = terminals[0];
     await waitFor(() => t.text.includes('hello world DISPLAY=:0'), 10000, 'program output');
+    assert.ok(t.text.includes('size 30 100'), `started at the settled size: ${t.text}`);
     t.pty.handleInput('fine\r');
     await waitFor(() => t.text.includes('[hello exited with 4]'), 10000, 'exit');
     assert.ok(t.text.includes('you typed fine'), t.text);
@@ -173,6 +182,20 @@ function waitFor(cond, ms, what) {
     await waitFor(() => terminals[2].text.includes('ended by signal 1'), 10000, 'stopped');
     assert.ok(!m2.some((m) => m.event === 'output' && /without debugging/.test(m.body.output)));
     console.log('ok   Ctrl+F5 runs without the debugging note; disconnect stops the program');
+
+    // an agent with the installer's key is refused once, with the offer to use it
+    const conf2 = path.join(work, 'agent2.conf');
+    fs.writeFileSync(conf2, `connect 127.0.0.1:${port}\nsecret ${instKey}\n` +
+      `tmpdir ${tmpdir}\nreserve-mb 1\nretry 1\n`, { mode: 0o600 });
+    const agent2 = spawn(bin, ['-f', '-c', conf2], { stdio: 'ignore' });
+    try {
+      await waitFor(() => messages.some((m) => /refused.*Use that key\?/.test(m)), 10000, 'installer key offer');
+      await new Promise((r) => setTimeout(r, 2500));       // it dials again: no second warning
+      assert.strictEqual(messages.filter((m) => /Use that key\?/.test(m)).length, 1, messages.join('\n'));
+    } finally {
+      agent2.kill('SIGTERM');
+    }
+    console.log("ok   an agent with the installer's key: one offer to use that key");
 
     // a broken build sends nothing
     fs.writeFileSync(path.join(proj, 'Makefile'), 'all:\n\tfalse\n');

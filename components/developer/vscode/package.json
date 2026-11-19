@@ -2,7 +2,7 @@
   "name": "vscode-amix",
   "displayName": "AMIX Development Tools",
   "description": "VS Code helpers for building AMIX m68k programs with gcc 2.7.2.3 (m68k-cbm-sysv4) or gcc 14 (gcc14-cross-amix).",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "publisher": "isoriano1968",
   "license": "MIT",
   "icon": "images/amix-logo.png",
@@ -18,6 +18,13 @@
     "Programming Languages",
     "Other"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In Restricted Mode the AMIX commands only say how to trust the folder: make, Run on Target and the agent listener need a trusted folder."
+    },
+    "virtualWorkspaces": false
+  },
   "activationEvents": [
     "onStartupFinished",
     "onLanguage:c",

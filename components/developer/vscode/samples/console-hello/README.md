@@ -6,6 +6,11 @@ Enter, `q` to quit). It runs on the console, in a dtterm or over ssh, with no
 X at all. It uses only classic curses calls (`initscr`, `newwin`, `box`,
 `wattron`, `halfdelay`, `wgetch`, `endwin`), as in SVR4 curses and ncurses.
 
+When the terminal changes size (VS Code's panel, an xterm), ncurses reports
+`KEY_RESIZE`; SVR4 curses keeps the size it started with and would draw over
+the wrong lines, so on `SIGWINCH` the program makes a new screen
+(`newterm`, `delscreen`), which reads the new size.
+
 ## Build
 
 On the build host, with either AMIX cross toolchain:

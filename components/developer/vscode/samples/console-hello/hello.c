@@ -11,6 +11,7 @@
  * Only classic curses calls, as in SVR4 curses and ncurses.
  */
 #include <curses.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -48,28 +49,83 @@ static void draw(WINDOW *w, struct utsname *u, int sel, const char *msg)
     wrefresh(w);
 }
 
-int main(void)
-{
-    struct utsname u;
-    WINDOW *w;
-    int sel = 0, ch, rows, cols;
-    char msg[64] = "";
+/*
+ * A resized terminal (VS Code's panel, an xterm): ncurses reports it as
+ * KEY_RESIZE.  SVR4 curses keeps the size it started with and would draw over
+ * the wrong lines, so on SIGWINCH the program makes a new screen, which reads
+ * the new size from the terminal.
+ */
+#ifndef KEY_RESIZE
+static volatile sig_atomic_t resized;
 
-    uname(&u);
-    initscr();
+static void on_winch(int sig)
+{
+    resized = 1;
+    signal(sig, on_winch);      /* SVR4 signal() resets the handler */
+}
+#endif
+
+static SCREEN *scr;
+
+static WINDOW *start_screen(void)
+{
+    WINDOW *w;
+    int rows, cols;
+
+    scr = newterm(NULL, stdout, stdin);
+    set_term(scr);
     cbreak();
     noecho();
     curs_set(0);
     getmaxyx(stdscr, rows, cols);
     refresh();
 
-    w = newwin(12, 50, (rows - 12) / 2, (cols - 50) / 2);
+    w = newwin(12, 50, rows > 12 ? (rows - 12) / 2 : 0, cols > 50 ? (cols - 50) / 2 : 0);
     keypad(w, TRUE);
     halfdelay(10);              /* wake up every second for the clock */
+    return w;
+}
+
+static WINDOW *restart_screen(WINDOW *w)
+{
+    SCREEN *old = scr;
+
+    delwin(w);
+    endwin();
+    w = start_screen();
+    delscreen(old);
+    clearok(curscr, TRUE);      /* the whole terminal again, not a diff */
+    return w;
+}
+
+int main(void)
+{
+    struct utsname u;
+    WINDOW *w;
+    int sel = 0, ch;
+    char msg[64] = "";
+
+    uname(&u);
+    w = start_screen();
+#ifndef KEY_RESIZE
+    signal(SIGWINCH, on_winch);
+#endif
 
     for (;;) {
         draw(w, &u, sel, msg);
         ch = wgetch(w);
+#ifdef KEY_RESIZE
+        if (ch == KEY_RESIZE) {
+            w = restart_screen(w);
+            continue;
+        }
+#else
+        if (resized) {
+            resized = 0;
+            w = restart_screen(w);
+            continue;
+        }
+#endif
         if (ch == 'q' || ch == 'Q')
             break;
         if (ch == KEY_UP || ch == 'k')

@@ -15,6 +15,7 @@ const { AgentServer, newKey } = require('./agent-link');
 const KEY = 'amix.agentKey';
 const FS_UAE_HOST = '10.0.2.2';
 // where the AMIX Installer keeps the key of an agent it set up
+const SETTLE_MS = 400;     // a new terminal's size settles within this
 const INSTALLER_KEY = path.join(os.homedir(), '.local/share/amix-installer/vscode-agent.key');
 
 let ctx;
@@ -25,6 +26,7 @@ let current = null;   // the agent Run on Target uses
 let statusItem;
 let out;
 const announced = new Set();
+const warned = new Set();      // hosts told about a refused key
 
 function settings() {
   const c = vscode.workspace.getConfiguration('amix');
@@ -77,8 +79,21 @@ function updateStatus() {
   }
 }
 
+// the key the AMIX Installer wrote when it put the agent on AMIX, or ''
+function installerKey() {
+  let v = '';
+  try { v = fs.readFileSync(INSTALLER_KEY, 'utf8').trim(); } catch (e) { return ''; }
+  return v.length >= 16 && !/\s/.test(v) ? v : '';
+}
+
 async function loadKey() {
   key = (await ctx.secrets.get(KEY)) || '';
+  // no key of our own yet: the installer's, so its agent signs in at once
+  if (!key && installerKey()) {
+    key = installerKey();
+    await ctx.secrets.store(KEY, key);
+    log(`agent key taken from ${INSTALLER_KEY}`);
+  }
   return key;
 }
 
@@ -120,8 +135,24 @@ async function startListener(quiet) {
   });
   srv.on('reject', (r) => {
     log(`refused ${r.address}: ${r.reason}`);
-    if (/key/.test(r.reason)) {
-      vscode.window.showWarningMessage(`AMIX: an agent at ${r.address} was refused: ${r.reason}.`);
+    const host = String(r.address).replace(/:\d+$/, '');
+    if (!/key/.test(r.reason) || warned.has(host)) return;
+    warned.add(host);           // the agent dials again and again: ask once
+    const ik = installerKey();
+    if (ik && ik !== key) {
+      vscode.window.showWarningMessage(
+        `AMIX: an agent at ${r.address} was refused: ${r.reason}. The AMIX Installer `
+        + `put an agent on AMIX with the key in ${INSTALLER_KEY}. Use that key?`,
+        'Use the Installer\'s Key', 'Set Agent Key').then((b) => {
+        if (b === 'Use the Installer\'s Key') useKey(ik);
+        else if (b === 'Set Agent Key') setKey();
+      });
+    } else {
+      vscode.window.showWarningMessage(`AMIX: an agent at ${r.address} was refused: ${r.reason}.`,
+        'Set Agent Key', 'How to Set Up').then((b) => {
+        if (b === 'Set Agent Key') setKey();
+        else if (b === 'How to Set Up') showSetup();
+      });
     }
   });
   srv.on('error', (e) => log(`listener: ${e.message}`));
@@ -209,9 +240,10 @@ function setupGuide() {
     '   small system with just the base and the agent, without the desktop.',
     '3. Install. The installer writes `/etc/vscode-agent.conf` on AMIX with this computer\'s address and a new key,',
     '   and saves the key as `vscode-agent.key` beside its report (the last page names the file).',
-    '4. Here: **AMIX: Set Agent Key**. It offers the installer\'s key file when it is on this computer',
-    '   (`' + INSTALLER_KEY + '`), else paste the key. The listener starts and the status bar',
-    '   shows `AMIX target: <name>` once AMIX has booted.',
+    '4. Here: nothing to do when this extension has no key of its own yet: it takes the installer\'s key file',
+    '   (`' + INSTALLER_KEY + '`). With a key of its own, the first agent it refuses brings',
+    '   **Use the Installer\'s Key**; or run **AMIX: Set Agent Key**. The status bar shows',
+    '   `AMIX target: <name>` once AMIX has booted.',
     '',
     '**Quick test, just the agent** into an AMIX that is already running (FS-UAE or an Amiga, nothing else changed):',
     'the installer\'s **Just the Agent** button for a running system, or',
@@ -220,6 +252,9 @@ function setupGuide() {
     'it prints the key file and the address the agent dials. Then **AMIX: Set Agent Key** as in step 4.',
     '',
     'The base system plus the agent into a running AMIX: `amix-installer --running fs-uae --vscode-only --net`.',
+    '',
+    '**A new project folder** (AMIX: New ... Project) may open in Restricted Mode: choose **Yes, I trust the authors**',
+    '(or **Manage Workspace Trust**), since the AMIX commands stay off in a folder VS Code does not trust.',
     '',
     '## B. Just the agent, by hand, on an installed AMIX',
     '',
@@ -280,9 +315,8 @@ async function setKey() {
     ], { placeHolder: 'The agent key: the secret line of /etc/vscode-agent.conf on AMIX' });
     if (!pick) return false;
     if (pick.file) {
-      let v = '';
-      try { v = fs.readFileSync(INSTALLER_KEY, 'utf8').trim(); } catch (e) { /* unreadable */ }
-      if (v.length < 16 || /\s/.test(v)) {
+      const v = installerKey();
+      if (!v) {
         vscode.window.showErrorMessage(`AMIX: ${INSTALLER_KEY} holds no agent key.`);
         return false;
       }
@@ -302,6 +336,7 @@ async function setKey() {
 
 async function useKey(v) {
   key = v;
+  warned.clear();
   await ctx.secrets.store(KEY, key);
   stopListener();
   return startListener(false);
@@ -436,6 +471,8 @@ function openTerminal(agent, name, argv, s, dir) {
   const closeEv = new vscode.EventEmitter();
   let run = null;
   let done = false;
+  let size;
+  let settle = null;
   let finish;
   const finished = new Promise((res) => { finish = res; });
   const env = { ...s.env };
@@ -446,57 +483,73 @@ function openTerminal(agent, name, argv, s, dir) {
     onDidClose: closeEv.event,
     open(dims) {
       write.fire(`\x1b[2m${name} on ${agent.name}, as ${agent.info.user}\x1b[0m\r\n`);
-      run = agent.run(argv, { env, cols: dims ? dims.columns : 80, rows: dims ? dims.rows : 24 });
-      run.on('data', (d) => write.fire(d.toString('latin1')));
-      run.on('exit', async (e) => {
-        done = true;
-        if (e.lost) {
-          write.fire('\r\n\x1b[31m[the connection to the target was lost]\x1b[0m\r\n');
-          finish(e);
-          return;
-        }
-        if (e.signal) {
-          write.fire(`\r\n\x1b[33m[${name} ended by signal ${e.signal}${e.core ? ', core dumped' : ''}]\x1b[0m\r\n`);
-          if (e.core && s.fetchCore) {
-            try {
-              const core = await agent.get('core');
-              if (core) {
-                const f = path.join(dir, `core.${name}`);
-                fs.writeFileSync(f, core);
-                write.fire(`\x1b[2m[core saved as ${f}]\x1b[0m\r\n`);
-              }
-            } catch (err) {
-              write.fire(`\x1b[2m[core not fetched: ${err.message}]\x1b[0m\r\n`);
-            }
-          }
-        } else {
-          write.fire(`\r\n\x1b[2m[${name} exited with ${e.code}]\x1b[0m\r\n`);
-        }
-        finish(e);
-      });
-      run.started.catch((err) => {
-        done = true;
-        write.fire(`\x1b[31m${name} did not start: ${err.message}\x1b[0m\r\n`);
-        finish({ error: err.message });
-      });
+      size = dims;
+      // VS Code resizes a new terminal at once (and again as F5 lays out the
+      // debug view): start with the size it settles on, since a curses
+      // program that misses a resize draws over the wrong lines
+      settle = setTimeout(start, SETTLE_MS);
     },
     handleInput(data) {
       if (run && !done) run.write(Buffer.from(data, 'latin1'));
     },
     setDimensions(d) {
-      if (run && !done) run.resize(d.columns, d.rows);
+      size = d;
+      if (settle) {
+        clearTimeout(settle);
+        settle = setTimeout(start, SETTLE_MS);
+      } else if (run && !done) {
+        run.resize(d.columns, d.rows);
+      }
     },
     close() {
+      if (settle) { clearTimeout(settle); settle = null; done = true; finish({ error: 'closed' }); }
       if (run && !done) run.kill(1);
     }
   };
+  function start() {
+    settle = null;
+    if (done) return;
+    run = agent.run(argv, { env, cols: size ? size.columns : 80, rows: size ? size.rows : 24 });
+    run.on('data', (d) => write.fire(d.toString('latin1')));
+    run.on('exit', async (e) => {
+      done = true;
+      if (e.lost) {
+        write.fire('\r\n\x1b[31m[the connection to the target was lost]\x1b[0m\r\n');
+        finish(e);
+        return;
+      }
+      if (e.signal) {
+        write.fire(`\r\n\x1b[33m[${name} ended by signal ${e.signal}${e.core ? ', core dumped' : ''}]\x1b[0m\r\n`);
+        if (e.core && s.fetchCore) {
+          try {
+            const core = await agent.get('core');
+            if (core) {
+              const f = path.join(dir, `core.${name}`);
+              fs.writeFileSync(f, core);
+              write.fire(`\x1b[2m[core saved as ${f}]\x1b[0m\r\n`);
+            }
+          } catch (err) {
+            write.fire(`\x1b[2m[core not fetched: ${err.message}]\x1b[0m\r\n`);
+          }
+        }
+      } else {
+        write.fire(`\r\n\x1b[2m[${name} exited with ${e.code}]\x1b[0m\r\n`);
+      }
+      finish(e);
+    });
+    run.started.catch((err) => {
+      done = true;
+      write.fire(`\x1b[31m${name} did not start: ${err.message}\x1b[0m\r\n`);
+      finish({ error: err.message });
+    });
+  }
   const term = vscode.window.createTerminal({ name: `AMIX: ${name} @ ${agent.name}`, pty });
   term.show();
   return {
     name,
     agent: agent.name,
     done: finished,
-    kill: (sig = 15) => { if (run && !done) run.kill(sig); }
+    kill: (sig = 15) => { if (settle) pty.close(); else if (run && !done) run.kill(sig); }
   };
 }
 

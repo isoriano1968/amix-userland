@@ -43,8 +43,46 @@ let extensionRoot = '';
 let output;
 let statusItem;
 
+// Restricted Mode (a folder VS Code does not trust yet, e.g. a new sample
+// project): building runs the folder's make and settings, so every AMIX command
+// only says how to trust the folder; trusting it activates the extension fully.
 function activate(context) {
   extensionRoot = context.extensionPath;
+  if (vscode.workspace.isTrusted) {
+    activateFull(context);
+    return;
+  }
+  const ids = require('../package.json').contributes.commands.map((c) => c.command);
+  const stubs = ids.map((id) => vscode.commands.registerCommand(id, askTrust));
+  context.subscriptions.push(...stubs, vscode.workspace.onDidGrantWorkspaceTrust(() => {
+    for (const d of stubs) d.dispose();
+    activateFull(context);
+    vscode.window.showInformationMessage('AMIX: the folder is trusted; the AMIX commands work now.');
+  }));
+  if (looksLikeAmixProject()) askTrust();
+}
+
+const TRUST_TEXT = 'AMIX: this folder is open in Restricted Mode, so the AMIX commands '
+  + '(make, Run on Target, the agent listener) are off. Trust the folder to use them.';
+
+async function askTrust() {
+  const b = await vscode.window.showWarningMessage(TRUST_TEXT, 'Trust This Folder');
+  if (b) vscode.commands.executeCommand('workbench.trust.manage');
+}
+
+// a project from the AMIX samples, or one with an amix launch configuration
+function looksLikeAmixProject() {
+  for (const f of vscode.workspace.workspaceFolders || []) {
+    const d = f.uri.fsPath;
+    try {
+      if (fs.existsSync(path.join(d, 'amix-fix-needed'))) return true;
+      if (/"type"\s*:\s*"amix"/.test(fs.readFileSync(path.join(d, '.vscode', 'launch.json'), 'utf8'))) return true;
+    } catch (e) { /* no launch.json */ }
+  }
+  return false;
+}
+
+function activateFull(context) {
 
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   statusItem.command = 'amix.selectToolchain';
@@ -551,6 +589,15 @@ async function newSampleProject(which) {
   }
 
   if (folders.length === 0) {
+    // a new folder may open in Restricted Mode: say so before the window goes
+    const go = await vscode.window.showInformationMessage(
+      `AMIX: ${name} opens now. If VS Code asks whether you trust the folder, choose `
+      + '"Yes, I trust the authors": in Restricted Mode the AMIX commands are off.',
+      { modal: true }, 'Open');
+    if (!go) {
+      vscode.window.showInformationMessage(`AMIX: the project is in ${dest}; open it with File > Open Folder.`);
+      return;
+    }
     await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(dest));
     return;
   }

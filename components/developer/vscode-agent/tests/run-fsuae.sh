@@ -123,7 +123,7 @@ PIDS="$PIDS $FSPID"
 ( n=0; while kill -0 $FSPID 2>/dev/null; do sleep 60; n=$((n + 1)); shot "t$(printf %03d $n)"; done ) &
 PIDS="$PIDS $!"
 rc=0
-E2E_TIMEOUT_MIN=${E2E_TIMEOUT_MIN:-30} node "$HERE/amix-e2e.js" "$KEY" "$PORT" guest | tee "$W/e2e.log" || rc=1
+E2E_TIMEOUT_MIN=${E2E_TIMEOUT_MIN:-30} node "${E2E_SCRIPT:-$HERE/amix-e2e.js}" "$KEY" "$PORT" guest | tee "$W/e2e.log" || rc=1
 grep -q "all passed" "$W/e2e.log" || rc=1
 shot end
 cp "$W/tftp/put/go.log" "$W/" 2>/dev/null || true

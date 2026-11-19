@@ -322,10 +322,12 @@ agent has signed in, and **AMIX: Check Development Setup** lists it):
    Code agent**, or click **Only the VS Code agent** for a console system
    that is only a target. The installer writes `/etc/vscode-agent.conf`
    with a new key and leaves the key in `vscode-agent.key` beside its
-   report. In VS Code, run **AMIX: Set Agent Key** and paste it.
+   report. On the same computer the extension finds that file: with no
+   key of its own it takes it, else the first refused agent brings **Use
+   the Installer's Key** (or run **AMIX: Set Agent Key**).
    For a quick test into an AMIX that is already running, **Just the
    Agent** (`amix-installer --running fs-uae --agent-only --net`) installs
-   only the agent; Set Agent Key then offers the installer's key file.
+   only the agent, with the same key file.
 2. **By hand:**
    1. Install the agent on AMIX: `pkg install developer/vscode-agent`.
    2. In VS Code, run **AMIX: Create Agent Key**. It opens the
@@ -334,6 +336,15 @@ agent has signed in, and **AMIX: Check Development Setup** lists it):
    3. On AMIX, as root, save it as `/etc/vscode-agent.conf`, set the
       `user` line to your login, then run:
       `chmod 600 /etc/vscode-agent.conf; /etc/init.d/vscode-agent start`.
+
+**Restricted Mode:** a folder VS Code does not trust yet (a new sample
+project, say) opens with the AMIX commands off, since they run the
+folder's make; each of them then offers **Trust This Folder**.
+
+**Resizing:** the program starts once the terminal's size has settled,
+and a later change reaches the program as SIGWINCH (AMIX's pty sends it). Stock SVR4 curses
+does not follow a resize by itself; the console sample shows how
+(a new screen on SIGWINCH).
 
 ### launch.json
 
