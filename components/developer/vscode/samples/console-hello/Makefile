@@ -45,7 +45,11 @@ else ifneq ($(wildcard $(LIB_SYSROOT)/usr/ccs/lib/libcurses.a),)
 # statically (usr/include/curses.h, usr/ccs/lib/libcurses.a), so the program
 # runs on any AMIX without library/ncurses.  This needs the sysroot's own
 # SVR4 curses.h: a sysroot with ncurses' curses.h in usr/include has ncurses.pc.
+# curses.h takes its System V branch only when stdio.h defines L_ctermid,
+# which it hides when __STDC__ is 1 (gcc 2.7): without SYSV it maps memcpy
+# to bcopy and string.h no longer parses.
 CURSES    = AMIX SVR4 curses
+CPPFLAGS += -DSYSV
 LIBS      = -L$(LIB_SYSROOT)/usr/ccs/lib -lcurses
 else
 $(error neither ncurses.pc nor usr/ccs/lib/libcurses.a in $(LIB_SYSROOT): install developer/amix/sysroot)
@@ -66,6 +70,15 @@ CFLAGS ?= -O -m68020
 RPATH  = -Wl,-rpath,/usr/local/lib
 else
 $(error TOOLCHAIN must be gcc14 or gcc272, not '$(TOOLCHAIN)')
+endif
+
+# not on PATH (a shell outside VS Code): the OpenIndiana packages' bin
+# directory, /opt/m68k-amix/bin (gcc-14) or /opt/amix-cross/bin (gcc-27)
+PKG_BIN = $(if $(filter gcc14,$(TOOLCHAIN)),/opt/m68k-amix/bin,/opt/amix-cross/bin)
+ifeq ($(shell command -v $(GCC) 2>/dev/null),)
+ifneq ($(wildcard $(PKG_BIN)/$(GCC)),)
+export PATH := $(PKG_BIN):$(PATH)
+endif
 endif
 
 # make's built-in CC is "cc"; take the toolchain's unless CC was given

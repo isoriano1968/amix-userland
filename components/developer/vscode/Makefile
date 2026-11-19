@@ -2,7 +2,7 @@
 #   make build     package build/vscode-amix-$(COMPONENT_VERSION).vsix
 #   make install   install it into VS Code
 COMPONENT_NAME    = vscode
-COMPONENT_VERSION = 0.6.2
+COMPONENT_VERSION = 0.6.3
 
 include ../../../make-rules/shared.mk
 

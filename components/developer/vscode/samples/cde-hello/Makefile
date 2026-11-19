@@ -62,6 +62,15 @@ else
 $(error TOOLCHAIN must be gcc14 or gcc272, not '$(TOOLCHAIN)')
 endif
 
+# not on PATH (a shell outside VS Code): the OpenIndiana packages' bin
+# directory, /opt/m68k-amix/bin (gcc-14) or /opt/amix-cross/bin (gcc-27)
+PKG_BIN = $(if $(filter gcc14,$(TOOLCHAIN)),/opt/m68k-amix/bin,/opt/amix-cross/bin)
+ifeq ($(shell command -v $(GCC) 2>/dev/null),)
+ifneq ($(wildcard $(PKG_BIN)/$(GCC)),)
+export PATH := $(PKG_BIN):$(PATH)
+endif
+endif
+
 # make's built-in CC is "cc"; take the toolchain's unless CC was given
 ifeq ($(origin CC),default)
 CC = $(GCC)
