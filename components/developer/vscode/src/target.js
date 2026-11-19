@@ -61,8 +61,8 @@ function updateStatus() {
   } else if (!current) {
     const s = settings();
     statusItem.text = '$(radio-tower) AMIX target: waiting';
-    statusItem.tooltip = `Listening on port ${s.port} for vscode-agent. Click for the agent's configuration.`;
-    statusItem.command = 'amix.showAgentConfig';
+    statusItem.tooltip = `Listening on port ${s.port} for vscode-agent; none has signed in. Click for how to set up an AMIX target.`;
+    statusItem.command = 'amix.setupTarget';
   } else {
     statusItem.text = `$(vm-connect) AMIX target: ${current.name}`;
     statusItem.tooltip = [
@@ -163,6 +163,72 @@ function configText() {
     'log      /var/log/vscode-agent.log',
     '');
   return lines.join('\n');
+}
+
+// What Check Setup and the guide say about Run on Target.
+function statusLines() {
+  const s = settings();
+  const lines = [];
+  if (!key) lines.push('MISSING agent key: AMIX: Create Agent Key, or AMIX: Set Agent Key with the AMIX Installer\'s vscode-agent.key');
+  else lines.push('ok      agent key set');
+  if (!server) lines.push(`absent  agent listener (port ${s.port}): AMIX: Start Agent Listener`);
+  else lines.push(`ok      agent listener on ${s.address}:${s.port} (this computer: ${[FS_UAE_HOST + ' from FS-UAE', ...addresses()].join(', ')})`);
+  const list = agents();
+  if (list.length) {
+    for (const a of list) lines.push(`ok      target ${a.name} (${a.info.address}), programs run as ${a.info.user}`);
+  } else {
+    lines.push('absent  AMIX target: no vscode-agent has signed in. AMIX: Set Up an AMIX Target shows how to install it');
+    lines.push('        (AMIX Installer, "Develop from a PC", or pkg install developer/vscode-agent on an installed AMIX).');
+  }
+  return lines;
+}
+
+function setupGuide() {
+  const s = settings();
+  const here = addresses();
+  return [
+    '# Set up an AMIX target for Run on Target',
+    '',
+    'Run on Target and the `amix` launch type need **vscode-agent** on the AMIX machine (an Amiga or FS-UAE).',
+    'It starts at boot from `/etc/init.d/vscode-agent`, dials this computer on port ' + s.port + ' and signs in with a shared key.',
+    'Nothing needs ssh or an open port on AMIX.',
+    '',
+    '## Now',
+    '',
+    ...statusLines().map((l) => '    ' + l),
+    '',
+    '## A. New AMIX with the AMIX Installer (recommended)',
+    '',
+    '1. Start the AMIX Installer on this computer (OpenIndiana: `pkg install desktop/amix-installer`).',
+    '2. On the development step, in **Develop from a PC**, switch on **VS Code agent**; or press **Only the VS Code agent** for a',
+    '   small system with just the base and the agent, without the desktop.',
+    '3. Install. The installer writes `/etc/vscode-agent.conf` on AMIX with this computer\'s address and a new key,',
+    '   and saves the key as `vscode-agent.key` beside its report (the last page names the file).',
+    '4. Here: **AMIX: Set Agent Key** and paste the key from that file. The listener starts and the status bar',
+    '   shows `AMIX target: <name>` once AMIX has booted.',
+    '',
+    '## B. AMIX that is already installed',
+    '',
+    '1. As root on AMIX: `pkg install developer/vscode-agent` (from the amix publisher).',
+    '2. **AMIX: Show Agent Configuration** here gives the file to save as `/etc/vscode-agent.conf` on AMIX:',
+    '   it has this key and the `connect` lines; set `user` to the AMIX login the programs run as (not root).',
+    '3. On AMIX: `chmod 600 /etc/vscode-agent.conf && /etc/init.d/vscode-agent start`',
+    '',
+    '## Addresses',
+    '',
+    `- FS-UAE: AMIX sees this computer as \`${FS_UAE_HOST}\` (FS-UAE's NAT); nothing else is needed.`,
+    `- A real Amiga: one of ${here.length ? here.map((a) => '`' + a + '`').join(', ') : '(no network address found)'}, port ${s.port} open in this computer's firewall.`,
+    '',
+    'If an agent connects with another key, it is refused and the AMIX Target output names its address.',
+    'The agent logs to `/var/log/vscode-agent.log` on AMIX.',
+    ''
+  ].join('\n');
+}
+
+async function showSetup() {
+  await loadKey();
+  const doc = await vscode.workspace.openTextDocument({ content: setupGuide(), language: 'markdown' });
+  await vscode.window.showTextDocument(doc);
 }
 
 async function showConfig() {
@@ -270,9 +336,12 @@ async function runOnTarget(over = {}) {
   if (current && current.closed) current = null;
   if (!current) {
     const pick = await vscode.window.showWarningMessage(
-      'AMIX: no target is connected. vscode-agent on AMIX connects here once it has this key and address.',
-      'Show Agent Configuration');
-    if (pick) showConfig();
+      'AMIX: no AMIX target is connected. It needs vscode-agent on AMIX: install it with the AMIX Installer '
+      + '("Develop from a PC") or pkg install developer/vscode-agent, then give both sides the same key.',
+      'How to Set Up', 'Set Agent Key', 'Show Agent Configuration');
+    if (pick === 'How to Set Up') showSetup();
+    else if (pick === 'Set Agent Key') setKey();
+    else if (pick === 'Show Agent Configuration') showConfig();
     return;
   }
   const agent = current;
@@ -404,6 +473,7 @@ function activate(context, h) {
     vscode.commands.registerCommand('amix.createAgentKey', createKey),
     vscode.commands.registerCommand('amix.setAgentKey', setKey),
     vscode.commands.registerCommand('amix.showAgentConfig', showConfig),
+    vscode.commands.registerCommand('amix.setupTarget', showSetup),
     vscode.commands.registerCommand('amix.startAgentListener', () => startListener(false)),
     vscode.commands.registerCommand('amix.stopAgentListener', stopListener),
     vscode.commands.registerCommand('amix.selectTarget', selectTarget),
@@ -418,4 +488,4 @@ function activate(context, h) {
   require('./launch').activate(context, (config) => runOnTarget(config));
 }
 
-module.exports = { activate, isAmixExecutable, configText };
+module.exports = { activate, isAmixExecutable, configText, statusLines, setupGuide };

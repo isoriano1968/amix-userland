@@ -633,6 +633,8 @@ function checkSetup() {
     lines.push(`MISSING curses: neither ${ncPc} nor ${svr4}`);
     missingPkgs.push(PKG.sysroot);
   }
+  lines.push('', 'Run on Target (vscode-agent on AMIX):');
+  for (const l of require('./target').statusLines()) lines.push(l);
   const dlm = '/opt/amix-dlmkit';
   lines.push(`${fs.existsSync(dlm) ? 'ok     ' : 'absent '} driver kit (dlmkit, optional): ${dlm}`);
 

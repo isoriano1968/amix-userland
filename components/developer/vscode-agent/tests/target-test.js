@@ -112,6 +112,8 @@ function waitFor(cond, ms, what) {
       workspaceRoot: () => proj
     });
     await waitFor(() => messages.some((m) => m.includes('listening')), 5000, 'listener');
+    // no agent yet: Check Setup says how to get one
+    assert.ok(target.statusLines().some((l) => /AMIX Installer/.test(l)), target.statusLines().join('\n'));
 
     const conf = path.join(work, 'agent.conf');
     fs.writeFileSync(conf, `connect 127.0.0.1:${port}\nsecret ${secretStore['amix.agentKey']}\n` +
@@ -120,6 +122,10 @@ function waitFor(cond, ms, what) {
     await waitFor(() => messages.some((m) => m.includes('is connected')), 10000, 'agent sign-in');
 
     // the configuration text has the key and FS-UAE's address
+    // the setup guide and Check Setup's lines name the target once it is there
+    assert.ok(target.statusLines().some((l) => /^ok\s+target /.test(l)), target.statusLines().join('\n'));
+    assert.ok(target.setupGuide().includes('developer/vscode-agent'));
+    assert.ok(commands['amix.setupTarget'], 'setup command registered');
     const text = target.configText();
     assert.ok(text.includes(`secret   ${secretStore['amix.agentKey']}`));
     assert.ok(text.includes(`connect  10.0.2.2:${port}`));

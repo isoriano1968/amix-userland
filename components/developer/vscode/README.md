@@ -158,6 +158,7 @@ toolchain, the extension offers to rewrite `.vscode/settings.json` and
 - `AMIX: Show Agent Configuration (/etc/vscode-agent.conf)`
 - `AMIX: Start Agent Listener` / `AMIX: Stop Agent Listener`
 - `AMIX: Select Target`
+- `AMIX: Set Up an AMIX Target (vscode-agent)`: how to install the agent, with what is missing now
 
 ## Makefile Builds
 
@@ -314,7 +315,9 @@ shared key before anything runs. The programs run as a normal user, never
 as root, each in a session folder under `/tmp` that is removed when VS
 Code goes away.
 
-Setting it up:
+Setting it up (**AMIX: Set Up an AMIX Target** shows the same, with this
+computer's state; Run on Target and the status bar lead there while no
+agent has signed in, and **AMIX: Check Development Setup** lists it):
 1. **With the AMIX Installer:** in its Development step, switch on **VS
    Code agent**, or click **Only the VS Code agent** for a console system
    that is only a target. The installer writes `/etc/vscode-agent.conf`
