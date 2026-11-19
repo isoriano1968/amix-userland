@@ -13,6 +13,7 @@
 #include <curses.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <sys/utsname.h>
@@ -73,6 +74,11 @@ static WINDOW *start_screen(void)
     int rows, cols;
 
     scr = newterm(NULL, stdout, stdin);
+    if (scr == NULL) {          /* no terminfo entry for TERM */
+        fprintf(stderr, "hello: no terminal description for TERM=%s\n",
+                getenv("TERM") ? getenv("TERM") : "(unset)");
+        exit(1);
+    }
     set_term(scr);
     cbreak();
     noecho();

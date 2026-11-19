@@ -4,7 +4,7 @@
 #   make stage   build/stage: the binary, the rc script and its links,
 #                the example configuration
 COMPONENT_NAME    = vscode-agent
-COMPONENT_VERSION = 0.1.1
+COMPONENT_VERSION = 0.1.2
 
 include ../../../make-rules/shared.mk
 

@@ -64,7 +64,7 @@ length, and exactly that many bytes follow the line.
 ```
 agent → AMIX-AGENT 1 <version> <nonceA>
 ext   → AUTH <nonceB> <hmac(key, "ext <nonceA> <nonceB>")>
-agent → OK <hmac(key, "agent <nonceB> <nonceA>")> user=U uid=N free=KB dir=D uname=…
+agent → OK <hmac(key, "agent <nonceB> <nonceA>")> user=U uid=N free=KB dir=D term=T uname=…
         (or ERR AUTH …, and the connection closes)
 
 ext   → PUT <name> <mode, octal> <size> <sha256>   + size bytes
@@ -89,7 +89,12 @@ How a program starts:
   session folder. Any other name is looked up in `PATH`.
 - **Working folder:** `run/`.
 - **Environment:** `HOME`, `USER`, `LOGNAME`, `SHELL`, `PATH`,
-  `TERM=xterm` and `VSCODE_AGENT_DIR`, plus what RUN gives.
+  `TERM` and `VSCODE_AGENT_DIR`, plus what RUN gives. `TERM` is
+  `xterm-256color` (what VS Code's terminal is) when sysutils/terminfo has
+  put it in `/usr/share/lib/terminfo`, else stock AMIX's `xterm`; the
+  sign-in reports it. No `LINES`/`COLUMNS`: both SVR4 curses and ncurses
+  read the pty's size, and a fixed size in the environment would stop them
+  following a resize (the pty sends `SIGWINCH`).
 - **X programs:** with `DISPLAY` set, `XAUTHORITY` defaults to the user's
   `~/.Xauthority`. A window can only open on the Amiga screen while that
   user is logged in to the desktop.

@@ -1,0 +1,8 @@
+{
+  "name": "vscode-agent-tests",
+  "private": true,
+  "description": "test-only: VS Code's terminal engine for the curses screen check in amix-e2e.js",
+  "devDependencies": {
+    "@xterm/headless": "5.5.0"
+  }
+}

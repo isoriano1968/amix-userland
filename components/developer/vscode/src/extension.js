@@ -666,6 +666,8 @@ function checkSetup() {
     if (!has) desktopMissing.push(pkg);
   }
   if (desktopMissing.length > 0) missingPkgs.push(PKG.desktop);
+  lines.push('        on AMIX, Motif/CDE programs need /usr/motif/lib/libXm.so.4: the AMIX Installer\'s',
+    '        "Agent and Motif" button (--agent-only --with-motif) puts it there with the agent');
 
   // the console sample: ncurses through pkg-config when the sysroot has it,
   // else AMIX's own SVR4 curses, linked statically

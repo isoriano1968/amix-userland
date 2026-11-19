@@ -8,7 +8,16 @@ const assert = require('assert');
 const crypto = require('crypto');
 const { AgentServer } = require('../../vscode/src/agent-link.js');
 
+const fs = require('fs');
+const path = require('path');
+
 const [key, port, user = 'guest'] = process.argv.slice(2);
+// curses programs to check on screen (the console-hello sample), each
+// "label=file": AMIX_E2E_CURSES="svr4=build/hello-svr4 ncurses=build/hello-nc";
+// AMIX_E2E_TERMINFO = a compiled xterm-256color for a target without it
+const cursesProgs = (process.env.AMIX_E2E_CURSES || '').split(/\s+/).filter(Boolean)
+  .map((x) => { const i = x.indexOf('='); return { label: x.slice(0, i), file: x.slice(i + 1) }; });
+const terminfoFile = process.env.AMIX_E2E_TERMINFO || '';
 let failed = 0;
 
 function once(em, ev, ms) {
@@ -144,6 +153,69 @@ async function test(name, fn) {
     const { out } = await runIt(agent, ['/sbin/sh', '-c', '/usr/bin/sum $VSCODE_AGENT_DIR/big.bin']);
     assert.ok(/\d+\s+1024/.test(out), out);
   });
+
+  // --- curses on screen: the output through VS Code's own terminal engine ---
+  // console-hello draws a 12x50 frame in the middle of the terminal; it must
+  // sit there at the starting size and again after a resize, with nothing
+  // drawn outside it (a program that misses the size scrolls the screen)
+  async function screenCheck(file, label, env) {
+    const { Terminal } = require('./node_modules/@xterm/headless');
+    const name = `curses-${label}`;
+    await agent.put(name, fs.readFileSync(file), 0o755);
+    let term = new Terminal({ cols: 100, rows: 30, allowProposedApi: true });
+    const r = agent.run([name], { cols: 100, rows: 30, env });
+    let pending = Promise.resolve();
+    r.on('data', (d) => { const s = d.toString('latin1'); pending = pending.then(() => new Promise((res) => term.write(s, res))); });
+    const exited = once(r, 'exit', 60000);
+    exited.catch(() => {});
+    await r.started;
+    const check = async (rows, cols, when) => {
+      await new Promise((res) => setTimeout(res, 3500));     // the clock redraws every second
+      await pending;
+      const b = term.buffer.active;
+      const lines = [];
+      for (let y = 0; y < rows; y++) lines.push(b.getLine(b.viewportY + y).translateToString(true));
+      const top = Math.floor((rows - 12) / 2);
+      const left = Math.floor((cols - 50) / 2);
+      const show = lines.map((l, y) => `     | ${String(y).padStart(2)} ${l}`).join('\n');
+      const at = (y, x) => (lines[y] || '').charAt(x);
+      assert.ok((lines[top] || '').includes('Hello AMIX'), `${when}: title on row ${top}\n${show}`);
+      assert.strictEqual(at(top, left) + at(top, left + 49), '┌┐', `${when}: top corners\n${show}`);
+      assert.strictEqual(at(top + 11, left) + at(top + 11, left + 49), '└┘', `${when}: bottom corners\n${show}`);
+      assert.ok(lines[top + 10].includes('arrows: move  Enter: choose  q: quit'), `${when}: help row\n${show}`);
+      lines.forEach((l, y) => {
+        if (y < top || y > top + 11) assert.strictEqual(l.trim(), '', `${when}: row ${y} outside the frame\n${show}`);
+      });
+      return show;
+    };
+    try {
+      await check(30, 100, '100x30');
+      term.resize(90, 22);           // as VS Code: the terminal first, then the pty
+      r.resize(90, 22);
+      console.log(await check(22, 90, 'after a resize to 90x22'));
+      r.write('q');
+      const ex = await exited;
+      assert.strictEqual(ex.code, 0, JSON.stringify(ex));
+    } catch (e) {
+      r.kill(9);
+      throw e;
+    }
+  }
+  for (const p of cursesProgs) {
+    await test(`curses on screen (${p.label}, TERM from the agent): frame at 100x30 and after a resize`, () =>
+      screenCheck(p.file, p.label, {}));
+  }
+  if (cursesProgs.length && terminfoFile) {
+    await test('stock curses reads the terminfo package\'s xterm-256color', async () => {
+      await agent.put('xterm-256color', fs.readFileSync(terminfoFile), 0o644);
+      // the session folder is root's; run/ (the working folder) is the user's
+      const cp = await runIt(agent, ['/sbin/sh', '-c',
+        '/usr/bin/mkdir -p ti/x && /usr/bin/cp $VSCODE_AGENT_DIR/xterm-256color ti/x/ && echo copied']);
+      assert.ok(cp.ex.code === 0 && cp.out.includes('copied'), cp.out);
+      await screenCheck(cursesProgs[0].file, `${cursesProgs[0].label}-256`,
+        { TERM: 'xterm-256color', TERMINFO: `${agent.info.dir}/run/ti` });
+    });
+  }
 
   await test('CLEAN, then disconnect: programs end, session folders go, agent dials again', async () => {
     await agent.clean();

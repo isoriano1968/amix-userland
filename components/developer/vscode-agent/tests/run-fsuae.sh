@@ -7,7 +7,8 @@
 #   2. go, as root at boot: the agent (libamixc99 linked in), its rc script and a
 #      configuration (user guest, a fresh key, connect 10.0.2.2:PORT), then
 #      /etc/init.d/vscode-agent start;
-#   3. tests/amix-e2e.js waits for the agent to dial in and runs its checks.
+#   3. tests/amix-e2e.js waits for the agent to dial in and runs its checks,
+#      console-hello (SVR4 curses) on screen through @xterm/headless among them.
 # Kills only its own pids; "run-fsuae.sh --clean WORKDIR" removes the copies.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -18,6 +19,11 @@ if [ "$1" = --clean ]; then
 	echo "run-fsuae: disk copies removed from $2"
 	exit 0
 fi
+# the FS-UAE e2e runs share ports 7777, 1069 and 8069 (the installer's
+# agent-only-fsuae.sh and e2e-fsuae.sh take the same lock): one at a time
+LOCK=${AMIX_E2E_LOCK:-${XDG_RUNTIME_DIR:-/tmp}/amix-fsuae-e2e.lock}
+exec 9>"$LOCK"
+flock -n 9 || { echo "run-fsuae: another FS-UAE e2e holds $LOCK"; exit 75; }
 CORE=${1:?usage: run-fsuae.sh CORE.hdf PVMK.hdf WORKDIR}
 PVMK=${2:?pvmk.hdf}
 W=${3:?workdir}
@@ -34,6 +40,17 @@ cleanup() { [ -z "$PIDS" ] || kill $PIDS 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
 [ -f "$COMP/build/vscode-agent" ] || { echo "run-fsuae: make build first"; exit 1; }
+# the curses screen check: console-hello with AMIX's own SVR4 curses (stock
+# curses.h: AMIX_STOCK_INCLUDE where the sysroot's usr/include has ncurses'),
+# VS Code's terminal engine for the tests, the terminfo package's entry
+[ -d "$HERE/node_modules/@xterm/headless" ] || (cd "$HERE" && npm install --silent)
+SAMPLE=$COMP/../vscode/samples/console-hello
+m68k-elf-gcc -DSYSV -O2 -m68020-60 -I"${AMIX_STOCK_INCLUDE:-$SYSROOT/usr/include}" \
+	"$SAMPLE/hello.c" -o "$W/hello-svr4" -L"$SYSROOT/usr/ccs/lib" -lcurses
+"$COMP/../../../tools/amix-fix-needed" "$W/hello-svr4" > /dev/null
+export AMIX_E2E_CURSES="${AMIX_E2E_CURSES:-svr4=$W/hello-svr4}"
+TI=$COMP/../../sysutils/terminfo/build/ti/x/xterm-256color
+[ -f "$TI" ] && export AMIX_E2E_TERMINFO="${AMIX_E2E_TERMINFO:-$TI}"
 cp "$CORE" "$W/core.hdf"
 cp "$PVMK" "$W/pvmk.hdf"
 KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")

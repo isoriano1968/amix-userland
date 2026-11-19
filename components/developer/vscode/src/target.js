@@ -211,7 +211,14 @@ function statusLines() {
   else lines.push(`ok      agent listener on ${s.address}:${s.port} (this computer: ${[FS_UAE_HOST + ' from FS-UAE', ...addresses()].join(', ')})`);
   const list = agents();
   if (list.length) {
-    for (const a of list) lines.push(`ok      target ${a.name} (${a.info.address}), programs run as ${a.info.user}`);
+    for (const a of list) {
+      lines.push(`ok      target ${a.name} (${a.info.address}), programs run as ${a.info.user}`
+        + (a.info.term ? `, TERM=${a.info.term}` : ''));
+      // agents before 0.1.2 say nothing; stock xterm lacks colours and civis
+      if (a.info.term && a.info.term !== 'xterm-256color') {
+        lines.push(`note    ${a.name} has no xterm-256color: install sysutils/terminfo on AMIX for colours`);
+      }
+    }
   } else {
     lines.push('absent  AMIX target: no vscode-agent has signed in. AMIX: Set Up an AMIX Target shows how to install it');
     lines.push('        (AMIX Installer, "Develop from a PC", or pkg install developer/vscode-agent on an installed AMIX).');
@@ -250,6 +257,9 @@ function setupGuide() {
     '`amix-installer --running fs-uae --agent-only --net` (`--running amiga` for a real Amiga on the network).',
     'It installs or updates only developer/vscode-agent, writes its configuration with a new key and restarts it;',
     'it prints the key file and the address the agent dials. Then **AMIX: Set Agent Key** as in step 4.',
+    '',
+    'For Motif/CDE programs (the CDE sample) AMIX needs Motif too: **Agent and Motif**, or `--agent-only --with-motif`',
+    '(desktop/motif, with X11R6.3). Without it the program stops with "can\'t find library libXm.so.4".',
     '',
     'The base system plus the agent into a running AMIX: `amix-installer --running fs-uae --vscode-only --net`.',
     '',
@@ -510,7 +520,19 @@ function openTerminal(agent, name, argv, s, dir) {
     settle = null;
     if (done) return;
     run = agent.run(argv, { env, cols: size ? size.columns : 80, rows: size ? size.rows : 24 });
-    run.on('data', (d) => write.fire(d.toString('latin1')));
+    let tail = '';
+    let hinted = false;
+    run.on('data', (d) => {
+      const text = d.toString('latin1');
+      write.fire(text);
+      // AMIX's ld.so: "dynamic linker: hello: can't find library libXm.so.4"
+      tail = (tail + text).slice(-400);
+      if (!hinted && /can.t (find|open) (library|shared object)[^\n]*lib(Xm|Mrm|Dt|Tt)\b/i.test(tail)) {
+        hinted = true;
+        write.fire('\r\n\x1b[33m[Motif/CDE is not on this AMIX: in the AMIX Installer, use "Agent and Motif" '
+          + '(amix-installer --running ... --agent-only --with-motif), or pkg install desktop/motif]\x1b[0m\r\n');
+      }
+    });
     run.on('exit', async (e) => {
       done = true;
       if (e.lost) {

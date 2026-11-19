@@ -572,6 +572,15 @@ sane(int fd)
 	tcsetattr(fd, TCSANOW, &t);
 }
 
+/* xterm-256color (sysutils/terminfo, which the package requires) is what VS
+ * Code's terminal is; stock AMIX's 1993 xterm entry is the fallback */
+static const char *
+term_name(void)
+{
+	return access("/usr/share/lib/terminfo/x/xterm-256color", R_OK) == 0
+	    ? "xterm-256color" : "xterm";
+}
+
 static void
 setenv_list(char **env, int *n, int max, const char *name, const char *value)
 {
@@ -627,7 +636,7 @@ child(const char *slavename, char **argv, char **extra, int nextra)
 	setenv_list(env, &n, 64, "LOGNAME", C.user);
 	setenv_list(env, &n, 64, "SHELL", rshell);
 	setenv_list(env, &n, 64, "PATH", "/usr/local/bin:/usr/gnu/bin:/usr/bin:/usr/ucb:/usr/sbin");
-	setenv_list(env, &n, 64, "TERM", "xterm");
+	setenv_list(env, &n, 64, "TERM", term_name());
 	setenv_list(env, &n, 64, "VSCODE_AGENT_DIR", sess);
 	if ((e = getenv("TZ")) != NULL)
 		setenv_list(env, &n, 64, "TZ", e);
@@ -1059,8 +1068,8 @@ cmd_auth(char **t, int n)
 	snprintf(un, sizeof un, "%.64s %.64s %.64s %.64s %.64s", u.sysname, u.nodename, u.release, u.version,
 	    u.machine);
 	enc(un, e, sizeof e);
-	sendf("OK %s user=%s uid=%ld free=%ld dir=%s uname=%s\n", reply, C.user, (long)ruid,
-	    free_kb(sess), sess, e);
+	sendf("OK %s user=%s uid=%ld free=%ld dir=%s term=%s uname=%s\n", reply, C.user, (long)ruid,
+	    free_kb(sess), sess, term_name(), e);
 	logmsg("the extension signed in, session %s", sess);
 }
 
