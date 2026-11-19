@@ -1,0 +1,81 @@
+setclk: -t SECONDS sets the system time to the second.
+
+date(1) takes minutes only, so a clock set from another computer is up to
+a minute off, more when the string was made earlier.  -t takes seconds
+since 1970 (UTC) and sets the system time with stime(2); with -s the
+battery clock follows: "setclk -t `remote seconds` -s".
+
+--- a/usr/amiga/src/cmd/setclk/setclk.c	2026-11-19 17:57:57.058875935 +0100
++++ b/usr/amiga/src/cmd/setclk/setclk.c	2026-11-19 17:58:02.710897851 +0100
+@@ -36,6 +36,7 @@
+ static char *progname;
+ static const char *devclock = "/dev/clock";
+ static int set_clock, display_clock, set_hardware_clock;
++static char *system_time;	/* -t: seconds since 1970 (UTC) */
+ 
+ static int write_clock(char *), read_clock(char *);
+ static time_t read_from_clock_device(void);
+@@ -105,7 +106,7 @@
+ 	return 0;
+     }
+ 
+-    while((c = getopt(argc, argv, "ps?")) != EOF)
++    while((c = getopt(argc, argv, "pst:?")) != EOF)
+     {
+ 	switch(c)
+ 	{
+@@ -117,6 +118,10 @@
+ 	    set_clock++;
+ 	    break;
+ 
++	case 't':
++	    system_time = optarg;
++	    break;
++
+ 	case '?':
+ 	    error_flag++;
+ 	    break;
+@@ -140,6 +145,34 @@
+     if (set_clock && set_hardware_clock)
+ 	usage();
+ 
++    if (system_time)
++    {
++	char *end;
++	long secs;
++	time_t thetime;
++
++	/*
++	** Set the system time to the second (date(1) takes minutes only):
++	** -t SECONDS since 1970, UTC; with -s the battery clock follows.
++	*/
++	errno = 0;
++	secs = strtol(system_time, &end, 10);
++	if (errno || end == system_time || *end || secs <= 0)
++	{
++	    (void) fprintf(stderr, "%s: -t takes seconds since 1970: %s\n",
++			   progname, system_time);
++	    return 1;
++	}
++	thetime = (time_t) secs;
++	if (stime(&thetime) != 0)
++	{
++	    (void) fprintf(stderr, "%s: cannot set the system time (%s)\n",
++			   progname, strerror(errno));
++	    return 1;
++	}
++	retval = TRUE;
++    }
++
+     if (set_clock)
+     {
+ 	char buffer[CLKBUF];
+@@ -193,7 +226,7 @@
+ static void
+ usage()
+ {
+-    (void) fprintf(stderr, "usage: %s [-p?] [-s | mmddHHMM[YY]YY]\n", progname);
++    (void) fprintf(stderr, "usage: %s [-p?] [-t seconds] [-s | mmddHHMM[YY]YY]\n", progname);
+     exit(1);
+ }
+ 

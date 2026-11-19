@@ -1,3 +1,0 @@
-# /etc/dt/config/Xservers -- AMIX: the X server Xamix through its wrapper
-# (limits, library path, mode, font path).  See /opt/amix/bin/Xamix-dt.
-   :0	Local local_uid@console root /opt/amix/bin/Xamix-dt :0

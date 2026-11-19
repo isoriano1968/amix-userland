@@ -1,10 +1,11 @@
 # setclk: Commodore's battery clock tool, from AMIX's own source
 # (amigaux/amix-system usr/amiga/src/cmd/setclk at AMIX_SYSTEM_COMMIT) with
-# patches/: a four-digit year, so the date is right at boot after 1999.
+# patches/: a four-digit year, so the date is right at boot after 1999, and
+# -t SECONDS (UTC since 1970) to set the system time to the second.
 #   make build   the AMIX binary (gcc 14 cross, AMIX_CPU: 68020 code tuned for the 060)
 #   make stage   build/stage/usr/amiga/bin/setclk
 COMPONENT_NAME    = setclk
-COMPONENT_VERSION = 2.1.1
+COMPONENT_VERSION = 2.1.2
 
 include ../../../make-rules/shared.mk
 
