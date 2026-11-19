@@ -10,12 +10,17 @@
 #      WORKDIR: it serves go, the bootstrap and REPO, and AMIX installs
 #      developer/vscode-agent and nothing else; the key lands in
 #      WORKDIR/home/.local/share/amix-installer/vscode-agent.key;
-#   3. vscode-agent's tests/amix-e2e.js with that key: the agent dials in and
+#   3. the AMIX clock within 5 s of this computer's (clockcheck.py); with
+#      E2E_MOTIF=1 the "Agent and Motif" install, libXm and libX11 on the disk;
+#   4. vscode-agent's tests/amix-e2e.js with that key: the agent dials in and
 #      its checks run (programs as the user the installer reported).
-# Passes when the installer exits 0 on DONE and amix-e2e.js says "all passed".
+# Passes when the installer exits 0 on DONE, the clock is right and amix-e2e.js
+# says "all passed".
 # Kills only its own pids; "agent-only-fsuae.sh --clean WORKDIR" removes the
 # disk copies.
 set -e
+# never the user's display: only FS-UAE gets one, the private Xvfb's
+unset DISPLAY WAYLAND_DISPLAY
 HERE=$(cd "$(dirname "$0")" && pwd)
 APP=$(cd "$HERE/../.." && pwd)
 AGENT=$(cd "$APP/../../developer/vscode-agent" && pwd)
@@ -34,6 +39,21 @@ KICK=${KICKSTART:-$HOME/Documents/FS-UAE/Kickstarts/A3000.47.115.rom}
 mkdir -p "$W/shots" "$W/home"
 W=$(cd "$W" && pwd)
 export AMIX_E2E_DIR=$W
+# one FS-UAE end-to-end run at a time on this computer (ports 7777, 1069,
+# 8069; vscode-agent's tests/run-fsuae.sh takes the same lock): exit 75 = busy
+LOCK=${AMIX_E2E_LOCK:-${XDG_RUNTIME_DIR:-/tmp}/amix-fsuae-e2e.lock}
+exec 9>"$LOCK"
+flock -n 9 || { echo "e2e: another FS-UAE end-to-end run holds $LOCK"; exit 75; }
+# the curses screen check (amix-e2e.js): console-hello with AMIX's own curses,
+# VS Code's terminal engine; with the terminfo package the agent's TERM
+if [ -z "$AMIX_E2E_CURSES" ] && command -v m68k-elf-gcc >/dev/null; then
+	sh "$HERE/curses-hello.sh" "$W/hello-svr4" && export AMIX_E2E_CURSES="svr4=$W/hello-svr4"
+fi
+AGENT_TESTS=$APP/../../developer/vscode-agent/tests
+[ -d "$AGENT_TESTS/node_modules/@xterm/headless" ] || [ ! -f "$AGENT_TESTS/package.json" ] ||
+	(cd "$AGENT_TESTS" && npm install --silent)
+ls "$REPO"/publisher/amix/pkg/sysutils%2Fterminfo >/dev/null 2>&1 &&
+	export AMIX_E2E_TERM=${AMIX_E2E_TERM:-xterm-256color}
 PIDS=
 cleanup() { [ -z "$PIDS" ] || kill $PIDS 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
@@ -53,7 +73,9 @@ E
 EOF
 python3 "$HERE/hookfile.py" "$W/core.hdf" /etc/rc2.d/S99zz9000 "$W/hook.sh"
 
-HOME="$W/home" python3 -u "$APP/amix-installer" --running fs-uae --agent-only --net \
+MOTIF=
+[ -z "$E2E_MOTIF" ] || MOTIF=--with-motif
+HOME="$W/home" python3 -u "$APP/amix-installer" --running fs-uae --agent-only $MOTIF --net \
 	--repo "$REPO" > "$W/installer.log" 2>&1 &
 IPID=$!
 PIDS="$PIDS $IPID"
@@ -90,6 +112,14 @@ PIDS="$PIDS $!"
 rc=0
 wait $IPID || rc=$?
 echo "agent-only: the installer exited $rc"
+# the clock: setclk from the repository, the time from this computer to the second
+python3 "$HERE/clockcheck.py" "$W/installer.log" || rc=1
+# E2E_MOTIF=1 (Agent and Motif): the Motif and X11 run time on AMIX's disk
+if [ -n "$E2E_MOTIF" ]; then
+	sync
+	python3 "$HERE/hasfile.py" "$W/core.hdf" /usr/motif/lib/libXm.so.4 \
+		/usr/motif/lib/libMrm.so.4 /usr/x11r6/lib/libX11.so.7 || rc=1
+fi
 KEY=$(cat "$W/home/.local/share/amix-installer/vscode-agent.key" 2>/dev/null || true)
 U=$(sed -n 's/.*VS Code agent: runs programs as \([^,]*\), dials.*/\1/p' "$W/installer.log" | tail -1)
 if [ $rc = 0 ] && [ -n "$KEY" ] && [ -n "$U" ]; then

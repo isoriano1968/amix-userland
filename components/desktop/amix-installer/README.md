@@ -38,7 +38,7 @@ installer still runs, and its plan names what is missing.
 empty data disk and an FS-UAE configuration (an A3000 with an A2065), as
 HDF files, for the Z3660 SD card, or as ZuluSCSI/BlueSCSI images named by
 SCSI ID. AMIX itself then installs the kernel and packages over the A2065,
-in FS-UAE or on an Amiga that has one (version 0.4); the PC never writes
+in FS-UAE or on an Amiga that has one (version 0.4); OpenIndiana or Linux never writes
 AMIX's file system. All eight steps work (Base system, Machine,
 Disks, Kernel, Drivers, Desktop, Development, Summary), options a machine
 cannot use are greyed out, and the choices can be saved and loaded as a
@@ -47,12 +47,17 @@ system use, AMIX packages, kernels, what is installed already, a pvmk boot
 partition and the package client; the Disks page then shows its real sizes. Disk writing and package installs come next; see
 [the plan](../../../doc/plans/AMIX-INSTALLER-APP-PLAN.md).
 
-**Developing from a PC with VS Code** (0.6.5): the Development step has a
-**VS Code agent** switch (developer/vscode-agent) and a button, **Only the
-VS Code agent**, that makes a console system with just the agent: no
-desktop, applications or compilers on the Amiga, because they stay on the
-PC. The network install writes `/etc/vscode-agent.conf` (root only):
-- the agent dials the PC on port 7777;
+**Developing with VS Code on OpenIndiana or Linux** (0.6.5): the
+Development step has a **VS Code agent** switch (developer/vscode-agent)
+and a button, **Only the VS Code agent**, that makes a console system with
+just the agent: no desktop, applications or compilers on the Amiga, because
+they stay on OpenIndiana or Linux. For an AMIX that is already running
+(0.6.7), **Just the Agent** sets AMIX's clock (sysutils/setclk) and installs
+or updates only the agent, which brings sysutils/terminfo
+(`TERM=xterm-256color`); **Agent and Motif** adds desktop/motif and
+x11/x11r6.3 for Motif and CDE programs. The network install writes
+`/etc/vscode-agent.conf` (root only):
+- the agent dials the OpenIndiana or Linux computer on port 7777;
 - it runs programs as the first login user, or as a new user `developer`;
 - it signs in with a new key.
 

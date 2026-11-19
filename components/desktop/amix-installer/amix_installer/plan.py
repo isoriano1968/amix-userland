@@ -1003,10 +1003,14 @@ def make_plan(cfg, paths, fs=None, written=False):
     repo = paths.get("repo") or default_repo()
     no_repo = repo_problem(repo) if repo else NO_REPO
     if sel["src"] == "run" and getattr(cfg, "agent_only", False):
-        pl.actions.append(NetInstall("the VS Code agent alone: the running system fetches the "
-                                     "bootstrap with tftp, which installs or updates "
-                                     "developer/vscode-agent and writes its configuration; no "
-                                     "base set, nothing else", repo, no_repo))
+        extra = getattr(cfg, "agent_extra", [])
+        pl.actions.append(NetInstall(
+            "the VS Code agent%s: the running system fetches the bootstrap with tftp, "
+            "which sets the clock (sysutils/setclk), installs or updates "
+            "developer/vscode-agent%s and writes its configuration; no base set%s"
+            % (" and Motif" if extra else " alone",
+               "".join(" and %s (with what it needs)" % p for p in extra),
+               "" if extra else ", nothing else"), repo, no_repo))
         return pl
     if sel["src"] == "run":
         pl.actions.append(NetInstall("the running system fetches the bootstrap with tftp; "

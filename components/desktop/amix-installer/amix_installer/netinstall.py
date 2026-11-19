@@ -252,6 +252,19 @@ def data_disk_text(dd):
     return t if machine == raw else "%s (on the machine: %s)" % (t, machine)
 
 
+def running_data_disk(cfg, fs_uae_config):
+    """The data disk for an AMIX that runs in FS-UAE with fs_uae_config: its
+    empty AMIX disk at SCSI ID 1 as step 4 takes it (raw slice, sectors, the
+    same slice), or None (none there, or it has its file system already:
+    AMIX mounts that one itself)."""
+    from . import fsuae, plan
+    _, data, _ = fsuae.amix_disks(fs_uae_config)
+    if not data or not data[2]:
+        return None
+    dev = plan.disk_device(cfg, "data", 1, fs_uae=True)
+    return (dev, data[1], dev)
+
+
 def hdf_movable():
     from . import hdf
     return hdf.MOVABLE
@@ -365,6 +378,111 @@ def fetch_size(repo, stems, skip=None):
     return files, size
 
 
+def unpacked_kb(repo, stems):
+    """{stem: (KB on the root, KB under hdf.MOVABLE)} for stems and every
+    package they require, each once: what installing them takes on AMIX
+    (pkg.size, plus 1 KB a file for its last fragment and inode)."""
+    from . import hdf
+    mov = tuple(d.lstrip("/") + "/" for d in hdf.MOVABLE)
+    out = {}
+    todo = list(stems)
+    while todo:
+        stem = todo.pop()
+        if stem in out:
+            continue
+        try:
+            _, man = _newest(repo, stem)
+        except KeyError:
+            out[stem] = (0, 0)
+            continue
+        root = movable = 0
+        for line in man.splitlines():
+            w = line.split()
+            if not w:
+                continue
+            if w[0] == "file":
+                path = [x[5:] for x in w if x.startswith("path=")]
+                sz = [x for x in w if x.startswith("pkg.size=")]
+                n = int(sz[0].split("=", 1)[1]) if sz else 0
+                if path and path[0].startswith(mov):
+                    movable += n + 1024
+                else:
+                    root += n + 1024
+            elif w[0] == "depend" and "type=require" in w:
+                fmri = [x[5:] for x in w if x.startswith("fmri=")]
+                if fmri:
+                    todo.append(fmri[0].replace("pkg://amix/", "").replace("pkg:/", "")
+                                .split("@")[0])
+        out[stem] = ((root + 1023) // 1024, (movable + 1023) // 1024)
+    return out
+
+
+ROOM_SHORT = "not enough room"
+
+
+def room_lines(table, data_kb=None, extra_root_kb=0):
+    """Shell lines (after step 1, before anything changes): the KB the
+    packages of table (unpacked_kb) that are not installed yet take, against
+    the free space, keeping $M MB on each file system.  With a data disk
+    (data_kb: the one step 4 makes; else /amixdata when it is mounted) the
+    MOVABLE trees count there, else on the root.  extra_root_kb: files the
+    steps write besides packages (a kernel and the stock one kept).  Stops
+    with FAILED: "not enough room: ..." (ROOM_SHORT) when it does not fit."""
+    lines = ["# room: what the packages not installed yet take, against the free space;",
+             "# too little: the bootstrap goes again (nothing else has changed), then FAILED",
+             "room_fail() {",
+             "  R=/tmp/amixboot-report; /usr/bin/rm -rf $R",
+             "  /usr/bin/mkdir $R && /usr/bin/cp $B/bin/pkg $B/lib/* $R/ && RPKG=$R/pkg RLD=$R",
+             "  (cd / && /usr/sbin/pkgrm -n -a /tmp/amixboot.admin %s >>$LOG 2>&1) || unboot" % BOOT_PKG,
+             "  /usr/bin/rm -f /tmp/amixboot.admin /tmp/go /tmp/amix-steps",
+             "  report \"FAILED: $*\"",
+             "  /usr/bin/rm -rf $R",
+             "  exit 1",
+             "}",
+             "NR=%d; NM=0" % extra_root_kb]
+    for stem in sorted(table):
+        rk, mk = table[stem]
+        if rk or mk:
+            lines += ["$B/bin/pkg list %s >/dev/null 2>&1 || { NR=`/usr/bin/expr $NR + %d`; "
+                      "NM=`/usr/bin/expr $NM + %d`; }" % (stem, rk, mk)]
+    lines += ["FR=`/usr/bin/df -k / | /usr/bin/tail -1 | /usr/bin/awk '{print $4}'`",
+              "K=`/usr/bin/expr $M \\* 1024`"]
+    if data_kb is not None:
+        lines += ["FL=%d; WHERE='the new data disk'" % data_kb]
+    else:
+        lines += ["FL=; WHERE='the data disk'",
+                  "if /usr/sbin/mount | /usr/bin/grep '^/amixdata ' >/dev/null; then",
+                  "  FL=`/usr/bin/df -k /amixdata | /usr/bin/tail -1 | /usr/bin/awk '{print $4}'`",
+                  "fi"]
+    lines += [
+        "if [ -n \"$FL\" ]; then",
+        "  report \"room: the root needs $NR KB of $FR KB free, $WHERE $NM KB of $FL KB (each keeps $M MB)\"",
+        "  [ `/usr/bin/expr $NR + $K` -le $FR ] || room_fail \"%s: the root needs $NR KB and $M MB to spare, it has $FR KB free\"" % ROOM_SHORT,
+        "  [ `/usr/bin/expr $NM + $K` -le $FL ] || room_fail \"%s: $WHERE needs $NM KB and $M MB to spare, it has $FL KB free\"" % ROOM_SHORT,
+        "else",
+        "  N=`/usr/bin/expr $NR + $NM`",
+        "  report \"room: no data disk: the root needs $N KB of $FR KB free (keeps $M MB)\"",
+        "  [ `/usr/bin/expr $N + $K` -le $FR ] || room_fail \"%s: no data disk, the root needs $N KB and $M MB to spare, it has $FR KB free\"" % ROOM_SHORT,
+        "fi"]
+    return lines
+
+
+def room_advice(failure, emu, fs_uae_config=None):
+    """What to do when the room check stopped the install (failure starts
+    with ROOM_SHORT), or None.  Nothing has changed on AMIX by then."""
+    if not failure or not failure.startswith(ROOM_SHORT):
+        return None
+    if emu:
+        how = ("amix-installer --fs-uae-config %s --add-data-disk 1g" % fs_uae_config
+               if fs_uae_config else "Add a Data Disk on this page")
+        return ("Nothing was changed on AMIX. Give it a data disk (%s), quit FS-UAE and start "
+                "it again with that configuration, then start the install again; or choose "
+                "fewer packages." % how)
+    return ("Nothing was changed on AMIX. Choose fewer packages, or give the Amiga a second "
+            "disk (or a free partition) with an AMIX file system mounted on /amixdata "
+            "(an /etc/vfstab line), then start the install again.")
+
+
 def fetching(what, size):
     """The report line before pkg fetches: what, its files and kilobytes;
     Session.reported parses it for the progress bar."""
@@ -391,6 +509,8 @@ PATCH_ANSWERS_KERNEL = ["n", "danger", "y", "n", "go"]
 PATCH_ANSWERS = ["n", "danger", "n", "go"]
 # foundation packages that replace a file of the SVR4 core package
 HANDOVER = {"sysutils/setclk": "/usr/amiga/bin/setclk"}
+# foundation packages brought up to the repository's version when present
+UPDATE_PKGS = {"sysutils/setclk"}
 
 
 def patch_check_lines(patch):
@@ -424,6 +544,86 @@ def patch_check_lines(patch):
     return lines
 
 
+def foundation_pkg_lines(p, sizes=None):
+    """Shell lines: foundation package p installed ($PKG, $M), Commodore's file
+    handed over first (HANDOVER); a package of UPDATE_PKGS that is there
+    already is updated to the repository's version."""
+    sizes = sizes or {}
+    lines = []
+    if p in HANDOVER:
+        # a file of Commodore's that the package replaces: core hands it
+        # over (removef, as SVR4 does), so pkg may own it; the file stays
+        # AMIX 2.1 ships installf but not removef: then its one change,
+        # the path's line out of the contents file (kept as .amix-installer)
+        path = HANDOVER[p]
+        C = "/var/sadm/install/contents"
+        lines += ["if /usr/bin/grep '^%s ' %s >/dev/null; then" % (path, C),
+                  "  if [ -x /usr/sbin/removef ]; then",
+                  "    /usr/sbin/removef core %s >>$LOG 2>&1 && /usr/sbin/removef -f core >>$LOG 2>&1 || "
+                  "fail 'removef %s'" % (path, path),
+                  "  else",
+                  "    [ -f %s.amix-installer ] || /usr/bin/cp -p %s %s.amix-installer || "
+                  "fail 'keeping %s'" % (C, C, C, C),
+                  "    a=`/usr/bin/wc -l < %s`" % C,
+                  "    # .new as a copy first: the original's owner, group and mode",
+                  "    /usr/bin/cp -p %s %s.new || fail 'copying %s'" % (C, C, C),
+                  "    /usr/bin/grep -v '^%s ' %s > %s.new || fail 'the contents without %s'"
+                  % (path, C, C, path),
+                  "    b=`/usr/bin/wc -l < %s.new`" % C,
+                  "    [ `/usr/bin/expr $a - $b` -eq 1 ] || { /usr/bin/rm -f %s.new; "
+                  "fail 'the contents would lose more than %s'; }" % (C, path),
+                  "    /usr/bin/mv %s.new %s || fail 'writing %s'" % (C, C, C),
+                  "  fi",
+                  "  report 'foundation %s: %s handed from core'" % (p, path),
+                  "fi",
+                  "# pkg replaces no unowned file: Commodore's binary steps aside for the",
+                  "# install only, back if it fails, gone when the package has its own",
+                  "[ ! -f %s ] || $PKG list %s >/dev/null 2>&1 || /usr/bin/mv %s %s.core || "
+                  "fail 'moving %s aside'" % (path, p, path, path, path)]
+    if p in UPDATE_PKGS:
+        lines += ["if $PKG list %s >/dev/null 2>&1; then" % p,
+                  "  $PKG --min-free $M update %s >>$LOG 2>&1 || fail 'updating %s'" % (p, p),
+                  "  report \"foundation %s present `$PKG list %s 2>/dev/null | /usr/bin/awk 'END {print $2}'`\"" % (p, p),
+                  "else"]
+    else:
+        lines += ["if $PKG list %s >/dev/null 2>&1; then report 'foundation %s present'; else" % (p, p)]
+    if p in sizes:
+        lines += ["  " + fetching(p, sizes[p])]
+    lines += ["  $PKG --min-free $M install %s >>$LOG 2>&1 || "
+              "{ %sreport 'foundation %s failed'; fail 'installing %s'; }"
+              % (p, ("[ ! -f %s.core ] || /usr/bin/mv %s.core %s; " % ((HANDOVER[p],) * 3))
+                 if p in HANDOVER else "", p, p),
+              "  report 'foundation %s installed'" % p,
+              "fi"]
+    if p in HANDOVER:
+        lines += ["/usr/bin/rm -f %s.core" % HANDOVER[p]]
+    return lines
+
+
+def clock_lines(stamp):
+    """Shell lines: /etc/clkzone, then the time from this computer to the
+    second (GET /now, setclk -t), then into the battery clock; stamp
+    (MMDDhhmmYYYY, UTC, when the steps were made) only when /now cannot be
+    fetched or setclk has no -t."""
+    return [
+        "# the battery clock keeps local time (as AmigaDOS): setclk reads it in this zone",
+        "if [ -s /etc/clkzone ]; then report \"foundation clkzone present `/usr/bin/cat /etc/clkzone`\"; else",
+        "  Z=`. /etc/TIMEZONE; echo $TZ`",
+        "  [ -n \"$Z\" ] || Z=:GMT",
+        "  echo \"$Z\" > /etc/clkzone || fail 'writing /etc/clkzone'",
+        "  report \"foundation clkzone installed $Z\"",
+        "fi",
+        "# the time from this computer now (UTC, to the second), then into the battery clock",
+        "S=; $PKG http get $W/now /tmp/amix-now >>$LOG 2>&1 && S=`/usr/bin/cat /tmp/amix-now`",
+        "/usr/bin/rm -f /tmp/amix-now",
+        "if [ -n \"$S\" ] && /usr/amiga/bin/setclk -t $S -s >>$LOG 2>&1; then :; else",
+        "  report 'foundation clock: to the minute only (no time from this computer, or an old setclk)'",
+        "  TZ=GMT0 /usr/bin/date %s >>$LOG 2>&1 || fail 'setting the date'" % stamp,
+        "  /usr/amiga/bin/setclk -s >>$LOG 2>&1 || report 'foundation clock: the battery clock was not written'",
+        "fi",
+        "report \"foundation clock installed `/usr/bin/date` (battery `/usr/amiga/bin/setclk -p`)\""]
+
+
 def foundation_lines(have, now, sizes=None):
     """Shell lines: the clock, the base set, syslogd, the random driver.
     have: the foundation packages the repository holds (the others fail the
@@ -437,61 +637,10 @@ def foundation_lines(have, now, sizes=None):
     if gone:
         lines += ["fail 'the foundation needs %s: not in the repository'" % " ".join(gone)]
     for p in FOUNDATION_PKGS:
-        if p in gone:
-            continue
-        if p in HANDOVER:
-            # a file of Commodore's that the package replaces: core hands it
-            # over (removef, as SVR4 does), so pkg may own it; the file stays
-            # AMIX 2.1 ships installf but not removef: then its one change,
-            # the path's line out of the contents file (kept as .amix-installer)
-            path = HANDOVER[p]
-            C = "/var/sadm/install/contents"
-            lines += ["if /usr/bin/grep '^%s ' %s >/dev/null; then" % (path, C),
-                      "  if [ -x /usr/sbin/removef ]; then",
-                      "    /usr/sbin/removef core %s >>$LOG 2>&1 && /usr/sbin/removef -f core >>$LOG 2>&1 || "
-                      "fail 'removef %s'" % (path, path),
-                      "  else",
-                      "    [ -f %s.amix-installer ] || /usr/bin/cp -p %s %s.amix-installer || "
-                      "fail 'keeping %s'" % (C, C, C, C),
-                      "    a=`/usr/bin/wc -l < %s`" % C,
-                      "    # .new as a copy first: the original's owner, group and mode",
-                      "    /usr/bin/cp -p %s %s.new || fail 'copying %s'" % (C, C, C),
-                      "    /usr/bin/grep -v '^%s ' %s > %s.new || fail 'the contents without %s'"
-                      % (path, C, C, path),
-                      "    b=`/usr/bin/wc -l < %s.new`" % C,
-                      "    [ `/usr/bin/expr $a - $b` -eq 1 ] || { /usr/bin/rm -f %s.new; "
-                      "fail 'the contents would lose more than %s'; }" % (C, path),
-                      "    /usr/bin/mv %s.new %s || fail 'writing %s'" % (C, C, C),
-                      "  fi",
-                      "  report 'foundation %s: %s handed from core'" % (p, path),
-                      "fi",
-                      "# pkg replaces no unowned file: Commodore's binary steps aside for the",
-                      "# install only, back if it fails, gone when the package has its own",
-                      "[ ! -f %s ] || $PKG list %s >/dev/null 2>&1 || /usr/bin/mv %s %s.core || "
-                      "fail 'moving %s aside'" % (path, p, path, path, path)]
-        lines += ["if $PKG list %s >/dev/null 2>&1; then report 'foundation %s present'; else" % (p, p)]
-        if p in sizes:
-            lines += ["  " + fetching(p, sizes[p])]
-        lines += ["  $PKG --min-free $M install %s >>$LOG 2>&1 || "
-                  "{ %sreport 'foundation %s failed'; fail 'installing %s'; }"
-                  % (p, ("[ ! -f %s.core ] || /usr/bin/mv %s.core %s; " % ((HANDOVER[p],) * 3))
-                     if p in HANDOVER else "", p, p),
-                  "  report 'foundation %s installed'" % p,
-                  "fi"]
-        if p in HANDOVER:
-            lines += ["/usr/bin/rm -f %s.core" % HANDOVER[p]]
+        if p not in gone:
+            lines += foundation_pkg_lines(p, sizes)
+    lines += clock_lines(stamp)
     lines += [
-        "# the battery clock keeps local time (as AmigaDOS): setclk reads it in this zone",
-        "if [ -s /etc/clkzone ]; then report \"foundation clkzone present `/usr/bin/cat /etc/clkzone`\"; else",
-        "  Z=`. /etc/TIMEZONE; echo $TZ`",
-        "  [ -n \"$Z\" ] || Z=:GMT",
-        "  echo \"$Z\" > /etc/clkzone || fail 'writing /etc/clkzone'",
-        "  report \"foundation clkzone installed $Z\"",
-        "fi",
-        "# the time from this computer (UTC), then into the battery clock",
-        "TZ=GMT0 /usr/bin/date %s >>$LOG 2>&1 || fail 'setting the date'" % stamp,
-        "/usr/amiga/bin/setclk -s >>$LOG 2>&1 || report 'foundation clock: the battery clock was not written'",
-        "report \"foundation clock installed `/usr/bin/date` (battery `/usr/amiga/bin/setclk -p`)\"",
         "# syslogd: Patch Disk 1-2a ships it off (an exit at the top of its script)",
         "if /usr/bin/grep '^exit$' /etc/init.d/syslogd >/dev/null 2>&1; then",
         "  [ -f /etc/init.d/syslogd.stock ] || /usr/bin/cp /etc/init.d/syslogd /etc/init.d/syslogd.stock",
@@ -542,14 +691,32 @@ def agent_lines(host, key, port=AGENT_PORT):
 AGENT_PKG = "developer/vscode-agent"
 
 
-def agent_only_script(host, http_port, repo, agent_key):
+CLOCK_PKG = "sysutils/setclk"
+
+
+def agent_only_script(host, http_port, repo, agent_key, now=None, extra=()):
     """The steps for model.agent_only: the bootstrap's pkg installs (or
-    updates) the VS Code agent and nothing else, its configuration is written
-    (an existing one kept), the agent started, the bootstrap removed."""
+    updates) setclk and sets the clock from this computer, then installs (or
+    updates) the VS Code agent and nothing else; its configuration is written
+    (an existing one kept), the agent started, the bootstrap removed.
+    now: the host's time (UTC), the clock's fallback to the minute.
+    extra: further packages installed or updated with the agent (Agent and
+    Motif: model.AGENT_MOTIF_PKGS)."""
     W = "http://%s:%d" % (host, http_port)
-    size = fetch_size(repo, [AGENT_PKG]) if repo else None
+    now = now or time.gmtime()
+    stamp = "%02d%02d%02d%02d%04d" % (now.tm_mon, now.tm_mday, now.tm_hour, now.tm_min,
+                                      now.tm_year)
+    extra = [p for p in extra if p != AGENT_PKG]
+    if repo:
+        gone = [p for p in extra if missing_in_repo(repo, p)]
+        extra = [p for p in extra if p not in gone]
+    else:
+        gone = []
+    size = fetch_size(repo, [AGENT_PKG] + extra) if repo else None
+    clock_sizes = {CLOCK_PKG: fetch_size(repo, [CLOCK_PKG])} if repo else {}
     lines = ["#!/bin/sh",
-             "# AMIX Installer: the VS Code agent alone, fetched from %s/steps" % W,
+             "# AMIX Installer: the VS Code agent%s, fetched from %s/steps"
+             % (" and " + " ".join(extra) if extra else " alone", W),
              "W=%s" % W, "B=%s" % BOOT_DIR,
              "LD_LIBRARY_PATH=$B/lib; export LD_LIBRARY_PATH",
              "LOG=/tmp/amix-install.log; : > $LOG",
@@ -559,13 +726,37 @@ def agent_only_script(host, http_port, repo, agent_key):
              "step() { n=$1; shift; report \"step $n: $*\"; }",
              "",
              "step 1 \"the system: `uname -a`\"",
-             "report \"root: `/usr/bin/df -k / | /usr/bin/tail -1`\"",
-             "",
-             "step 6 \"packages: %s (alone)\"" % AGENT_PKG,
+             "report \"root: `/usr/bin/df -k / | /usr/bin/tail -1`\""]
+    lines += unboot_lines()
+    lines += ["PKG=$B/bin/pkg",
+             "# MB pkg keeps free on each file system (the installer's core reserve)",
+             "M=%d" % model.RESERVE_MB,
              "$B/bin/pkg set-publisher -O $W/repo amix >>$LOG 2>&1 || fail set-publisher",
-             "$B/bin/pkg refresh >>$LOG 2>&1 || fail refresh"]
+             "$B/bin/pkg refresh >>$LOG 2>&1 || fail refresh",
+             "",
+             "step 5 \"the clock: %s, the time from this computer\"" % CLOCK_PKG]
+    if repo:
+        lines += room_lines(unpacked_kb(repo, [CLOCK_PKG, AGENT_PKG] + extra))
+    if repo and missing_in_repo(repo, CLOCK_PKG):
+        lines += ["report 'the clock: %s is not in the repository, the clock stays as it is'"
+                  % CLOCK_PKG]
+    else:
+        lines += foundation_pkg_lines(CLOCK_PKG, clock_sizes)
+        lines += clock_lines(stamp)
+    lines += ["",
+              "step 6 \"packages: %s\"" % (" ".join([AGENT_PKG] + extra) if extra
+                                            else AGENT_PKG + " (alone)")]
+    lines += ["report 'not in the repository, left out: %s'" % " ".join(gone)] if gone else []
     if size:
-        lines += [fetching(AGENT_PKG, size)]
+        lines += [fetching(" ".join([AGENT_PKG] + extra), size)]
+    for p in extra:
+        lines += ["if $B/bin/pkg list %s >/dev/null 2>&1; then" % p,
+                  "  $PKG --min-free $M update %s >>$LOG 2>&1 || fail 'updating %s'" % (p, p),
+                  "  report '%s updated'" % p,
+                  "else",
+                  "  $PKG --min-free $M install %s >>$LOG 2>&1 || fail 'installing %s'" % (p, p),
+                  "  report '%s installed'" % p,
+                  "fi"]
     lines += ["if $B/bin/pkg list %s >/dev/null 2>&1; then" % AGENT_PKG,
               "  $B/bin/pkg update %s >>$LOG 2>&1 || fail 'updating the VS Code agent'" % AGENT_PKG,
               "  report 'VS Code agent: %s updated'" % AGENT_PKG,
@@ -574,7 +765,6 @@ def agent_only_script(host, http_port, repo, agent_key):
               "  report 'VS Code agent: %s installed'" % AGENT_PKG,
               "fi"]
     lines += agent_lines(host, agent_key)
-    lines += unboot_lines()
     lines += ["",
               "# no installed pkg reports here: the bootstrap's pkg and its lib/",
               "# are copied out first, the bootstrap's removal takes them with it",
@@ -634,9 +824,14 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
              "step() { n=$1; shift; report \"step $n: $*\"; }",
              "",
              "step 1 \"the system: `uname -a`\"",
-             "report \"root: `/usr/bin/df -k / | /usr/bin/tail -1`\"",
-             "",
-             "step 2 \"foundation: the AMIX patch level\""]
+             "report \"root: `/usr/bin/df -k / | /usr/bin/tail -1`\""]
+    lines += unboot_lines()
+    if repo:
+        table = unpacked_kb(repo, ["sysutils/amix-pkg"] + have + pkgs)
+        data_kb = data_disk[1] // 2 * 9 // 10 if data_disk else None     # less UFS's own
+        lines += room_lines(table, data_kb, 2 * (kernel[0] // 1024 + 1) if kernel else 0)
+    lines += ["",
+              "step 2 \"foundation: the AMIX patch level\""]
     lines += patch_check_lines(patch)
     lines += ["",
               "step 3 \"the package client\"",
@@ -662,6 +857,9 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
                   "D=%s" % slice_,
                   "V=%s" % on_machine,
                   "if /usr/sbin/mount | /usr/bin/grep /amixdata >/dev/null; then report 'data disk mounted already'; else",
+                  "  # never over a file system: only an empty disk is made",
+                  "  ! /usr/lib/fs/ufs/fstyp $D >/dev/null 2>&1 || fail \"$D has a file system already: "
+                  "the installer does not overwrite it (mount it on /amixdata, or give an empty disk)\"",
                   "  /usr/sbin/mkfs -F ufs $D %d >>$LOG 2>&1 || fail mkfs" % sectors,
                   "  { [ -d /amixdata ] || /usr/bin/mkdir -p /amixdata; } && /usr/sbin/mount -F ufs `echo $D | /usr/bin/sed s/rdsk/dsk/` /amixdata >>$LOG 2>&1 || fail mount",
                   "  echo \"`echo $V | /usr/bin/sed s/rdsk/dsk/` $V /amixdata ufs 2 yes -\" >> /etc/vfstab",
@@ -701,7 +899,6 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
                   "echo %s > /etc/X11/amix-card || fail 'writing /etc/X11/amix-card'" % card,
                   "report 'X card driver: %s (/etc/X11/amix-card)'" % card]
     lines += kernel_lines(cfg, kernel)
-    lines += unboot_lines()
     lines += ["",
               "step 8 \"removing the bootstrap\"",
               "cd / && /usr/sbin/pkgrm -n -a /tmp/amixboot.admin %s >>$LOG 2>&1 || unboot" % BOOT_PKG,
@@ -945,6 +1142,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         path = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
         if path == "/steps":
             return self._reply(200, st.steps().encode())
+        if path == "/now":
+            # this computer's time to the second (UTC), for setclk -t
+            return self._reply(200, b"%d\n" % int(time.time()))
         if path == "/kernel" and st.kernel:
             return self._reply(200, st.kernel[0], "application/octet-stream")
         if path == "/patch" and st.patch:
@@ -1053,7 +1253,8 @@ class Session(object):
 
     def steps(self):
         if getattr(self.cfg, "agent_only", False):
-            return agent_only_script(self.host, self.http_port, self.repo, self.agent_key)
+            return agent_only_script(self.host, self.http_port, self.repo, self.agent_key,
+                                     extra=getattr(self.cfg, "agent_extra", []))
         return steps_script(self.cfg, self.host, self.http_port, self.data_disk, self.repo,
                             self.kernel[1:] if self.kernel else None, bool(self.patch),
                             agent_key=self.agent_key)

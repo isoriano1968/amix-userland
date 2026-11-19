@@ -380,9 +380,10 @@ STEPS = [
               O("python", "Python 3", "With pip for user installs", mb=90,
                probe=("/usr/local/bin/python3",)),
               O("vim", "vim", "Editor", mb=10, probe=("/usr/local/bin/vim",))]),
-          G("remote", "Develop from a PC", options=[
+          G("remote", "Develop from OpenIndiana or Linux", options=[
               O("vscode", "VS Code agent",
-                "Runs the programs VS Code builds on the PC: starts at boot and dials the PC, "
+                "Runs the programs VS Code builds on your OpenIndiana or Linux computer: starts at "
+                "boot and dials that computer, "
                 "no compilers needed on the Amiga", mb=1, probe=("/usr/local/bin/vscode-agent",))])]),
     Step("summary", "Summary", "Check and create",
          "Check your choices, then create the disks. A profile keeps them for the next machine.",
@@ -438,14 +439,21 @@ DISK_HW = {"on_" + h[3:]: h for h in ("hw_a3000scsi", "hw_a2091", "hw_gvpscsi", 
 VSCODE_ONLY_OFF = ("apps", "core1", "tc", "tools")
 
 
-def agent_only(cfg):
+# "Agent and Motif": what a Motif or CDE program needs at run time (libXm,
+# libMrm; desktop/motif brings x11/x11r6.3)
+AGENT_MOTIF_PKGS = ["desktop/motif"]
+
+
+def agent_only(cfg, motif=False):
     """The VS Code agent and its configuration, nothing else, into a running
     AMIX: no foundation, no package client (the bootstrap's pkg installs or
-    updates the agent), for a quick test or an agent update."""
+    updates the agent), for a quick test or an agent update.  motif: the
+    Motif and X11 run time too (AGENT_MOTIF_PKGS), for Motif and CDE programs."""
     vscode_only(cfg)
     cfg.sel["src"] = "run"
     cfg.normalize()
     cfg.agent_only = True
+    cfg.agent_extra = list(AGENT_MOTIF_PKGS) if motif else []
     return cfg
 
 
@@ -534,6 +542,7 @@ class Config(object):
     def __init__(self, sel=None, on=None, source=None):
         self.source = source        # hdf.SourceInfo of the core image, or None
         self.agent_only = False     # a running system gets the VS Code agent alone
+        self.agent_extra = []       # with agent_only: further packages (Agent and Motif)
         self.sel = dict(DEFAULT_SEL)
         self.on = dict(DEFAULT_ON)
         if sel:

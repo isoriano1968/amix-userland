@@ -392,7 +392,7 @@ class Window(Adw.ApplicationWindow):
         return pg
 
     def _vscode_card(self):
-        """Only the VS Code agent: a console system VS Code on the PC develops for."""
+        """Only the VS Code agent: a console system VS Code on OpenIndiana or Linux develops for."""
         box = Gtk.Box(spacing=14)
         box.add_css_class("amix-info")
         img = Gtk.Image.new_from_icon_name("computer-symbolic")
@@ -401,8 +401,9 @@ class Window(Adw.ApplicationWindow):
         box.append(img)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         col.set_hexpand(True)
-        col.append(label("Developing on a PC with VS Code?", ("heading",)))
-        col.append(label("The compilers stay on the PC: the Amiga needs only the VS Code agent, "
+        col.append(label("Developing with VS Code on OpenIndiana or Linux?", ("heading",)))
+        col.append(label("The compilers stay on your OpenIndiana or Linux computer: the Amiga "
+                         "needs only the VS Code agent, "
                          "which runs what VS Code builds. This keeps your machine, kernel and "
                          "disks and leaves out the desktop, the applications and the compilers."))
         box.append(col)
@@ -419,16 +420,31 @@ class Window(Adw.ApplicationWindow):
         # a running AMIX: the agent alone, for a quick test or an agent update
         alone = Gtk.Button(label="Just the Agent", valign=Gtk.Align.CENTER)
         alone.add_css_class("pill")
-        alone.set_tooltip_text("Install or update only the VS Code agent on the running "
-                               "AMIX: no base set, no package client, nothing else")
+        alone.set_tooltip_text("Set the clock and install or update only the VS Code agent "
+                               "on the running AMIX: no base set, no package client, nothing "
+                               "else (console programs)")
 
         def just(_b):
             model.agent_only(self.cfg)
             self.show_step(self.step)
-            self.toast("Only the VS Code agent: nothing else is installed")
+            self.toast("Only the clock and the VS Code agent: nothing else is installed")
         alone.connect("clicked", just)
         btns.append(alone)
+        # Motif and CDE programs need libXm and the X11 libraries on AMIX
+        motif = Gtk.Button(label="Agent and Motif", valign=Gtk.Align.CENTER)
+        motif.add_css_class("pill")
+        motif.set_tooltip_text("The VS Code agent and the Motif and X11 run time "
+                               "(desktop/motif, x11/x11r6.3) that Motif and CDE "
+                               "programs such as the CDE sample need")
+
+        def with_motif(_b):
+            model.agent_only(self.cfg, motif=True)
+            self.show_step(self.step)
+            self.toast("The VS Code agent and the Motif run time: nothing else is installed")
+        motif.connect("clicked", with_motif)
+        btns.append(motif)
         self._extra.append(lambda: alone.set_visible(self.cfg.in_place()))
+        self._extra.append(lambda: motif.set_visible(self.cfg.in_place()))
         box.append(btns)
         return box
 
@@ -1211,8 +1227,52 @@ class Window(Adw.ApplicationWindow):
         row = Adw.ComboRow(title="FS-UAE configuration", model=Gtk.StringList.new(names))
         info.add(row)
 
+        data = Adw.ActionRow(title="Data disk")
+        add = Gtk.Button(label="Add a Data Disk", valign=Gtk.Align.CENTER)
+        data.add_suffix(add)
+        info.add(data)
+
+        def data_state(p):
+            """The configuration's data disk: the install makes its file system
+            when it is empty; without one everything goes onto the root."""
+            from . import netinstall
+            try:
+                core, d, owner = fsuae.amix_disks(p)
+            except OSError as e:
+                core, d, owner = None, None, None
+                data.set_subtitle("Cannot read its disks: %s" % e)
+            if self.net is not None and getattr(self, "net_real", False):
+                # a running AMIX: the configuration's empty data disk, made in step 4
+                self.net.data_disk = netinstall.running_data_disk(self.cfg, p) if core else None
+            add.set_visible(bool(core) and d is None and owner is None)
+            if d is not None:
+                data.set_subtitle("%s: %s" % (os.path.basename(d[0]),
+                                  "empty, AMIX makes its file system in the install" if d[2]
+                                  else "AMIX mounts it on /amixdata"))
+            elif owner is not None:
+                data.set_subtitle("None: SCSI ID 1 is taken by %s" % os.path.basename(owner))
+            elif core:
+                data.set_subtitle("None: everything goes onto the root, if it fits. "
+                                  "Add one (1 GB, beside %s), then restart FS-UAE"
+                                  % os.path.basename(core))
+            else:
+                data.set_subtitle("No AMIX core disk found in this configuration")
+
+        def add_disk(_b):
+            p = paths[row.get_selected()]
+            try:
+                out = fsuae.add_data_disk(p, 1 << 30)
+            except (ValueError, OSError) as e:
+                self._alert("No data disk added", str(e))
+                return
+            self.toast("Data disk %s added: quit FS-UAE and start it again"
+                       % os.path.basename(out))
+            data_state(p)
+        add.connect("clicked", add_disk)
+
         def check(*_a):
             p = paths[row.get_selected()]
+            data_state(p)
             card = fs.network_of(p)
             if card == "a2065":
                 row.set_subtitle("With an A2065: AMIX must be 10.0.2.15 (the amigaunix line of "
@@ -1266,6 +1326,7 @@ class Window(Adw.ApplicationWindow):
                 self._alert("The data disk cannot be read", str(e))
                 return
         emu = emu or not real           # AMIX in FS-UAE: this computer is 10.0.2.2
+        self.net_emu, self.net_real = emu, real
         host = netinstall.FS_UAE_HOST if emu else netinstall.lan_address()
         why = net.missing or netinstall.not_ready(net.repo)
         if why:
@@ -1342,6 +1403,7 @@ class Window(Adw.ApplicationWindow):
         GLib.timeout_add(500, self._net_poll)
 
     def _net_poll(self):
+        from . import netinstall
         n = getattr(self, "net", None)
         if n is None:
             return False
@@ -1350,8 +1412,10 @@ class Window(Adw.ApplicationWindow):
                 ". VS Code: AMIX: Set Agent Key, the key is in %s" % n.agent_key_file
                 if getattr(n, "agent_key_file", None) else ""))
         elif n.failed:
-            self.run_title.set_text("Stopped on AMIX: %s (AMIX's own log is below)"
-                                    % (n.failure or "no reason given"))
+            advice = netinstall.room_advice(n.failure, getattr(self, "net_emu", False))
+            self.run_title.set_text("Stopped on AMIX: %s%s" % (
+                n.failure or "no reason given",
+                (". " + advice) if advice else " (AMIX's own log is below)"))
         elif n.messages:
             self.run_title.set_text(n.messages[-1][2])
         from . import netinstall

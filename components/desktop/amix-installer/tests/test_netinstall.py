@@ -4,6 +4,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import urllib.parse
 import urllib.request
@@ -315,6 +316,114 @@ class Running(unittest.TestCase):
             self.assertIn("Install over the network", r.stdout)
 
 
+    def test_cli_running_fs_uae_over_a_profile_without_network(self):
+        # a profile saved for disks (A3000 with a Z3660, no network card):
+        # --running fs-uae still means FS-UAE's A3000 and its A2065
+        from test_plan import good_repo
+        from amix_installer import profile
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as d:
+            good_repo(os.path.join(d, "r"))
+            prof = os.path.join(d, "p.json")
+            c = model.Config()
+            c.sel.update(accel="z3660", net="nonet")
+            c.normalize()
+            profile.save(c, prof)
+            env = dict(os.environ, HOME=d, PYTHONPATH=here)
+            r = subprocess.run([sys.executable, os.path.join(here, "amix-installer"), "--profile",
+                                prof, "--running", "fs-uae", "--plan", "--repo",
+                                os.path.join(d, "r")], env=env, capture_output=True,
+                               text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("the running system fetches the bootstrap", r.stdout)
+            self.assertNotIn("choose the core HDF", r.stdout + r.stderr)
+
+
+    def test_cli_add_data_disk_never_opens_the_window(self):
+        # no display at all: a window would fail; the CLI answers by itself
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as d:
+            conf = os.path.join(d, "a.fs-uae")
+            with open(conf, "w") as f:
+                f.write("[fs-uae]\n")
+            env = dict(os.environ, HOME=d, PYTHONPATH=here)
+            env.pop("DISPLAY", None)
+            env.pop("WAYLAND_DISPLAY", None)
+            r = subprocess.run([sys.executable, os.path.join(here, "amix-installer"),
+                                "--fs-uae-config", conf, "--add-data-disk", "512m"],
+                               env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("has no AMIX core disk", r.stderr)
+
+
+class Room(unittest.TestCase):
+    """The room check runs under sh: df, mount and pkg are stand-ins."""
+
+    def run_room(self, table, free_root, data_kb=None, amixdata_free=None, installed=()):
+        with tempfile.TemporaryDirectory() as d:
+            fb = os.path.join(d, "bin")
+            os.mkdir(fb)
+
+            def tool(name, body):
+                with open(os.path.join(fb, name), "w") as f:
+                    f.write("#!/bin/sh\n" + body + "\n")
+                os.chmod(os.path.join(fb, name), 0o755)
+            tool("df", 'echo "Filesystem kbytes used avail capacity Mounted on"\n'
+                 'case "$2" in /amixdata) echo "/dev/dsk/c1d0s1 1000000 1 %s 1%% /amixdata";; '
+                 '*) echo "/dev/dsk/c6d0s1 480297 1 %d 68%% /";; esac'
+                 % (amixdata_free or 0, free_root))
+            tool("mount", "echo '/ on /dev/dsk/c6d0s1 read/write'" +
+                 ("; echo '/amixdata on /dev/dsk/c1d0s1 read/write'" if amixdata_free else ""))
+            tool("pkg", 'case " %s " in *" $2 "*) exit 0;; esac; exit 1' % " ".join(installed))
+            body = "\n".join(netinstall.room_lines(table, data_kb))
+            for real in ("/usr/bin/df", "/usr/sbin/mount", "$B/bin/pkg"):
+                body = body.replace(real, os.path.join(fb, os.path.basename(real)))
+            body = body.replace("/usr/bin/", "").replace("/usr/sbin/", "")
+            sh = ("M=100\nLOG=/dev/null\nB=%s\nunboot() { echo UNBOOT; }\n"
+                  "report() { echo \"$*\"; }\nfail() { echo \"FAILED: $*\"; exit 1; }\n" % d
+                  + body + "\necho FITS\n")
+            r = subprocess.run(["sh", "-c", sh], capture_output=True, text=True)
+            return r.returncode, r.stdout
+
+    def test_fits_on_root(self):
+        rc, out = self.run_room({"a": (1000, 2000)}, free_root=200000)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("room: no data disk: the root needs 3000 KB of 200000 KB free", out)
+
+    def test_too_big_without_data_disk(self):
+        rc, out = self.run_room({"desktop/cde": (100, 42000), "runtime/python3": (0, 30000)},
+                                free_root=151509)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAILED: %s: no data disk, the root needs 72100 KB" % netinstall.ROOM_SHORT,
+                      out)
+        # the bootstrap goes before FAILED: nothing else has changed on AMIX
+        self.assertLess(out.index("UNBOOT"), out.index("FAILED"))
+
+    def test_installed_ones_do_not_count(self):
+        rc, out = self.run_room({"desktop/cde": (100, 42000), "runtime/python3": (0, 30000)},
+                                free_root=151509, installed=("desktop/cde",))
+        self.assertEqual(rc, 0, out)
+
+    def test_mounted_data_disk(self):
+        rc, out = self.run_room({"desktop/cde": (100, 42000)}, free_root=151509,
+                                amixdata_free=900000)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("the data disk 42000 KB of 900000 KB", out)
+
+    def test_planned_data_disk(self):
+        rc, out = self.run_room({"desktop/cde": (100, 42000)}, free_root=151509, data_kb=120000)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("the new data disk needs 42000 KB and 100 MB to spare", out)
+
+    def test_unpacked_kb(self):
+        with tempfile.TemporaryDirectory() as d:
+            fake_repo(d, {"desktop/motif": (["x11/x11r6.3"], [3000000]),
+                          "x11/x11r6.3": ([], [1000000])})
+            t = netinstall.unpacked_kb(d, ["desktop/motif"])
+        # fake files are at f0, f1 (the root): pkg.size is 3x csize, +1 KB each
+        self.assertEqual(t, {"desktop/motif": (8791, 0), "x11/x11r6.3": (2931, 0)})
+
+
 class DataDiskText(unittest.TestCase):
     """fs_uae_data_disk gives three fields; both front ends print them."""
 
@@ -330,7 +439,8 @@ class AgentOnly(unittest.TestCase):
 
     def test_script(self):
         with tempfile.TemporaryDirectory() as d:
-            fake_repo(d, {"developer/vscode-agent": ([], [40000, 1000])})
+            fake_repo(d, {"developer/vscode-agent": ([], [40000, 1000]),
+                          "sysutils/setclk": ([], [4000])})
             cfg = model.agent_only(model.Config())
             s = netinstall.Session(cfg, d, host="10.0.2.2", tftp_port=0, http_port=0,
                                    bind="127.0.0.1")
@@ -347,10 +457,71 @@ class AgentOnly(unittest.TestCase):
         self.assertIn("secret %s" % s.agent_key, t)
         self.assertIn("report DONE", t)
         # the last reports go through a copy: removing the bootstrap takes its pkg
-        self.assertLess(t.index("RPKG=$R/pkg RLD=$R"), t.index("pkgrm -n"))
+        self.assertLess(t.rindex("RPKG=$R/pkg RLD=$R"), t.rindex("pkgrm -n"))
         self.assertLess(t.index("report DONE"), t.rindex("/usr/bin/rm -rf $R\n"))
-        for other in ("foundation", "sysutils/amix-pkg", "setclk", "gnu-tools", "PATCH"):
+        # the clock first: setclk installed or updated, the time from /now to the second
+        self.assertLess(t.index("step 5 \"the clock"), t.index("step 6 \"packages"))
+        self.assertIn("$PKG --min-free $M update sysutils/setclk", t)
+        self.assertIn("$PKG --min-free $M install sysutils/setclk", t)
+        self.assertIn("$PKG http get $W/now /tmp/amix-now", t)
+        self.assertIn("/usr/amiga/bin/setclk -t $S -s", t)
+        for other in ("sysutils/amix-pkg", "gnu-tools", "libm99", "PATCH", "syslogd"):
             self.assertNotIn(other, t)
+
+    def test_with_motif(self):
+        with tempfile.TemporaryDirectory() as d:
+            fake_repo(d, {"developer/vscode-agent": ([], [40000]),
+                          "sysutils/setclk": ([], [4000]),
+                          "desktop/motif": (["x11/x11r6.3"], [900000]),
+                          "x11/x11r6.3": ([], [2000000])})
+            cfg = model.agent_only(model.Config(), motif=True)
+            self.assertEqual(cfg.agent_extra, ["desktop/motif"])
+            s = netinstall.Session(cfg, d, host="10.0.2.2", tftp_port=0, http_port=0,
+                                   bind="127.0.0.1")
+            try:
+                t = s.steps()
+            finally:
+                s.tftp.stop()
+                s.http.server_close()
+        Scripts.sh_ok(self, t)
+        self.assertIn('step 6 "packages: developer/vscode-agent desktop/motif"', t)
+        self.assertIn("$PKG --min-free $M install desktop/motif", t)
+        self.assertIn("$PKG --min-free $M update desktop/motif", t)
+        # x11r6.3 comes as motif's requirement: counted in what is fetched
+        self.assertIn("installing developer/vscode-agent desktop/motif: 3 files", t)
+        # a plain "Just the Agent" afterwards drops the Motif packages
+        self.assertEqual(model.agent_only(cfg).agent_extra, [])
+
+    def test_motif_not_in_repo(self):
+        with tempfile.TemporaryDirectory() as d:
+            fake_repo(d, {"developer/vscode-agent": ([], [40000])})
+            t = netinstall.agent_only_script("10.0.2.2", 8069, d, "k" * 64,
+                                             extra=["desktop/motif"])
+        Scripts.sh_ok(self, t)
+        self.assertIn("not in the repository, left out: desktop/motif", t)
+        self.assertNotIn("install desktop/motif", t)
+
+    def test_no_setclk_in_repo(self):
+        with tempfile.TemporaryDirectory() as d:
+            fake_repo(d, {"developer/vscode-agent": ([], [40000])})
+            t = netinstall.agent_only_script("10.0.2.2", 8069, d, "k" * 64)
+        Scripts.sh_ok(self, t)
+        self.assertIn("sysutils/setclk is not in the repository", t)
+        self.assertNotIn("setclk -t", t)
+
+    def test_now(self):
+        with tempfile.TemporaryDirectory() as d:
+            fake_repo(d, {"developer/vscode-agent": ([], [40000])})
+            s = netinstall.Session(model.agent_only(model.Config()), d, host="127.0.0.1",
+                                   tftp_port=0, http_port=0, bind="127.0.0.1")
+            try:
+                s.start()
+                t0 = time.time()
+                got = int(urllib.request.urlopen("http://127.0.0.1:%d/now" % s.http_port,
+                                                 timeout=5).read())
+            finally:
+                s.stop()
+        self.assertLessEqual(abs(got - t0), 2)
 
     def test_any_choice_ends_agent_only(self):
         cfg = model.agent_only(model.Config())

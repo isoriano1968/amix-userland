@@ -21,6 +21,8 @@
 # Needs: Xvfb ($XVFB or on PATH), fs-uae, xwd, python3 with GTK not needed;
 # for the Picasso II kernel AMIX_RTGFB_KIT and m68k-cbm-sysv4-ld on PATH.
 set -e
+# never the user's display: only FS-UAE gets one, the private Xvfb's
+unset DISPLAY WAYLAND_DISPLAY
 HERE=$(cd "$(dirname "$0")" && pwd)
 APP=$(cd "$HERE/../.." && pwd)
 if [ "$1" = --clean ]; then
@@ -39,6 +41,21 @@ W=$(cd "$W" && pwd)
 FAST=
 [ -z "$E2E_FAST" ] || FAST="--uae_cpu_speed=max --uae_cpu_cycle_exact=0 --uae_cycle_exact=0"
 export AMIX_E2E_DIR=$W
+# one FS-UAE end-to-end run at a time on this computer (ports 7777, 1069,
+# 8069; vscode-agent's tests/run-fsuae.sh takes the same lock): exit 75 = busy
+LOCK=${AMIX_E2E_LOCK:-${XDG_RUNTIME_DIR:-/tmp}/amix-fsuae-e2e.lock}
+exec 9>"$LOCK"
+flock -n 9 || { echo "e2e: another FS-UAE end-to-end run holds $LOCK"; exit 75; }
+# the curses screen check (amix-e2e.js): console-hello with AMIX's own curses,
+# VS Code's terminal engine; with the terminfo package the agent's TERM
+if [ -z "$AMIX_E2E_CURSES" ] && command -v m68k-elf-gcc >/dev/null; then
+	sh "$HERE/curses-hello.sh" "$W/hello-svr4" && export AMIX_E2E_CURSES="svr4=$W/hello-svr4"
+fi
+AGENT_TESTS=$APP/../../developer/vscode-agent/tests
+[ -d "$AGENT_TESTS/node_modules/@xterm/headless" ] || [ ! -f "$AGENT_TESTS/package.json" ] ||
+	(cd "$AGENT_TESTS" && npm install --silent)
+ls "$REPO"/publisher/amix/pkg/sysutils%2Fterminfo >/dev/null 2>&1 &&
+	export AMIX_E2E_TERM=${AMIX_E2E_TERM:-xterm-256color}
 PIDS=
 cleanup() { [ -z "$PIDS" ] || kill $PIDS 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
@@ -122,10 +139,11 @@ sleep 10
 shot boot1-end
 cp "$W/out/foundation-report.txt" "$W/" 2>/dev/null || true
 grep -q "amix: DONE" "$W/net.log" || { echo "e2e: boot 1 did not finish"; tail -30 "$W/net.log"; exit 1; }
+python3 "$HERE/clockcheck.py" "$W/net.log" || { echo "e2e: the AMIX clock is off"; exit 1; }
 # E2E_AGENT=1 (a profile with the VS Code agent): its own checks, AMIX still up
+KEY=$(cat "$W/out/vscode-agent.key" 2>/dev/null || true)
+U=$(sed -n 's/.*VS Code agent: runs programs as \([^,]*\), dials.*/\1/p' "$W/net.log" | tail -1)
 if [ -n "$E2E_AGENT" ]; then
-	KEY=$(cat "$W/out/vscode-agent.key" 2>/dev/null || true)
-	U=$(sed -n 's/.*VS Code agent: runs programs as \([^,]*\), dials.*/\1/p' "$W/net.log" | tail -1)
 	[ -n "$KEY" ] && [ -n "$U" ] || { echo "e2e: no agent key or user"; exit 1; }
 	E2E_TIMEOUT_MIN=${E2E_TIMEOUT_MIN:-15} node "$APP/../../developer/vscode-agent/tests/amix-e2e.js" \
 		"$KEY" 7777 "$U" > "$W/agent-e2e.log" 2>&1 || true
@@ -149,6 +167,8 @@ python3 -u "$HERE/tftpd.py" "$W/tftp" > "$W/tftpd.log" 2>&1 &
 PIDS="$PIDS $!"
 fsuae 2
 t=0
+rc=0
+CDE_DONE=
 until grep -q "put e2e-done" "$W/tftpd.log"; do
 	sleep 20; t=$((t + 20))
 	[ $((t % 120)) -ne 0 ] || shot "boot2-$(printf %05d $t)"
@@ -156,6 +176,24 @@ until grep -q "put e2e-done" "$W/tftpd.log"; do
 	for m in $(ls "$W/tftp/put" 2>/dev/null | grep '^shot-' || true); do
 		[ -f "$W/shots/boot2-$m.png" ] || shot "boot2-$m"
 	done
+	# E2E_CDE_SAMPLE=BINARY: once CDE runs, a Motif program through the VS Code
+	# agent on AMIX's own display (as Run on Target does), its window shot
+	if [ -n "$E2E_CDE_SAMPLE" ] && [ -z "$CDE_DONE" ] && [ -f "$W/tftp/put/shot-session" ]; then
+		CDE_DONE=1
+		node "$APP/../../developer/vscode-agent/tests/run-on-target.js" "$KEY" 7777 "$U" \
+			"$E2E_CDE_SAMPLE" --env DISPLAY=:0 --keep 45 --wait 5 > "$W/cde-sample.log" 2>&1 &
+		CPID=$!
+		PIDS="$PIDS $CPID"
+		sleep 30
+		shot boot2-cde-sample
+		if wait $CPID; then echo "e2e: the CDE sample ran on AMIX's display"
+		else echo "e2e: the CDE sample FAILED"; tail -8 "$W/cde-sample.log"; rc=1; fi
+	fi
 done
 shot boot2-end
 echo "e2e: boot 2 finished after ${t}s; screenshots in $W/shots"
+grep -q "put e2e-done" "$W/tftpd.log" || rc=1
+# what AMIX found wrong in boot 2 (go2.sh: "FAIL: ..." lines in its log)
+if grep "^FAIL" "$W/tftp/put/e2e-done" 2>/dev/null; then rc=1; fi
+[ -z "$E2E_CDE_SAMPLE" ] || [ -n "$CDE_DONE" ] || { echo "e2e: CDE never came up for the sample"; rc=1; }
+exit $rc

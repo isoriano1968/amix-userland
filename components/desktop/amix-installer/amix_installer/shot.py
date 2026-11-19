@@ -21,6 +21,8 @@ SCENES = [("%d-%s" % (i + 1, s.id), {}, {}, i) for i, s in enumerate(model.STEPS
     ("x-running-base", {"src": "run"}, {}, 0),
     ("x-single-disk-full", {"layout": "single"}, {}, model.step_index("disks")),
     ("x-running-summary", {"src": "run"}, {}, model.step_index("summary")),
+    # a running AMIX, VS Code agent chosen: the card with "Just the Agent"
+    ("x-running-vscode", {"src": "run"}, {"vscode": True}, model.step_index("dev")),
 ]
 # with --source: what the image holds, real sizes, installed marks
 SOURCE_SCENES = [
@@ -70,7 +72,9 @@ def run(win, outdir):
         from . import plan
         if plan.default_repo():
             scenes = [("n-net", {"src": "run"}, {}, 0), ("n-fsuae-net", {"src": "run"}, {}, 0),
-                      ("n-fetch-net", {"src": "run"}, {}, 0)]
+                      ("n-fetch-net", {"src": "run"}, {}, 0),
+                      ("n-agent-fsuae-net", {"src": "run"}, {}, 0),
+                      ("n-done-fsuae-net", {"src": "run"}, {}, 0)]
     out = os.environ.get("AMIX_SHOT_OUT")
     if out and getattr(win, "source_state", None):
         win.paths["out_dir"] = out
@@ -92,6 +96,8 @@ def run(win, outdir):
         from . import model as m
         source = st[1] if st and st[0] == "done" else None
         win.cfg = m.Config(sel=sel, on=on, source=source)
+        if "-agent-" in name:
+            win.cfg = m.agent_only(win.cfg)
         win.show_step(step)
         if name.endswith("-end"):
             after_paint(to_end)
@@ -104,7 +110,17 @@ def run(win, outdir):
             from . import plan
             win._net_page(plan.NetInstall("", plan.default_repo()), real=True,
                           emu=name.endswith("fsuae-net"))
-            if name.endswith("fetch-net"):
+            if "-done-" in name:
+                # an agent-only install that came to its end
+                for m in ("step 1: the system: UNIX_System_V amigaunix 4.0 2.1c 0800430 Amiga m68k",
+                          "step 5: the clock: sysutils/setclk, the time from this computer",
+                          "foundation sysutils/setclk installed",
+                          "step 6: packages: developer/vscode-agent (alone)",
+                          "VS Code agent: developer/vscode-agent installed",
+                          "step 8: removing the bootstrap", "DONE"):
+                    win.net.reported("msg", m)
+                GLib.timeout_add(1500, lambda: after_paint(net_grab) and False)
+            elif name.endswith("fetch-net"):
                 # AMIX in the middle of the base set: the bar while pkg fetches
                 for m in ("step 5: foundation: clock, base packages, syslogd",
                           "foundation sysutils/setclk installed",

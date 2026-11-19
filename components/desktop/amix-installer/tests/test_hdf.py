@@ -133,3 +133,61 @@ class Z3660Image(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+TEST_CORE = os.environ.get("AMIX_TEST_HDF",
+                           os.path.expanduser("~/Sources/usr-amix/pvmk/build/amix-test.hdf"))
+
+
+class FsUaeDisks(unittest.TestCase):
+    """The disks of an FS-UAE configuration: core, data disk at SCSI ID 1."""
+
+    def conf(self, d, drives):
+        p = os.path.join(d, "a.fs-uae")
+        with open(p, "w") as f:
+            f.write("[fs-uae]\namiga_model = A3000\n")
+            for n, (img, ctl) in enumerate(drives):
+                f.write("hard_drive_%d = %s\nhard_drive_%d_controller = %s\n" % (n, img, n, ctl))
+        return p
+
+    def test_empty_data_disk_found(self):
+        from amix_installer import fsuae
+        with tempfile.TemporaryDirectory() as d:
+            data = os.path.join(d, "x-data.hdf")
+            make_disk(data, [("UNIX_Data", 0x554e4901, 2, 50, None)])
+            p = self.conf(d, [(data, "scsi1")])
+            core, dd, owner = fsuae.amix_disks(p)
+            self.assertIsNone(core)
+            self.assertEqual(dd, (data, 49 * 32, True))
+            self.assertIsNone(owner)
+            with self.assertRaises(ValueError):          # no core disk to copy from
+                fsuae.add_data_disk(p, 1 << 30)
+
+    def test_scsi1_taken(self):
+        from amix_installer import fsuae
+        with tempfile.TemporaryDirectory() as d:
+            work = os.path.join(d, "work.hdf")
+            make_disk(work, [("Work", 0x444f5303, 2, 50, b"DOS\x03")])
+            p = self.conf(d, [(work, "scsi1")])
+            self.assertEqual(fsuae.amix_disks(p), (None, None, work))
+
+    @unittest.skipUnless(os.path.exists(TEST_CORE), "no AMIX core HDF here")
+    def test_add_data_disk(self):
+        from amix_installer import fsuae, model, netinstall
+        before = os.stat(TEST_CORE).st_mtime
+        with tempfile.TemporaryDirectory() as d:
+            p = self.conf(d, [(TEST_CORE, "scsi6")])
+            core, dd, _ = fsuae.amix_disks(p)
+            self.assertEqual((core, dd), (TEST_CORE, None))
+            out = os.path.join(d, "t-data.hdf")
+            self.assertEqual(fsuae.add_data_disk(p, 512 << 20, out=out), out)
+            self.assertTrue(os.path.exists(p + fsuae.KEPT_SUFFIX))
+            core, dd, _ = fsuae.amix_disks(p)
+            self.assertEqual(core, TEST_CORE)
+            self.assertEqual((dd[0], dd[2]), (out, True))
+            self.assertIn("hard_drive_1_controller = scsi1", open(p).read())
+            dev, secs, _ = netinstall.running_data_disk(model.Config(sel={"src": "run"}), p)
+            self.assertEqual((dev, secs), ("/dev/rdsk/c1d0s1", dd[1]))
+            with self.assertRaises(ValueError):          # one is enough
+                fsuae.add_data_disk(p, 512 << 20, out=out + "2")
+        self.assertEqual(os.stat(TEST_CORE).st_mtime, before)   # the core only read

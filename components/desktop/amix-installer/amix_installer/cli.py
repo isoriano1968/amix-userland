@@ -31,8 +31,18 @@ def main(argv=None):
     ap.add_argument("--vscode-only", action="store_true",
                     help="only the VS Code agent: a console system VS Code develops for")
     ap.add_argument("--agent-only", action="store_true",
-                    help="with --running: install or update the VS Code agent and nothing "
-                    "else (no base set, no package client)")
+                    help="with --running: set the clock (setclk) and install or update the "
+                    "VS Code agent, nothing else (no base set, no package client)")
+    ap.add_argument("--fs-uae-config", metavar="FILE",
+                    help="with --running fs-uae: the FS-UAE configuration AMIX runs with; "
+                    "its empty data disk (SCSI ID 1) gets its file system in the install")
+    ap.add_argument("--add-data-disk", metavar="SIZE", nargs="?", const="1g",
+                    help="with --fs-uae-config: write an empty AMIX data disk (default 1g; "
+                    "512m, 1g or 2g) beside its core disk and add it on SCSI ID 1, then exit; "
+                    "restart FS-UAE with it before the install")
+    ap.add_argument("--with-motif", action="store_true",
+                    help="with --agent-only: also the Motif and X11 run time (desktop/motif, "
+                    "x11/x11r6.3) that Motif and CDE programs need")
     ap.add_argument("--screenshot", metavar="DIR",
                     help="render every step to DIR/*.png and quit (tests)")
     ex = ap.add_mutually_exclusive_group()
@@ -43,7 +53,8 @@ def main(argv=None):
                     help="keep files of the same name in --out as <name>.<date>-<time>.bak")
     ap.add_argument("--version", action="version", version="%(prog)s " + __version__)
     args = ap.parse_args(argv)
-    if args.plan or args.apply or args.net:
+    # every command-line action runs here: only none of them opens the window
+    if args.plan or args.apply or args.net or args.add_data_disk:
         return run_plan(args)
     from .app import main as gui
     return gui(args)
@@ -61,7 +72,35 @@ def run_plan(args):
         for m in msgs:
             print("profile: %s" % m, file=sys.stderr)
     paths = {}
+    if args.add_data_disk:
+        from . import fsuae
+        sizes = {"512m": 512 << 20, "1g": 1 << 30, "2g": 2 << 30}
+        if not args.fs_uae_config or args.add_data_disk not in sizes:
+            print("amix-installer: --add-data-disk SIZE (512m, 1g, 2g) needs --fs-uae-config FILE",
+                  file=sys.stderr)
+            return 1
+        try:
+            out = fsuae.add_data_disk(args.fs_uae_config, sizes[args.add_data_disk])
+        except (ValueError, OSError) as e:
+            print("amix-installer: %s" % e, file=sys.stderr)
+            return 1
+        print("data disk: %s, added to %s on SCSI ID %d (the old file: %s%s)\n"
+              "Quit FS-UAE and start it again with this configuration, then run the install."
+              % (out, args.fs_uae_config, fsuae.DATA_SCSI_ID, args.fs_uae_config,
+                 fsuae.KEPT_SUFFIX))
+        return 0
+    if args.fs_uae_config and args.running != "fs-uae":
+        print("amix-installer: --fs-uae-config goes with --running fs-uae", file=sys.stderr)
+        return 1
+    if args.fs_uae_config:
+        paths["fs_uae_config"] = os.path.abspath(args.fs_uae_config)
     if args.running:
+        if args.running == "fs-uae":
+            # the machine is FS-UAE's A3000, its network card the A2065: a
+            # running AMIX is reached over it
+            cfg.sel["mach"], cfg.sel["accel"] = "uae", "none"
+            cfg.on["hw_a2065"] = True
+            cfg.sel["net"] = "net2065"
         cfg.sel["src"] = "run"
         paths["running"] = args.running
         cfg.normalize()
@@ -72,7 +111,10 @@ def run_plan(args):
             print("amix-installer: --agent-only needs --running fs-uae or --running amiga",
                   file=sys.stderr)
             return 1
-        model.agent_only(cfg)
+        model.agent_only(cfg, motif=args.with_motif)
+    elif args.with_motif:
+        print("amix-installer: --with-motif goes with --agent-only", file=sys.stderr)
+        return 1
     if args.source:
         paths["core_hdf"] = os.path.abspath(args.source)
         try:
@@ -149,7 +191,10 @@ def run_net(cfg, pl, paths=None):
         return 1
     real = cfg.in_place()
     try:
-        data_disk = None if real else netinstall.fs_uae_data_disk(pl)
+        if real and (paths or {}).get("fs_uae_config"):
+            data_disk = netinstall.running_data_disk(cfg, paths["fs_uae_config"])
+        else:
+            data_disk = None if real else netinstall.fs_uae_data_disk(pl)
     except (OSError, hdf.NotAnImage) as e:
         print("amix-installer: the data disk: %s (run --apply first)" % e, file=sys.stderr)
         return 1
@@ -181,6 +226,9 @@ def run_net(cfg, pl, paths=None):
             time.sleep(0.5)
         if s.failed:
             time.sleep(5)       # AMIX sends the end of its log right after FAILED
+            advice = netinstall.room_advice(s.failure, emu, (paths or {}).get("fs_uae_config"))
+            if advice:
+                print("amix-installer: %s" % advice, file=sys.stderr)
     except KeyboardInterrupt:
         print("\namix-installer: stopped", file=sys.stderr)
         return 130
