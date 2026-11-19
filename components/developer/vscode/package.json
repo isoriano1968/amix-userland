@@ -2,7 +2,7 @@
   "name": "vscode-amix",
   "displayName": "AMIX Development Tools",
   "description": "VS Code helpers for building AMIX m68k programs with gcc 2.7.2.3 (m68k-cbm-sysv4) or gcc 14 (gcc14-cross-amix).",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "publisher": "isoriano1968",
   "license": "MIT",
   "icon": "images/amix-logo.png",
