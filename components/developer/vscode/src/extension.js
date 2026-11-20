@@ -492,7 +492,10 @@ async function buildCurrent(kind) {
     ].join(' ');
   }
 
-  const terminal = vscode.window.createTerminal(`AMIX Build (${c.label})`);
+  // transient: a one-shot command, not a shell to bring back after a restart
+  const terminal = vscode.window.createTerminal({
+    name: `AMIX Build (${c.label})`, cwd: parsed.dir, isTransient: true
+  });
   terminal.show();
   terminal.sendText(command);
 }
@@ -520,7 +523,9 @@ async function runMake(clean, which) {
     `${exports} ${quote(c.makeCommand)} ${args.map(quote).join(' ')}`.trim()
   ].join(' && ');
 
-  const terminal = vscode.window.createTerminal(`AMIX Make (${c.label})`);
+  const terminal = vscode.window.createTerminal({
+    name: `AMIX Make (${c.label})`, cwd: makeDir, isTransient: true
+  });
   terminal.show();
   terminal.sendText(command);
 }

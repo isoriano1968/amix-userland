@@ -611,7 +611,9 @@ function openTerminal(agent, name, argv, s, dir) {
       finish({ error: err.message });
     });
   }
-  const term = vscode.window.createTerminal({ name: `AMIX: ${name} @ ${agent.name}`, pty });
+  // transient: VS Code must not bring this pty back as a shell after a
+  // restart (it did, with cwd "", and said the terminal failed to launch)
+  const term = vscode.window.createTerminal({ name: `AMIX: ${name} @ ${agent.name}`, pty, isTransient: true });
   term.show();
   return {
     name,

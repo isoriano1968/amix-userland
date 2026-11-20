@@ -58,7 +58,7 @@ const vscode = {
     },
     activeTextEditor: undefined,
     createTerminal: (o) => {
-      const t = { name: o.name, text: '', show() {} };
+      const t = { name: o.name, text: '', show() {}, opts: o };
       o.pty.onDidWrite((d) => { t.text += d; });
       t.pty = o.pty;
       terminals.push(t);
@@ -156,6 +156,7 @@ function waitFor(cond, ms, what) {
     const t = terminals[0];
     await waitFor(() => t.text.includes('hello world DISPLAY=:0'), 10000, 'program output');
     assert.ok(t.text.includes('size 30 100'), `started at the settled size: ${t.text}`);
+    assert.strictEqual(t.opts.isTransient, true, 'a Run on Target terminal is not restored after a restart');
     t.pty.handleInput('fine\r');
     await waitFor(() => t.text.includes('[hello exited with 4]'), 10000, 'exit');
     assert.ok(t.text.includes('you typed fine'), t.text);
