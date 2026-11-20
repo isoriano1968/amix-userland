@@ -69,7 +69,7 @@ stage:
 	# Manager entry; the control in the AMIX panel is desktop/cde-apps/panel
 	mkdir -p $(DT)/types/C $(DT)/icons/C $(DT)/appmanager/C/Desktop_Apps
 	cp files/netsurf.sh $(STAGE_DIR)$(PREFIX)/bin/netsurf
-	cp files/netsurf.dt $(DT)/types/C/
+	cp files/netsurf.dt files/netsurf.fp $(DT)/types/C/
 	python3 -I files/mkicons.py $(S)/frontends/gtk/res/netsurf.xpm $(DT)/icons/C
 	: > $(DT)/appmanager/C/Desktop_Apps/NetSurf
 	chmod 755 $(STAGE_DIR)$(PREFIX)/bin/netsurf $(DT)/appmanager/C/Desktop_Apps/NetSurf

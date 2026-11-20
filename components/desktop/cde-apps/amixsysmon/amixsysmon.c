@@ -38,6 +38,10 @@ enum { SORT_CPU, SORT_MEM, SORT_PID, SORT_NAME };
 
 static XtAppContext app;
 static Widget top, nb, plist, pstatus, gcpu, gmem, gnet, gc1, lcpu, lmem, lnet, lc1, fsarea, ztext, status;
+static int have_z3660;          /* amix-hw -q z3660: the Z3660 tab and core 1's network */
+static int kernel_ok;           /* ast_open found the running kernel */
+static char kernel_err[200];
+static unsigned long sys_user0, sys_all0;      /* sysinfo, when there is no prf */
 static Widget confirm;
 static GC gc;
 static Pixel c_bg, c_grid, c_user, c_kern, c_mem, c_swap, c_in, c_out, c_text, c_bar, c_barbg;
@@ -229,7 +233,8 @@ static void draw_graphs(void)
     draw_graph(gcpu, h_kern, c_kern, h_user, c_user, 1, 100);
     draw_graph(gmem, h_mem, c_mem, h_swap, c_swap, 0, 100);
     draw_graph(gnet, h_in, c_in, h_out, c_out, 0, net_top());
-    draw_graph(gc1, h_c1in, c_in, h_c1out, c_out, 0, rate_top(h_c1in, h_c1out, 100));
+    if (gc1)
+        draw_graph(gc1, h_c1in, c_in, h_c1out, c_out, 0, rate_top(h_c1in, h_c1out, 100));
 }
 
 static void expose_graph(Widget w, XtPointer cd, XtPointer cb)
@@ -499,6 +504,15 @@ static void sample(XtPointer data, XtIntervalId *id)
         }
         cpu0 = c;
         have_cpu0 = 1;
+    } else if (kernel_ok && ast_cpu(&c) == 0) {
+        /* no prf: the kernel's own counters, which book idle as kernel
+           time, so only the user share is known */
+        unsigned long all = c.user + c.kernel + c.wait;
+
+        push(h_user, sys_all0 && all > sys_all0 ? 100.0 * (c.user - sys_user0) / (all - sys_all0) : 0);
+        push(h_kern, 0);
+        sys_user0 = c.user;
+        sys_all0 = all;
     } else {
         push(h_user, 0);
         push(h_kern, 0);
@@ -522,7 +536,7 @@ static void sample(XtPointer data, XtIntervalId *id)
         push(h_out, 0);
     }
     free(ifs);
-    {
+    if (have_z3660) {
         /* core 1's own network: what it fetched (video streams) beside zen0 */
         struct ast_c1net n;
 
@@ -551,11 +565,13 @@ static void sample(XtPointer data, XtIntervalId *id)
     if (nhist < NHIST)
         nhist++;
 
-    if (c.prf)
+    if (!kernel_ok)
+        sprintf(m, "CPU   unknown: %.150s", kernel_err);
+    else if (c.prf)
         sprintf(m, "CPU   user %.0f %%   system %.0f %%   idle %.0f %%", h_user[nhist - 1], h_kern[nhist - 1],
                 100 - h_user[nhist - 1] - h_kern[nhist - 1]);
     else
-        sprintf(m, "CPU   unknown: the kernel profiler (/dev/prf) is in use for something else");
+        sprintf(m, "CPU   user %.0f %%   (system and idle not apart: %.100s)", h_user[nhist - 1], ast_prf_why());
     set_label(lcpu, m);
     human(a, mem.total - mem.free);
     human(b, mem.total);
@@ -583,7 +599,7 @@ static void sample(XtPointer data, XtIntervalId *id)
         if (tab == TAB_FS)
             draw_fs();
     }
-    if (tab == TAB_Z3660 && tick % 2 == 1)
+    if (have_z3660 && tab == TAB_Z3660 && tick % 2 == 1)
         show_ztop();
     XtAppAddTimeOut(app, 1000, sample, NULL);
 }
@@ -594,7 +610,7 @@ static void page_cb(Widget w, XtPointer cd, XtPointer cb)
     case TAB_PROCS: show_procs(); break;
     case TAB_RES:   draw_graphs(); break;
     case TAB_FS:    draw_fs(); break;
-    case TAB_Z3660: show_ztop(); break;
+    case TAB_Z3660: if (have_z3660) show_ztop(); break;
     }
 }
 
@@ -704,7 +720,8 @@ static void build_res(Widget f)
     gcpu = graph(f, NULL, &lcpu, "CPU");
     gmem = graph(f, XtParent(gcpu), &lmem, "Memory and Swap");
     gnet = graph(f, XtParent(gmem), &lnet, "Network");
-    gc1 = graph(f, XtParent(gnet), &lc1, "Core 1 network");
+    if (have_z3660)
+        gc1 = graph(f, XtParent(gnet), &lc1, "Core 1 network");
 }
 
 int main(int argc, char **argv)
@@ -718,6 +735,10 @@ int main(int argc, char **argv)
     top = XtVaOpenApplication(&app, "Amixsysmon", NULL, 0, &argc, argv, NULL, sessionShellWidgetClass,
                               XmNtitle, "System Monitor", XmNwidth, 760, XmNheight, 680, NULL);
     fail = ast_open(err, sizeof err);
+    kernel_ok = fail == 0;
+    strcpy(kernel_err, kernel_ok ? "" : err);
+    /* the board's parts only with the board (sysutils/amix-pkg's amix-hw) */
+    have_z3660 = access("/usr/bin/amix-hw", X_OK) == 0 && system("/usr/bin/amix-hw -q z3660") == 0;
     font = XLoadQueryFont(XtDisplay(top), "-*-courier-medium-r-normal--12-*-*-*-*-*-*-*");
     if (!font)
         font = XLoadQueryFont(XtDisplay(top), "fixed");
@@ -761,10 +782,11 @@ int main(int argc, char **argv)
     XtAddCallback(fsarea, XmNexposeCallback, expose_fs, NULL);
     XtAddCallback(fsarea, XmNresizeCallback, expose_fs, NULL);
 
-    f = tab("Z3660", TAB_Z3660);
-    {
+    if (have_z3660) {
         Arg a[8];
         int n = 0;
+
+        f = tab("Z3660", TAB_Z3660);
 
         XtSetArg(a[n], XmNeditMode, XmMULTI_LINE_EDIT); n++;
         XtSetArg(a[n], XmNeditable, False); n++;

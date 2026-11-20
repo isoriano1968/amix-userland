@@ -4,6 +4,9 @@ version  87a99d1
 # 68060 only: core 1 builds for the Z3660's 68060
 cpu      68060
 summary  ioquake3: the whole engine and its GL on the Z3660's core 1 (q3.sh, c1q3)
+# runs on the Z3660's ARM core 1: pkg and the installer leave it off a
+# machine without the board (amix-hw)
+hw       z3660-core1
 require  x11/mesa-183
 require  x11/x11r6.3
 require  library/lib060

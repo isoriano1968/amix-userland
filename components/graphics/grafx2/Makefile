@@ -50,7 +50,7 @@ stage:
 	cp $(S)/share/grafx2/gfx2def.ini $(S)/share/grafx2/gfx2.gif $(S)/share/grafx2/gfx2.png $(STAGE_DIR)$(DATA)/
 	cp $(S)/share/grafx2/skins/* $(STAGE_DIR)$(DATA)/skins/
 	cp $(S)/share/grafx2/fonts/*.png $(S)/share/grafx2/fonts/*.gif $(S)/share/grafx2/fonts/*.pcx $(STAGE_DIR)$(DATA)/fonts/
-	cp files/grafx2.dt $(DT)/types/C/
+	cp files/grafx2.dt files/grafx2.fp $(DT)/types/C/
 	python3 -I files/mkicons.py $(S)/share/grafx2/gfx2.png Grafx2 $(DT)/icons/C
 	: > $(DT)/appmanager/C/Desktop_Apps/Grafx2
 	chmod 755 $(STAGE_DIR)$(PREFIX)/bin/grafx2 $(DT)/appmanager/C/Desktop_Apps/Grafx2

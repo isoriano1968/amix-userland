@@ -1,0 +1,33 @@
+# name, version and what building and running it needs
+name     desktop/cde-z3660
+version  1.0
+summary  CDE for the Z3660: its window (temperatures, clocks, core 1 programs) and AmixCast (DLNA video through core 1)
+# the 68020..68060 baseline, tools/amix-cpu-scan clean
+cpu      68020
+# the Z3660's ARM core 1: pkg and the installer leave it off a machine
+# without the board; its CDE files are in /etc/dt/appconfig-hw/z3660-core1,
+# which the session searches only when amix-hw finds the board
+hw       z3660-core1
+require  x11/x11r6.3
+require  desktop/cde
+require  desktop/motif
+require  library/amixc99 >= 2
+# the AMIX control and its subpanel AmixPanel, which the control goes into
+require  desktop/cde-apps
+require  library/libupnp
+require  library/pth
+file     /etc/dt/appconfig-hw/z3660-core1/appmanager/C/Desktop_Apps/AmixCast
+file     /etc/dt/appconfig-hw/z3660-core1/appmanager/C/Desktop_Apps/ZtopCDE
+file     /etc/dt/appconfig-hw/z3660-core1/icons/C/AmixCast.l.pm
+file     /etc/dt/appconfig-hw/z3660-core1/icons/C/AmixCast.m.pm
+file     /etc/dt/appconfig-hw/z3660-core1/icons/C/AmixCast.t.pm
+file     /etc/dt/appconfig-hw/z3660-core1/icons/C/Z3660.l.pm
+file     /etc/dt/appconfig-hw/z3660-core1/icons/C/Z3660.m.pm
+file     /etc/dt/appconfig-hw/z3660-core1/icons/C/Z3660.t.pm
+file     /etc/dt/appconfig-hw/z3660-core1/types/C/amixcast.dt
+file     /etc/dt/appconfig-hw/z3660-core1/types/C/amixcast.fp
+file     /etc/dt/appconfig-hw/z3660-core1/types/C/ztopcde.dt
+file     /etc/dt/appconfig-hw/z3660-core1/types/C/ztopcde.fp
+file     /opt/amix/bin/amixcast
+file     /opt/amix/bin/ztopcde
+file     /opt/vplay/amixcast

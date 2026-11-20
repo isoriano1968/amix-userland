@@ -2,6 +2,9 @@
 name     games/iortcw
 version  438e7d4
 summary  Return to Castle Wolfenstein: the whole engine and its GL on the Z3660's core 1 (wolf.sh, c1q3)
+# runs on the Z3660's ARM core 1: pkg and the installer leave it off a
+# machine without the board (amix-hw)
+hw       z3660-core1
 require  x11/mesa-183
 require  x11/x11r6.3
 require  library/lib060

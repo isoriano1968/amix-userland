@@ -36,7 +36,7 @@ stage:
 	cd $(S) && cp -R PyDPainter.py libs gif2numpy data $(STAGE_DIR)$(DATA)/
 	rm -f $(STAGE_DIR)$(DATA)/data/Displayinfo.ods $(STAGE_DIR)$(DATA)/data/multiscale.py
 	sed 's|@DATA@|$(DATA)|' files/pydpainter.in > $(STAGE_DIR)$(PREFIX)/bin/pydpainter
-	cp files/pydpainter.dt $(DT)/types/C/
+	cp files/pydpainter.dt files/pydpainter.fp $(DT)/types/C/
 	python3 -I files/mkicons.py $(S)/data/logo.png PyDPainter $(DT)/icons/C
 	: > $(DT)/appmanager/C/Desktop_Apps/PyDPainter
 	chmod 755 $(STAGE_DIR)$(PREFIX)/bin/pydpainter $(DT)/appmanager/C/Desktop_Apps/PyDPainter

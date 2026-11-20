@@ -13,6 +13,7 @@ file     /etc/dt/appconfig/icons/C/Grafx2.l.pm
 file     /etc/dt/appconfig/icons/C/Grafx2.m.pm
 file     /etc/dt/appconfig/icons/C/Grafx2.t.pm
 file     /etc/dt/appconfig/types/C/grafx2.dt
+file     /etc/dt/appconfig/types/C/grafx2.fp
 file     /usr/local/bin/grafx2
 file     /usr/local/share/grafx2/fonts/5pxtinyfont.png
 file     /usr/local/share/grafx2/fonts/8pxfont.png

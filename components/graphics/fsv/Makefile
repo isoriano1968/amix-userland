@@ -39,7 +39,7 @@ stage:
 	cp build/fsv $(STAGE_DIR)$(PREFIX)/libexec/
 	cp files/fsv.sh $(STAGE_DIR)$(PREFIX)/bin/fsv
 	cp build/fsv.txt $(STAGE_DIR)$(DOC)/
-	cp files/fsv.dt $(DT)/types/C/
+	cp files/fsv.dt files/fsv.fp $(DT)/types/C/
 	python3 -I files/mkicons.py $(S)/src/xmaps/fsv-icon.xpm $(DT)/icons/C
 	: > $(DT)/appmanager/C/Desktop_Apps/Fsv
 	chmod 755 $(STAGE_DIR)$(PREFIX)/bin/fsv $(STAGE_DIR)$(PREFIX)/libexec/fsv $(DT)/appmanager/C/Desktop_Apps/Fsv

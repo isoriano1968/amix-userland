@@ -2,6 +2,9 @@
 name     demos/halloween
 version  1
 summary  Halloween intro on core 1
+# runs on the Z3660's ARM core 1: pkg and the installer leave it off a
+# machine without the board (amix-hw)
+hw       z3660-core1
 require  x11/x11r6.3
 require  audio/libmikmod
 require  x11/mesa-183

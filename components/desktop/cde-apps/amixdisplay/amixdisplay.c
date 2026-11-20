@@ -1,7 +1,10 @@
 /*
  * amixdisplay.c -- the Display settings for AMIX in CDE, after the Linux
  * desktops' panels: the screen resolution, refresh and colours of the
- * Xamix server on the Z3660.
+ * Xamix server, on whichever card it drives (/etc/X11/amix-card: z3660,
+ * zz9000, cirrus for the Picasso II).  The modes are the ones the running
+ * server reports through RandR; the monitor text and the login screen's
+ * default are the card's.
  *
  * The change is live through RandR 1.1 (x11/xserver-amix local-randr.patch).
  * After it, a dialog asks "Keep this screen mode?" for 20 seconds and goes
@@ -59,8 +62,48 @@
 #define KEEP_WAIT_MS 3000   /* after a size change: dtwm restarts first */
 #define MAXSIZES    64
 
-/* without RandR: the modes the Z3660 kernel driver and every Xamix (Xzz9000
-   before 2026-11-16) build know (zz9000hw.c before RandR, minus the ZZ9000-only 1920x800) */
+#define CARDFILE    "/etc/X11/amix-card"
+
+/* the card Xamix drives (the AMIX Installer writes /etc/X11/amix-card; Xamix-dt
+   reads it too): what the window says about the monitor, and the login
+   screen's mode when /etc/dt/config/rtg-mode sets none (Xamix-dt's default:
+   1920x1080 on the Z3660, else the card driver's own) */
+struct card {
+    const char *id, *monitor, *login_default;
+    int hdmi_table;             /* the fallback table below is its board's */
+};
+static const struct card cards[] = {
+    { "z3660", "Monitor: Z3660 HDMI output (it reads nothing from the monitor: "
+      "every board mode is listed)", "1920 x 1080 (the Z3660's default)", 1 },
+    { "zz9000", "Monitor: ZZ9000 HDMI output (it reads nothing from the monitor: "
+      "every board mode is listed)", "the ZZ9000 driver's default", 1 },
+    { "cirrus", "Monitor: Picasso II, analog RGB (it reads nothing from the monitor: "
+      "a mode it cannot show goes back by itself)", "1024 x 768 (the Picasso II's default)", 0 },
+    { NULL, "Monitor: the X server's screen", "the X server's default", 0 }
+};
+static const struct card *card;
+
+static const struct card *read_card(void)
+{
+    char s[32];
+    FILE *f = fopen(CARDFILE, "r");
+    int i;
+
+    s[0] = 0;
+    if (f) {
+        if (fscanf(f, "%31s", s) != 1)
+            s[0] = 0;
+        fclose(f);
+    }
+    for (i = 0; cards[i].id; i++)
+        if (strcmp(cards[i].id, s) == 0)
+            break;
+    return &cards[i];
+}
+
+/* without RandR, on the Z3660 or ZZ9000 only: the modes the Z3660 kernel driver
+   and every Xamix (Xzz9000 before 2026-11-16) build know (zz9000hw.c before
+   RandR, minus the ZZ9000-only 1920x800); another card shows its current size */
 static const short fallback[][2] = {
     { 640, 480 }, { 800, 600 }, { 1024, 768 }, { 1280, 720 },
     { 1280, 800 }, { 1280, 1024 }, { 1920, 1080 }
@@ -148,6 +191,14 @@ static void load_modes(void)
             return;
         }
         have_rr = 0;
+    }
+    if (!card->hdmi_table) {
+        modes[0].w = DisplayWidth(dpy, scr);
+        modes[0].h = DisplayHeight(dpy, scr);
+        modes[0].nrates = 0;
+        cur_size = 0;
+        nmodes = 1;
+        return;
     }
     for (i = 0; i < (int)(sizeof fallback / sizeof fallback[0]); i++) {
         modes[i].w = fallback[i][0];
@@ -313,6 +364,7 @@ static int apply_file(const char *path)
 
         have_rr = XRRQueryExtension(dpy, &eb, &erb);
     }
+    card = read_card();
     if (!have_rr || !read_conf(path, &w, &h, &rate)) {
         XCloseDisplay(dpy);
         return 0;
@@ -356,7 +408,7 @@ static void mode_text(char *s, int w, int h, int rate)
 
 static void show_state(void)
 {
-    char s[300], a[80], b[80];
+    char s[300], a[80], b[120];
     int w, h, rate;
 
     if (cur_size >= 0)
@@ -370,7 +422,7 @@ static void show_state(void)
     strcpy(a, "none");
     if (read_conf(user_path(), &w, &h, &rate))
         mode_text(a, w, h, rate);
-    strcpy(b, "1920 x 1080 (built in)");
+    strcpy(b, card->login_default);
     if (read_conf(SYSFILE, &w, &h, &rate))
         mode_text(b, w, h, rate);
     sprintf(s, "Your default: %s      Login screen: %s", a, b);
@@ -685,12 +737,12 @@ int main(int argc, char **argv)
     scr = DefaultScreen(dpy);
     root = RootWindow(dpy, scr);
     have_rr = XRRQueryExtension(dpy, &eb, &erb);
+    card = read_card();
     load_modes();
 
     form = XtVaCreateManagedWidget("form", xmFormWidgetClass, top, XmNmarginWidth, 10,
                                    XmNmarginHeight, 10, NULL);
-    l_mon = hsep_label(form, NULL, "Monitor: Z3660 HDMI output (it reads nothing from the "
-                                   "monitor: every board mode is listed)");
+    l_mon = hsep_label(form, NULL, card->monitor);
     l_now = hsep_label(form, l_mon, "");
     l_saved = hsep_label(form, l_now, "");
 
@@ -738,8 +790,8 @@ int main(int argc, char **argv)
     depth_opt = XmCreateOptionMenu(rc, "depth", a, n);
     set_label(XmOptionLabelGadget(depth_opt), "Colours: ");
     XtManageChild(depth_opt);
-    /* the Z3660's HDMI path is RGB565 (xserver-amix docs/DEPTH-24-32-EVALUATION.md):
-       the server has one depth, and another one would need a server restart */
+    /* one depth per server (the Z3660's HDMI path is RGB565, xserver-amix
+       docs/DEPTH-24-32-EVALUATION.md): another one would need a server restart */
     XtSetSensitive(depth_opt, False);
 
     l_info = hsep_label(form, rc, "");

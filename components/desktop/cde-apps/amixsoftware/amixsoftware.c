@@ -86,6 +86,9 @@
 #define SADM       "/var/sadm/pkg"	/* AMIXSOFTWARE_SADM for tests */
 #define CONTENTS   "/var/sadm/install/contents"
 #define IPS_ATTRS  "/var/pkg/publisher/amix/catalog/catalog.attrs"
+#define IPS_PATHS  "/var/pkg/paths"	/* pkg rewrites it after every change */
+#define AMIX_HW    "/usr/bin/amix-hw"	/* the boards (sysutils/amix-pkg); AMIXSOFTWARE_HW for tests */
+#define CACHE_NAME ".amixsoftware.cache"	/* in $HOME: the parsed IPS list between starts */
 #define DISCOVERY_PORT 8070
 #define MAXPKG     1500
 #define MAXCAT     64
@@ -107,6 +110,7 @@ struct pkg {
 	char cat[32];
 	char desc[256];
 	char cpu[8];			/* IPS: 68020, 68060 or "" */
+	char hw[24];			/* IPS: the board it needs (org.amix.hw: z3660-core1, a|b) or "" */
 	int installed;
 	int original;			/* apkg: installed without VERSION, Amix 2.1 */
 	char iver[40];			/* the installed version */
@@ -138,6 +142,8 @@ static int user_file;			/* ~/.amixsoftware exists */
 
 /* the programs, as found */
 static int ips_ok, apkg_ok, has060;
+static char machine_hw[80];		/* amix-hw: " z3660 z3660-core1 " (blank-framed) */
+static int loading;			/* the first load runs after the window shows */
 static char ips_ver[64], apkg_ver[64], ips_note[200];
 static char repo[256] = "(not set)", catalog[320] = DEF_CATDIR "/catalog";
 static char apkg_cachedir[256] = "", apkg_ns[64] = "";
@@ -442,17 +448,191 @@ static int save_user_settings(void)
 	return rename(tmp, user_settings());
 }
 
+/* ------------------------------------------------------------ the cache */
+
+/*
+ * ~/.amixsoftware.cache: what the first start costs on a 68030 (pkg version,
+ * apkg version, pkg list -at parsing the whole catalog) kept for the next
+ * one.  Each part carries the stat key (mtime, size, inode) of what it came
+ * from: the program, the catalog (refresh), /var/pkg/paths (every change);
+ * a part whose key differs is redone and the file rewritten.
+ *   #amixsoftware-cache 1
+ *   prog PATH KEY\tVERSION-OUTPUT
+ *   ips KEY
+ *   <pkg list -at, to the end>
+ */
+static char *cache_text;		/* the file, read once */
+
+static void stat_key(const char *path, char *out)
+{
+	struct stat st;
+
+	if (stat(path, &st) < 0)
+		strcpy(out, "-");
+	else
+		sprintf(out, "%ld.%ld.%ld", (long)st.st_mtime, (long)st.st_size, (long)st.st_ino);
+}
+
+static char *cache_path(void)
+{
+	static char p[300];
+	const char *h = getenv("HOME");
+
+	snprintf(p, sizeof p, "%s/%s", h && *h ? h : "/", CACHE_NAME);
+	return p;
+}
+
+static void cache_read(void)
+{
+	FILE *f;
+	struct stat st;
+
+	if (cache_text)
+		return;
+	if (stat(cache_path(), &st) < 0 || st.st_size > 2 * 1024 * 1024 || !(f = fopen(cache_path(), "r")))
+		return;
+	cache_text = malloc(st.st_size + 1);
+	if (cache_text) {
+		size_t n = fread(cache_text, 1, st.st_size, f);
+
+		cache_text[n] = 0;
+		if (strncmp(cache_text, "#amixsoftware-cache 1\n", 22)) {
+			free(cache_text);
+			cache_text = NULL;
+		}
+	}
+	fclose(f);
+}
+
+/* the line "WORD ARG KEY..." of the cache, or NULL; *rest after the key */
+static const char *cache_find(const char *word, const char *arg, const char *key)
+{
+	char head[600];
+	const char *s;
+	size_t l;
+
+	if (!cache_text)
+		return NULL;
+	snprintf(head, sizeof head, "\n%s %s%s%s", word, arg, arg[0] ? " " : "", key);
+	l = strlen(head);
+	for (s = cache_text; (s = strstr(s, head)) != NULL; s += l)
+		if (s[l] == '\t' || s[l] == '\n')
+			return s + l;
+	return NULL;
+}
+
+static void cache_write(const char *ips_key, const char *list)
+{
+	char tmp[320];
+	FILE *f;
+
+	snprintf(tmp, sizeof tmp, "%s.new", cache_path());
+	if (!(f = fopen(tmp, "w")))
+		return;
+	fprintf(f, "#amixsoftware-cache 1\n");
+	if (ips_ok) {
+		char k[80];
+
+		stat_key(cfg.ips_path, k);
+		fprintf(f, "prog %s %s\t%s\n", cfg.ips_path, k, ips_ver);
+	}
+	if (apkg_ok) {
+		char k[80];
+
+		stat_key(cfg.apkg_path, k);
+		fprintf(f, "prog %s %s\tapkg %s\n", cfg.apkg_path, k, apkg_ver);
+	}
+	if (ips_key && list)
+		fprintf(f, "ips %s\n%s", ips_key, list);
+	if (fclose(f) == 0)
+		rename(tmp, cache_path());
+	else
+		unlink(tmp);
+	free(cache_text);		/* read again next time */
+	cache_text = NULL;
+}
+
+/* the IPS list's key: pkg, its catalog, the installed paths */
+static void ips_key(char *out)
+{
+	char a[80], b[80], c[80];
+
+	stat_key(cfg.ips_path, a);
+	stat_key(IPS_ATTRS, b);
+	stat_key(IPS_PATHS, c);
+	sprintf(out, "%s/%s/%s", a, b, c);
+}
+
+/* ------------------------------------------------------------ the boards */
+
+static void read_machine_hw(void)
+{
+	const char *e = getenv("AMIXSOFTWARE_HW");
+	char out[80], *argv[2], *s;
+
+	out[0] = 0;
+	if (e)
+		copy(out, e, sizeof out);
+	else if (access(AMIX_HW, X_OK) == 0) {
+		argv[0] = AMIX_HW;
+		argv[1] = NULL;
+		if (capture(argv, out, sizeof out, NULL, 0) != 0)
+			out[0] = 0;
+	}
+	for (s = out; *s; s++)
+		if (*s == '\n' || *s == ',' || *s == '\t')
+			*s = ' ';
+	snprintf(machine_hw, sizeof machine_hw, " %s ", out);
+}
+
+/* does the machine have one of want's alternatives (a|b)? */
+static int has_hw(const char *want)
+{
+	char w[40], *a, *b;
+
+	copy(w, want, sizeof w);
+	for (a = w; a && *a; a = b) {
+		char look[44];
+
+		b = strchr(a, '|');
+		if (b)
+			*b++ = 0;
+		sprintf(look, " %s ", a);
+		if (strstr(machine_hw, look))
+			return 1;
+	}
+	return 0;
+}
+
+/* needs a board this machine does not have */
+static int hw_bad(const struct pkg *p)
+{
+	return p->hw[0] && !has_hw(p->hw);
+}
+
 /* ------------------------------------------------------------ the programs */
 
 /* is it there, and which version: "PATH version" prints it ("apkg 0.2.3" or "0.5.0") */
 static int check_program(const char *path, char *ver, const char *prefix)
 {
 	struct stat st;
-	char out[128], *argv[3];
+	char out[128], *argv[3], key[80];
+	const char *c;
 
 	ver[0] = 0;
 	if (path[0] != '/' || stat(path, &st) < 0 || !S_ISREG(st.st_mode) || access(path, X_OK) < 0)
 		return 0;
+	stat_key(path, key);
+	cache_read();
+	if ((c = cache_find("prog", path, key)) != NULL && *c == '\t') {
+		copy(out, c + 1, sizeof out);
+		if (strchr(out, '\n'))
+			*strchr(out, '\n') = 0;
+		if (!prefix || !strncmp(out, prefix, strlen(prefix))) {
+			copy(ver, out + (prefix ? strlen(prefix) : 0), 64);
+			return 1;
+		}
+	}
 	argv[0] = (char *)path;
 	argv[1] = "version";
 	argv[2] = NULL;
@@ -603,11 +783,11 @@ static int load_apkg(void)
 
 /* ------------------------------------------------------------ IPS data */
 
-/* one line of "pkg list -t": stem, version, flags, cpu, newest, requires, summary */
+/* one line of "pkg list -t": stem, version, flags, cpu, newest, requires, summary, hw */
 static void ips_line(char *line)
 {
 	struct pkg *p = &pk[npk];
-	char *s = line, *stem, *ver, *flags, *cpu, *newest, *deps, *sum, *slash;
+	char *s = line, *stem, *ver, *flags, *cpu, *newest, *deps, *sum, *hw, *slash;
 
 	if (npk >= MAXPKG || !*line)
 		return;
@@ -618,6 +798,7 @@ static void ips_line(char *line)
 	newest = next_field(&s);
 	deps = next_field(&s);
 	sum = next_field(&s);
+	hw = next_field(&s);		/* pkg 0.5.2 on; "" from an older pkg */
 	if (!*stem || !*ver || strlen(flags) < 2)
 		return;
 	memset(p, 0, sizeof *p);
@@ -631,6 +812,7 @@ static void ips_line(char *line)
 		copy(p->iver, ver, sizeof p->iver);
 	copy(p->version, strcmp(newest, "-") ? newest : ver, sizeof p->version);
 	copy(p->cpu, strcmp(cpu, "-") ? cpu : "", sizeof p->cpu);
+	copy(p->hw, strcmp(hw, "-") ? hw : "", sizeof p->hw);
 	copy(p->deps, strcmp(deps, "-") ? deps : "", sizeof p->deps);
 	copy(p->desc, sum, sizeof p->desc);
 	slash = strchr(stem, '/');
@@ -645,6 +827,19 @@ static void ips_line(char *line)
 	npk++;
 }
 
+/* the lines of pkg list -t (text is cut up) */
+static void ips_parse(char *text)
+{
+	char *line, *nl;
+
+	for (line = text; line && *line; line = nl) {
+		nl = strchr(line, '\n');
+		if (nl)
+			*nl++ = 0;
+		ips_line(line);
+	}
+}
+
 /* 0; -1 no catalog yet (installed ones only) */
 static int load_ips(void)
 {
@@ -653,8 +848,18 @@ static int load_ips(void)
 	struct stat st;
 	int r;
 
+	char key[260];
+	const char *c;
+
 	ips_note[0] = 0;
 	ips_time = stat(IPS_ATTRS, &st) == 0 ? st.st_mtime : 0;
+	ips_key(key);
+	cache_read();
+	if ((c = cache_find("ips", "", key)) != NULL && *c == '\n') {
+		copy(out, c + 1, sizeof out);
+		ips_parse(out);
+		return 0;
+	}
 	argv[0] = cfg.ips_path;
 	argv[1] = "list";
 	argv[2] = "-at";
@@ -668,13 +873,9 @@ static int load_ips(void)
 		strcpy(ips_note, strstr(err, "no catalog") ? "no catalog yet: Check for Updates"
 							   : "pkg list failed");
 		r = -1;
-	}
-	for (line = out; line && *line; line = nl) {
-		nl = strchr(line, '\n');
-		if (nl)
-			*nl++ = 0;
-		ips_line(line);
-	}
+	} else
+		cache_write(key, out);
+	ips_parse(out);
 	return r;
 }
 
@@ -714,16 +915,19 @@ static void pair_twins(void)
 				}
 }
 
-/* hidden: a 68060-only package on a machine without one, unless asked for */
+/* hidden: a 68060-only package on a machine without one, unless asked for;
+ * one that needs a board this machine has not (org.amix.hw), always */
 static int hidden(const struct pkg *p)
 {
-	return !cfg.show060 && !has060 && !strcmp(p->cpu, "68060") && !p->installed;
+	if (p->installed)
+		return 0;
+	return hw_bad(p) || (!cfg.show060 && !has060 && !strcmp(p->cpu, "68060"));
 }
 
-/* runs on a 68060 only, and this machine has none */
+/* cannot run here: 68060 only and no 68060, or a board it needs is missing */
 static int cpu_bad(const struct pkg *p)
 {
-	return !has060 && !strcmp(p->cpu, "68060");
+	return (!has060 && !strcmp(p->cpu, "68060")) || hw_bad(p);
 }
 
 static int ips_state = 0, apkg_state = 0;	/* load results: 0 ok, -1 no catalog, -2 bad */
@@ -735,6 +939,7 @@ static void load_all(void)
 	npk = ncats = 0;
 	check_programs();
 	load_apkg_conf();
+	read_machine_hw();
 	ips_state = ips_ok ? load_ips() : 0;
 	apkg_state = cfg.apkg_on ? load_apkg() : 0;
 	pair_twins();
@@ -853,6 +1058,8 @@ static void state_word(const struct pkg *p, char *out)
 		strcpy(out, "Amix 2.1");
 	else if (p->installed)
 		strcpy(out, "installed");
+	else if (hw_bad(p))
+		strcpy(out, "board only");
 	else if (cpu_bad(p))
 		strcpy(out, "68060 only");
 	else
@@ -1082,6 +1289,8 @@ static void show_details(void)
 		strcpy(s, "Installed, part of the original Amix 2.1");
 	else if (p->installed)
 		sprintf(s, "Installed %s", p->iver);
+	else if (hw_bad(p))
+		sprintf(s, "Needs the board %s; this machine has none", p->hw);
 	else if (cpu_bad(p))
 		strcpy(s, "Needs a 68060; this machine has none");
 	else
@@ -1212,7 +1421,7 @@ static void (*queue_after)(void);
 
 static int busy(void)
 {
-	return child > 0 || cur_job >= 0;
+	return child > 0 || cur_job >= 0 || loading;
 }
 
 static struct job *new_job(const char *title)
@@ -3040,6 +3249,123 @@ static void start_check_cb(XtPointer cd, XtIntervalId *id)
 	check_cb(NULL, NULL, NULL);
 }
 
+/*
+ * The first load, after the window shows: pkg list -at (the whole catalog,
+ * slow on a 68030) runs as a child read through XtAppAddInput, so the window
+ * stays drawn and the status line says what it waits for.  From the cache
+ * (~/.amixsoftware.cache, when nothing changed) there is no child at all.
+ */
+static pid_t load_pid = -1;
+static int load_fd = -1;
+static XtInputId load_in;
+static char *load_buf;
+static int load_len, load_cap;
+static char load_key[260];
+
+static void finish_load(void)
+{
+	char s[500];
+	int i;
+
+	apkg_state = cfg.apkg_on ? load_apkg() : 0;
+	pair_twins();
+	for (i = 0; i < npk; i++)
+		cat_index(pk[i].cat);
+	qsort(cats, ncats, sizeof cats[0], cmp_cat);
+	loading = 0;
+	fill_cats();
+	fill_pkgs();
+	refresh_status();
+	set_sensitivity();
+	if (cfg.apkg_on && apkg_state == -2) {
+		sprintf(s, "%s is not an apkg catalog (version 1).", catalog);
+		message(s, 2);
+	}
+	update_warning();
+	if (cfg.update_at_start && (ips_ok || apkg_ok))
+		XtAppAddTimeOut(app, 300, start_check_cb, NULL);
+}
+
+static void load_input(XtPointer cd, int *fd, XtInputId *id)
+{
+	int r, st;
+
+	if (load_len + 4097 > load_cap) {
+		char *n = realloc(load_buf, load_cap + 65536);
+
+		if (n) {
+			load_buf = n;
+			load_cap += 65536;
+		}
+	}
+	if (load_len + 4097 <= load_cap && (r = read(*fd, load_buf + load_len, 4096)) > 0) {
+		load_len += r;
+		return;
+	}
+	XtRemoveInput(load_in);
+	close(load_fd);
+	load_fd = -1;
+	while (waitpid(load_pid, &st, 0) < 0 && errno == EINTR)
+		;
+	load_pid = -1;
+	if (load_buf && WIFEXITED(st) && WEXITSTATUS(st) == 0) {
+		load_buf[load_len] = 0;
+		cache_write(load_key, load_buf);
+		ips_parse(load_buf);
+		ips_state = 0;
+	} else
+		ips_state = load_ips();	/* no catalog yet and the like: the full way, with its notes */
+	free(load_buf);
+	load_buf = NULL;
+	load_len = load_cap = 0;
+	finish_load();
+}
+
+static void start_load_cb(XtPointer cd, XtIntervalId *id)
+{
+	struct stat st;
+	const char *c;
+	int p[2];
+
+	npk = ncats = 0;
+	has060 = cpu_has_060();
+	check_programs();
+	load_apkg_conf();
+	read_machine_hw();
+	ips_note[0] = 0;
+	ips_state = 0;
+	if (!ips_ok) {
+		finish_load();
+		return;
+	}
+	ips_time = stat(IPS_ATTRS, &st) == 0 ? st.st_mtime : 0;
+	ips_key(load_key);
+	if ((c = cache_find("ips", "", load_key)) != NULL && *c == '\n') {
+		ips_state = load_ips();		/* reads the cache */
+		finish_load();
+		return;
+	}
+	status("Loading the IPS catalog (pkg list)...");
+	if (pipe(p) < 0 || (load_pid = fork()) < 0) {
+		ips_state = load_ips();
+		finish_load();
+		return;
+	}
+	if (load_pid == 0) {
+		int nul = open("/dev/null", O_RDWR);
+
+		dup2(nul, 0);
+		dup2(p[1], 1);
+		dup2(nul, 2);
+		close(p[0]);
+		execl(cfg.ips_path, cfg.ips_path, "list", "-at", (char *)NULL);
+		_exit(127);
+	}
+	close(p[1]);
+	load_fd = p[0];
+	load_in = XtAppAddInput(app, load_fd, (XtPointer)XtInputReadMask, load_input, NULL);
+}
+
 static Widget source_menu(Widget parent)
 {
 	Widget pd = XmCreatePulldownMenu(parent, "sourcepd", NULL, 0), om, b;
@@ -3268,11 +3594,13 @@ int main(int argc, char **argv)
 	make_repos();
 	make_prefs();
 
-	reload();
+	/* the window first, the catalogs after (start_load_cb) */
+	loading = 1;
+	status("Loading catalogs...");
+	set_sensitivity();
 	XtRealizeWidget(top);
 	XmProcessTraversal(l_pkgs, XmTRAVERSE_CURRENT);
-	if (cfg.update_at_start && (ips_ok || apkg_ok))
-		XtAppAddTimeOut(app, 300, start_check_cb, NULL);
+	XtAppAddTimeOut(app, 100, start_load_cb, NULL);
 	XtAppMainLoop(app);
 	return 0;
 }

@@ -1,8 +1,9 @@
 # name, version and what building and running it needs
 name     graphics/fsv
 version  4ef9040
-# the 68020..68060 baseline, tools/amix-cpu-scan clean
-cpu      68020
+# its own code is the 68020..68060 baseline, but it needs x11/mesa-183,
+# which is 68060 only: the package is too (pkg, Software Center)
+cpu      68060
 summary  fsv: 3D file system visualizer (IRIX fsn clone), Motif interface
 require  x11/x11r6.3
 require  desktop/motif

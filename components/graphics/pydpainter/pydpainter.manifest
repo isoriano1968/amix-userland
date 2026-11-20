@@ -2,6 +2,9 @@
 name     graphics/pydpainter
 version  2.2.1
 summary  PyDPainter: Deluxe Paint clone in Python 3 and pygame
+# Python only, but it needs library/python/numpy and pygame, which are
+# 68060 only (lib060): the package is too (pkg, Software Center)
+cpu      68060
 require  runtime/python3
 require  library/python/pygame
 require  library/python/numpy
@@ -14,6 +17,7 @@ file     /etc/dt/appconfig/icons/C/PyDPainter.l.pm
 file     /etc/dt/appconfig/icons/C/PyDPainter.m.pm
 file     /etc/dt/appconfig/icons/C/PyDPainter.t.pm
 file     /etc/dt/appconfig/types/C/pydpainter.dt
+file     /etc/dt/appconfig/types/C/pydpainter.fp
 file     /usr/local/bin/pydpainter
 file     /usr/local/share/pydpainter/PyDPainter.py
 file     /usr/local/share/pydpainter/data/FreeSans.ttf

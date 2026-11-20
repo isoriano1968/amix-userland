@@ -28,7 +28,7 @@ stage:
 	rm -rf $(STAGE_DIR)
 	mkdir -p $(STAGE_DIR)$(PREFIX)/bin $(DT)/types/C $(DT)/icons/C $(DT)/appmanager/C/Desktop_Apps
 	cp build/nedit build/nc $(STAGE_DIR)$(PREFIX)/bin/
-	cp files/nedit.dt $(DT)/types/C/
+	cp files/nedit.dt files/nedit.fp $(DT)/types/C/
 	python3 -I files/mkicons.py $(DT)/icons/C
 	: > $(DT)/appmanager/C/Desktop_Apps/NEdit
 	chmod 755 $(DT)/appmanager/C/Desktop_Apps/NEdit

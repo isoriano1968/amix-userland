@@ -6,6 +6,9 @@ version  fc1cb90
 cpu      68020
 cpu-skip /opt/uae/bench/coremark.060 a benchmark for the emulated Amiga's 68060, not AMIX code
 summary  Amiga emulator (uae4arm) on the Z3660's ARM core 1, run from AMIX by c1uae
+# runs on the Z3660's ARM core 1: pkg and the installer leave it off a
+# machine without the board (amix-hw)
+hw       z3660-core1
 require  library/zlib
 # libamixc99.so.1 (gcc 14's specs make objects that call C99 functions NEED it)
 require  library/amixc99 >= 2

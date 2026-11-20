@@ -7,8 +7,9 @@
  *
  * It writes /etc/dt/config/rtg-mode and nothing else.  Xamix-dt passes the
  * whole of line 1 to the server's -mode, so line 1 is exactly "WxH"; line 2
- * is "rate N" when a rate is given.  Only the sizes of the Z3660 kernel
- * driver's table that Xamix knows are accepted, and the rate must be
+ * is "rate N" when a rate is given.  Only the sizes of the card Xamix
+ * drives (/etc/X11/amix-card) are accepted: a size the card cannot show
+ * would stop the X server at every dtlogin start.  The rate must be
  * between 20 and 120 Hz.  The file is written next to the old one and
  * renamed over it, so a reader never sees half a file.
  */
@@ -26,13 +27,20 @@
 #define FILE_   "/etc/dt/config/rtg-mode"
 #define TMP     "/etc/dt/config/rtg-mode.new"
 
+#define CARDFILE "/etc/X11/amix-card"
+
 /* zz9k_modes_z3660 (amix-gate io/zz9000) that Xamix has in its table:
-   2560x1440 is not in it, 1920x800 is ZZ9000 only */
+   2560x1440 is not in it, 1920x800 is ZZ9000 only; the ZZ9000 has these too */
 static const int sizes[][2] = {
     { 640, 400 }, { 640, 480 }, { 640, 512 }, { 720, 480 }, { 720, 576 },
     { 800, 600 }, { 1024, 768 }, { 1280, 720 }, { 1280, 800 }, { 1280, 1024 },
     { 1366, 768 }, { 1600, 900 }, { 1600, 1200 }, { 1680, 1050 }, { 1920, 1080 },
     { 1920, 1200 }
+};
+
+/* the Picasso II (card cirrus): xserver-amix's cirrusModes[] */
+static const int cirrus_sizes[][2] = {
+    { 640, 480 }, { 800, 600 }, { 1024, 768 }
 };
 
 static int number(const char *s, const char **end)
@@ -64,11 +72,29 @@ int main(int argc, char **argv)
     h = number(p + 1, &p);
     if (h < 0 || *p)
         goto bad;
-    for (i = 0; i < (int)(sizeof sizes / sizeof sizes[0]); i++)
-        if (sizes[i][0] == w && sizes[i][1] == h)
-            break;
-    if (i == (int)(sizeof sizes / sizeof sizes[0]))
-        goto bad;
+    {
+        char card[32];
+        FILE *f = fopen(CARDFILE, "r");
+        const int (*tab)[2] = sizes;
+        int n = (int)(sizeof sizes / sizeof sizes[0]);
+
+        card[0] = 0;
+        if (f) {
+            if (fscanf(f, "%31s", card) != 1)
+                card[0] = 0;
+            fclose(f);
+        }
+        if (strcmp(card, "cirrus") == 0) {
+            tab = cirrus_sizes;
+            n = (int)(sizeof cirrus_sizes / sizeof cirrus_sizes[0]);
+        }
+        for (i = 0; i < n; i++)
+            if (tab[i][0] == w && tab[i][1] == h)
+                break;
+        /* the ZZ9000 has 1920x800 of its own */
+        if (i == n && !(strcmp(card, "zz9000") == 0 && w == 1920 && h == 800))
+            goto bad;
+    }
     if (argc == 3) {
         rate = number(argv[2], &p);
         if (rate < 0 || *p || (rate != 0 && (rate < 20 || rate > 120)))
@@ -101,7 +127,7 @@ int main(int argc, char **argv)
     }
     return 0;
 bad:
-    fprintf(stderr, "setlogin: not a mode of the Z3660 X server: %s%s%s\n", argv[1],
+    fprintf(stderr, "setlogin: not a mode of this card's X server: %s%s%s\n", argv[1],
             argc == 3 ? " " : "", argc == 3 ? argv[2] : "");
     return 2;
 }

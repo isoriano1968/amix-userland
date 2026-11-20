@@ -6,14 +6,24 @@
 # that dtlogin's signals (reset, terminate) reach the server itself.
 # The card is the server's choice: /etc/X11/amix-card (the AMIX Installer
 # writes it: cirrus for the Picasso II, zz9000, z3660).  Mode: $RTG_MODE, else
-# the first word of /etc/dt/config/rtg-mode, else 1920x1080 on the Z3660 RTG
-# and the card's own default on the others.
+# the first word of /etc/dt/config/rtg-mode (on the Picasso II only one of
+# its sizes), else 1920x1080 on the Z3660 RTG and the card's own default on
+# the others (the Picasso II: 1024x768).
 ulimit -v 131072 2> /dev/null || ulimit -m 131072 2> /dev/null
 ulimit -d 65536 2> /dev/null
 MODE=${RTG_MODE-}
 # the first word of line 1 only: the line may carry a comment after the mode
 [ -z "$MODE" ] && [ -r /etc/dt/config/rtg-mode ] && MODE=`awk 'NR == 1 { print $1; exit }' /etc/dt/config/rtg-mode`
 CARD=`cat /etc/X11/amix-card 2> /dev/null`
+# a saved mode the card cannot show would stop the server at every start:
+# the Picasso II (cirrus) has 640x480, 800x600 and 1024x768 (its default)
+if [ "$CARD" = cirrus ]; then
+	case "$MODE" in
+	""|640x480|800x600|1024x768) ;;
+	*)	echo "Xamix-dt: $MODE is not a Picasso II mode: the card's default" >> /var/dt/Xamix.log 2> /dev/null
+		MODE= ;;
+	esac
+fi
 [ -z "$MODE" ] && [ "$CARD" = z3660 ] && MODE=1920x1080
 LD_LIBRARY_PATH=/usr/lib:/usr/amiga/lib
 export LD_LIBRARY_PATH
