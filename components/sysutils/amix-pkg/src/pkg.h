@@ -188,6 +188,7 @@ struct installed {
 	struct manifest m;
 };
 int installed_list(const struct image *im, struct installed **out, size_t *n);
+int installed_list_light(const struct image *im, struct installed **out, size_t *n);
 int installed_each(const struct image *im, void (*fn)(struct installed *, void *), void *arg);
 void installed_free(struct installed *p, size_t n);
 

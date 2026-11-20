@@ -13,7 +13,7 @@
 
 #include "pkg.h"
 
-#define VERSION_STRING	"0.5.3"
+#define VERSION_STRING	"0.5.5"
 
 static struct image im;
 
@@ -344,7 +344,7 @@ list_or_search(int argc, char **argv, const char *text)
 	}
 	argc -= optidx;
 	argv += optidx;
-	installed_list(&im, &in, &nin);
+	installed_list_light(&im, &in, &nin);	/* names and versions: no actions */
 	have_cat = catalog_load(&im, &cat) == 0;
 	if ((all || upd) && !have_cat) {
 		installed_free(in, nin);

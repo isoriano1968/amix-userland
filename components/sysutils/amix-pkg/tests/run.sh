@@ -355,6 +355,15 @@ if [ -x "$PUB" ] && command -v python3 >/dev/null 2>&1; then
 	expect "autoremove: again nothing" 0 "nothing to remove" "$PKG" -R "$H" --min-free 0 autoremove
 	rm -f "$H/var/pkg/requested"
 	expect "autoremove: no record, list only" 0 "no record of what you asked for" "$PKG" -R "$H" --min-free 0 autoremove
+	# leaves only: app's own requirement is not listed while app is there
+	hbpkg demo/emu 1.0,2.1-3 "" a usr/local/share/emu
+	"$PKG" -R "$H" refresh
+	"$PKG" -R "$H" --min-free 0 install demo/emu > /dev/null
+	hbpkg demo/app 1.0,2.1-3 "depend fmri=pkg:/demo/emu@1.0 type=require" b usr/local/share/app
+	"$PKG" -R "$H" refresh; "$PKG" -R "$H" --min-free 0 update > /dev/null
+	rm -f "$H/var/pkg/requested"
+	expect "autoremove: no record, leaf listed" 0 "  demo/app" "$PKG" -R "$H" --min-free 0 autoremove
+	expect "autoremove: no record, required not listed" 0 "" sh -c "! '$PKG' -R '$H' --min-free 0 autoremove | grep -q '  demo/emu'"
 	expect "autoremove: app still there" 0 "demo/app" "$PKG" -R "$H" list
 else
 	echo "skip hold (no tools/amix-publish)"

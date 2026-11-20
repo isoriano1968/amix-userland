@@ -3,7 +3,7 @@
 #   make test    a host build, its unit tests and tests/run.sh against tests/repo
 #   make stage   build/stage/usr/bin/pkg
 COMPONENT_NAME    = amix-pkg
-COMPONENT_VERSION = 0.5.3
+COMPONENT_VERSION = 0.5.5
 
 include ../../../make-rules/shared.mk
 

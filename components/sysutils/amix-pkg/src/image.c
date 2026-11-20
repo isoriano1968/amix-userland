@@ -515,8 +515,10 @@ cmp_inst(const void *a, const void *b)
  * and takes it over (keep or free it), so callers that only look need not
  * hold all manifests at once
  */
-int
-installed_each(const struct image *im, void (*fn)(struct installed *, void *), void *arg)
+/* light: only the pkg.fmri line of each manifest (in.m holds just that):
+ * pkg list needs names and versions, not 3 MB of actions */
+static int
+installed_walk(const struct image *im, void (*fn)(struct installed *, void *), void *arg, int light)
 {
 	char *dir = image_path(im, "installed");
 	DIR *d = opendir(dir);
@@ -536,7 +538,21 @@ installed_each(const struct image *im, void (*fn)(struct installed *, void *), v
 		if (e->d_name[0] == '.' || strstr(e->d_name, ".new"))
 			continue;
 		f = root_path(dir, e->d_name);
-		if (read_file(f, &b) < 0 || manifest_parse(b.data, b.len, &in.m) < 0) {
+		if (read_file(f, &b) == 0 && light) {
+			char *l = b.data, *nl;
+
+			for (; l && *l; l = nl ? nl + 1 : NULL) {
+				nl = strchr(l, '\n');
+				if (!strncmp(l, "set ", 4) && strstr(l, "name=pkg.fmri")) {
+					if (nl)
+						nl[1] = 0;
+					memmove(b.data, l, strlen(l) + 1);
+					b.len = strlen(b.data);
+					break;
+				}
+			}
+		}
+		if (!b.data || manifest_parse(b.data, b.len, &in.m) < 0) {
 			warnx("%s: unreadable", f);
 			buf_free(&b);
 			free(f);
@@ -560,6 +576,12 @@ installed_each(const struct image *im, void (*fn)(struct installed *, void *), v
 	return 0;
 }
 
+int
+installed_each(const struct image *im, void (*fn)(struct installed *, void *), void *arg)
+{
+	return installed_walk(im, fn, arg, 0);
+}
+
 struct inlist {
 	struct installed *v;
 	size_t n;
@@ -580,6 +602,20 @@ installed_list(const struct image *im, struct installed **out, size_t *n)
 	struct inlist l = { NULL, 0 };
 
 	installed_each(im, inlist_add, &l);
+	if (l.n)
+		qsort(l.v, l.n, sizeof(*l.v), cmp_inst);
+	*out = l.v;
+	*n = l.n;
+	return 0;
+}
+
+/* names and versions only (in[i].m: just the pkg.fmri action) */
+int
+installed_list_light(const struct image *im, struct installed **out, size_t *n)
+{
+	struct inlist l = { NULL, 0 };
+
+	installed_walk(im, inlist_add, &l, 1);
 	if (l.n)
 		qsort(l.v, l.n, sizeof(*l.v), cmp_inst);
 	*out = l.v;

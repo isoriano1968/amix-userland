@@ -47,7 +47,9 @@ it), and everything else is updated. Named, such an update is refused.
 `pkg install NAME` notes NAME in `var/pkg/requested` (from 0.5.3 on); `pkg
 autoremove` removes what no installed package requires and was not asked
 for, again until nothing more goes (pkg itself stays). An image from before
-0.5.3 has no such record: autoremove only lists the candidates there.
+0.5.3 has no such record: autoremove then only lists the true leaves (what no
+installed package requires), marking those whose newest version cannot run
+here and the libraries, and removes nothing.
 
 Every change is checked first: no path of another IPS package, of stock
 AMIX or an SVR4 package (`/var/sadm/install/contents`; directories may be

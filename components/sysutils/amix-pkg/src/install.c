@@ -1827,8 +1827,11 @@ out:
 
 /*
  * pkg autoremove [-n]: what nothing installed requires and nobody asked for
- * (var/pkg/requested), again and again until nothing more goes; never pkg
- * itself.  Without the record (an image from before 0.5.3) only the list.
+ * (var/pkg/requested), pass after pass until nothing more goes (each pass
+ * against what was installed at its start); never pkg itself.  Without the
+ * record (an image from before 0.5.3) only the true leaves are listed, one
+ * pass, with what marks a likely one (its newest version cannot run here,
+ * a library), and nothing is removed.
  */
 int
 cmd_autoremove(struct image *im)
@@ -1846,6 +1849,8 @@ cmd_autoremove(struct image *im)
 		buf_add(&req, "", 0);
 	installed_list(im, &in, &nin);
 	while (more) {
+		size_t pass_gone = ngone;	/* the needed test looks at the start of the pass */
+
 		more = 0;
 		for (i = 0; i < nin; i++) {
 			size_t k, a;
@@ -1859,7 +1864,7 @@ cmd_autoremove(struct image *im)
 			for (k = 0; k < nin && !needed; k++) {
 				int kgone = 0;
 
-				for (a = 0; a < ngone; a++)
+				for (a = 0; a < pass_gone; a++)
 					if (!strcmp(gone[a], in[k].stem))
 						kgone = 1;
 				if (k == i || kgone)
@@ -1882,14 +1887,34 @@ cmd_autoremove(struct image *im)
 				more = 1;
 			}
 		}
+		if (!have_req)
+			more = 0;		/* leaves only: their requirements may be wanted */
 	}
 	if (!ngone)
 		printf("nothing to remove\n");
 	else if (!have_req) {
+		struct catalog cat;
+		int have_cat = catalog_load(im, &cat) == 0;
+
 		printf("nothing installed requires these; pkg has no record of what you asked for\n"
 		    "(it keeps one from 0.5.3 on): remove the ones you do not want with pkg uninstall\n");
-		for (i = 0; i < ngone; i++)
-			printf("  %s\n", gone[i]);
+		for (i = 0; i < ngone; i++) {
+			const struct catpkg *cp = have_cat ? catalog_find(&cat, gone[i]) : NULL;
+			const struct catver *v = cp && cp->n ? &cp->v[cp->n - 1] : NULL;
+			const char *why = "";
+			char b[120];
+
+			if (v && v->hw && !hw_has(v->hw)) {
+				snprintf(b, sizeof(b), "   (its newest version needs the board %s)", v->hw);
+				why = b;
+			} else if (v && v->cpu && !strcmp(v->cpu, "68060") && !cpu_has_060())
+				why = "   (its newest version is 68060 only)";
+			else if (!strncmp(gone[i], "library/", 8))
+				why = "   (a library: probably pulled in once)";
+			printf("  %s%s\n", gone[i], why);
+		}
+		if (have_cat)
+			catalog_free(&cat);
 	} else {
 		char **names = xmalloc(ngone * sizeof(*names));
 

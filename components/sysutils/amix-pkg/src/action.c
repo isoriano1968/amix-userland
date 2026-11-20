@@ -10,34 +10,52 @@ is_space(char c)
 	return c == ' ' || c == '\t';
 }
 
-/* a token: plain up to a space, or "..."/'...' with \ escapes */
+/* a token: plain up to a space, or "..."/'...' with \ escapes.  Two passes,
+ * the size, then the copy, into one exact allocation: a manifest holds
+ * thousands of these, and a byte-at-a-time buffer cost a 68030 most of
+ * pkg list's time (2026-11-20: 33 s for 60 installed packages). */
 static char *
 token(const char **sp)
 {
-	const char *s = *sp;
-	struct buf b = { 0 };
+	const char *s = *sp, *p;
+	size_t n = 0;
+	char *out, *o;
 
-	buf_add(&b, "", 0);
-	while (*s && !is_space(*s)) {
-		if (*s == '"' || *s == '\'') {
-			char q = *s++;
+	for (p = s; *p && !is_space(*p);) {
+		if (*p == '"' || *p == '\'') {
+			char q = *p++;
 
-			while (*s && *s != q) {
-				if (*s == '\\' && s[1])
-					s++;
-				buf_add(&b, s++, 1);
+			while (*p && *p != q) {
+				if (*p == '\\' && p[1])
+					p++;
+				p++;
+				n++;
 			}
-			if (*s != q) {
-				buf_free(&b);
+			if (*p != q)
 				return NULL;
-			}
-			s++;
-		} else
-			buf_add(&b, s++, 1);
+			p++;
+		} else {
+			p++;
+			n++;
+		}
 	}
-	*sp = s;
-	/* exactly its size: a manifest holds thousands of these (an A3000 has 16 MB) */
-	return xrealloc(b.data, b.len + 1);
+	o = out = xmalloc(n + 1);
+	for (p = s; *p && !is_space(*p);) {
+		if (*p == '"' || *p == '\'') {
+			char q = *p++;
+
+			while (*p != q) {
+				if (*p == '\\' && p[1])
+					p++;
+				*o++ = *p++;
+			}
+			p++;
+		} else
+			*o++ = *p++;
+	}
+	*o = 0;
+	*sp = p;
+	return out;
 }
 
 int
