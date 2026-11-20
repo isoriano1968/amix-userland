@@ -99,7 +99,7 @@ int main(int argc, char **argv)
             printf("cpu over %.0f ticks (prf): user %.1f %%, kernel %.1f %%, idle %.1f %%\n",
                    all, 100 * u / all, 100 * k / all, 100 * d / all);
     } else {
-        printf("cpu: no prf (in use for something else, or no /dev/prf)\n");
+        printf("cpu: no prf: %s\n", ast_prf_why());
     }
     for (i = 0; i < n1; i++) {
         const struct ast_proc *a = find(p0, n0, p1[i].pid);

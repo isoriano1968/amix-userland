@@ -3,9 +3,12 @@
  *
  * The kernel.  Our kernels in /stand are relocatable ELF files that the boot
  * loader puts at 0x08000000, their allocated sections one after the other in
- * header order.  The file that runs is the one whose build id matches the
- * one uname -a prints, apart from the CPU (the file says 68040, a 68060
- * reports 68060).  A symbol defined in a section has its address from the
+ * header order; Commodore's 2.1c kernel (/stand/unix) is such a file too.
+ * The file that runs is the one whose utsname, read from the live kernel at
+ * the address the file gives, holds what uname() returns: that also proves
+ * the addresses right.  Our kernels' build id (68060-261104-x2 in uname -a)
+ * only says which files to try first; the stock kernel has none.  A symbol
+ * defined in a section has its address from the
  * section map; a COMMON one (physmem, freemem, sysinfo ...) is placed at
  * load time, so its address is read out of the live kernel at the
  * R_68K_32 relocation sites in .text that use it, and they must all agree.
@@ -26,6 +29,7 @@
 #include <net/if.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
+#include <sys/utsname.h>
 #include <errno.h>
 #include "amixstat.h"
 
@@ -33,9 +37,9 @@
 #define STAND       "/stand"
 #define SHN_COMMON  0xFFF2
 
-enum { K_PHYSMEM, K_FREEMEM, K_ANONINFO, K_SYSINFO, K_LBOLT, K_IFSTATS, K_IDLE, K_N };
+enum { K_PHYSMEM, K_FREEMEM, K_ANONINFO, K_SYSINFO, K_LBOLT, K_IFSTATS, K_IDLE, K_UTSNAME, K_N };
 static const char *const knames[K_N] = {
-    "physmem", "freemem", "anoninfo", "sysinfo", "lbolt", "ifstats", "idle"
+    "physmem", "freemem", "anoninfo", "sysinfo", "lbolt", "ifstats", "idle", "utsname"
 };
 static unsigned long kaddr[K_N];
 static int kmem = -1, prf = -1;
@@ -49,13 +53,27 @@ static int kmem = -1, prf = -1;
    a profiling run someone started is left alone. */
 #define PRF_IDLE_LEN 6          /* stop #0x2000 (4 bytes), rts (2) */
 
+static const char *prf_why = "the kernel is not open";
+
+const char *ast_prf_why(void)
+{
+    return prf >= 0 ? "" : prf_why;
+}
+
 static void prf_setup(void)
 {
     unsigned long want[3], have[7];
     int n, state;
 
-    if (!kaddr[K_IDLE] || (prf = open("/dev/prf", O_RDWR)) < 0)
+    if (!kaddr[K_IDLE]) {
+        prf_why = "the kernel file has no idle()";
         return;
+    }
+    if ((prf = open("/dev/prf", O_RDWR)) < 0) {
+        prf_why = errno == ENOENT ? "no /dev/prf" : errno == EACCES ? "/dev/prf is not writable"
+                                                                    : "/dev/prf cannot be opened (no driver)";
+        return;
+    }
     want[0] = KBASE;
     want[1] = kaddr[K_IDLE];
     want[2] = kaddr[K_IDLE] + PRF_IDLE_LEN;
@@ -67,11 +85,19 @@ static void prf_setup(void)
             return;
         close(prf);
         prf = -1;
+        prf_why = "the kernel profiler (/dev/prf) is profiling something else";
+        return;
+    }
+    if (state < 0) {
+        close(prf);
+        prf = -1;
+        prf_why = "the kernel has no profiler behind /dev/prf";
         return;
     }
     if (write(prf, want, sizeof want) != sizeof want || ioctl(prf, 3, 1) < 0) {
         close(prf);
         prf = -1;
+        prf_why = "the kernel profiler (/dev/prf) refused the idle buckets";
     }
 }
 static char kfile[300];
@@ -289,7 +315,7 @@ static int resolve(const unsigned char *d, long n, char *err, int errlen)
         }
         if (!kaddr[k])
             kaddr[k] = a;
-        if (!kaddr[k] && k != K_IFSTATS && k != K_IDLE)
+        if (!kaddr[k] && k != K_IFSTATS && k != K_IDLE && k != K_UTSNAME)
             found = 0;
         free(sites[k]);
     }
@@ -304,58 +330,84 @@ static int resolve(const unsigned char *d, long n, char *err, int errlen)
     return 0;
 }
 
+/* does the live kernel hold, at the utsname the file gave, what uname() says? */
+static int live_matches(void)
+{
+    struct utsname u, k;
+
+    if (!kaddr[K_UTSNAME] || uname(&u) < 0 || kread(kaddr[K_UTSNAME], &k, sizeof k) < 0)
+        return 0;
+    k.release[sizeof k.release - 1] = k.version[sizeof k.version - 1] = 0;
+    k.sysname[sizeof k.sysname - 1] = 0;
+    return !strcmp(u.sysname, k.sysname) && !strcmp(u.release, k.release) &&
+           !strcmp(u.version, k.version);
+}
+
+/* one candidate: an ELF kernel file whose addresses fit the live kernel */
+static int try_kernel(const char *path, int need_id, const char *id, char *err, int errlen)
+{
+    struct stat st;
+    unsigned char *d;
+    long n = 0;
+    int ok;
+
+    if (stat(path, &st) < 0 || !S_ISREG(st.st_mode) || st.st_size < 500000)
+        return 0;
+    if (!(d = slurp(path, &n)))
+        return 0;
+    ok = !memcmp(d, "\177ELF", 4) && d[5] == 2 && be16(d + 0x10) == 1 &&   /* ET_REL */
+         (!need_id || has_id(d, n, id));
+    if (ok) {
+        copy(kfile, sizeof kfile, path);
+        ok = resolve(d, n, err, errlen) == 0 && live_matches();
+        if (!ok)
+            kfile[0] = 0;
+    }
+    free(d);
+    return ok;
+}
+
 int ast_open(char *err, int errlen)
 {
     char id[32], path[300];
     DIR *dir;
     struct dirent *e;
-    unsigned char *d = NULL;
-    long n = 0;
+    int pass, found = 0;
 
     if (kmem >= 0)
         return 0;
-    if (build_id(id, sizeof id) < 0) {
-        fail(err, errlen, "uname -a names no kernel build id", NULL);
-        return -1;
-    }
+    if (build_id(id, sizeof id) < 0)
+        id[0] = 0;                      /* the stock kernel: no build id */
     if ((kmem = open("/dev/kmem", O_RDONLY)) < 0) {
         fail(err, errlen, "cannot read /dev/kmem (needs group sys)", NULL);
         return -1;
     }
-    if (!(dir = opendir(STAND))) {
-        fail(err, errlen, "cannot read", STAND);
-        ast_close();
-        return -1;
-    }
     kfile[0] = 0;
-    while ((e = readdir(dir)) != NULL) {
-        struct stat st;
-
-        copy(path, sizeof path, STAND "/");
-        cat(path, sizeof path, e->d_name);
-        if (stat(path, &st) < 0 || !S_ISREG(st.st_mode) || st.st_size < 500000)
+    /* pass 0: files with the build id; 1: /stand/unix; 2: every other file */
+    for (pass = id[0] ? 0 : 1; pass < 3 && !found; pass++) {
+        if (pass == 1) {
+            found = try_kernel(STAND "/unix", 0, id, err, errlen);
             continue;
-        if (!(d = slurp(path, &n)))
-            continue;
-        if (!memcmp(d, "\177ELF", 4) && d[5] == 2 && has_id(d, n, id)) {
-            copy(kfile, sizeof kfile, path);
-            break;
         }
-        free(d);
-        d = NULL;
+        if (!(dir = opendir(STAND))) {
+            fail(err, errlen, "cannot read", STAND);
+            ast_close();
+            return -1;
+        }
+        while (!found && (e = readdir(dir)) != NULL) {
+            if (e->d_name[0] == '.' || (pass == 2 && !strcmp(e->d_name, "unix")))
+                continue;
+            copy(path, sizeof path, STAND "/");
+            cat(path, sizeof path, e->d_name);
+            found = try_kernel(path, pass == 0, id, err, errlen);
+        }
+        closedir(dir);
     }
-    closedir(dir);
-    if (!d) {
-        fail(err, errlen, "no kernel in /stand has the build id", id);
+    if (!found) {
+        fail(err, errlen, "no kernel file in /stand matches the running kernel (uname)", NULL);
         ast_close();
         return -1;
     }
-    if (resolve(d, n, err, errlen) < 0) {
-        free(d);
-        ast_close();
-        return -1;
-    }
-    free(d);
     prf_setup();
     return 0;
 }

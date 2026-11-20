@@ -3,9 +3,11 @@
  * processes, file systems and network interfaces (libamixstat).
  *
  * AMIX has no kstat and its sar finds the kernel through /unix, which is not
- * the kernel that runs.  ast_open() finds the running kernel in /stand by the
- * build id uname -a prints and reads its counters through /dev/kmem, so the
- * caller needs group sys (or root).  Processes come from /proc: all of them
+ * the kernel that runs.  ast_open() finds the running kernel in /stand (ours
+ * by the build id uname -a prints, Commodore's 2.1c /stand/unix too): the
+ * file whose utsname, read from the live kernel, holds what uname() says.
+ * It reads the counters through /dev/kmem, so the caller needs group sys
+ * (or root).  Processes come from /proc: all of them
  * for root, one's own otherwise.
  */
 #ifndef AMIXSTAT_H
@@ -87,6 +89,7 @@ struct ast_c1net {
 
 /* find the running kernel and its counters; 0, or -1 with a reason in err */
 int ast_open(char *err, int errlen);
+const char *ast_prf_why(void);      /* why prf is 0: "" when it runs */
 const char *ast_kernel(void);       /* the kernel file in /stand */
 void ast_close(void);
 
