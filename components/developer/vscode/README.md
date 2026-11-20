@@ -324,7 +324,10 @@ agent has signed in, and **AMIX: Check Development Setup** lists it):
    with a new key and leaves the key in `vscode-agent.key` beside its
    report. On the same computer the extension finds that file: with no
    key of its own it takes it, else the first refused agent brings **Use
-   the Installer's Key** (or run **AMIX: Set Agent Key**).
+   the Installer's Key** (or run **AMIX: Set Agent Key**: the installer's
+   key, **Choose a key file...** for a `vscode-agent.key` or a copy of
+   `/etc/vscode-agent.conf`, or **Paste a key**, where a path to such a
+   file works too).
    For a quick test into an AMIX that is already running, **Just the
    Agent** (`amix-installer --running fs-uae --agent-only --net`) installs
    only the agent, with the same key file.

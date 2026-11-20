@@ -79,11 +79,32 @@ function updateStatus() {
   }
 }
 
+function goodKey(v) {
+  return v.length >= 16 && !/\s/.test(v);
+}
+
+// the key in a file: a vscode-agent.key (the key on its first line) or a
+// vscode-agent.conf (its secret line); '' when there is none
+function keyFromFile(f) {
+  let text;
+  try { text = fs.readFileSync(f, 'utf8'); } catch (e) { return ''; }
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+  const sec = lines.find((l) => /^secret\s/.test(l));
+  const v = sec ? sec.replace(/^secret\s+/, '') : (lines[0] || '');
+  return goodKey(v) ? v : '';
+}
+
+// what was typed, when it names a file (/... or ~/...) that exists
+function typedPath(x) {
+  const t = x.trim();
+  if (!/^(\/|~\/|~$)/.test(t)) return '';
+  const f = t.startsWith('~') ? path.join(os.homedir(), t.slice(1)) : t;
+  try { return fs.statSync(f).isFile() ? f : ''; } catch (e) { return ''; }
+}
+
 // the key the AMIX Installer wrote when it put the agent on AMIX, or ''
 function installerKey() {
-  let v = '';
-  try { v = fs.readFileSync(INSTALLER_KEY, 'utf8').trim(); } catch (e) { return ''; }
-  return v.length >= 16 && !/\s/.test(v) ? v : '';
+  return keyFromFile(INSTALLER_KEY);
 }
 
 async function loadKey() {
@@ -249,7 +270,8 @@ function setupGuide() {
     '   and saves the key as `vscode-agent.key` beside its report (the last page names the file).',
     '4. Here: nothing to do when this extension has no key of its own yet: it takes the installer\'s key file',
     '   (`' + INSTALLER_KEY + '`). With a key of its own, the first agent it refuses brings',
-    '   **Use the Installer\'s Key**; or run **AMIX: Set Agent Key**. The status bar shows',
+    '   **Use the Installer\'s Key**; or run **AMIX: Set Agent Key**, which takes the installer\'s key,',
+    '   a key file you choose (`vscode-agent.key` or a copy of `/etc/vscode-agent.conf`), or the key pasted in. The status bar shows',
     '   `AMIX target: <name>` once AMIX has booted.',
     '',
     '**Quick test, just the agent** into an AMIX that is already running (FS-UAE or an Amiga, nothing else changed):',
@@ -317,31 +339,55 @@ async function createKey() {
 }
 
 async function setKey() {
+  const items = [];
   // the AMIX Installer's key, when it ran on this computer
   if (fs.existsSync(INSTALLER_KEY)) {
-    const pick = await vscode.window.showQuickPick([
-      { label: 'Use the AMIX Installer\'s key', description: INSTALLER_KEY, file: true },
-      { label: 'Paste a key' }
-    ], { placeHolder: 'The agent key: the secret line of /etc/vscode-agent.conf on AMIX' });
-    if (!pick) return false;
-    if (pick.file) {
-      const v = installerKey();
-      if (!v) {
-        vscode.window.showErrorMessage(`AMIX: ${INSTALLER_KEY} holds no agent key.`);
-        return false;
-      }
-      return useKey(v);
+    items.push({ label: 'Use the AMIX Installer\'s key', description: INSTALLER_KEY, how: 'installer' });
+  }
+  items.push({ label: 'Choose a key file...', description: 'vscode-agent.key or vscode-agent.conf', how: 'file' });
+  items.push({ label: 'Paste a key', description: 'the text of the key, or the path of its file', how: 'paste' });
+  const pick = await vscode.window.showQuickPick(items,
+    { placeHolder: 'The agent key: the secret line of /etc/vscode-agent.conf on AMIX' });
+  if (!pick) return false;
+  if (pick.how === 'installer') {
+    const v = installerKey();
+    if (!v) {
+      vscode.window.showErrorMessage(`AMIX: ${INSTALLER_KEY} holds no agent key.`);
+      return false;
     }
+    return useKey(v);
+  }
+  if (pick.how === 'file') {
+    const dir = path.dirname(INSTALLER_KEY);
+    const got = await vscode.window.showOpenDialog({
+      canSelectMany: false,
+      openLabel: 'Use This Key',
+      title: 'The agent key file (vscode-agent.key, or a vscode-agent.conf)',
+      defaultUri: vscode.Uri.file(fs.existsSync(dir) ? dir : os.homedir())
+    });
+    if (!got || !got.length) return false;
+    const v = keyFromFile(got[0].fsPath);
+    if (!v) {
+      vscode.window.showErrorMessage(`AMIX: ${got[0].fsPath} holds no agent key `
+        + '(a line of 16 or more characters without spaces, or a secret line).');
+      return false;
+    }
+    return useKey(v);
   }
   const v = await vscode.window.showInputBox({
-    prompt: 'The agent key (the secret line of /etc/vscode-agent.conf on AMIX)',
+    prompt: 'The agent key (the secret line of /etc/vscode-agent.conf on AMIX), or the path of a key file',
     password: true,
     ignoreFocusOut: true,
-    validateInput: (x) => (x.trim().length >= 16 && !/\s/.test(x.trim()) ? null
-      : '16 characters or more, no spaces')
+    validateInput: (x) => {
+      const f = typedPath(x);
+      if (f) return keyFromFile(f) ? null : `${f} holds no agent key`;
+      return goodKey(x.trim()) ? null : '16 characters or more, no spaces (or the path of a key file)';
+    }
   });
   if (!v) return false;
-  return useKey(v.trim());
+  const f = typedPath(v);
+  if (f) log(`agent key read from ${f}`);
+  return useKey(f ? keyFromFile(f) : v.trim());
 }
 
 async function useKey(v) {
@@ -601,4 +647,4 @@ function activate(context, h) {
   require('./launch').activate(context, (config) => runOnTarget(config));
 }
 
-module.exports = { activate, isAmixExecutable, configText, statusLines, setupGuide };
+module.exports = { keyFromFile, typedPath, activate, isAmixExecutable, configText, statusLines, setupGuide };

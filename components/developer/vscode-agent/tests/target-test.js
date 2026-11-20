@@ -37,6 +37,7 @@ class VEmitter {
 }
 const vscode = {
   EventEmitter: VEmitter,
+  Uri: { file: (f) => ({ fsPath: f }) },
   StatusBarAlignment: { Left: 1 },
   ProgressLocation: { Notification: 15 },
   window: {
@@ -46,6 +47,15 @@ const vscode = {
     showWarningMessage: async (m) => { messages.push(`warn: ${m}`); },
     showErrorMessage: async (m) => { messages.push(`error: ${m}`); },
     withProgress: async (o, f) => f(),
+    // Set Agent Key's dialogs answer from these
+    answers: {},
+    showQuickPick: async (items) => items.find((i) => i.label === vscode.window.answers.pick),
+    showOpenDialog: async () => [{ fsPath: vscode.window.answers.file }],
+    showInputBox: async (o) => {
+      const v = vscode.window.answers.typed;
+      vscode.window.answers.check = o.validateInput(v);
+      return vscode.window.answers.check ? undefined : v;
+    },
     activeTextEditor: undefined,
     createTerminal: (o) => {
       const t = { name: o.name, text: '', show() {} };
@@ -104,9 +114,11 @@ function waitFor(cond, ms, what) {
     workspaceState: { get: () => undefined, update: async () => {} }
   };
   let agentProc;
+  let agentKey;
   try {
     // a key exists: the listener starts by itself (port 0 = any free port)
     secretStore['amix.agentKey'] = require('../../vscode/src/agent-link.js').newKey();
+    agentKey = secretStore['amix.agentKey'];
     // a fixed port: the agent's config must name it
     const net = require('net');
     const port = await new Promise((res) => {
@@ -196,6 +208,41 @@ function waitFor(cond, ms, what) {
       agent2.kill('SIGTERM');
     }
     console.log("ok   an agent with the installer's key: one offer to use that key");
+
+    // Set Agent Key: a key file (key line or a vscode-agent.conf), a typed path
+    assert.strictEqual(target.keyFromFile(path.join(instKeyDir, 'vscode-agent.key')), instKey);
+    assert.strictEqual(target.keyFromFile(conf2), instKey);
+    assert.strictEqual(target.keyFromFile(path.join(work, 'none')), '');
+    fs.writeFileSync(path.join(work, 'short.key'), 'abc\n');
+    assert.strictEqual(target.keyFromFile(path.join(work, 'short.key')), '');
+    assert.strictEqual(target.typedPath('~/.local/share/amix-installer/vscode-agent.key'),
+      path.join(instKeyDir, 'vscode-agent.key'));
+    assert.strictEqual(target.typedPath(` ${conf2} `), conf2);
+    assert.strictEqual(target.typedPath(instKey), '');
+    assert.strictEqual(target.typedPath('/no/such/file'), '');
+    const ans = vscode.window.answers;
+    const typedKey = require('../../vscode/src/agent-link.js').newKey();
+    fs.writeFileSync(path.join(work, 'typed.key'), typedKey + '\n');
+    Object.assign(ans, { pick: 'Paste a key', typed: path.join(work, 'typed.key') });
+    await commands['amix.setAgentKey']();
+    assert.strictEqual(ans.check, null);
+    assert.strictEqual(secretStore['amix.agentKey'], typedKey);
+    Object.assign(ans, { typed: path.join(work, 'short.key') });
+    await commands['amix.setAgentKey']();
+    assert.ok(/holds no agent key/.test(ans.check), ans.check);
+    assert.strictEqual(secretStore['amix.agentKey'], typedKey);
+    Object.assign(ans, { pick: 'Choose a key file...', file: conf2 });
+    await commands['amix.setAgentKey']();
+    assert.strictEqual(secretStore['amix.agentKey'], instKey);
+    Object.assign(ans, { pick: 'Paste a key', typed: ` ${typedKey} ` });
+    await commands['amix.setAgentKey']();
+    assert.strictEqual(secretStore['amix.agentKey'], typedKey);
+    // back to the running agent's key: it signs in again
+    const n = messages.filter((m) => m.includes(' signed in, ')).length;
+    Object.assign(ans, { typed: agentKey });
+    await commands['amix.setAgentKey']();
+    await waitFor(() => messages.filter((m) => m.includes(' signed in, ')).length > n, 10000, 'agent back');
+    console.log('ok   Set Agent Key reads a key file, a conf file, or a typed path');
 
     // a broken build sends nothing
     fs.writeFileSync(path.join(proj, 'Makefile'), 'all:\n\tfalse\n');
