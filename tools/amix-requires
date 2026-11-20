@@ -126,13 +126,19 @@ def walk(comp, path, order, bad):
     if not path:
         return
     missing = [p for p in m["provide"] if not present(p)]
+    if missing and os.environ.get("AMIX_REQUIRES_NO_BUILD"):
+        # a build from packages (the AMIX Installer's): the sysroot holds the
+        # requirements, unpacked from the repository; nothing is built here
+        bad.append("%s needs %s (%s): not in the sysroot %s" % (path[-1], comp, " ".join(missing),
+                                                                  os.environ.get("AMIX_SYSROOT", "")))
+        return
     if missing:
         print("amix-requires: %s needs %s: building %s" % (path[-1], " ".join(missing), comp), file=sys.stderr)
         d = os.path.join(COMPONENTS, comp)
-        if subprocess.call(["make", "-C", d, "-n", "stage"], stdout=subprocess.DEVNULL,
+        if subprocess.call([os.environ.get("MAKE", "make"), "-C", d, "-n", "stage"], stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL) != 0:
             bad.append("%s: cannot be built here, see its README (needed by %s)" % (comp, path[-1]))
-        elif subprocess.call(["make", "-C", d, "build", "sysroot-install"], stdout=sys.stderr) != 0:
+        elif subprocess.call([os.environ.get("MAKE", "make"), "-C", d, "build", "sysroot-install"], stdout=sys.stderr) != 0:
             bad.append("%s: build failed (needed by %s)" % (comp, path[-1]))
         elif not all(present(p) for p in missing):
             bad.append("%s: built, but %s still missing" % (comp, " ".join(missing)))

@@ -38,7 +38,7 @@ ifneq ($(wildcard *.manifest),)
 build: requires
 endif
 requires:
-	$(abspath $(dir $(lastword $(MAKEFILE_LIST)))../tools/amix-requires) $(CURDIR)
+	MAKE=$(MAKE) $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../tools/amix-requires) $(CURDIR)
 
 clean:
 	rm -rf build $(CLEAN_FILES)

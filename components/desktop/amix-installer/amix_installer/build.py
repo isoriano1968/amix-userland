@@ -496,7 +496,9 @@ def build(src, stem, repo, log=None):
     # the recipes use GNU tar, sed and friends: illumos keeps them in /usr/gnu/bin
     gnu = "/usr/gnu/bin" + os.pathsep if os.path.isdir("/usr/gnu/bin") else ""
     tools = tool_wrappers(toolchain(), sysroot)
-    env.update(AMIX_TOOLS=tools, AMIX_SYSROOT=sysroot,
+    # AMIX_REQUIRES_NO_BUILD: the requirements come from the sysroot (the
+    # packages unpacked above); tools/amix-requires never builds them here
+    env.update(AMIX_TOOLS=tools, AMIX_SYSROOT=sysroot, AMIX_REQUIRES_NO_BUILD="1",
                PATH=tools + os.pathsep + gnu + env.get("PATH", ""))
     d = comps[stem]["dir"]
     if needs_gcc27(d):

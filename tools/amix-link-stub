@@ -16,6 +16,10 @@ matching it, for a library that exports far more than its API: as has little
 memory.
 """
 import os, re, subprocess, sys
+# the cross toolchain's readelf (AMIX_TOOLS, else on PATH): a build host such as
+# OpenIndiana need not have binutils of its own
+READELF = os.environ.get("READELF") or (os.path.join(os.environ["AMIX_TOOLS"], "m68k-elf-readelf")
+                                         if os.environ.get("AMIX_TOOLS") else "m68k-elf-readelf")
 
 SKIP = {"_init", "_fini", "_etext", "_edata", "_end", "__bss_start", "_DYNAMIC",
 	"_GLOBAL_OFFSET_TABLE_", "_PROCEDURE_LINKAGE_TABLE_"}
@@ -28,7 +32,7 @@ dirs = [a[2:] for a in args if a.startswith("-L")]
 ndirs = [args[i + 1] for i, a in enumerate(args) if a == "-n"]
 args = [a for i, a in enumerate(args) if a != "-n" and (i == 0 or args[i - 1] != "-n")]
 if ndirs:
-	for l in subprocess.check_output(["readelf", "-d", lib], text=True).splitlines():
+	for l in subprocess.check_output([READELF, "-d", lib], text=True).splitlines():
 		m = re.search(r"\(NEEDED\).*\[(.+)\]", l)
 		if m and not m.group(1).startswith("/"):
 			others += [p for p in (os.path.join(d, m.group(1)) for d in ndirs) if os.path.exists(p)][:1]
@@ -39,12 +43,12 @@ for a in args:
 		others.append(a)
 known = set()
 for k in others:
-	for l in subprocess.check_output(["readelf", "-W", "--dyn-syms", "--syms", k], text=True).splitlines():
+	for l in subprocess.check_output([READELF, "-W", "--dyn-syms", "--syms", k], text=True).splitlines():
 		p = l.split()
 		if len(p) == 8 and p[0].rstrip(":").isdigit() and p[6] != "UND":
 			known.add(p[7].split("@")[0])
 funcs, objs, needs = [], [], []
-for l in subprocess.check_output(["readelf", "-W", "--dyn-syms", lib], text=True).splitlines():
+for l in subprocess.check_output([READELF, "-W", "--dyn-syms", lib], text=True).splitlines():
 	p = l.split()
 	if len(p) == 8 and p[0].rstrip(":").isdigit() and p[6] == "UND" and p[4] != "WEAK" and p[7].split("@")[0] not in known:
 		needs.append(p[7].split("@")[0])
