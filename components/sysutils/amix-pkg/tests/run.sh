@@ -2,7 +2,8 @@
 # run.sh PKG -- the read side against tests/repo (published with OI's pkgsend):
 # set-publisher, refresh (signatures), list, info, contents, verify.
 # Works in a temporary image root; on the host, not on AMIX.
-PKG=${1:?usage: run.sh path/to/pkg}
+PKG=${1:?usage: run.sh path/to/pkg [path/to/amix-hw]}
+HW=$2
 here=$(cd "$(dirname "$0")" && pwd)
 case $PKG in /*) ;; *) PKG=$(pwd)/$PKG ;; esac
 T=$(mktemp -d "${TMPDIR:-/tmp}/amix-pkg-test.XXXXXX")
@@ -244,6 +245,20 @@ if [ -x "$PUB" ] && command -v python3 >/dev/null 2>&1; then
 	expect "nothing installed"    1 ""              test -f "$R4/usr/local/share/fast.txt"
 	expect "68060 package on a 060" 0 ""            env PKG_CPU=060 "$PKG" -R "$R4" install demo/fast
 	expect "installed"            0 ""              test -f "$R4/usr/local/share/fast.txt"
+	# org.amix.hw: a board it needs (0.5.2)
+	printf '%s\n' 'set name=pkg.fmri value=pkg://amix/demo/core1@1.0,2.1-1' \
+		'set name=pkg.summary value="on core 1"' 'set name=org.amix.hw value=z3660-core1|zz9000' \
+		'dir path=usr owner=root group=sys mode=0755' 'dir path=usr/local owner=root group=bin mode=0755' \
+		'dir path=usr/local/share owner=root group=bin mode=0755' \
+		'file f path=usr/local/share/core1.txt owner=root group=bin mode=0444' > "$T/core1.p5m"
+	"$PUB" -s "$T/cpurepo" -d "$T/cpusrc" "$T/core1.p5m" >/dev/null 2>&1
+	"$PKG" -R "$R4" refresh
+	expect "hw in the catalog"    0 "demo/core1${TAB}.*${TAB}on core 1${TAB}z3660-core1|zz9000" "$PKG" -R "$R4" list -at core1
+	expect "hw: none here"        1 "needs the board z3660-core1|zz9000 (org.amix.hw), and this machine has none" env PKG_HW=none "$PKG" -R "$R4" install demo/core1
+	expect "hw: nothing installed" 1 ""             test -f "$R4/usr/local/share/core1.txt"
+	expect "hw: other board"      1 "this machine has z3660" env PKG_HW=z3660 "$PKG" -R "$R4" install demo/core1
+	expect "hw: the board"        0 ""              env PKG_HW=z3660,z3660-core1 "$PKG" -R "$R4" install demo/core1
+	expect "hw: installed"        0 ""              test -f "$R4/usr/local/share/core1.txt"
 else
 	echo "skip cpu (no tools/amix-publish)"
 fi
@@ -301,6 +316,15 @@ if [ -x "$PUB" ] && command -v python3 >/dev/null 2>&1; then
 	expect "clash refused"            1 "belongs to demo/a" "$PKG" -R "$M" --min-free 0 install demo/c
 else
 	echo "skip move (no tools/amix-publish)"
+fi
+
+# amix-hw: the boards, PKG_HW for the test (no board on the host)
+if [ -n "$HW" ]; then
+	expect "amix-hw: none on the host" 0 ""         sh -c "env -u PKG_HW '$HW' | grep -q . && exit 1 || exit 0"
+	expect "amix-hw: list"        0 "z3660-core1"   env PKG_HW=z3660,z3660-core1 "$HW"
+	expect "amix-hw -q yes"       0 ""              env PKG_HW=z3660,z3660-core1 "$HW" -q "zz9000|z3660-core1"
+	expect "amix-hw -q no"        1 ""              env PKG_HW=z3660 "$HW" -q z3660-core1
+	expect "amix-hw -q prefix"    1 ""              env PKG_HW=z3660-core1 "$HW" -q z3660
 fi
 
 echo

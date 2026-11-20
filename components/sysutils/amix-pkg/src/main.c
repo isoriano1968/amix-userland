@@ -13,7 +13,7 @@
 
 #include "pkg.h"
 
-#define VERSION_STRING	"0.5.1"
+#define VERSION_STRING	"0.5.2"
 
 static struct image im;
 
@@ -265,7 +265,8 @@ holds(const char *s, const char *text)
  * one package for -t, tab-separated (the AMIX Software Center reads it):
  * name, version (the installed one, else the newest), flags (i installed,
  * u an update is there), cpu (org.amix.cpu or -), the newest version, what
- * it requires (stems, comma-separated, or -), the summary
+ * it requires (stems, comma-separated, or -), the summary, the board it
+ * needs (org.amix.hw, or -; last, so an older reader just ignores it)
  */
 static void
 tab_line(const char *stem, const char *version, int inst, int newer, const struct catver *cv)
@@ -287,7 +288,8 @@ tab_line(const char *stem, const char *version, int inst, int newer, const struc
 		printf("%s%.*s", first ? "" : ",", (int)(at ? at - s : (long)strlen(s)), s);
 		first = 0;
 	}
-	printf("%s\t%s\n", first ? "-" : "", cv && cv->summary ? cv->summary : "");
+	printf("%s\t%s\t%s\n", first ? "-" : "", cv && cv->summary ? cv->summary : "",
+	    cv && cv->hw ? cv->hw : "-");
 	free(sv);
 	free(nv);
 }

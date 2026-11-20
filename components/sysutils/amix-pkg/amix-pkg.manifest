@@ -1,9 +1,12 @@
 # name, version and what building and running it needs
 name     sysutils/amix-pkg
-version  0.5.1
+version  0.5.2
 # the 68020..68060 baseline, tools/amix-cpu-scan clean
 cpu      68020
 summary  pkg, the AMIX IPS client: install, update, uninstall, verify from an IPS repository
 require  library/zlib
 # libamixc99 is linked in (from its archive): a stock AMIX lacks libamixc99.so.1
 file     /usr/bin/pkg
+file     /usr/bin/amix-hw
+# CDE: the application roots of the boards amix-hw finds (/etc/dt/appconfig-hw/TAG)
+file     /etc/dt/config/Xsession.d/0013.amix-hw

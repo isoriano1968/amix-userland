@@ -438,6 +438,12 @@ catalog_load(const struct image *im, struct catalog *c)
 					    action_get(&act, "value")) {
 						free(cv->cpu);
 						cv->cpu = xstrdup(action_get(&act, "value"));
+					} else if (part && !strcmp(act.type, "set") &&
+					    action_get(&act, "name") &&
+					    !strcmp(action_get(&act, "name"), "org.amix.hw") &&
+					    action_get(&act, "value")) {
+						free(cv->hw);
+						cv->hw = xstrdup(action_get(&act, "value"));
 					}
 					action_free(&act);
 				}
@@ -465,6 +471,7 @@ catalog_free(struct catalog *c)
 			free(v->sig);
 			free(v->summary);
 			free(v->cpu);
+			free(v->hw);
 			for (d = v->depends; d && *d; d++)
 				free(*d);
 			free(v->depends);

@@ -571,6 +571,16 @@ plan_add(const struct image *im, const struct catalog *cat, const struct install
 			return -1;
 		}
 	}
+	{
+		/* org.amix.hw: a board it needs (amix-hw, PKG_HW in tests) */
+		const char *hw = manifest_set(&c->m, "org.amix.hw");
+
+		if (hw && !hw_has(hw)) {
+			warnx("%s: needs the board %s (org.amix.hw), and this machine has %s", stem,
+			    hw, *hw_list() ? hw_list() : "none");
+			return -1;
+		}
+	}
 	for (i = 0; i < c->m.n; i++) {
 		const struct action *a = &c->m.act[i];
 		const char *fm = action_get(a, "fmri"), *ty = action_get(a, "type");

@@ -29,6 +29,15 @@ Version 0.5: the read side, the write side, several origins, search and the CPU 
 
 A package for the 68060 only (`set name=org.amix.cpu value=68060`) is refused on a
 machine whose kernel names no 68060 (uname); `PKG_CPU=060|030` decides in tests.
+A package that needs a board (`set name=org.amix.hw value=z3660-core1`,
+alternatives with `|`) is refused on a machine without it. `amix-hw` (also
+in this package) prints the boards the drivers report: `z3660` (the Z3660's
+RTG), `z3660-core1` (programs on its ARM core 1) and `zz9000` (the MNT
+ZZ9000); `amix-hw -q TAG` answers by exit status; `PKG_HW=tag,tag` (or
+`none`) decides in tests. Such a package keeps its CDE files in
+`/etc/dt/appconfig-hw/TAG`; `/etc/dt/config/Xsession.d/0013.amix-hw` adds
+that directory to the session's search path only when the board is there,
+so its panel controls and App Manager entries show only with the board.
 
 Every change is checked first: no path of another IPS package, of stock
 AMIX or an SVR4 package (`/var/sadm/install/contents`; directories may be

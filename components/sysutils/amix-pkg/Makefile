@@ -3,22 +3,24 @@
 #   make test    a host build, its unit tests and tests/run.sh against tests/repo
 #   make stage   build/stage/usr/bin/pkg
 COMPONENT_NAME    = amix-pkg
-COMPONENT_VERSION = 0.5.1
+COMPONENT_VERSION = 0.5.2
 
 include ../../../make-rules/shared.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
-SRC      = $(wildcard src/*.c)
+SRC      = $(filter-out src/amix-hw.c,$(wildcard src/*.c))
+HW_SRC   = src/amix-hw.c src/hw.c src/util.c
 HDR      = src/pkg.h
 HOSTCC  ?= cc
 HOSTFLAGS = -O2 -g -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L -DPKG_TESTING -Isrc
 
-build: $(BUILD_DIR)/pkg
+build: $(BUILD_DIR)/pkg $(BUILD_DIR)/amix-hw
 
 # 68020 to 68060: pkg runs on every AMIX machine, an A3000 with its 030 too
 # (the AMIX baseline, doc/CPU-TARGET-68020-60.md)
 CFLAGS68 = -O2 $(AMIX_CPU_BASELINE) -D__amix__ -D__svr4__ -DSVR4 -Wall -Isrc
 OBJ68    = $(patsubst src/%.c,$(BUILD_DIR)/obj/%.o,$(SRC))
+HW_OBJ68 = $(patsubst src/%.c,$(BUILD_DIR)/obj/%.o,$(HW_SRC))
 
 $(BUILD_DIR)/obj/%.o: src/%.c $(HDR)
 	mkdir -p $(BUILD_DIR)/obj
@@ -54,17 +56,28 @@ $(BUILD_DIR)/pkg: $(OBJ68) $(AMIXC99_A)
 	../../../tools/amix-fix-needed $@ > /dev/null
 	../../../tools/amix-fix-needed $@ > /dev/null
 
+# amix-hw: the boards (hw.c, which pkg has too), for scripts and the CDE session
+$(BUILD_DIR)/amix-hw: $(HW_OBJ68) $(AMIXC99_A)
+	m68k-elf-gcc $(AMIX_CPU_BASELINE) $(HW_OBJ68) $(AMIXC99_A) -Wl,--as-needed \
+		-Wl,-rpath-link,$(AMIX_SYSROOT)/usr/lib -o $@
+	@if m68k-elf-readelf -d $@ | grep -q libamixc99; then echo "$@ still needs libamixc99.so"; exit 1; fi
+	m68k-elf-strip $@
+
 test: $(SRC) $(HDR) tests/unit.c
 	mkdir -p $(BUILD_DIR)/host
 	$(HOSTCC) $(HOSTFLAGS) $(SRC) -lz -o $(BUILD_DIR)/host/pkg
+	$(HOSTCC) $(HOSTFLAGS) $(HW_SRC) -o $(BUILD_DIR)/host/amix-hw
 	$(HOSTCC) $(HOSTFLAGS) tests/unit.c $(filter-out src/main.c,$(SRC)) -lz -o $(BUILD_DIR)/host/unit
 	$(BUILD_DIR)/host/unit
-	sh tests/run.sh $(BUILD_DIR)/host/pkg
+	sh tests/run.sh $(BUILD_DIR)/host/pkg $(BUILD_DIR)/host/amix-hw
 
 stage: build
 	rm -rf $(STAGE_DIR)
 	mkdir -p $(STAGE_DIR)/usr/bin
-	cp $(BUILD_DIR)/pkg $(STAGE_DIR)/usr/bin/pkg
+	cp $(BUILD_DIR)/pkg $(BUILD_DIR)/amix-hw $(STAGE_DIR)/usr/bin/
+	mkdir -p $(STAGE_DIR)/etc/dt/config/Xsession.d
+	cp files/0013.amix-hw $(STAGE_DIR)/etc/dt/config/Xsession.d/
+	chmod 755 $(STAGE_DIR)/etc/dt/config/Xsession.d/0013.amix-hw
 	$(CPU_SCAN) $(STAGE_DIR)
 
 .PHONY: build test stage

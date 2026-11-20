@@ -1,0 +1,18 @@
+# AMIX: the CDE files of a package that needs a board (org.amix.hw) live in
+# /etc/dt/appconfig-hw/TAG (types, icons, appmanager, help).  Only the
+# boards amix-hw finds now join the session's search path (DTSPSYSAPPHOSTS,
+# read by dtsearchpath after these scripts): without its board, an
+# installed package shows nothing in the front panel or App Manager.
+if [ -x /usr/bin/amix-hw ]; then
+	for amix_hw_tag in `/usr/bin/amix-hw`; do
+		if [ -d /etc/dt/appconfig-hw/$amix_hw_tag ]; then
+			if [ -n "$DTSPSYSAPPHOSTS" ]; then
+				DTSPSYSAPPHOSTS="$DTSPSYSAPPHOSTS,/etc/dt/appconfig-hw/$amix_hw_tag"
+			else
+				DTSPSYSAPPHOSTS=/etc/dt/appconfig-hw/$amix_hw_tag
+			fi
+		fi
+	done
+	unset amix_hw_tag
+	[ -n "$DTSPSYSAPPHOSTS" ] && export DTSPSYSAPPHOSTS
+fi

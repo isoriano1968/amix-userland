@@ -153,6 +153,10 @@ int image_remove_origin(struct image *im, const char *url);
 int image_origin_off(struct image *im, const char *url, int off);
 /* does this machine have a 68060 (the kernel's uname tag; PKG_CPU=060|030 for tests) */
 int cpu_has_060(void);
+/* hw.c: the boards (org.amix.hw); PKG_HW overrides */
+const char *hw_list(void);
+int hw_has(const char *want);
+extern const char *hw_why;
 
 /* the catalog: stem -> versions with summary */
 struct catver {
@@ -160,6 +164,7 @@ struct catver {
 	char *sig;		/* manifest SHA-1 */
 	char *summary;
 	char *cpu;		/* org.amix.cpu: "68020", "68060" or NULL (untagged) */
+	char *hw;		/* org.amix.hw: "z3660-core1", "a|b" or NULL (no board needed) */
 	char **depends;		/* "library/world@1", NULL-terminated */
 };
 struct catpkg {
