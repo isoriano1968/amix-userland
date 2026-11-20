@@ -335,9 +335,12 @@ def unpack(repo, stem, dest):
         if kind == "link":
             os.symlink(target, t)
         else:
-            src = os.path.join(dest, target.lstrip("/"))
+            # a hardlink's target: absolute from the image root, or relative
+            # to the link's own directory (IPS writes it so)
+            src = (os.path.join(dest, target.lstrip("/")) if target.startswith("/")
+                   else os.path.normpath(os.path.join(os.path.dirname(t), target)))
             if os.path.exists(src):
-                shutil.copy2(src, t)
+                os.link(src, t)
     return version
 
 
@@ -433,6 +436,32 @@ def _run(argv, log, cwd=None, env=None):
                                                          for i, a in enumerate(argv[:4])), "\n".join(tail[-12:])))
 
 
+def tool_wrappers(tools, sysroot):
+    """CACHE/tools: the compiler drivers with the build sysroot's /usr/lib
+    first in the library search, the other tools as they are.  gcc 14's
+    specs link -lamixc99 and libc through %R, its configured sysroot (the
+    installed base one, without library/amixc99's shared library).  Not
+    --sysroot: with it this compiler takes SYSROOT/usr/local/include as a
+    system directory after its include-fixed, drops the -I that pkg-config
+    gives for it, and a stock header (curses.h) wins over the package's."""
+    d = os.path.join(CACHE, "tools")
+    shutil.rmtree(d, ignore_errors=True)
+    os.makedirs(d)
+    for name in os.listdir(tools):
+        real = os.path.join(tools, name)
+        if not name.startswith("m68k-elf-") or not os.access(real, os.X_OK):
+            continue
+        w = os.path.join(d, name)
+        if name.rsplit("-", 1)[-1] in ("gcc", "g++", "c++", "cpp") or name.endswith(("-gcc-14.2.0",)):
+            with open(w, "w") as f:
+                f.write('#!/bin/sh\nexec "%s" "$@" -L"%s/usr/lib" -Wl,-rpath-link,"%s/usr/lib"\n'
+                        % (real, sysroot, sysroot))
+            os.chmod(w, 0o755)
+        else:
+            os.symlink(real, w)
+    return d
+
+
 def build(src, stem, repo, log=None):
     """Build stem from src against repo's packages and publish it into repo
     through src's gates; returns the published FMRI."""
@@ -446,8 +475,9 @@ def build(src, stem, repo, log=None):
     env = dict(os.environ)
     # the recipes use GNU tar, sed and friends: illumos keeps them in /usr/gnu/bin
     gnu = "/usr/gnu/bin" + os.pathsep if os.path.isdir("/usr/gnu/bin") else ""
-    env.update(AMIX_TOOLS=toolchain(), AMIX_SYSROOT=sysroot,
-               PATH=toolchain() + os.pathsep + gnu + env.get("PATH", ""))
+    tools = tool_wrappers(toolchain(), sysroot)
+    env.update(AMIX_TOOLS=tools, AMIX_SYSROOT=sysroot,
+               PATH=tools + os.pathsep + gnu + env.get("PATH", ""))
     d = comps[stem]["dir"]
     _say(log, "== building %s" % stem)
     # build, then stage: not every component's stage target depends on its build
