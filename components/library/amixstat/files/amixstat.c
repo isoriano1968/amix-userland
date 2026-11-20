@@ -1,9 +1,16 @@
 /*
  * amixstat.c -- libamixstat: the running AMIX system's counters (amixstat.h).
  *
- * The kernel.  Our kernels in /stand are relocatable ELF files that the boot
- * loader puts at 0x08000000, their allocated sections one after the other in
- * header order; Commodore's 2.1c kernel (/stand/unix) is such a file too.
+ * The kernel.  The kernels in /stand (ours, Commodore's 2.1c /stand/unix, the
+ * one the AMIX Installer links) are relocatable ELF files.  The loader (boot2,
+ * or pvmk) binds .text, .rodata, .data and .bss one after the other at the
+ * start of a fast RAM region: 0x08000000 on a Z3660, elsewhere on another
+ * machine (the FS-UAE A3000: the motherboard RAM).  The kernel notes that
+ * base in kernel_load_address (config(): bootinfo.bootdata.tvaddr, or
+ * 0x200000 from an old boot2): a base B is the one when the word at
+ * B + kernel_load_address is B itself.
+ * /dev/kmem checks every address (memprobe), so the candidates are safe to
+ * read.
  * The file that runs is the one whose utsname, read from the live kernel at
  * the address the file gives, holds what uname() returns: that also proves
  * the addresses right.  Our kernels' build id (68060-261104-x2 in uname -a)
@@ -33,13 +40,15 @@
 #include <errno.h>
 #include "amixstat.h"
 
-#define KBASE       0x08000000UL
+#define KBASE       0x08000000UL         /* the Z3660's: tried first */
+static unsigned long kbase = KBASE;
 #define STAND       "/stand"
 #define SHN_COMMON  0xFFF2
 
-enum { K_PHYSMEM, K_FREEMEM, K_ANONINFO, K_SYSINFO, K_LBOLT, K_IFSTATS, K_IDLE, K_UTSNAME, K_N };
+enum { K_PHYSMEM, K_FREEMEM, K_ANONINFO, K_SYSINFO, K_LBOLT, K_IFSTATS, K_IDLE, K_UTSNAME,
+       K_BOOTINFO, K_N };
 static const char *const knames[K_N] = {
-    "physmem", "freemem", "anoninfo", "sysinfo", "lbolt", "ifstats", "idle", "utsname"
+    "physmem", "freemem", "anoninfo", "sysinfo", "lbolt", "ifstats", "idle", "utsname", "kernel_load_address"
 };
 static unsigned long kaddr[K_N];
 static int kmem = -1, prf = -1;
@@ -74,7 +83,7 @@ static void prf_setup(void)
                                                                     : "/dev/prf cannot be opened (no driver)";
         return;
     }
-    want[0] = KBASE;
+    want[0] = kbase;
     want[1] = kaddr[K_IDLE];
     want[2] = kaddr[K_IDLE] + PRF_IDLE_LEN;
     state = ioctl(prf, 1, 0);
@@ -222,7 +231,7 @@ static int has_id(const unsigned char *d, long n, const char *id)
 }
 
 /* the counters' addresses out of the kernel file d, with the live kernel */
-static int resolve(const unsigned char *d, long n, char *err, int errlen)
+static int resolve(const unsigned char *d, long n, int live, char *err, int errlen)
 {
     unsigned long shoff = be32(d + 0x20), *vbase, run = 0;
     unsigned shent = be16(d + 0x2E), shnum = be16(d + 0x30);
@@ -237,16 +246,33 @@ static int resolve(const unsigned char *d, long n, char *err, int errlen)
         return -1;
     }
     vbase = calloc(shnum, sizeof *vbase);
-    for (i = 0; i < shnum; i++) {
-        sh = d + shoff + i * shent;
+    for (i = 0; i < shnum; i++)
         vbase[i] = (unsigned long)-1;
-        if (be32(sh + 8) & 2) {         /* SHF_ALLOC */
-            vbase[i] = run;
-            run += be32(sh + 20);
-        }
-        if (be32(sh + 4) == 2)          /* SHT_SYMTAB */
-            symsec = i;
+    {
+        /* the loader's order: code, read-only data, data, bss (pvmk
+           amixload.c, boot2's bootdata), each class in header order */
+        int cls;
+
+        for (cls = 0; cls < 4; cls++)
+            for (i = 0; i < shnum; i++) {
+                unsigned long fl, ty;
+                int c;
+
+                sh = d + shoff + i * shent;
+                fl = be32(sh + 8);
+                ty = be32(sh + 4);
+                if (!(fl & 2) || !be32(sh + 20))      /* SHF_ALLOC, not empty */
+                    continue;
+                c = ty == 8 ? 3 : (fl & 4) ? 0 : (fl & 1) ? 2 : 1;   /* NOBITS, EXECINSTR, WRITE */
+                if (c != cls)
+                    continue;
+                vbase[i] = kbase + run;
+                run += be32(sh + 20);
+            }
     }
+    for (i = 0; i < shnum; i++)
+        if (be32(d + shoff + i * shent + 4) == 2)     /* SHT_SYMTAB */
+            symsec = i;
     if (!symsec) {
         free(vbase);
         fail(err, errlen, "kernel file has no symbol table", kfile);
@@ -274,11 +300,11 @@ static int resolve(const unsigned char *d, long n, char *err, int errlen)
                 continue;
             symk[i] = k;
             if (shndx && shndx < shnum && vbase[shndx] != (unsigned long)-1)
-                kaddr[k] = KBASE + vbase[shndx] + be32(s + 4);
+                kaddr[k] = vbase[shndx] + be32(s + 4);
         }
     }
     /* the relocation sites in .text of the COMMON ones */
-    for (i = 0; i < shnum; i++) {
+    for (i = 0; live && i < shnum; i++) {
         unsigned long off, cnt, r, tsec;
 
         sh = d + shoff + i * shent;
@@ -299,7 +325,7 @@ static int resolve(const unsigned char *d, long n, char *err, int errlen)
             if ((info & 0xFF) != 1 || be32(e + 8) || si >= nsym || (kk = symk[si]) < 0 || kaddr[kk])
                 continue;
             sites[kk] = realloc(sites[kk], (nsites[kk] + 1) * sizeof **sites);
-            sites[kk][nsites[kk]++] = KBASE + vbase[tsec] + be32(e);
+            sites[kk][nsites[kk]++] = vbase[tsec] + be32(e);
         }
     }
     for (k = 0; k < K_N; k++) {
@@ -315,12 +341,14 @@ static int resolve(const unsigned char *d, long n, char *err, int errlen)
         }
         if (!kaddr[k])
             kaddr[k] = a;
-        if (!kaddr[k] && k != K_IFSTATS && k != K_IDLE && k != K_UTSNAME)
+        if (!kaddr[k] && k != K_IFSTATS && k != K_IDLE && k != K_UTSNAME && k != K_BOOTINFO)
             found = 0;
         free(sites[k]);
     }
     free(symk);
     free(vbase);
+    if (!live)
+        return 0;           /* the section symbols only (the base search) */
     if (!found) {
         for (k = 0; k < K_N && kaddr[k]; k++)
             ;
@@ -343,6 +371,33 @@ static int live_matches(void)
            !strcmp(u.version, k.version);
 }
 
+/* the base candidates after KBASE: 64 KB steps through the fast RAM
+   windows an Amiga has (Zorro II, the A3000's motherboard RAM, Zorro III) */
+static const unsigned long windows[][2] = {
+    { 0x07000000UL, 0x08000000UL }, { 0x08000000UL, 0x10000000UL },
+    { 0x00200000UL, 0x00a00000UL }, { 0x10000000UL, 0x20000000UL },
+    { 0x40000000UL, 0x48000000UL }
+};
+
+/* the base the loader bound the file at: kernel_load_address holds it */
+static int find_base(unsigned long kla)
+{
+    unsigned long v, b;
+    unsigned w;
+
+    if (kword(KBASE + kla, &v) == 0 && v == KBASE) {
+        kbase = KBASE;
+        return 0;
+    }
+    for (w = 0; w < sizeof windows / sizeof windows[0]; w++)
+        for (b = windows[w][0]; b < windows[w][1]; b += 0x10000UL)
+            if (b != KBASE && kword(b + kla, &v) == 0 && v == b) {
+                kbase = b;
+                return 0;
+            }
+    return -1;
+}
+
 /* one candidate: an ELF kernel file whose addresses fit the live kernel */
 static int try_kernel(const char *path, int need_id, const char *id, char *err, int errlen)
 {
@@ -359,7 +414,12 @@ static int try_kernel(const char *path, int need_id, const char *id, char *err, 
          (!need_id || has_id(d, n, id));
     if (ok) {
         copy(kfile, sizeof kfile, path);
-        ok = resolve(d, n, err, errlen) == 0 && live_matches();
+        kbase = 0;
+        if (resolve(d, n, 0, err, errlen) == 0 && kaddr[K_BOOTINFO] && find_base(kaddr[K_BOOTINFO]) == 0)
+            ;                           /* kbase found */
+        else
+            kbase = KBASE;              /* a kernel without bootinfo: the Z3660's */
+        ok = resolve(d, n, 1, err, errlen) == 0 && live_matches();
         if (!ok)
             kfile[0] = 0;
     }
@@ -447,6 +507,15 @@ int ast_mem(struct ast_mem *m)
     return 0;
 }
 
+static unsigned long sys_idle;
+
+/* sysinfo's cpu[CPU_IDLE] at the last ast_cpu(): the idle ticks since boot
+   on a kernel that books them there (Commodore's 2.1c), else 0 */
+unsigned long ast_cpu_idle(void)
+{
+    return sys_idle;
+}
+
 int ast_cpu(struct ast_cpu *c)
 {
     unsigned char b[20];
@@ -456,8 +525,17 @@ int ast_cpu(struct ast_cpu *c)
     if (kread(kaddr[K_SYSINFO], b, 20) < 0 || kword(kaddr[K_LBOLT], &c->lbolt) < 0)
         return -1;
     c->user = be32(b + 4);      /* cpu[CPU_USER] */
-    c->kernel = be32(b + 8);    /* cpu[CPU_KERNEL], idle included */
+    c->kernel = be32(b + 8);    /* cpu[CPU_KERNEL]: idle too on our kernels */
     c->wait = be32(b + 12);     /* cpu[CPU_WAIT] */
+    sys_idle = be32(b);         /* cpu[CPU_IDLE]: 0 on our kernels */
+    if (prf < 0 && be32(b) > 0) {
+        /* Commodore's 2.1c books idle ticks in cpu[CPU_IDLE]: the shares
+           come from sysinfo itself (prf 2), no profiler needed */
+        c->prf = 2;
+        c->s_user = c->user;
+        c->s_kernel = c->kernel + c->wait;
+        c->s_idle = be32(b);
+    }
     if (prf >= 0) {
         unsigned long v[7];
 

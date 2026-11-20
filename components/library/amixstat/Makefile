@@ -5,7 +5,7 @@
 # comes from the setuid root helper lib/amixstat/psinfo for a user other
 # than root: AMIX's /proc lets a process open only its own user's processes.
 COMPONENT_NAME    = amixstat
-COMPONENT_VERSION = 1.3
+COMPONENT_VERSION = 1.6
 
 include ../../../make-rules/shared.mk
 include ../../../make-rules/shlib.mk

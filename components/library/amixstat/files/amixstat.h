@@ -39,7 +39,11 @@ struct ast_mem {
    from the kernel profiler instead: with prf set, s_user, s_kernel and s_idle
    count the clock ticks since ast_open() found the CPU in user mode, in the
    kernel and stopped in the idle loop; differences over an interval give the
-   shares.  prf is 0 when the profiler is in use for something else. */
+   shares.  prf is 0 when the profiler is in use for something else (or
+   absent: ast_prf_why).  prf is 2 on a kernel that books idle ticks in
+   sysinfo's cpu[CPU_IDLE] (Commodore's 2.1c): s_user, s_kernel (wait
+   included) and s_idle are then sysinfo's own counts since boot, with the
+   same use (differences over an interval). */
 struct ast_cpu {
     unsigned long user, kernel, wait;
     unsigned long lbolt;    /* ticks since boot */
@@ -95,6 +99,7 @@ void ast_close(void);
 
 int ast_mem(struct ast_mem *m);
 int ast_cpu(struct ast_cpu *c);
+unsigned long ast_cpu_idle(void);  /* sysinfo cpu[CPU_IDLE] at the last ast_cpu(), 0: none */
 /* the processes, in a malloc'd array (free it); their count, or -1 */
 int ast_procs(struct ast_proc **list);
 int ast_filesystems(struct ast_fs **list);

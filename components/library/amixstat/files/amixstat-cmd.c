@@ -52,7 +52,8 @@ int main(int argc, char **argv)
                ifs[i].up ? "up  " : "down", ifs[i].ipackets, ifs[i].opackets,
                ifs[i].ierrors, ifs[i].oerrors, ifs[i].collisions);
     free(ifs);
-    {
+    /* the Z3660 core 1's network: only with the board (amix-hw) */
+    if (access("/usr/bin/amix-hw", X_OK) == 0 && system("/usr/bin/amix-hw -q 'z3660|zz9000'") == 0) {
         struct ast_c1net n;
 
         if (ast_c1net(&n) < 0)
@@ -72,8 +73,12 @@ int main(int argc, char **argv)
     ast_cpu(&c0);
     n0 = ast_procs(&p0);
     if (secs <= 0) {
-        printf("cpu since boot: %lu ticks at %lu Hz, user %lu, kernel+idle %lu\n",
-               c0.lbolt, c0.hz, c0.user, c0.kernel);
+        if (ast_cpu_idle())
+            printf("cpu since boot: %lu ticks at %lu Hz, user %lu, kernel %lu, wait %lu, idle %lu\n",
+                   c0.lbolt, c0.hz, c0.user, c0.kernel, c0.wait, ast_cpu_idle());
+        else
+            printf("cpu since boot: %lu ticks at %lu Hz, user %lu, kernel+idle %lu\n",
+                   c0.lbolt, c0.hz, c0.user, c0.kernel);
         for (i = 0; i < n0; i++)
             printf("%6ld %6ld %5ld %c %3d %6.1f MB %6.1f MB %9.1f s (%.1f + %.1f) %s\n",
                    (long)p0[i].pid, (long)p0[i].ppid, (long)p0[i].uid, p0[i].state, p0[i].nice,
@@ -96,8 +101,8 @@ int main(int argc, char **argv)
         double u = c1.s_user - c0.s_user, k = c1.s_kernel - c0.s_kernel, d = c1.s_idle - c0.s_idle;
         double all = u + k + d;
         if (all > 0)
-            printf("cpu over %.0f ticks (prf): user %.1f %%, kernel %.1f %%, idle %.1f %%\n",
-                   all, 100 * u / all, 100 * k / all, 100 * d / all);
+            printf("cpu over %.0f ticks (%s): user %.1f %%, kernel %.1f %%, idle %.1f %%\n",
+                   all, c1.prf == 2 ? "sysinfo" : "prf", 100 * u / all, 100 * k / all, 100 * d / all);
     } else {
         printf("cpu: no prf: %s\n", ast_prf_why());
     }
