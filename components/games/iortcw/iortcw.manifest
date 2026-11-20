@@ -5,9 +5,7 @@ summary  Return to Castle Wolfenstein: the whole engine and its GL on the Z3660'
 # runs on the Z3660's ARM core 1: pkg and the installer leave it off a
 # machine without the board (amix-hw)
 hw       z3660-core1
-require  x11/mesa-183
 require  x11/x11r6.3
-require  library/lib060
 build    library/dlmalloc
 require  games/ioquake3
 file     /opt/rtcw/wolf.sh

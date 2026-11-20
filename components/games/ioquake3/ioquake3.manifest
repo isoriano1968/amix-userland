@@ -1,15 +1,14 @@
 # name, version and what building and running it needs
 name     games/ioquake3
 version  87a99d1
-# 68060 only: core 1 builds for the Z3660's 68060
-cpu      68060
+# the game and its GL run on the Z3660's ARM core 1; the 68k part is c1q3,
+# a small loader at the 68020..68060 baseline: the board is the requirement
+cpu      68020
 summary  ioquake3: the whole engine and its GL on the Z3660's core 1 (q3.sh, c1q3)
 # runs on the Z3660's ARM core 1: pkg and the installer leave it off a
 # machine without the board (amix-hw)
 hw       z3660-core1
-require  x11/mesa-183
 require  x11/x11r6.3
-require  library/lib060
 build    library/dlmalloc
 file     /opt/ioq3/q3.sh
 file     /root/z3660ARMCores/z3660ARM_Core_q3.bin

@@ -31,13 +31,18 @@ C1MAKE       = PATH=$(ARM):$$PATH $(MAKE) -f $(CURDIR)/files/core1/Makefile SRC=
 Q3DATA      ?= $(abspath ../../../../private/quake/data)
 
 # the core 1 image (needs amix-gate's build/arm/libOSMesa.a: xbuild.py arm)
-# and c1q3, the 060's helper
+# and c1q3, its 68k helper
 core1:
 	test -d $(SRC) || $(MAKE) prep
 	$(MAKE) -C ../../library/dlmalloc malloc-2.8.6.c
 	$(C1MAKE)
+	$(MAKE) c1q3
+
+# c1q3, the 68k side: it loads the image onto core 1 and passes keys, mouse and
+# the window; the game itself runs on the ARM, so the 68020..68060 baseline
+c1q3:
 	mkdir -p $(BUILD_DIR)/amix
-	$(AMIX_CC) -O2 -m68060 -Wall -Wno-implicit-int -I$(Z3660_CORE1)/cores/h264bench -Ifiles/core1 \
+	$(AMIX_CC) -O2 $(AMIX_CPU_BASELINE) -Wall -Wno-implicit-int -I$(Z3660_CORE1)/cores/h264bench -Ifiles/core1 \
 	    -I$(SRC)/code/client files/amix/c1q3.c -o $(BUILD_DIR)/amix/c1q3 `$(PKG_CONFIG) --cflags --libs x11`
 
 # the real image in qemu's Zynq with fake060.py as the 68k: q3dm1 loads, a
@@ -77,4 +82,4 @@ stage: core1
 	chmod 755 $(STAGE_DIR)/opt/ioq3/q3.sh $(STAGE_DIR)/opt/amix/bin/c1q3
 	@$(manifest_files)
 
-.PHONY: core1 check-core1 stage-core1 stage
+.PHONY: core1 c1q3 check-core1 stage-core1 stage
