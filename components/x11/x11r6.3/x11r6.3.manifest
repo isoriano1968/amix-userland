@@ -1,9 +1,13 @@
 # name, version and what building and running it needs
 name     x11/x11r6.3
 version  6.3
-summary  X11R6.3 client libraries (shared, libX*.so.7), headers, .pc files and xauth in /usr/x11r6
+# the 68020..68060 baseline (-mcpu=68020 -mtune=68060), tools/amix-cpu-scan clean
+cpu      68020
+summary  X11R6.3 client libraries (shared, libX*.so.7), headers, .pc files, xauth, xinit, xset, xsetroot, xrdb, xterm and xmodmap in /usr/x11r6
 # x11.pc requires amixc99 (what current libraries want from libc beyond AMIX's)
 require  library/amixc99 >= 1
+# xterm's termcap
+require  library/ncurses
 provide  x11
 provide  xt
 provide  xext
@@ -15,17 +19,7 @@ provide  xi
 provide  xau
 provide  xdmcp
 # every file the stage installs; "devel": headers, .so links, .pc, link stubs
-file     /usr/x11r6/bin/xauth
-file     /usr/x11r6/lib/libICE.so.7
-file     /usr/x11r6/lib/libSM.so.7
-file     /usr/x11r6/lib/libX11.so.7
-file     /usr/x11r6/lib/libXau.so.7
-file     /usr/x11r6/lib/libXaw.so.7
-file     /usr/x11r6/lib/libXdmcp.so.7
-file     /usr/x11r6/lib/libXext.so.7
-file     /usr/x11r6/lib/libXi.so.7
-file     /usr/x11r6/lib/libXmu.so.7
-file     /usr/x11r6/lib/libXt.so.7
+file     /usr/local/share/amix-stubs/x11r6.3/LIST devel
 file     /usr/local/share/amix-stubs/x11r6.3/libICE.so.7.s devel
 file     /usr/local/share/amix-stubs/x11r6.3/libSM.so.7.s devel
 file     /usr/local/share/amix-stubs/x11r6.3/libX11.so.7.s devel
@@ -36,161 +30,31 @@ file     /usr/local/share/amix-stubs/x11r6.3/libXext.so.7.s devel
 file     /usr/local/share/amix-stubs/x11r6.3/libXi.so.7.s devel
 file     /usr/local/share/amix-stubs/x11r6.3/libXmu.so.7.s devel
 file     /usr/local/share/amix-stubs/x11r6.3/libXt.so.7.s devel
-file     /usr/local/share/amix-stubs/x11r6.3/LIST devel
 file     /usr/local/share/amix-stubs/x11r6.3/native.sh devel
 file     /usr/local/share/amix-stubs/x11r6.3/xtinherit.c devel
-file     /usr/x11r6/include/X11/ap_keysym.h devel
-file     /usr/x11r6/include/X11/bitmaps/1x1 devel
-file     /usr/x11r6/include/X11/bitmaps/2x2 devel
-file     /usr/x11r6/include/X11/bitmaps/black devel
-file     /usr/x11r6/include/X11/bitmaps/black6 devel
-file     /usr/x11r6/include/X11/bitmaps/box6 devel
-file     /usr/x11r6/include/X11/bitmaps/boxes devel
-file     /usr/x11r6/include/X11/bitmaps/calculator devel
-file     /usr/x11r6/include/X11/bitmaps/cntr_ptr devel
-file     /usr/x11r6/include/X11/bitmaps/cntr_ptrmsk devel
-file     /usr/x11r6/include/X11/bitmaps/cross_weave devel
-file     /usr/x11r6/include/X11/bitmaps/Dashes devel
-file     /usr/x11r6/include/X11/bitmaps/dimple1 devel
-file     /usr/x11r6/include/X11/bitmaps/dimple3 devel
-file     /usr/x11r6/include/X11/bitmaps/dot devel
-file     /usr/x11r6/include/X11/bitmaps/Down devel
-file     /usr/x11r6/include/X11/bitmaps/dropbar7 devel
-file     /usr/x11r6/include/X11/bitmaps/dropbar8 devel
-file     /usr/x11r6/include/X11/bitmaps/escherknot devel
-file     /usr/x11r6/include/X11/bitmaps/Excl devel
-file     /usr/x11r6/include/X11/bitmaps/flagdown devel
-file     /usr/x11r6/include/X11/bitmaps/flagup devel
-file     /usr/x11r6/include/X11/bitmaps/FlipHoriz devel
-file     /usr/x11r6/include/X11/bitmaps/flipped_gray devel
-file     /usr/x11r6/include/X11/bitmaps/FlipVert devel
-file     /usr/x11r6/include/X11/bitmaps/Fold devel
-file     /usr/x11r6/include/X11/bitmaps/gray devel
-file     /usr/x11r6/include/X11/bitmaps/gray1 devel
-file     /usr/x11r6/include/X11/bitmaps/gray3 devel
-file     /usr/x11r6/include/X11/bitmaps/grid16 devel
-file     /usr/x11r6/include/X11/bitmaps/grid2 devel
-file     /usr/x11r6/include/X11/bitmaps/grid4 devel
-file     /usr/x11r6/include/X11/bitmaps/grid8 devel
-file     /usr/x11r6/include/X11/bitmaps/hlines2 devel
-file     /usr/x11r6/include/X11/bitmaps/hlines3 devel
-file     /usr/x11r6/include/X11/bitmaps/icon devel
-file     /usr/x11r6/include/X11/bitmaps/keyboard16 devel
-file     /usr/x11r6/include/X11/bitmaps/Left devel
-file     /usr/x11r6/include/X11/bitmaps/left_ptr devel
-file     /usr/x11r6/include/X11/bitmaps/left_ptrmsk devel
-file     /usr/x11r6/include/X11/bitmaps/letters devel
-file     /usr/x11r6/include/X11/bitmaps/light_gray devel
-file     /usr/x11r6/include/X11/bitmaps/mailempty devel
-file     /usr/x11r6/include/X11/bitmaps/mailemptymsk devel
-file     /usr/x11r6/include/X11/bitmaps/mailfull devel
-file     /usr/x11r6/include/X11/bitmaps/mailfullmsk devel
-file     /usr/x11r6/include/X11/bitmaps/mensetmanus devel
-file     /usr/x11r6/include/X11/bitmaps/menu10 devel
-file     /usr/x11r6/include/X11/bitmaps/menu12 devel
-file     /usr/x11r6/include/X11/bitmaps/menu16 devel
-file     /usr/x11r6/include/X11/bitmaps/menu6 devel
-file     /usr/x11r6/include/X11/bitmaps/menu8 devel
-file     /usr/x11r6/include/X11/bitmaps/noletters devel
-file     /usr/x11r6/include/X11/bitmaps/opendot devel
-file     /usr/x11r6/include/X11/bitmaps/opendotMask devel
-file     /usr/x11r6/include/X11/bitmaps/plaid devel
-file     /usr/x11r6/include/X11/bitmaps/Right devel
-file     /usr/x11r6/include/X11/bitmaps/right_ptr devel
-file     /usr/x11r6/include/X11/bitmaps/right_ptrmsk devel
-file     /usr/x11r6/include/X11/bitmaps/root_weave devel
-file     /usr/x11r6/include/X11/bitmaps/RotateLeft devel
-file     /usr/x11r6/include/X11/bitmaps/RotateRight devel
-file     /usr/x11r6/include/X11/bitmaps/scales devel
-file     /usr/x11r6/include/X11/bitmaps/sipb devel
-file     /usr/x11r6/include/X11/bitmaps/star devel
-file     /usr/x11r6/include/X11/bitmaps/starMask devel
-file     /usr/x11r6/include/X11/bitmaps/stipple devel
-file     /usr/x11r6/include/X11/bitmaps/Stipple devel
-file     /usr/x11r6/include/X11/bitmaps/target devel
-file     /usr/x11r6/include/X11/bitmaps/Term devel
-file     /usr/x11r6/include/X11/bitmaps/terminal devel
-file     /usr/x11r6/include/X11/bitmaps/tie_fighter devel
-file     /usr/x11r6/include/X11/bitmaps/Up devel
-file     /usr/x11r6/include/X11/bitmaps/vlines2 devel
-file     /usr/x11r6/include/X11/bitmaps/vlines3 devel
-file     /usr/x11r6/include/X11/bitmaps/weird_size devel
-file     /usr/x11r6/include/X11/bitmaps/wide_weave devel
-file     /usr/x11r6/include/X11/bitmaps/wingdogs devel
-file     /usr/x11r6/include/X11/bitmaps/woman devel
-file     /usr/x11r6/include/X11/bitmaps/xfd_icon devel
-file     /usr/x11r6/include/X11/bitmaps/xlogo11 devel
-file     /usr/x11r6/include/X11/bitmaps/xlogo16 devel
-file     /usr/x11r6/include/X11/bitmaps/xlogo32 devel
-file     /usr/x11r6/include/X11/bitmaps/xlogo64 devel
-file     /usr/x11r6/include/X11/bitmaps/xsnow devel
+file     /usr/x11r6/bin/xauth
+file     /usr/x11r6/bin/xinit
+file     /usr/x11r6/bin/xmodmap
+file     /usr/x11r6/bin/xrdb
+file     /usr/x11r6/bin/xset
+file     /usr/x11r6/bin/xsetroot
+file     /usr/x11r6/bin/xterm
 file     /usr/x11r6/include/X11/Composite.h devel
 file     /usr/x11r6/include/X11/CompositeP.h devel
 file     /usr/x11r6/include/X11/ConstrainP.h devel
 file     /usr/x11r6/include/X11/Constraint.h devel
 file     /usr/x11r6/include/X11/Core.h devel
 file     /usr/x11r6/include/X11/CoreP.h devel
-file     /usr/x11r6/include/X11/cursorfont.h devel
 file     /usr/x11r6/include/X11/DECkeysym.h devel
-file     /usr/x11r6/include/X11/extensions/lbxbuf.h devel
-file     /usr/x11r6/include/X11/extensions/lbxbufstr.h devel
-file     /usr/x11r6/include/X11/extensions/lbxdeltastr.h devel
-file     /usr/x11r6/include/X11/extensions/lbximage.h devel
-file     /usr/x11r6/include/X11/extensions/lbxopts.h devel
-file     /usr/x11r6/include/X11/extensions/lbxstr.h devel
-file     /usr/x11r6/include/X11/extensions/lbxzlib.h devel
-file     /usr/x11r6/include/X11/extensions/MITMisc.h devel
-file     /usr/x11r6/include/X11/extensions/multibuf.h devel
-file     /usr/x11r6/include/X11/extensions/Print.h devel
-file     /usr/x11r6/include/X11/extensions/Printstr.h devel
-file     /usr/x11r6/include/X11/extensions/record.h devel
-file     /usr/x11r6/include/X11/extensions/recordstr.h devel
-file     /usr/x11r6/include/X11/extensions/security.h devel
-file     /usr/x11r6/include/X11/extensions/securstr.h devel
-file     /usr/x11r6/include/X11/extensions/shape.h devel
-file     /usr/x11r6/include/X11/extensions/sync.h devel
-file     /usr/x11r6/include/X11/extensions/Xag.h devel
-file     /usr/x11r6/include/X11/extensions/Xagsrv.h devel
-file     /usr/x11r6/include/X11/extensions/Xagstr.h devel
-file     /usr/x11r6/include/X11/extensions/Xdbe.h devel
-file     /usr/x11r6/include/X11/extensions/Xdbeproto.h devel
-file     /usr/x11r6/include/X11/extensions/Xext.h devel
-file     /usr/x11r6/include/X11/extensions/XIE.h devel
-file     /usr/x11r6/include/X11/extensions/XIElib.h devel
-file     /usr/x11r6/include/X11/extensions/XIEproto.h devel
-file     /usr/x11r6/include/X11/extensions/XIEprotost.h devel
-file     /usr/x11r6/include/X11/extensions/XI.h devel
-file     /usr/x11r6/include/X11/extensions/XInput.h devel
-file     /usr/x11r6/include/X11/extensions/XIproto.h devel
-file     /usr/x11r6/include/X11/extensions/XKBbells.h devel
-file     /usr/x11r6/include/X11/extensions/XKBconfig.h devel
-file     /usr/x11r6/include/X11/extensions/XKBfile.h devel
-file     /usr/x11r6/include/X11/extensions/XKBgeom.h devel
-file     /usr/x11r6/include/X11/extensions/XKB.h devel
-file     /usr/x11r6/include/X11/extensions/XKBproto.h devel
-file     /usr/x11r6/include/X11/extensions/XKBrules.h devel
-file     /usr/x11r6/include/X11/extensions/XKBsrv.h devel
-file     /usr/x11r6/include/X11/extensions/XKBstr.h devel
-file     /usr/x11r6/include/X11/extensions/XKMformat.h devel
-file     /usr/x11r6/include/X11/extensions/XKM.h devel
-file     /usr/x11r6/include/X11/extensions/XShm.h devel
-file     /usr/x11r6/include/X11/extensions/xtestext1.h devel
-file     /usr/x11r6/include/X11/extensions/XTest.h devel
-file     /usr/x11r6/include/X11/fonts/FS.h devel
-file     /usr/x11r6/include/X11/fonts/FSlib.h devel
-file     /usr/x11r6/include/X11/fonts/fsmasks.h devel
-file     /usr/x11r6/include/X11/fonts/FSproto.h devel
 file     /usr/x11r6/include/X11/HPkeysym.h devel
-file     /usr/x11r6/include/X11/ICE/ICEconn.h devel
 file     /usr/x11r6/include/X11/ICE/ICE.h devel
+file     /usr/x11r6/include/X11/ICE/ICEconn.h devel
 file     /usr/x11r6/include/X11/ICE/ICElib.h devel
 file     /usr/x11r6/include/X11/ICE/ICEmsg.h devel
 file     /usr/x11r6/include/X11/ICE/ICEproto.h devel
 file     /usr/x11r6/include/X11/ICE/ICEutil.h devel
 file     /usr/x11r6/include/X11/Intrinsic.h devel
 file     /usr/x11r6/include/X11/IntrinsicP.h devel
-file     /usr/x11r6/include/X11/keysymdef.h devel
-file     /usr/x11r6/include/X11/keysym.h devel
 file     /usr/x11r6/include/X11/Object.h devel
 file     /usr/x11r6/include/X11/ObjectP.h devel
 file     /usr/x11r6/include/X11/PEX5/PEX.h devel
@@ -202,16 +66,19 @@ file     /usr/x11r6/include/X11/PM/PM.h devel
 file     /usr/x11r6/include/X11/PM/PMproto.h devel
 file     /usr/x11r6/include/X11/RectObj.h devel
 file     /usr/x11r6/include/X11/RectObjP.h devel
-file     /usr/x11r6/include/X11/Shell.h devel
-file     /usr/x11r6/include/X11/ShellP.h devel
 file     /usr/x11r6/include/X11/SM/SM.h devel
 file     /usr/x11r6/include/X11/SM/SMlib.h devel
 file     /usr/x11r6/include/X11/SM/SMproto.h devel
+file     /usr/x11r6/include/X11/Shell.h devel
+file     /usr/x11r6/include/X11/ShellP.h devel
 file     /usr/x11r6/include/X11/StringDefs.h devel
 file     /usr/x11r6/include/X11/Sunkeysym.h devel
 file     /usr/x11r6/include/X11/Vendor.h devel
 file     /usr/x11r6/include/X11/VendorP.h devel
+file     /usr/x11r6/include/X11/X.h devel
 file     /usr/x11r6/include/X11/X10.h devel
+file     /usr/x11r6/include/X11/XKBlib.h devel
+file     /usr/x11r6/include/X11/XWDFile.h devel
 file     /usr/x11r6/include/X11/Xalloca.h devel
 file     /usr/x11r6/include/X11/Xatom.h devel
 file     /usr/x11r6/include/X11/Xauth.h devel
@@ -237,8 +104,8 @@ file     /usr/x11r6/include/X11/Xaw/Label.h devel
 file     /usr/x11r6/include/X11/Xaw/LabelP.h devel
 file     /usr/x11r6/include/X11/Xaw/List.h devel
 file     /usr/x11r6/include/X11/Xaw/ListP.h devel
-file     /usr/x11r6/include/X11/Xaw/MenuButton.h devel
 file     /usr/x11r6/include/X11/Xaw/MenuButtoP.h devel
+file     /usr/x11r6/include/X11/Xaw/MenuButton.h devel
 file     /usr/x11r6/include/X11/Xaw/MultiSink.h devel
 file     /usr/x11r6/include/X11/Xaw/MultiSinkP.h devel
 file     /usr/x11r6/include/X11/Xaw/MultiSrc.h devel
@@ -258,9 +125,9 @@ file     /usr/x11r6/include/X11/Xaw/Simple.h devel
 file     /usr/x11r6/include/X11/Xaw/SimpleMenP.h devel
 file     /usr/x11r6/include/X11/Xaw/SimpleMenu.h devel
 file     /usr/x11r6/include/X11/Xaw/SimpleP.h devel
+file     /usr/x11r6/include/X11/Xaw/Sme.h devel
 file     /usr/x11r6/include/X11/Xaw/SmeBSB.h devel
 file     /usr/x11r6/include/X11/Xaw/SmeBSBP.h devel
-file     /usr/x11r6/include/X11/Xaw/Sme.h devel
 file     /usr/x11r6/include/X11/Xaw/SmeLine.h devel
 file     /usr/x11r6/include/X11/Xaw/SmeLineP.h devel
 file     /usr/x11r6/include/X11/Xaw/SmeP.h devel
@@ -288,8 +155,6 @@ file     /usr/x11r6/include/X11/Xcms.h devel
 file     /usr/x11r6/include/X11/Xdmcp.h devel
 file     /usr/x11r6/include/X11/Xfuncproto.h devel
 file     /usr/x11r6/include/X11/Xfuncs.h devel
-file     /usr/x11r6/include/X11/X.h devel
-file     /usr/x11r6/include/X11/XKBlib.h devel
 file     /usr/x11r6/include/X11/Xlib.h devel
 file     /usr/x11r6/include/X11/Xlibint.h devel
 file     /usr/x11r6/include/X11/Xlocale.h devel
@@ -315,9 +180,9 @@ file     /usr/x11r6/include/X11/Xmu/WidgetNode.h devel
 file     /usr/x11r6/include/X11/Xmu/WinUtil.h devel
 file     /usr/x11r6/include/X11/Xmu/Xct.h devel
 file     /usr/x11r6/include/X11/Xmu/Xmu.h devel
-file     /usr/x11r6/include/X11/Xosdefs.h devel
 file     /usr/x11r6/include/X11/Xos.h devel
 file     /usr/x11r6/include/X11/Xos_r.h devel
+file     /usr/x11r6/include/X11/Xosdefs.h devel
 file     /usr/x11r6/include/X11/Xpoll.h devel
 file     /usr/x11r6/include/X11/Xproto.h devel
 file     /usr/x11r6/include/X11/Xprotostr.h devel
@@ -325,17 +190,202 @@ file     /usr/x11r6/include/X11/Xresource.h devel
 file     /usr/x11r6/include/X11/Xthreads.h devel
 file     /usr/x11r6/include/X11/Xtrans.h devel
 file     /usr/x11r6/include/X11/Xutil.h devel
-file     /usr/x11r6/include/X11/XWDFile.h devel
+file     /usr/x11r6/include/X11/ap_keysym.h devel
+file     /usr/x11r6/include/X11/bitmaps/1x1 devel
+file     /usr/x11r6/include/X11/bitmaps/2x2 devel
+file     /usr/x11r6/include/X11/bitmaps/Dashes devel
+file     /usr/x11r6/include/X11/bitmaps/Down devel
+file     /usr/x11r6/include/X11/bitmaps/Excl devel
+file     /usr/x11r6/include/X11/bitmaps/FlipHoriz devel
+file     /usr/x11r6/include/X11/bitmaps/FlipVert devel
+file     /usr/x11r6/include/X11/bitmaps/Fold devel
+file     /usr/x11r6/include/X11/bitmaps/Left devel
+file     /usr/x11r6/include/X11/bitmaps/Right devel
+file     /usr/x11r6/include/X11/bitmaps/RotateLeft devel
+file     /usr/x11r6/include/X11/bitmaps/RotateRight devel
+file     /usr/x11r6/include/X11/bitmaps/Stipple devel
+file     /usr/x11r6/include/X11/bitmaps/Term devel
+file     /usr/x11r6/include/X11/bitmaps/Up devel
+file     /usr/x11r6/include/X11/bitmaps/black devel
+file     /usr/x11r6/include/X11/bitmaps/black6 devel
+file     /usr/x11r6/include/X11/bitmaps/box6 devel
+file     /usr/x11r6/include/X11/bitmaps/boxes devel
+file     /usr/x11r6/include/X11/bitmaps/calculator devel
+file     /usr/x11r6/include/X11/bitmaps/cntr_ptr devel
+file     /usr/x11r6/include/X11/bitmaps/cntr_ptrmsk devel
+file     /usr/x11r6/include/X11/bitmaps/cross_weave devel
+file     /usr/x11r6/include/X11/bitmaps/dimple1 devel
+file     /usr/x11r6/include/X11/bitmaps/dimple3 devel
+file     /usr/x11r6/include/X11/bitmaps/dot devel
+file     /usr/x11r6/include/X11/bitmaps/dropbar7 devel
+file     /usr/x11r6/include/X11/bitmaps/dropbar8 devel
+file     /usr/x11r6/include/X11/bitmaps/escherknot devel
+file     /usr/x11r6/include/X11/bitmaps/flagdown devel
+file     /usr/x11r6/include/X11/bitmaps/flagup devel
+file     /usr/x11r6/include/X11/bitmaps/flipped_gray devel
+file     /usr/x11r6/include/X11/bitmaps/gray devel
+file     /usr/x11r6/include/X11/bitmaps/gray1 devel
+file     /usr/x11r6/include/X11/bitmaps/gray3 devel
+file     /usr/x11r6/include/X11/bitmaps/grid16 devel
+file     /usr/x11r6/include/X11/bitmaps/grid2 devel
+file     /usr/x11r6/include/X11/bitmaps/grid4 devel
+file     /usr/x11r6/include/X11/bitmaps/grid8 devel
+file     /usr/x11r6/include/X11/bitmaps/hlines2 devel
+file     /usr/x11r6/include/X11/bitmaps/hlines3 devel
+file     /usr/x11r6/include/X11/bitmaps/icon devel
+file     /usr/x11r6/include/X11/bitmaps/keyboard16 devel
+file     /usr/x11r6/include/X11/bitmaps/left_ptr devel
+file     /usr/x11r6/include/X11/bitmaps/left_ptrmsk devel
+file     /usr/x11r6/include/X11/bitmaps/letters devel
+file     /usr/x11r6/include/X11/bitmaps/light_gray devel
+file     /usr/x11r6/include/X11/bitmaps/mailempty devel
+file     /usr/x11r6/include/X11/bitmaps/mailemptymsk devel
+file     /usr/x11r6/include/X11/bitmaps/mailfull devel
+file     /usr/x11r6/include/X11/bitmaps/mailfullmsk devel
+file     /usr/x11r6/include/X11/bitmaps/mensetmanus devel
+file     /usr/x11r6/include/X11/bitmaps/menu10 devel
+file     /usr/x11r6/include/X11/bitmaps/menu12 devel
+file     /usr/x11r6/include/X11/bitmaps/menu16 devel
+file     /usr/x11r6/include/X11/bitmaps/menu6 devel
+file     /usr/x11r6/include/X11/bitmaps/menu8 devel
+file     /usr/x11r6/include/X11/bitmaps/noletters devel
+file     /usr/x11r6/include/X11/bitmaps/opendot devel
+file     /usr/x11r6/include/X11/bitmaps/opendotMask devel
+file     /usr/x11r6/include/X11/bitmaps/plaid devel
+file     /usr/x11r6/include/X11/bitmaps/right_ptr devel
+file     /usr/x11r6/include/X11/bitmaps/right_ptrmsk devel
+file     /usr/x11r6/include/X11/bitmaps/root_weave devel
+file     /usr/x11r6/include/X11/bitmaps/scales devel
+file     /usr/x11r6/include/X11/bitmaps/sipb devel
+file     /usr/x11r6/include/X11/bitmaps/star devel
+file     /usr/x11r6/include/X11/bitmaps/starMask devel
+file     /usr/x11r6/include/X11/bitmaps/stipple devel
+file     /usr/x11r6/include/X11/bitmaps/target devel
+file     /usr/x11r6/include/X11/bitmaps/terminal devel
+file     /usr/x11r6/include/X11/bitmaps/tie_fighter devel
+file     /usr/x11r6/include/X11/bitmaps/vlines2 devel
+file     /usr/x11r6/include/X11/bitmaps/vlines3 devel
+file     /usr/x11r6/include/X11/bitmaps/weird_size devel
+file     /usr/x11r6/include/X11/bitmaps/wide_weave devel
+file     /usr/x11r6/include/X11/bitmaps/wingdogs devel
+file     /usr/x11r6/include/X11/bitmaps/woman devel
+file     /usr/x11r6/include/X11/bitmaps/xfd_icon devel
+file     /usr/x11r6/include/X11/bitmaps/xlogo11 devel
+file     /usr/x11r6/include/X11/bitmaps/xlogo16 devel
+file     /usr/x11r6/include/X11/bitmaps/xlogo32 devel
+file     /usr/x11r6/include/X11/bitmaps/xlogo64 devel
+file     /usr/x11r6/include/X11/bitmaps/xsnow devel
+file     /usr/x11r6/include/X11/cursorfont.h devel
+file     /usr/x11r6/include/X11/extensions/MITMisc.h devel
+file     /usr/x11r6/include/X11/extensions/Print.h devel
+file     /usr/x11r6/include/X11/extensions/Printstr.h devel
+file     /usr/x11r6/include/X11/extensions/XI.h devel
+file     /usr/x11r6/include/X11/extensions/XIE.h devel
+file     /usr/x11r6/include/X11/extensions/XIElib.h devel
+file     /usr/x11r6/include/X11/extensions/XIEproto.h devel
+file     /usr/x11r6/include/X11/extensions/XIEprotost.h devel
+file     /usr/x11r6/include/X11/extensions/XInput.h devel
+file     /usr/x11r6/include/X11/extensions/XIproto.h devel
+file     /usr/x11r6/include/X11/extensions/XKB.h devel
+file     /usr/x11r6/include/X11/extensions/XKBbells.h devel
+file     /usr/x11r6/include/X11/extensions/XKBconfig.h devel
+file     /usr/x11r6/include/X11/extensions/XKBfile.h devel
+file     /usr/x11r6/include/X11/extensions/XKBgeom.h devel
+file     /usr/x11r6/include/X11/extensions/XKBproto.h devel
+file     /usr/x11r6/include/X11/extensions/XKBrules.h devel
+file     /usr/x11r6/include/X11/extensions/XKBsrv.h devel
+file     /usr/x11r6/include/X11/extensions/XKBstr.h devel
+file     /usr/x11r6/include/X11/extensions/XKM.h devel
+file     /usr/x11r6/include/X11/extensions/XKMformat.h devel
+file     /usr/x11r6/include/X11/extensions/XShm.h devel
+file     /usr/x11r6/include/X11/extensions/XTest.h devel
+file     /usr/x11r6/include/X11/extensions/Xag.h devel
+file     /usr/x11r6/include/X11/extensions/Xagsrv.h devel
+file     /usr/x11r6/include/X11/extensions/Xagstr.h devel
+file     /usr/x11r6/include/X11/extensions/Xdbe.h devel
+file     /usr/x11r6/include/X11/extensions/Xdbeproto.h devel
+file     /usr/x11r6/include/X11/extensions/Xext.h devel
+file     /usr/x11r6/include/X11/extensions/lbxbuf.h devel
+file     /usr/x11r6/include/X11/extensions/lbxbufstr.h devel
+file     /usr/x11r6/include/X11/extensions/lbxdeltastr.h devel
+file     /usr/x11r6/include/X11/extensions/lbximage.h devel
+file     /usr/x11r6/include/X11/extensions/lbxopts.h devel
+file     /usr/x11r6/include/X11/extensions/lbxstr.h devel
+file     /usr/x11r6/include/X11/extensions/lbxzlib.h devel
+file     /usr/x11r6/include/X11/extensions/multibuf.h devel
+file     /usr/x11r6/include/X11/extensions/record.h devel
+file     /usr/x11r6/include/X11/extensions/recordstr.h devel
+file     /usr/x11r6/include/X11/extensions/security.h devel
+file     /usr/x11r6/include/X11/extensions/securstr.h devel
+file     /usr/x11r6/include/X11/extensions/shape.h devel
+file     /usr/x11r6/include/X11/extensions/sync.h devel
+file     /usr/x11r6/include/X11/extensions/xtestext1.h devel
+file     /usr/x11r6/include/X11/fonts/FS.h devel
+file     /usr/x11r6/include/X11/fonts/FSlib.h devel
+file     /usr/x11r6/include/X11/fonts/FSproto.h devel
+file     /usr/x11r6/include/X11/fonts/fsmasks.h devel
+file     /usr/x11r6/include/X11/keysym.h devel
+file     /usr/x11r6/include/X11/keysymdef.h devel
+file     /usr/x11r6/lib/X11/Xcms.txt
+file     /usr/x11r6/lib/X11/app-defaults/XTerm
+file     /usr/x11r6/lib/X11/locale/C/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/compose.dir
+file     /usr/x11r6/lib/X11/locale/en_US.utf/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/iso8859-1/Compose
+file     /usr/x11r6/lib/X11/locale/iso8859-1/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/iso8859-2/Compose
+file     /usr/x11r6/lib/X11/locale/iso8859-2/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/iso8859-3/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/iso8859-4/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/iso8859-5/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/iso8859-6/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/iso8859-7/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/iso8859-8/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/iso8859-9/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/ja.JIS/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/ja.S90/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/ja.SJIS/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/ja.U90/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/ja/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/ko/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/locale.alias
+file     /usr/x11r6/lib/X11/locale/locale.dir
+file     /usr/x11r6/lib/X11/locale/tbl_data/gb2312
+file     /usr/x11r6/lib/X11/locale/tbl_data/jis0201
+file     /usr/x11r6/lib/X11/locale/tbl_data/jis0208
+file     /usr/x11r6/lib/X11/locale/tbl_data/ksc5601
+file     /usr/x11r6/lib/X11/locale/tbl_data/tab8859_1
+file     /usr/x11r6/lib/X11/locale/tbl_data/tab8859_2
+file     /usr/x11r6/lib/X11/locale/tbl_data/tab8859_3
+file     /usr/x11r6/lib/X11/locale/tbl_data/tab8859_4
+file     /usr/x11r6/lib/X11/locale/tbl_data/tab8859_5
+file     /usr/x11r6/lib/X11/locale/tbl_data/tab8859_6
+file     /usr/x11r6/lib/X11/locale/tbl_data/tab8859_7
+file     /usr/x11r6/lib/X11/locale/tbl_data/tab8859_8
+file     /usr/x11r6/lib/X11/locale/tbl_data/tab8859_9
+file     /usr/x11r6/lib/X11/locale/th_TH.TACTIS/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/zh/XLC_LOCALE
+file     /usr/x11r6/lib/X11/locale/zh_TW/XLC_LOCALE
 file     /usr/x11r6/lib/libICE.so devel
+file     /usr/x11r6/lib/libICE.so.7
 file     /usr/x11r6/lib/libSM.so devel
+file     /usr/x11r6/lib/libSM.so.7
 file     /usr/x11r6/lib/libX11.so devel
+file     /usr/x11r6/lib/libX11.so.7
 file     /usr/x11r6/lib/libXau.so devel
+file     /usr/x11r6/lib/libXau.so.7
 file     /usr/x11r6/lib/libXaw.so devel
+file     /usr/x11r6/lib/libXaw.so.7
 file     /usr/x11r6/lib/libXdmcp.so devel
+file     /usr/x11r6/lib/libXdmcp.so.7
 file     /usr/x11r6/lib/libXext.so devel
+file     /usr/x11r6/lib/libXext.so.7
 file     /usr/x11r6/lib/libXi.so devel
+file     /usr/x11r6/lib/libXi.so.7
 file     /usr/x11r6/lib/libXmu.so devel
+file     /usr/x11r6/lib/libXmu.so.7
 file     /usr/x11r6/lib/libXt.so devel
+file     /usr/x11r6/lib/libXt.so.7
 file     /usr/x11r6/lib/pkgconfig/ice.pc devel
 file     /usr/x11r6/lib/pkgconfig/sm.pc devel
 file     /usr/x11r6/lib/pkgconfig/x11.pc devel

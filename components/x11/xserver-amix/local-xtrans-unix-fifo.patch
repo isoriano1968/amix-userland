@@ -1,0 +1,11 @@
+--- a/lib/xtrans/Xtranssock.c
++++ b/lib/xtrans/Xtranssock.c
+@@ -952,7 +952,7 @@
+ 
+     if (stat (unsock->sun_path, &statb) == -1 ||
+         ((statb.st_mode & S_IFMT) !=
+-#if (defined (sun) && defined(SVR4)) || defined(NCR) || defined(sco)
++#if (defined (sun) && defined(SVR4)) || defined(NCR) || defined(sco) || defined(AMIX)
+ 	  		S_IFIFO))
+ #else
+ 			S_IFSOCK))

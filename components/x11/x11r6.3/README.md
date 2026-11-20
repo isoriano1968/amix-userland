@@ -62,7 +62,9 @@ on, `host.def` included), and `x11/cross/host.def` from jusii/amix-z3660rtg at
 the commit in the Makefile. gcc-14 (`AMIX_TOOLS`) compiles and links every
 object, imake writes the Makefiles for gcc-27's tool names (`GCC27_TOOLS`), and
 the host compiler builds imake, makestrs and makekeys. `AMIX_CPU` (default
-`-m68060`) is the CPU option. Every file of the stage is in
+`-mcpu=68020 -mtune=68060 -fexcess-precision=fast`, the AMIX baseline: one
+build for the 68020/030 with a 68881/2 up to the 68060) is the CPU option;
+`tools/amix-cpu-scan` checks the stage for 68040/060-only instructions. Every file of the stage is in
 `x11r6.3.manifest`; the stage target checks that.
 
 Built this way on 2026-11-14, nine of the ten libraries are byte-identical to

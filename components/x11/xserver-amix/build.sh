@@ -75,6 +75,12 @@ patch -p1 --no-backup-if-mismatch < "$W/local-putimage-move16.patch" > "$W/log/p
 # frame copied into its window through the clip list by the card's blitter
 # (TinyGL on the Z3660's soft3D), so menus and overlapping windows survive
 patch -p1 --no-backup-if-mismatch < "$W/local-soft3d-swap.patch" > "$W/log/patch-local-soft3d-swap.log"
+# local fix: AMIX's AF_UNIX socket file (libsocket over ticots) is a FIFO, as
+# on Sun SVR4; xtrans expected S_IFSOCK, so every server reset (the last
+# client gone) closed and re-made the UNIX listener, and a client connecting
+# in that moment was refused: dthello's second XOpenDisplay, quick runs of
+# clients ("unable to open display", "can't open display")
+patch -p1 --no-backup-if-mismatch < "$W/local-xtrans-unix-fifo.patch" > "$W/log/patch-local-xtrans-unix-fifo.log"
 
 # local change: RandR 1.1, a live resolution change (xrandr, the CDE display
 # panel).  The DIX extension is xorg-server 1.0.2's randr/ and the headers are
@@ -172,7 +178,11 @@ m68k-cbm-sysv4-ar rcs libsockstub.a $MEMBERS
 
 # 4. host.def, site.def, host imake and cpp wrapper
 cd "$W/src/xc"
-{ printf '#define AmixSysroot %s\n#define AmixXStubDir %s\n' "$M" "$W/stub"
+# UseRgbTxt: the colour names from rgb.txt (this package's
+# /usr/x11r6/lib/X11/rgb.txt), not an ndbm database: until 2026-11-20 the
+# server read stock AMIX's /usr/X/lib/rgb.dir/.pag (Commodore's Xcore), which
+# an AMIX without Xcore lacks
+{ printf '#define AmixSysroot %s\n#define AmixXStubDir %s\n#define UseRgbTxt YES\n' "$M" "$W/stub"
   cat "$W/files/host.def"; } > config/cf/host.def
 sed -i '127s|^/\* #include <host.def> \*/$|#include <host.def>|' config/cf/site.def
 chmod +x "$W/imakecpp.sh"

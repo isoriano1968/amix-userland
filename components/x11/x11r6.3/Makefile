@@ -23,7 +23,7 @@ COMPONENT_VERSION = 6.3
 include ../../../make-rules/shared.mk
 include ../../../make-rules/shlib.mk
 
-AMIX_CPU    ?= -m68060
+AMIX_CPU    ?= $(AMIX_CPU_BASELINE)
 GCC27_TOOLS ?= $(HOME)/opt/amix-cross/bin
 HOST_CC     ?= gcc
 HOST_CPP    ?= cpp
@@ -91,7 +91,7 @@ $(BUILD_DIR)/.makefiles: $(BUILD_DIR)/.prep files/imakecpp.sh
 # 3. the shared libraries, xauth and libXtInherit.a (files/build-shared.sh)
 $(BUILD_DIR)/.built: $(BUILD_DIR)/.makefiles files/build-shared.sh files/rand48.c files/xtinherit.c
 	rm -rf "$(SHSTAGE)"
-	AMIX_TOOLS=$(AMIX_TOOLS) AMIX_CPU=$(AMIX_CPU) AMIX_SYSROOT=$(AMIX_SYSROOT) \
+	AMIX_TOOLS=$(AMIX_TOOLS) AMIX_CPU="$(AMIX_CPU)" AMIX_SYSROOT=$(AMIX_SYSROOT) \
 		sh files/build-shared.sh $(XC) $(SHSTAGE) > $(LOG)/05-build-shared.log 2>&1
 	touch $@
 
@@ -109,7 +109,12 @@ stage: build
 	cp -P $(X)/lib/lib*.so.7 $(X)/lib/lib*.so $(STAGE_DIR)/usr/x11r6/lib/
 	cp $(filter-out %/xp.pc,$(wildcard $(X)/lib/pkgconfig/*.pc)) $(STAGE_DIR)/usr/x11r6/lib/pkgconfig/
 	cp -RL $(XC)/exports/include/X11 $(STAGE_DIR)/usr/x11r6/include/
-	cp $(X)/bin/xauth $(STAGE_DIR)/usr/x11r6/bin/
+	cp $(X)/bin/xauth $(X)/bin/xinit $(X)/bin/xset $(X)/bin/xsetroot $(X)/bin/xrdb $(X)/bin/xterm $(X)/bin/xmodmap \
+		$(STAGE_DIR)/usr/x11r6/bin/
+	mkdir -p $(STAGE_DIR)/usr/x11r6/lib/X11/app-defaults
+	cp $(X)/lib/X11/app-defaults/XTerm $(STAGE_DIR)/usr/x11r6/lib/X11/app-defaults/
+	cp -R $(X)/lib/X11/locale $(STAGE_DIR)/usr/x11r6/lib/X11/
+	cp $(X)/lib/X11/Xcms.txt $(STAGE_DIR)/usr/x11r6/lib/X11/
 	$(call link_stubs,$(STAGE_DIR)/usr/x11r6/lib/lib*.so.7,/usr/x11r6/lib,$(STAGE_DIR)/usr/x11r6/lib/lib*.so.7)
 	cp files/xtinherit.c $(STUB_DIR)/
 	printf '%s\n' '# libXtInherit.a by the Amiga'"'"'s own gcc' \
@@ -119,7 +124,17 @@ stage: build
 	@$(manifest_files)
 	@test "`cd $(STAGE_DIR) && find . -type f -o -type l | wc -l`" = "`grep -c '^file ' x11r6.3.manifest`" || \
 		{ echo "the stage and x11r6.3.manifest list different files"; exit 1; }
+	$(CPU_SCAN) $(STAGE_DIR)
 	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) \
 		-cf build/$(COMPONENT_NAME)-amix.tar usr
 
-.PHONY: prep build stage
+# cross builds of Motif programs link -lXtInherit (xm.pc): the archive goes
+# into the sysroot with the rest, for those links only; the package does not
+# ship it (on AMIX the Amiga's own gcc makes it, native.sh)
+sysroot-install: sysroot-xtinherit
+sysroot-xtinherit: build
+	$(SYSROOT_CHECK) -w "$(AMIX_SYSROOT)"
+	mkdir -p "$(AMIX_SYSROOT)/usr/x11r6/lib"
+	cp $(X)/lib/libXtInherit.a "$(AMIX_SYSROOT)/usr/x11r6/lib/"
+
+.PHONY: prep build stage sysroot-xtinherit

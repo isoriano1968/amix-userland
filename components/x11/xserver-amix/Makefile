@@ -17,18 +17,24 @@ X11   = $(STAGE_DIR)/usr/x11r6
 build:
 	sh build.sh
 
-# the server, the X link and the server's manual page (Xserver(1): the DIX
+# the server, the X link, rgb.txt (the colour names, UseRgbTxt), the SECURITY extension's policy (the server reads
+# /usr/x11r6/lib/X11/xserver/SecurityPolicy at start and complains without
+# it) and the server's manual page (Xserver(1): the DIX
 # options).  hw/amix/Xamix.man is not installed: it is still Xsun's page with
 # the name replaced (Sun frame buffers, none of -card, -mode, -rtgdepth).
 # The dtlogin wrapper Xamix-dt is CDE's (desktop/cde files/dtlogin).
 stage: $(XS)/Xamix
 	rm -rf $(STAGE_DIR)
-	mkdir -p $(X11)/bin $(X11)/man/man1
+	mkdir -p $(X11)/bin $(X11)/man/man1 $(X11)/lib/X11/xserver
 	$(STRIP) -o $(X11)/bin/Xamix $(XS)/Xamix
 	chmod 755 $(X11)/bin/Xamix
 	ln -s Xamix $(X11)/bin/X
+	cp src/xc/programs/rgb/rgb.txt $(X11)/lib/X11/rgb.txt
+	chmod 644 $(X11)/lib/X11/rgb.txt
 	cp $(XS)/Xserver.man $(X11)/man/man1/Xserver.1
 	chmod 644 $(X11)/man/man1/Xserver.1
+	cp $(XS)/Xext/SecurityPolicy $(X11)/lib/X11/xserver/SecurityPolicy
+	chmod 644 $(X11)/lib/X11/xserver/SecurityPolicy
 	chmod -R go-w,a+rX $(STAGE_DIR)
 	@$(manifest_files)
 	@test "`cd $(STAGE_DIR) && find . -type f -o -type l | wc -l`" = "`grep -c '^file ' xserver-amix.manifest`" || \

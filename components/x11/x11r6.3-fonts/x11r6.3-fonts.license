@@ -1,0 +1,203 @@
+The X11R6.3 core fonts, from the X Consortium's X11R6.3 distribution
+(xc-2.tar.gz, xc/fonts).  Each font keeps the copyright and permission
+notice of its maker: the BDF fonts carry theirs in their COPYRIGHT and
+NOTICE properties (Adobe, Bitstream, Bigelow & Holmes, the X Consortium,
+Sony, DEC, Sun, and others); the notices that came as files follow.
+
+Packaging for AMIX:
+
+Copyright (c) 2026 isoriano1968 and contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+
+==== xc/fonts/bdf/75dpi/LU_LEGALNOTICE
+
+This is the LEGAL NOTICE pertaining to the Lucida fonts from Bigelow & Holmes:
+
+	NOTICE TO USER: The source code, including the glyphs or icons 
+	forming a par of the OPEN LOOK TM Graphic User Interface, on this 
+	tape and in these files is copyrighted under U.S. and international
+	laws. Sun Microsystems, Inc. of Mountain View, California owns
+	the copyright and has design patents pending on many of the icons. 
+	AT&T is the owner of the OPEN LOOK trademark associated with the
+	materials on this tape. Users and possessors of this source code 
+	are hereby granted a nonexclusive, royalty-free copyright and 
+	design patent license to use this code in individual and 
+	commercial software. A royalty-free, nonexclusive trademark
+	license to refer to the code and output as "OPEN LOOK" compatible 
+	is available from AT&T if, and only if, the appearance of the 
+	icons or glyphs is not changed in any manner except as absolutely
+	necessary to accommodate the standard resolution of the screen or
+	other output device, the code and output is not changed except as 
+	authorized herein, and the code and output is validated by AT&T. 
+	Bigelow & Holmes is the owner of the Lucida (R) trademark for the
+	fonts and bit-mapped images associated with the materials on this 
+	tape. Users are granted a royalty-free, nonexclusive license to use
+	the trademark only to identify the fonts and bit-mapped images if, 
+	and only if, the fonts and bit-mapped images are not modified in any
+	way by the user. 
+
+
+	Any use of this source code must include, in the user documentation 
+	and internal comments to the code, notices to the end user as  
+	follows:
+
+
+	(c) Copyright 1989 Sun Microsystems, Inc. Sun design patents
+	pending in the U.S. and foreign countries. OPEN LOOK is a 
+	trademark of AT&T. Used by written permission of the owners.
+
+
+ 	(c) Copyright Bigelow & Holmes 1986, 1985. Lucida is a registered 
+	trademark of Bigelow & Holmes. Permission to use the Lucida 
+	trademark is hereby granted only in association with the images 
+	and fonts described in this file.
+
+
+
+	SUN MICROSYSTEMS, INC., AT&T, AND BIGELOW & HOLMES 
+	MAKE NO REPRESENTATIONS ABOUT THE SUITABILITY OF
+ 	THIS SOURCE CODE FOR ANY PURPOSE. IT IS PROVIDED "AS IS" 
+	WITHOUT EXPRESS OR IMPLIED WARRANTY OF ANY KIND. 
+	SUN  MICROSYSTEMS, INC., AT&T AND BIGELOW  & HOLMES, 
+	SEVERALLY AND INDIVIDUALLY, DISCLAIM ALL WARRANTIES 
+	WITH REGARD TO THIS SOURCE CODE, INCLUDING ALL IMPLIED
+	WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+	PARTICULAR PURPOSE. IN NO EVENT SHALL SUN MICROSYSTEMS,
+	INC., AT&T OR BIGELOW & HOLMES BE LIABLE FOR ANY
+	SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES,
+	OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA 	
+	OR PROFITS, WHETHER IN AN ACTION OF  CONTRACT, NEGLIGENCE
+	OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION
+	WITH THE USE OR PERFORMANCE OF THIS SOURCE CODE.
+
+==== xc/fonts/bdf/misc/README
+
+The fonts in this directory represent miscellaneous fonts that displays of
+all resolutions will probably want to have around:
+
+	fixed width fonts
+
+	DECwindows cursor and session manager fonts
+
+	Sun Open Look glyph fonts
+
+	Kanji and Kana fonts
+
+The Kanji and Kana fonts are as follows:
+
+	k14		kanji 14 pt font
+	7x14rk		JIS roman and kana font
+	7x14		ASCII fonts with same size for 7x14rk
+	8x16rk		JIS roman and kana font
+	8x16		ASCII fonts
+	12x24rk		JIS roman and kana font
+	12x24		ASCII fonts
+
+Roman-kana fonts contain roman part in the left part of them, and kana
+in the right. Because of this, kterm (version 3.2.0 or less) can not
+display kana characters with these fonts.
+
+
+Aliases for the Lucida fonts used by XView can be found in ../{75,100}dpi.
+They are based on the following "generic" aliases:
+
+lucidasans-bolditalic-8 -b&h-lucida-bold-i-normal-sans-*-80-*-*-p-*-iso8859-1
+lucidasans-bolditalic-10 -b&h-lucida-bold-i-normal-sans-*-100-*-*-p-*-iso8859-1
+lucidasans-bolditalic-12 -b&h-lucida-bold-i-normal-sans-*-120-*-*-p-*-iso8859-1
+lucidasans-bolditalic-14 -b&h-lucida-bold-i-normal-sans-*-140-*-*-p-*-iso8859-1
+lucidasans-bolditalic-18 -b&h-lucida-bold-i-normal-sans-*-180-*-*-p-*-iso8859-1
+lucidasans-bolditalic-24 -b&h-lucida-bold-i-normal-sans-*-240-*-*-p-*-iso8859-1
+lucidasans-bold-8 -b&h-lucida-bold-r-normal-sans-*-80-*-*-p-*-iso8859-1
+lucidasans-bold-10 -b&h-lucida-bold-r-normal-sans-*-100-*-*-p-*-iso8859-1
+lucidasans-bold-12 -b&h-lucida-bold-r-normal-sans-*-120-*-*-p-*-iso8859-1
+lucidasans-bold-14 -b&h-lucida-bold-r-normal-sans-*-140-*-*-p-*-iso8859-1
+lucidasans-bold-18 -b&h-lucida-bold-r-normal-sans-*-180-*-*-p-*-iso8859-1
+lucidasans-bold-24 -b&h-lucida-bold-r-normal-sans-*-240-*-*-p-*-iso8859-1
+lucidasans-italic-8 -b&h-lucida-medium-i-normal-sans-*-80-*-*-p-*-iso8859-1
+lucidasans-italic-10 -b&h-lucida-medium-i-normal-sans-*-100-*-*-p-*-iso8859-1
+lucidasans-italic-12 -b&h-lucida-medium-i-normal-sans-*-120-*-*-p-*-iso8859-1
+lucidasans-italic-14 -b&h-lucida-medium-i-normal-sans-*-140-*-*-p-*-iso8859-1
+lucidasans-italic-18 -b&h-lucida-medium-i-normal-sans-*-180-*-*-p-*-iso8859-1
+lucidasans-italic-24 -b&h-lucida-medium-i-normal-sans-*-240-*-*-p-*-iso8859-1
+lucidasans-8 -b&h-lucida-medium-r-normal-sans-*-80-*-*-p-*-iso8859-1
+lucidasans-10 -b&h-lucida-medium-r-normal-sans-*-100-*-*-p-*-iso8859-1
+lucidasans-12 -b&h-lucida-medium-r-normal-sans-*-120-*-*-p-*-iso8859-1
+lucidasans-14 -b&h-lucida-medium-r-normal-sans-*-140-*-*-p-*-iso8859-1
+lucidasans-18 -b&h-lucida-medium-r-normal-sans-*-180-*-*-p-*-iso8859-1
+lucidasans-24 -b&h-lucida-medium-r-normal-sans-*-240-*-*-p-*-iso8859-1
+lucidasanstypewriter-bold-8  -b&h-lucidatypewriter-bold-r-normal-sans-*-80-*-*-m-*-iso8859-1
+lucidasanstypewriter-bold-10 -b&h-lucidatypewriter-bold-r-normal-sans-*-100-*-*-m-*-iso8859-1
+lucidasanstypewriter-bold-12 -b&h-lucidatypewriter-bold-r-normal-sans-*-120-*-*-m-*-iso8859-1
+lucidasanstypewriter-bold-14 -b&h-lucidatypewriter-bold-r-normal-sans-*-140-*-*-m-*-iso8859-1
+lucidasanstypewriter-bold-18 -b&h-lucidatypewriter-bold-r-normal-sans-*-180-*-*-m-*-iso8859-1
+lucidasanstypewriter-bold-24 -b&h-lucidatypewriter-bold-r-normal-sans-*-240-*-*-m-*-iso8859-1
+lucidasanstypewriter-8 -b&h-lucidatypewriter-medium-r-normal-sans-*-80-*-*-m-*-iso8859-1
+lucidasanstypewriter-10 -b&h-lucidatypewriter-medium-r-normal-sans-*-100-*-*-m-*-iso8859-1
+lucidasanstypewriter-12 -b&h-lucidatypewriter-medium-r-normal-sans-*-120-*-*-m-*-iso8859-1
+lucidasanstypewriter-14 -b&h-lucidatypewriter-medium-r-normal-sans-*-140-*-*-m-*-iso8859-1
+lucidasanstypewriter-18 -b&h-lucidatypewriter-medium-r-normal-sans-*-180-*-*-m-*-iso8859-1
+lucidasanstypewriter-24 -b&h-lucidatypewriter-medium-r-normal-sans-*-240-*-*-m-*-iso8859-1
+
+
+==== xc/fonts/scaled/Speedo/COPYRIGHT
+
+Copyright 1989-1991, Bitstream Inc., Cambridge, MA.
+You are hereby granted permission under all Bitstream propriety rights to
+use, copy, modify, sublicense, sell, and redistribute the Bitstream Speedo
+software and the Bitstream Charter and Courier outline fonts for any purpose
+and without restrictions; provided, that this notice is left intact on all
+copies of such software or font and that Bitstream's trademark is acknowledged
+as shown below on all unmodified copies of such font.
+
+BITSTREAM CHARTER is a registered trademark of Bitstream Inc.
+
+
+BITSTREAM INC. DISCLAIMS ANY AND ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING
+WITHOUT LIMITATION THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE.  BITSTREAM SHALL NOT BE LIABLE FOR ANY DIRECT OR INDIRECT
+DAMAGES, INCLUDING BUT NOT LIMITED TO LOST PROFITS, LOST DATA, OR ANY OTHER
+INCIDENTAL OR CONSEQUENTIAL DAMAGES, ARISING OUT OF OR IN ANY WAY CONNECTED
+WITH THE SPEEDO SOFTWARE OR THE BITSTREAM CHARTER OUTLINE FONT.
+
+==== xc/fonts/scaled/Type1/COPYRIGHT.IBM
+
+IBM Courier - Copyright (c) IBM Corporation 1990, 1991
+
+You are hereby granted permission under the terms of the IBM/MIT X Consortium
+Courier Typefont agreement to execute, reproduce, distribute, display, market,
+sell and otherwise transfer copies of the IBM Courier font to third parties.
+
+The font is provided "AS IS" without charge.  NO WARRANTIES OR INDEMNIFICATION
+ARE GIVEN, WHETHER EXPRESS OR IMPLIED INCLUDING, BUT LIMITED TO THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+==== xc/fonts/scaled/Type1/Copyright
+
+(c) Copyright 1989-1992, Bitstream Inc., Cambridge, MA.
+
+You are hereby granted permission under all Bitstream propriety rights
+to use, copy, modify, sublicense, sell, and redistribute the 4 Bitstream
+Charter (r) Type 1 outline fonts and the 4 Courier Type 1 outline fonts
+for any purpose and without restriction; provided, that this notice is
+left intact on all copies of such fonts and that Bitstream's trademark
+is acknowledged as shown below on all unmodified copies of the 4 Charter
+Type 1 fonts.
+
+BITSTREAM CHARTER is a registered trademark of Bitstream Inc.

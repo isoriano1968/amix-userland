@@ -1,8 +1,12 @@
 # name, version and what building and running it needs
 name     x11/libxp
 version  6.3
+# the 68020..68060 baseline (-mcpu=68020 -mtune=68060), tools/amix-cpu-scan clean
+cpu      68020
 summary  X Print client library (libXp.so.7) with xp.pc
 require  x11/x11r6.3 >= 6.3
+# libamixc99.so.1 (gcc 14's specs make objects that call C99 functions NEED it)
+require  library/amixc99 >= 2
 provide  xp
 # every file the stage installs; "devel": .so link, .pc, link stubs
 file     /usr/local/share/amix-stubs/libxp/LIST devel

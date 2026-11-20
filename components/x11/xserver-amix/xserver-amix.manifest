@@ -1,16 +1,29 @@
 # name, version and what building and running it needs
 name     x11/xserver-amix
 version  2
+# the 68020..68060 baseline (-mcpu=68020 -mtune=68060), tools/amix-cpu-scan clean
+cpu      68020
+# PutImage by move16 only where uname names a 68040/060 (rtgcpu.c; never run to probe)
+cpu-allow move16=1 the RTG PutImage path, chosen at run time on a 68040/060 only
 summary  Xamix, the AMIX X server: card drivers z3660 (Z3660 RTG), zz9000 (MNT ZZ9000) and cirrus (Picasso II)
-# No require: Xamix needs only stock AMIX's shared libraries (readelf -d:
+# Shared libraries: only stock AMIX's (readelf -d:
 # libsocket.so, libnsl.so, /usr/amiga/lib/libscreen.so, /usr/lib/libc.so.1).
 # The X libraries it uses (Xau, Xdmcp, xkbfile, font, lbxutil, zlib) are the
 # server's own, built from the R6.3 tree by build.sh and linked statically;
 # x11/x11r6.3's shared client libraries are not used.  ZZ9K-SOFT3D talks to
 # the zz9000 kernel driver by ioctl at run time; it needs no library/soft3d.
-# Run time data from stock AMIX, given by desktop/cde's Xamix-dt: fonts and
-# rgb in /usr/X/lib (-fp, -co); no XKB data yet, so Xamix-dt passes -kb
-# (XKB data: a later component).
+# Its run time data is packaged: the fonts (x11/x11r6.3-fonts, in the font
+# path the server has built in) and rgb.txt (here); none of stock AMIX's X11R5
+# files (/usr/X/lib, Commodore's Xcore).  No XKB data yet, so Xamix-dt passes
+# -kb (XKB data: a later component).
+require  x11/x11r6.3-fonts >= 6.3
+# the server's built-in font path (misc holds "fixed", the font it must open)
+# and colour names: the gate checks they are delivered
+uses     /usr/x11r6/lib/X11/fonts/misc/fonts.dir
+uses     /usr/x11r6/lib/X11/fonts/misc/fonts.alias
+uses     /usr/x11r6/lib/X11/rgb.txt
 file     /usr/x11r6/bin/Xamix
 file     /usr/x11r6/bin/X
 file     /usr/x11r6/man/man1/Xserver.1
+file     /usr/x11r6/lib/X11/xserver/SecurityPolicy
+file     /usr/x11r6/lib/X11/rgb.txt

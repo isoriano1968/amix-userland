@@ -17,7 +17,7 @@ PREFIX            = /usr/x11r6
 include ../../../make-rules/shared.mk
 include ../../../make-rules/shlib.mk
 
-AMIX_CPU    ?= -m68060
+AMIX_CPU    ?= $(AMIX_CPU_BASELINE)
 XC_ARCHIVE   = xc-1.tar.gz
 XC_SHA256    = $(shell awk '$$2 == "$(XC_ARCHIVE)" { print $$1 }' ../x11r6.3/SOURCES.sha256)
 XC_URL       = https://www.x.org/archive/X11R6.3/tars/$(XC_ARCHIVE)
@@ -63,6 +63,7 @@ stage: build
 	mkdir -p $(STAGE_DIR)$(PREFIX)/lib/pkgconfig
 	sed 's|@VERSION@|$(COMPONENT_VERSION)|' xp.pc.in > $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/xp.pc
 	$(stage_finish)
+	$(CPU_SCAN) $(STAGE_DIR)
 	@$(manifest_files)
 	@test "`cd $(STAGE_DIR) && find . -type f -o -type l | wc -l`" = "`grep -c '^file ' libxp.manifest`" || \
 		{ echo "the stage and libxp.manifest list different files"; exit 1; }

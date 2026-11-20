@@ -11,15 +11,15 @@
 # The toolchain, CPU and sysroot come from the environment (the component
 # Makefile sets them; the defaults are the P52's):
 #   AMIX_TOOLS    gcc-14's bin directory     ($HOME/opt/m68k-amix/bin)
-#   AMIX_CPU      the CPU option             (-m68060)
+#   AMIX_CPU      the CPU option  (-mcpu=68020 -mtune=68060 -fexcess-precision=fast)
 #   AMIX_SYSROOT  passed as --sysroot, so gcc-14 sees only that sysroot and
 #                 not the one it was configured with (unset: its own)
 set -e
 XC=$1; STAGE=$2
-HERE=$(cd "$(dirname "$0")" && pwd)
+HERE=$(cd "$(dirname "$0")" && pwd)	# files/, before any cd
 TOOLS=$(cd "$HERE/../../../.." && pwd)/tools
 export PATH=${AMIX_TOOLS:-$HOME/opt/m68k-amix/bin}:$PATH
-CPU=${AMIX_CPU:--m68060}
+CPU=${AMIX_CPU:--mcpu=68020 -mtune=68060 -fexcess-precision=fast}
 CC14="m68k-elf-gcc${AMIX_SYSROOT:+ --sysroot=$AMIX_SYSROOT}"
 L=$STAGE/usr/x11r6/lib
 mkdir -p "$L/pkgconfig" "$XC/log"
@@ -112,3 +112,60 @@ $CC14 -O2 $CPU -w -Wno-error=implicit-function-declaration -Wno-error=int-conver
 	"$XC"/programs/xauth/parsedpy.c -L"$L" -Wl,-rpath-link,"$L" -Wl,-R,/usr/x11r6/lib \
 	-lXmu -lXt -lSM -lICE -lXext -lX11 -lXau -lsocket -lnsl -o "$STAGE/usr/x11r6/bin/xauth"
 m68k-elf-strip "$STAGE/usr/x11r6/bin/xauth"
+
+# the X programs CDE's session runs (xinit for startcde, xset and xsetroot in
+# Xsession, xrdb, xterm for the failsafe session, xmodmap for the Amiga keymaps), from the unchanged R6.3
+# sources: until 2026-11-20 they were stock AMIX's X11R5 ones (/usr/X/bin,
+# Commodore's Xbasic), which an AMIX without X lacks.  K&R C: -std=gnu89.
+CL="-std=gnu89 -O2 $CPU -w -Wno-error=implicit-function-declaration -Wno-error=int-conversion \
+	-Wno-error=incompatible-pointer-types -Wno-error=implicit-int -D__amix__ -DSVR4 \
+	-DTCPCONN -DUNIXCONN -DFUNCPROTO=15 -DNARROWPROTO -I$XC -I$XC/exports/include"
+LK="-L$L -Wl,-rpath-link,$L -Wl,-R,/usr/x11r6/lib"
+XLIBS="-lXmu -lXt -lSM -lICE -lXext -lX11 -lsocket -lnsl"
+B="$STAGE/usr/x11r6/bin"
+$CC14 $CL -DXINITDIR=\"/usr/x11r6/lib/X11/xinit\" -DBINDIR=\"/usr/x11r6/bin\" \
+	"$XC"/programs/xinit/xinit.c $LK -lX11 -lsocket -lnsl -o "$B/xinit"
+for p in xset xsetroot; do
+	$CC14 $CL "$XC/programs/$p/$p.c" $LK $XLIBS -o "$B/$p"
+done
+# xmodmap: the Amiga keyboard layouts (xkeymap-amiga)
+( cd "$XC/programs/xmodmap" && $CC14 $CL xmodmap.c pf.c handle.c exec.c $LK $XLIBS -o "$B/xmodmap" )
+# xrdb runs the C preprocessor of AMIX's own compilers (stock: /usr/ccs/lib/cpp);
+# without one, xrdb -nocpp
+$CC14 $CL -DCPP=\"/usr/ccs/lib/cpp\" "$XC"/programs/xrdb/xrdb.c $LK $XLIBS -o "$B/xrdb"
+# xterm: termcap from library/ncurses (/usr/local/lib), utmp entries as R6.3's
+# Imakefile (-DUTMP); not setuid
+( cd "$XC/programs/xterm" && $CC14 $CL -DUTMP button.c charproc.c cursor.c data.c input.c main.c \
+	menu.c misc.c screen.c scrollbar.c tabs.c Tekproc.c TekPrsTbl.c util.c VTPrsTbl.c \
+	$LK -Wl,-R,/usr/local/lib -L"${AMIX_SYSROOT:-/nonexistent}/usr/local/lib" -lXaw $XLIBS -lncurses \
+	-o "$B/xterm" )
+mkdir -p "$STAGE/usr/x11r6/lib/X11/app-defaults"
+cp "$XC/programs/xterm/XTerm.ad" "$STAGE/usr/x11r6/lib/X11/app-defaults/XTerm"
+for p in xinit xset xsetroot xrdb xterm xmodmap; do m68k-elf-strip "$B/$p"; done
+
+# Xlib's data in /usr/x11r6/lib/X11 (its compiled-in paths): the locale
+# database (XLOCALEDIR, xc/nls: without it XSupportsLocale fails, Xlib
+# says "locale not supported", and CDE's font sets come out empty: dtwm
+# stopped with "failed to load font") and Xcms.txt.  The nls files through cpp as R6.3's CppFileTarget
+# runs it (WCHAR32: AMIX's wchar_t is 32 bits); the C locale is AMIX's own,
+# with both halves of ISO 8859-1 (files/XLC_LOCALE.C.amix, umlauts in dtterm).
+X11D="$STAGE/usr/x11r6/lib/X11"
+LD="$X11D/locale"
+nlscpp() {	# nlscpp SRC DEST
+	cpp -traditional -P -undef -DWCHAR32=1 < "$1" | \
+		sed -e '/^#  *[0-9][0-9]*  *.*$/d' -e '/^XCOMM$/s//#/' -e '/^XCOMM[^a-zA-Z0-9_]/s/^XCOMM/#/' > "$2"
+}
+rm -rf "$LD"; mkdir -p "$LD/tbl_data"
+for f in locale.alias locale.dir compose.dir; do nlscpp "$XC/nls/$f" "$LD/$f"; done
+for n in C en_US.utf iso8859-1 iso8859-2 iso8859-3 iso8859-4 iso8859-5 iso8859-6 iso8859-7 iso8859-8 \
+	 iso8859-9 ja ja.JIS ja.S90 ja.SJIS ja.U90 ko th_TH.TACTIS zh zh_TW; do
+	mkdir -p "$LD/$n"
+	nlscpp "$XC/nls/XLC_LOCALE/$n" "$LD/$n/XLC_LOCALE"
+done
+cp "$HERE/XLC_LOCALE.C.amix" "$LD/C/XLC_LOCALE"
+for n in iso8859-1 iso8859-2; do cp "$XC/nls/Compose/$n" "$LD/$n/Compose"; done
+for f in tab8859_1 tab8859_2 tab8859_3 tab8859_4 tab8859_5 tab8859_6 tab8859_7 tab8859_8 tab8859_9 \
+	 jis0208 ksc5601 gb2312 jis0201; do cp "$XC/nls/XLC_LOCALE/$f" "$LD/tbl_data/"; done
+# (XErrorDB and XKeysymDB: desktop/cde has shipped them since before this
+# package did; a file moving between packages needs amix-pkg 0.5.1 on the box)
+cp "$XC/lib/X11/Xcms.txt" "$X11D/"

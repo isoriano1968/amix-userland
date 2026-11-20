@@ -1,0 +1,2 @@
+# AMIX: the console's keyboard layout for the session (xkeymap-amiga)
+[ -x /opt/amix/bin/xkeymap-amiga ] && /opt/amix/bin/xkeymap-amiga

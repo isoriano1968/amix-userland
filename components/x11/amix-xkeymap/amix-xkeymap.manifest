@@ -1,0 +1,25 @@
+# name, version and what building and running it needs
+name     x11/amix-xkeymap
+version  1
+# shell scripts and tables only
+cpu      68020
+summary  The Amiga keyboard layouts under X: the console's keymap for the X server, in every CDE session and on the login screen
+require  x11/x11r6.3 >= 6.3
+uses     /usr/x11r6/bin/xmodmap
+file     /opt/amix/bin/xkeymap-amiga
+file     /usr/dt/config/Xsession.d/0015.amix-keymap
+file     /usr/x11r6/lib/X11/xmodmap.amiga-cdn
+file     /usr/x11r6/lib/X11/xmodmap.amiga-ch1
+file     /usr/x11r6/lib/X11/xmodmap.amiga-ch2
+file     /usr/x11r6/lib/X11/xmodmap.amiga-d
+file     /usr/x11r6/lib/X11/xmodmap.amiga-dk
+file     /usr/x11r6/lib/X11/xmodmap.amiga-e
+file     /usr/x11r6/lib/X11/xmodmap.amiga-f
+file     /usr/x11r6/lib/X11/xmodmap.amiga-gb
+file     /usr/x11r6/lib/X11/xmodmap.amiga-i
+file     /usr/x11r6/lib/X11/xmodmap.amiga-n
+file     /usr/x11r6/lib/X11/xmodmap.amiga-s
+file     /usr/x11r6/lib/X11/xmodmap.amiga-usa
+file     /usr/x11r6/lib/X11/xmodmap.amiga-usa0
+file     /usr/x11r6/lib/X11/xmodmap.amiga-usa1
+file     /usr/x11r6/lib/X11/xmodmap.amiga-usa2
