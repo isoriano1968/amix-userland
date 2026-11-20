@@ -18,6 +18,9 @@ CARD=`cat /etc/X11/amix-card 2> /dev/null`
 LD_LIBRARY_PATH=/usr/lib:/usr/amiga/lib
 export LD_LIBRARY_PATH
 [ -d /var/dt ] || mkdir -p /var/dt
-exec /usr/x11r6/bin/Xamix "$@" ${MODE:+-mode $MODE} \
+# not ${MODE:+-mode $MODE}: AMIX's sh calls a $ inside ${...+word} a "bad
+# substitution"
+[ -z "$MODE" ] || set -- "$@" -mode "$MODE"
+exec /usr/x11r6/bin/Xamix "$@" \
 	-fp /usr/X/lib/fonts/misc/,/usr/X/lib/fonts/Xol/,/usr/X/lib/fonts/75dpi/,/usr/X/lib/fonts/100dpi/,/usr/dt/config/xfonts/C/ \
 	-co /usr/X/lib/rgb -kb >> /var/dt/Xamix.log 2>&1
