@@ -20,6 +20,7 @@
 
 /* --- util.c -------------------------------------------------------------- */
 extern const char *progname;
+extern char **self_argv;	/* main's argv: pkg runs itself again after its own update */
 extern int verbose;
 
 void die(const char *fmt, ...);
@@ -137,18 +138,28 @@ int gunzip(const struct buf *in, struct buf *out);
 /* --- image.c: the client's state under the root -------------------------- */
 struct image {
 	char *root;		/* "/" or -R */
-	char *origin;		/* from var/pkg/cfg */
+	char *origin;		/* the origin in use: active=, else the first one on */
+	char **origins;		/* every origin of the publisher, in order (var/pkg/cfg) */
+	int *off;		/* off[i]: origins[i] is kept but not used */
+	size_t norigins;
 	int devel;		/* facet.devel */
 };
 void image_open(struct image *im, const char *root);
 char *image_path(const struct image *im, const char *rel);	/* root/var/pkg/rel */
 int image_save_cfg(const struct image *im);
+/* origins: add (at the end), remove ("*": all), switch on or off; 0, or -1 unknown */
+void image_add_origin(struct image *im, const char *url);
+int image_remove_origin(struct image *im, const char *url);
+int image_origin_off(struct image *im, const char *url, int off);
+/* does this machine have a 68060 (the kernel's uname tag; PKG_CPU=060|030 for tests) */
+int cpu_has_060(void);
 
 /* the catalog: stem -> versions with summary */
 struct catver {
 	char *version;
 	char *sig;		/* manifest SHA-1 */
 	char *summary;
+	char *cpu;		/* org.amix.cpu: "68020", "68060" or NULL (untagged) */
 	char **depends;		/* "library/world@1", NULL-terminated */
 };
 struct catpkg {

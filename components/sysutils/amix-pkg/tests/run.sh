@@ -205,6 +205,104 @@ else
 	echo "skip http (no python3)"
 fi
 
+# origins (0.5): a mirror, one off, the first that answers is the one in use
+TAB=$(printf '\t')
+R3="$T/root3"; mkdir -p "$R3"
+expect "two origins"              0 ""              "$PKG" -R "$R3" set-publisher -O "$T/nosuch" -g "file://$here/repo" amix
+expect "publisher -t"             0 "amix${TAB}file://$here/repo${TAB}on${TAB}-" "$PKG" -R "$R3" publisher -t
+expect "refresh: the next origin" 0 "trying file://" "$PKG" -R "$R3" refresh
+expect "it is in use now"         0 "file://$here/repo${TAB}on${TAB}active" "$PKG" -R "$R3" publisher -t
+expect "--disable-origin"         0 ""              "$PKG" -R "$R3" set-publisher --disable-origin "file://$here/repo"
+expect "an origin off"            0 "file://$here/repo${TAB}off" "$PKG" -R "$R3" publisher -t
+expect "refresh: none on answers" 1 ""              "$PKG" -R "$R3" refresh
+expect "--enable-origin"          0 ""              "$PKG" -R "$R3" set-publisher --enable-origin "file://$here/repo"
+expect "-G one"                   0 ""              "$PKG" -R "$R3" set-publisher -G "$T/nosuch"
+expect "-G unknown"               1 "not an origin" "$PKG" -R "$R3" set-publisher -G "$T/nosuch"
+expect "unset-publisher"          0 ""              "$PKG" -R "$R3" unset-publisher amix
+expect "no origins left"          0 "(none)"        "$PKG" -R "$R3" publisher
+
+# search and tab-separated lists (0.5)
+expect "search: in a summary"     0 "demo/hello"    "$PKG" -R "$R" search LOUDER
+expect "search: nothing"          1 "no packages match" "$PKG" -R "$R" search zzzz
+expect "list -at"                 0 "library/world${TAB}" "$PKG" -R "$R" list -at world
+expect "list -at: newest, requires" 0 "demo/hello${TAB}1.0,2.1-1${TAB}iu${TAB}-${TAB}1.1,2.1-2${TAB}library/world${TAB}Says hello, louder" "$PKG" -R "$R" list -at hello
+
+# org.amix.cpu 68060: refused on a 68020/030 (0.5)
+PUB="$here/../../../../tools/amix-publish"
+if [ -x "$PUB" ] && command -v python3 >/dev/null 2>&1; then
+	mkdir -p "$T/cpusrc"; echo fast > "$T/cpusrc/f"
+	printf '%s\n' 'set name=pkg.fmri value=pkg://amix/demo/fast@1.0,2.1-1' \
+		'set name=pkg.summary value="for the 68060"' 'set name=org.amix.cpu value=68060' \
+		'dir path=usr owner=root group=sys mode=0755' 'dir path=usr/local owner=root group=bin mode=0755' \
+		'dir path=usr/local/share owner=root group=bin mode=0755' \
+		'file f path=usr/local/share/fast.txt owner=root group=bin mode=0444' > "$T/fast.p5m"
+	"$PUB" -s "$T/cpurepo" -d "$T/cpusrc" "$T/fast.p5m" >/dev/null 2>&1
+	R4="$T/root4"; mkdir -p "$R4"
+	"$PKG" -R "$R4" set-publisher -O "$T/cpurepo" amix && "$PKG" -R "$R4" refresh
+	expect "cpu in the catalog"   0 "demo/fast${TAB}1.0,2.1-1${TAB}--${TAB}68060" "$PKG" -R "$R4" list -at
+	expect "68060 package on a 030" 1 "68060 only" env PKG_CPU=030 "$PKG" -R "$R4" install demo/fast
+	expect "nothing installed"    1 ""              test -f "$R4/usr/local/share/fast.txt"
+	expect "68060 package on a 060" 0 ""            env PKG_CPU=060 "$PKG" -R "$R4" install demo/fast
+	expect "installed"            0 ""              test -f "$R4/usr/local/share/fast.txt"
+else
+	echo "skip cpu (no tools/amix-publish)"
+fi
+
+# a file moving between packages, and pkg updating itself first (0.5.1)
+if [ -x "$PUB" ] && command -v python3 >/dev/null 2>&1; then
+	mkdir -p "$T/mvsrc"; echo one > "$T/mvsrc/db"; echo pkg1 > "$T/mvsrc/p1"; echo pkg2 > "$T/mvsrc/p2"
+	mvpkg() {	# mvpkg [-x] STEM VERSION [FILE PATH]...: -x without the gates
+		x=; [ "$1" = -x ] && { x=--no-needed-check; shift; }
+		s=$1 v=$2; shift 2
+		{ echo "set name=pkg.fmri value=pkg://amix/$s@$v"
+		  echo "set name=pkg.summary value=\"$s\""
+		  echo 'dir path=usr owner=root group=sys mode=0755'
+		  echo 'dir path=usr/local owner=root group=bin mode=0755'
+		  echo 'dir path=usr/local/share owner=root group=bin mode=0755'
+		  echo 'dir path=usr/local/share/mv owner=root group=bin mode=0755'
+		  while [ $# -gt 1 ]; do
+			echo "file $1 path=$2 owner=root group=bin mode=0444"; shift 2
+		  done; } > "$T/mv.p5m"
+		"$PUB" $x -s "$T/mvrepo" -d "$T/mvsrc" "$T/mv.p5m" >/dev/null 2>&1 || { echo "(publish $s@$v refused)"; return 1; }
+	}
+	mvpkg demo/a 1.0,2.1-1 db usr/local/share/mv/DB
+	mvpkg demo/b 1.0,2.1-1
+	mvpkg sysutils/amix-pkg 0.5.0,2.1-1 p1 usr/local/share/mv/pkg
+	M="$T/mvroot"; mkdir -p "$M/etc"
+	cp "$I/etc/passwd" "$I/etc/group" "$M/etc/"; echo "sys::$(id -g):" >> "$M/etc/group"
+	"$PKG" -R "$M" set-publisher -O "$T/mvrepo" amix && "$PKG" -R "$M" refresh
+	expect "move: install a, b, pkg"  0 ""          "$PKG" -R "$M" --min-free 0 install demo/a demo/b sysutils/amix-pkg
+	expect "move: a has DB"           0 "usr/local/share/mv/DB	demo/a" cat "$M/var/pkg/paths"
+	mvpkg demo/a 1.0,2.1-2
+	mvpkg demo/b 1.0,2.1-2 db usr/local/share/mv/DB
+	mvpkg sysutils/amix-pkg 0.5.1,2.1-1 p2 usr/local/share/mv/pkg
+	"$PKG" -R "$M" refresh
+	expect "move: update b alone takes a along" 0 "update     demo/a" "$PKG" -R "$M" --min-free 0 update -n demo/b
+	expect "move: self-update first"  0 "pkg updates itself first" "$PKG" -R "$M" --min-free 0 update
+	expect "move: pkg updated"        0 "pkg2"      cat "$M/usr/local/share/mv/pkg"
+	expect "move: DB now in b"        0 "usr/local/share/mv/DB	demo/b" cat "$M/var/pkg/paths"
+	expect "move: DB still there"     0 "one"       cat "$M/usr/local/share/mv/DB"
+	expect "move: verify"             0 ""          "$PKG" -R "$M" verify
+	expect "move: history, two runs"  0 "update	ok	sysutils/amix-pkg@" cat "$M/var/pkg/history"
+	# and back, the owner dropping it in the same run: b drops, a takes; the
+	# repo gate refuses a before b has dropped it
+	expect "publish gate: path in b"  1 ""          mvpkg demo/a 1.0,2.1-3 db usr/local/share/mv/DB
+	expect "refused: not in the repo" 1 ""          sh -c "ls '$T/mvrepo/publisher/amix/pkg/demo%2Fa/' | grep -q 2.1-3"
+	mvpkg demo/b 1.0,2.1-3
+	mvpkg demo/a 1.0,2.1-3 db usr/local/share/mv/DB
+	"$PKG" -R "$M" refresh
+	expect "move back"                0 ""          "$PKG" -R "$M" --min-free 0 update demo/a demo/b
+	expect "move back: DB in a"       0 "usr/local/share/mv/DB	demo/a" cat "$M/var/pkg/paths"
+	expect "move back: DB there"      0 "one"       cat "$M/usr/local/share/mv/DB"
+	# a real clash still refused: c wants a's DB, a keeps it
+	expect "publish gate: path in a"  1 ""          mvpkg demo/c 1.0,2.1-1 db usr/local/share/mv/DB
+	mvpkg -x demo/c 1.0,2.1-1 db usr/local/share/mv/DB
+	"$PKG" -R "$M" refresh
+	expect "clash refused"            1 "belongs to demo/a" "$PKG" -R "$M" --min-free 0 install demo/c
+else
+	echo "skip move (no tools/amix-publish)"
+fi
+
 echo
 [ $fails = 0 ] && echo "all passed" || echo "$fails failed"
 exit $fails

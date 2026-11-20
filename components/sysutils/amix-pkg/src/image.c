@@ -18,11 +18,83 @@ image_path(const struct image *im, const char *rel)
 	return p;
 }
 
+/*
+ * var/pkg/cfg: publisher=, one line per origin (origin=URL, or origin-off=URL
+ * for one kept but not used), active= (the origin the last refresh used),
+ * devel=.  Origins are mirrors of one repository: refresh takes the first
+ * that answers and remembers it in active=, so installs fetch from the same.
+ */
+void
+image_add_origin(struct image *im, const char *url)
+{
+	size_t i;
+
+	for (i = 0; i < im->norigins; i++)
+		if (!strcmp(im->origins[i], url)) {
+			im->off[i] = 0;
+			return;
+		}
+	im->origins = xrealloc(im->origins, (im->norigins + 1) * sizeof(*im->origins));
+	im->off = xrealloc(im->off, (im->norigins + 1) * sizeof(*im->off));
+	im->origins[im->norigins] = xstrdup(url);
+	im->off[im->norigins++] = 0;
+}
+
+/* the origin in use: active= if it is still one that is on, else the first on */
+static void
+pick_origin(struct image *im, const char *active)
+{
+	size_t i;
+
+	free(im->origin);
+	im->origin = NULL;
+	for (i = 0; active && i < im->norigins; i++)
+		if (!im->off[i] && !strcmp(im->origins[i], active))
+			im->origin = xstrdup(active);
+	for (i = 0; !im->origin && i < im->norigins; i++)
+		if (!im->off[i])
+			im->origin = xstrdup(im->origins[i]);
+}
+
+int
+image_remove_origin(struct image *im, const char *url)
+{
+	size_t i, k = 0;
+	int hit = 0;
+
+	for (i = 0; i < im->norigins; i++) {
+		if (!strcmp(url, "*") || !strcmp(im->origins[i], url)) {
+			free(im->origins[i]);
+			hit = 1;
+			continue;
+		}
+		im->origins[k] = im->origins[i];
+		im->off[k++] = im->off[i];
+	}
+	im->norigins = k;
+	pick_origin(im, im->origin);
+	return hit ? 0 : -1;
+}
+
+int
+image_origin_off(struct image *im, const char *url, int off)
+{
+	size_t i;
+
+	for (i = 0; i < im->norigins; i++)
+		if (!strcmp(im->origins[i], url)) {
+			im->off[i] = off;
+			pick_origin(im, im->origin);
+			return 0;
+		}
+	return -1;
+}
+
 void
 image_open(struct image *im, const char *root)
 {
 	struct buf b = { 0 };
-	char *cfg;
+	char *cfg, *active = NULL;
 
 	memset(im, 0, sizeof(*im));
 	im->root = xstrdup(root ? root : "/");
@@ -35,27 +107,53 @@ image_open(struct image *im, const char *root)
 			nl = strchr(line, '\n');
 			if (nl)
 				*nl = 0;
-			if (!strncmp(line, "origin=", 7))
-				im->origin = xstrdup(line + 7);
-			else if (!strncmp(line, "devel=", 6))
+			if (!strncmp(line, "origin=", 7) && line[7])
+				image_add_origin(im, line + 7);
+			else if (!strncmp(line, "origin-off=", 11) && line[11]) {
+				image_add_origin(im, line + 11);
+				im->off[im->norigins - 1] = 1;
+			} else if (!strncmp(line, "active=", 7) && line[7]) {
+				free(active);
+				active = xstrdup(line + 7);
+			} else if (!strncmp(line, "devel=", 6))
 				im->devel = strcmp(line + 6, "false") != 0;
 		}
 	}
 	buf_free(&b);
 	free(cfg);
+	pick_origin(im, active);
+	free(active);
 }
 
 int
 image_save_cfg(const struct image *im)
 {
 	char *dir = image_path(im, ""), *cfg = image_path(im, "cfg");
-	char *text = xasprintf("publisher=%s\norigin=%s\ndevel=%s\n", PUBLISHER,
-	    im->origin ? im->origin : "", im->devel ? "true" : "false");
-	int r = mkdirs(dir, 0755) < 0 ? -1 : write_atomic(cfg, text, strlen(text));
+	struct buf t = { 0 };
+	char *s;
+	size_t i;
+	int r;
 
+	s = xasprintf("publisher=%s\n", PUBLISHER);
+	buf_add(&t, s, strlen(s));
+	free(s);
+	for (i = 0; i < im->norigins; i++) {
+		s = xasprintf("%s=%s\n", im->off[i] ? "origin-off" : "origin", im->origins[i]);
+		buf_add(&t, s, strlen(s));
+		free(s);
+	}
+	if (im->origin) {
+		s = xasprintf("active=%s\n", im->origin);
+		buf_add(&t, s, strlen(s));
+		free(s);
+	}
+	s = xasprintf("devel=%s\n", im->devel ? "true" : "false");
+	buf_add(&t, s, strlen(s));
+	free(s);
+	r = mkdirs(dir, 0755) < 0 ? -1 : write_atomic(cfg, t.data, t.len);
+	buf_free(&t);
 	free(dir);
 	free(cfg);
-	free(text);
 	return r;
 }
 
@@ -115,18 +213,14 @@ fetch_part(const struct image *im, const char *name, const char *want, struct bu
 static const char *const PARTS[] = { "catalog.base.C", "catalog.dependency.C",
     "catalog.summary.C", NULL };
 
-int
-catalog_refresh(struct image *im)
+static int
+refresh_one(struct image *im)
 {
 	struct buf attrs = { 0 }, part[3] = { { 0 } };
 	struct json *j = NULL, *parts;
 	char *dir = NULL;
 	int i, r = -1;
 
-	if (!im->origin || !*im->origin) {
-		warnx("no origin: pkg set-publisher -O URL %s", PUBLISHER);
-		return -1;
-	}
 	if (fetch_part(im, "catalog.attrs", NULL, &attrs) < 0)
 		goto out;
 	if (!(j = json_parse(attrs.data, attrs.len)) || !(parts = json_get(j, "parts"))) {
@@ -184,6 +278,39 @@ out:
 		buf_free(&part[i]);
 	free(dir);
 	return r;
+}
+
+/* the origin in use first, then every other one that is on, in order; the
+ * one that answers becomes active= */
+int
+catalog_refresh(struct image *im)
+{
+	char *first;
+	size_t i;
+
+	if (!im->origin || !*im->origin) {
+		warnx("no origin: pkg set-publisher -O URL %s", PUBLISHER);
+		return -1;
+	}
+	if (refresh_one(im) == 0)
+		return 0;
+	first = xstrdup(im->origin);
+	for (i = 0; i < im->norigins; i++) {
+		if (im->off[i] || !strcmp(im->origins[i], first))
+			continue;
+		free(im->origin);
+		im->origin = xstrdup(im->origins[i]);
+		warnx("trying %s", im->origin);
+		if (refresh_one(im) == 0) {
+			free(first);
+			if (image_save_cfg(im) < 0)
+				warnx("cannot write %s/var/pkg/cfg: %s", im->root, strerror(errno));
+			return 0;
+		}
+	}
+	free(im->origin);
+	im->origin = first;
+	return -1;
 }
 
 /* --- the catalog as kept ---------------------------------------------------- */
@@ -305,6 +432,12 @@ catalog_load(const struct image *im, struct catalog *c)
 					    action_get(&act, "value")) {
 						free(cv->summary);
 						cv->summary = xstrdup(action_get(&act, "value"));
+					} else if (part && !strcmp(act.type, "set") &&
+					    action_get(&act, "name") &&
+					    !strcmp(action_get(&act, "name"), "org.amix.cpu") &&
+					    action_get(&act, "value")) {
+						free(cv->cpu);
+						cv->cpu = xstrdup(action_get(&act, "value"));
 					}
 					action_free(&act);
 				}
@@ -331,6 +464,7 @@ catalog_free(struct catalog *c)
 			free(v->version);
 			free(v->sig);
 			free(v->summary);
+			free(v->cpu);
 			for (d = v->depends; d && *d; d++)
 				free(*d);
 			free(v->depends);

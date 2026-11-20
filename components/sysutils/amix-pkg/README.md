@@ -6,11 +6,18 @@ server or read from a folder. The plan is in
 [IPS-INSTALLER-PLAN.md](../../../doc/plans/IPS-INSTALLER-PLAN.md), the
 formats in [IPS-CLIENT-DESIGN.md](../../../doc/plans/IPS-CLIENT-DESIGN.md).
 
-Version 0.2: the read side (step 2) and the write side (step 3).
+Version 0.5: the read side, the write side, several origins, search and the CPU check.
 
     pkg set-publisher -O http://192.168.0.10/amix amix   # or file:///path, or a folder
-    pkg refresh                    # the catalog, its SHA-1 signatures checked
-    pkg list [-a] [-u] [-H]        # installed; -a everything; -u updates
+    pkg set-publisher -g URL       # a mirror more; -G URL (or '*') removes one (all)
+    pkg set-publisher --disable-origin URL   # kept, not used; --enable-origin
+    pkg unset-publisher            # every origin forgotten
+    pkg publisher [-t]             # the origins, on/off, the one in use (-t: tabs)
+    pkg refresh                    # the catalog (the first origin that answers),
+                                   # its SHA-1 signatures checked
+    pkg list [-a] [-u] [-H] [-t]   # installed; -a everything; -u updates; -t tabs:
+                                   # name, version, iu flags, cpu, newest, requires, summary
+    pkg search [-t] text           # name or summary holds text
     pkg info [-r] name[@version]   # -r: from the repository
     pkg contents [-r] [-m] [-t file|dir|link] name
     pkg verify [-q] [name...]      # files, sizes, SHA-512/256, modes, owners, links
@@ -19,6 +26,9 @@ Version 0.2: the read side (step 2) and the write side (step 3).
     pkg update [-n] [name...]            # all installed, without names
     pkg uninstall [-n] name...           # refused while another package needs it
     pkg history
+
+A package for the 68060 only (`set name=org.amix.cpu value=68060`) is refused on a
+machine whose kernel names no 68060 (uname); `PKG_CPU=060|030` decides in tests.
 
 Every change is checked first: no path of another IPS package, of stock
 AMIX or an SVR4 package (`/var/sadm/install/contents`; directories may be
@@ -29,12 +39,18 @@ interrupted change is undone or finished by the next one. A configuration
 file you changed stays; the package's goes beside it as `.new`. A file you
 changed is never removed: it is kept as `.pkgsave`.
 
+A file may move between packages: when the package that has it now drops it
+in its new version, both are changed in one run (an installed owner with a
+newer version is updated along), the old path removed before the new file is
+renamed in. When `sysutils/amix-pkg` itself has an update, pkg installs that
+alone first and runs the same command again as the new pkg.
+
 `-R root` works on an image below another root (tests, a mounted disk);
 `PKG_IMAGE` does the same. Without it, pkg changes nothing but AMIX.
 
 ## Build and test
 
-    make build    # the AMIX binary: gcc 14 cross, -m68020-60, zlib
+    make build    # the AMIX binary: gcc 14 cross, the 68020-68060 baseline, zlib
     make test     # host build, unit tests (FIPS hash vectors, JSON, actions,
                   # versions) and tests/run.sh against tests/repo: 80 checks,
                   # conflicts, preserved files, update, uninstall, crashes

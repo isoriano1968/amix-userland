@@ -3,6 +3,7 @@
  * publisher, refresh, list, info, contents, verify (step 2); install,
  * update, uninstall, history (step 3, install.c).
  */
+#include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,7 +13,7 @@
 
 #include "pkg.h"
 
-#define VERSION_STRING	"0.4.2"
+#define VERSION_STRING	"0.5.1"
 
 static struct image im;
 
@@ -22,9 +23,14 @@ usage(void)
 	fprintf(stderr,
 	    "usage: pkg [-R root] [-v] command ...\n"
 	    "  set-publisher -O origin [%s]   where packages come from (http://, file://, a folder)\n"
-	    "  publisher                       show it\n"
-	    "  refresh                         fetch the catalog\n"
-	    "  list [-a] [-u] [-H] [name...]   installed packages (-a all, -u updates)\n"
+	    "     -g origin / -G origin|'*'      add one (a mirror) / remove one or all\n"
+	    "     --enable-origin / --disable-origin origin   use it, or keep it unused\n"
+	    "  unset-publisher [" PUBLISHER "]       forget every origin\n"
+	    "  publisher [-t]                  the origins (-t: tab-separated)\n"
+	    "  refresh                         fetch the catalog (the first origin that answers)\n"
+	    "  list [-a] [-u] [-H] [-t] [name...]  installed packages (-a all, -u updates,\n"
+	    "                                  -t tab-separated with CPU and summary)\n"
+	    "  search [-t] text                packages whose name or summary holds text\n"
 	    "  info [-r] name[@version]...      about a package (-r from the repository)\n"
 	    "  contents [-r] [-m] [-t type] name  its paths (-m the manifest)\n"
 	    "  verify [-q] [name...]           check installed files against their manifests\n"
@@ -130,27 +136,88 @@ match(const char *stem, int argc, char **argv)
 static int
 cmd_set_publisher(int argc, char **argv)
 {
-	char *origin = NULL;
-	int c;
+	char *origin = NULL, *arg, **av;
+	int c, ac = 0, i, changed = 0;
 
-	while ((c = subopt(argc, argv, "O:", &origin)) != -1)
-		;
-	if (optidx < argc && strcmp(argv[optidx], PUBLISHER))
+	/* the long options first; the rest goes through subopt */
+	av = xmalloc((argc + 1) * sizeof(*av));
+	for (i = 0; i < argc; i++) {
+		if ((!strcmp(argv[i], "--enable-origin") || !strcmp(argv[i], "--disable-origin")) &&
+		    i + 1 < argc) {
+			if (image_origin_off(&im, argv[i + 1], argv[i][2] == 'd') < 0)
+				die("%s: not an origin of %s (pkg publisher)", argv[i + 1], PUBLISHER);
+			changed = 1;
+			i++;
+		} else
+			av[ac++] = argv[i];
+	}
+	av[ac] = NULL;
+	while ((c = subopt(ac, av, "O:g:G:", &arg)) != -1) {
+		if (c == 'O') {
+			/* -O: this origin and no other, as pkg(5); -g after it adds mirrors */
+			image_remove_origin(&im, "*");
+			image_add_origin(&im, arg);
+			free(im.origin);
+			im.origin = xstrdup(arg);
+			origin = arg;
+			changed = 1;
+		} else if (c == 'g') {
+			image_add_origin(&im, arg);
+			if (!im.origin)
+				im.origin = xstrdup(arg);
+			changed = 1;
+		} else {
+			if (image_remove_origin(&im, arg) < 0)
+				die("%s: not an origin of %s (pkg publisher)", arg, PUBLISHER);
+			changed = 1;
+		}
+	}
+	if (optidx < ac && strcmp(av[optidx], PUBLISHER))
 		die("the publisher is %s", PUBLISHER);
-	if (!origin)
+	(void)origin;
+	free(av);
+	if (!changed)
 		usage();
-	free(im.origin);
-	im.origin = xstrdup(origin);
 	if (image_save_cfg(&im) < 0)
 		die("cannot write %s/var/pkg/cfg: %s", im.root, strerror(errno));
 	return 0;
 }
 
 static int
-cmd_publisher(void)
+cmd_unset_publisher(int argc, char **argv)
 {
-	printf("PUBLISHER  TYPE     ORIGIN\n%-10s origin   %s\n", PUBLISHER,
-	    im.origin ? im.origin : "(none)");
+	if (argc > 2 || (argc == 2 && strcmp(argv[1], PUBLISHER)))
+		die("the publisher is %s", PUBLISHER);
+	image_remove_origin(&im, "*");
+	if (image_save_cfg(&im) < 0)
+		die("cannot write %s/var/pkg/cfg: %s", im.root, strerror(errno));
+	return 0;
+}
+
+/* publisher [-t]: one line per origin; -t: publisher, origin, on|off, active|- */
+static int
+cmd_publisher(int argc, char **argv)
+{
+	int tabs = 0, c;
+	char *arg;
+	size_t i;
+
+	while ((c = subopt(argc, argv, "t", &arg)) != -1)
+		tabs = 1;
+	if (!tabs)
+		printf("PUBLISHER  TYPE     STATUS  ORIGIN\n");
+	if (!im.norigins && !tabs)
+		printf("%-10s origin   -       (none)\n", PUBLISHER);
+	for (i = 0; i < im.norigins; i++) {
+		int act = im.origin && !strcmp(im.origin, im.origins[i]);
+
+		if (tabs)
+			printf("%s\t%s\t%s\t%s\n", PUBLISHER, im.origins[i], im.off[i] ? "off" : "on",
+			    act ? "active" : "-");
+		else
+			printf("%-10s origin   %-7s %s%s\n", PUBLISHER, im.off[i] ? "off" : "on",
+			    im.origins[i], act ? "  (in use)" : "");
+	}
 	return 0;
 }
 
@@ -174,21 +241,101 @@ cmd_refresh(void)
 
 /* --- list ------------------------------------------------------------------- */
 
+static int list_or_search(int argc, char **argv, const char *text);
+
+/* does s hold text, ignoring case (AMIX's libc has no strcasestr) */
+static int
+holds(const char *s, const char *text)
+{
+	size_t n = strlen(text);
+
+	for (; s && *s; s++) {
+		size_t k;
+
+		for (k = 0; k < n && s[k] && tolower((unsigned char)s[k]) ==
+		    tolower((unsigned char)text[k]); k++)
+			;
+		if (k == n)
+			return 1;
+	}
+	return n == 0;
+}
+
+/*
+ * one package for -t, tab-separated (the AMIX Software Center reads it):
+ * name, version (the installed one, else the newest), flags (i installed,
+ * u an update is there), cpu (org.amix.cpu or -), the newest version, what
+ * it requires (stems, comma-separated, or -), the summary
+ */
+static void
+tab_line(const char *stem, const char *version, int inst, int newer, const struct catver *cv)
+{
+	char *sv = version_short(version), *nv = cv ? version_short(cv->version) : NULL;
+	char **d;
+	int first = 1;
+
+	printf("%s\t%s\t%c%c\t%s\t%s\t", stem, sv, inst ? 'i' : '-', newer ? 'u' : '-',
+	    cv && cv->cpu ? cv->cpu : "-", nv ? nv : "-");
+	for (d = cv ? cv->depends : NULL; d && *d; d++) {
+		const char *s = *d, *at;
+
+		if (!strncmp(s, "pkg://", 6) && (at = strchr(s + 6, '/')))
+			s = at + 1;
+		else if (!strncmp(s, "pkg:/", 5))
+			s += 5;
+		at = strchr(s, '@');
+		printf("%s%.*s", first ? "" : ",", (int)(at ? at - s : (long)strlen(s)), s);
+		first = 0;
+	}
+	printf("%s\t%s\n", first ? "-" : "", cv && cv->summary ? cv->summary : "");
+	free(sv);
+	free(nv);
+}
+
 static int
 cmd_list(int argc, char **argv)
 {
-	int all = 0, upd = 0, noheader = 0, c, found = 0;
+	return list_or_search(argc, argv, NULL);
+}
+
+static int
+cmd_search(int argc, char **argv)
+{
+	int c, tabs = 0;
+	char *arg, *av[3];
+
+	while ((c = subopt(argc, argv, "t", &arg)) != -1)
+		tabs = 1;
+	if (optidx + 1 != argc)
+		usage();
+	av[0] = "search";
+	av[1] = tabs ? "-at" : "-a";
+	av[2] = NULL;
+	{
+		char *text = argv[optidx];
+
+		optidx = 0;
+		return list_or_search(2, av, text);
+	}
+}
+
+static int
+list_or_search(int argc, char **argv, const char *text)
+{
+	int all = 0, upd = 0, noheader = 0, tabs = 0, c, found = 0;
 	char *arg;
 	struct installed *in;
 	size_t nin, i;
 	struct catalog cat;
 	int have_cat;
 
-	while ((c = subopt(argc, argv, "auH", &arg)) != -1) {
+	while ((c = subopt(argc, argv, "auHt", &arg)) != -1) {
 		if (c == 'a')
 			all = 1;
 		else if (c == 'u')
 			upd = 1;
+		else if (c == 't')
+			tabs = noheader = 1;
 		else
 			noheader = 1;
 	}
@@ -210,12 +357,21 @@ cmd_list(int argc, char **argv)
 			const char *v = ip ? ip->version : p->v[p->n - 1].version;
 			char *sv;
 
+			const struct catver *cv = p->n ? &p->v[p->n - 1] : NULL;
+
 			if (!p->n || !match(p->stem, argc, argv))
 				continue;
+			if (text && !holds(p->stem, text) && !holds(cv->summary, text))
+				continue;
+			found = 1;
+			if (tabs) {
+				tab_line(p->stem, v, ip != NULL,
+				    ip && version_cmp(cv->version, ip->version) > 0, cv);
+				continue;
+			}
 			sv = version_short(v);
 			printf("%-36s %-22s %c--\n", short_name(p->stem), sv, ip ? 'i' : '-');
 			free(sv);
-			found = 1;
 		}
 	} else {
 		for (i = 0; i < nin; i++) {
@@ -225,6 +381,11 @@ cmd_list(int argc, char **argv)
 
 			if (!match(in[i].stem, argc, argv) || (upd && !newer))
 				continue;
+			if (tabs) {
+				tab_line(in[i].stem, in[i].version, 1, newer, p && p->n ? &p->v[p->n - 1] : NULL);
+				found = 1;
+				continue;
+			}
 			sv = version_short(in[i].version);
 			printf("%-36s %-22s i%c-\n", short_name(in[i].stem), sv, newer ? 'u' : '-');
 			free(sv);
@@ -235,7 +396,7 @@ cmd_list(int argc, char **argv)
 		catalog_free(&cat);
 	installed_free(in, nin);
 	if (!found && !upd) {
-		if (argc)
+		if (argc || text)
 			warnx("no packages match");
 		return 1;
 	}
@@ -736,6 +897,8 @@ main(int argc, char **argv)
 	const char *root = getenv("PKG_IMAGE");
 	int i;
 
+	self_argv = argv;
+
 	for (i = 1; i < argc && argv[i][0] == '-'; i++) {
 		if (!strcmp(argv[i], "-R") && i + 1 < argc)
 			root = argv[++i];
@@ -757,8 +920,12 @@ main(int argc, char **argv)
 	argv += i;
 	if (!strcmp(argv[0], "set-publisher"))
 		return cmd_set_publisher(argc, argv);
+	if (!strcmp(argv[0], "unset-publisher"))
+		return cmd_unset_publisher(argc, argv);
 	if (!strcmp(argv[0], "publisher"))
-		return cmd_publisher();
+		return cmd_publisher(argc, argv);
+	if (!strcmp(argv[0], "search"))
+		return cmd_search(argc, argv);
 	if (!strcmp(argv[0], "refresh"))
 		return cmd_refresh();
 	if (!strcmp(argv[0], "list"))

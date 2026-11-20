@@ -560,6 +560,17 @@ plan_add(const struct image *im, const struct catalog *cat, const struct install
 			return -1;
 		c->sig = v->sig ? xstrdup(v->sig) : NULL;
 	}
+	{
+		/* org.amix.cpu 68060: code a 68020/030 cannot run ("Bad System
+		 * Call" on its first 68040/060 instruction) */
+		const char *cpu = manifest_set(&c->m, "org.amix.cpu");
+
+		if (cpu && !strcmp(cpu, "68060") && !cpu_has_060()) {
+			warnx("%s: built for the 68060 only (org.amix.cpu), and this machine has none",
+			    stem);
+			return -1;
+		}
+	}
 	for (i = 0; i < c->m.n; i++) {
 		const struct action *a = &c->m.act[i];
 		const char *fm = action_get(a, "fmri"), *ty = action_get(a, "type");
@@ -980,9 +991,11 @@ prepare(const struct image *im, struct change *c, struct txn *t,
 }
 
 /* old directories nobody needs any more, deepest first */
+static int plan_wants(const struct plan *p, const char *path);
+
 static void
 queue_rmdirs(const struct manifest *oldm, const struct manifest *newm, const struct owners *w,
-    const char *stem, struct txn *t)
+    const char *stem, const struct plan *pl, struct txn *t)
 {
 	size_t i;
 
@@ -992,13 +1005,39 @@ queue_rmdirs(const struct manifest *oldm, const struct manifest *newm, const str
 
 		if (strcmp(a->type, "dir") || !p || (newm && find_path(newm, p)))
 			continue;
-		if (owners_find(w, p, stem, 0))
+		if (owners_find(w, p, stem, 0) || plan_wants(pl, p))
 			continue;		/* another package, or AMIX itself, has it */
 		txn_op(t, OP_RMDIR, p, NULL);
 	}
 }
 
 /* --- checks ------------------------------------------------------------------ */
+
+/* a path one of the new versions of this plan delivers */
+static int
+plan_wants(const struct plan *p, const char *path)
+{
+	size_t i;
+
+	for (i = 0; p && i < p->n; i++)
+		if (p->c[i].version && find_path(&p->c[i].m, path))
+			return 1;
+	return 0;
+}
+
+/* the owner is itself updated or removed in this plan, and its new version
+ * no longer delivers the path: the path moves between packages (2026-11-20:
+ * XErrorDB from desktop/cde to x11/x11r6.3 and back) */
+static int
+moves_away(const struct plan *p, const char *owner, const char *path)
+{
+	size_t i;
+
+	for (i = 0; i < p->n; i++)
+		if (!strcmp(p->c[i].stem, owner))
+			return !p->c[i].version || !find_path(&p->c[i].m, path);
+	return 0;
+}
 
 static int
 conflicts(const struct image *im, const struct plan *p, const struct owners *w)
@@ -1019,6 +1058,8 @@ conflicts(const struct image *im, const struct plan *p, const struct owners *w)
 			if (!path || !wanted(im, a) || !strcmp(a->type, "dir"))
 				continue;
 			o = owners_find(w, path, c->stem, 1);
+			if (o && moves_away(p, o->stem, path))
+				continue;	/* removed before it is renamed in */
 			if (o) {
 				warnx("/%s (%s) belongs to %s", path, c->stem, o->stem);
 				bad = 1;
@@ -1213,6 +1254,65 @@ paths_write(const struct image *im)
 
 /* --- the commands ------------------------------------------------------------ */
 
+/*
+ * Removals (and .pkgsave renames) first, then the renames into place, then the
+ * empty directories: a path one package of the plan drops and another brings
+ * is then removed before the new file arrives, never after. Stable within each
+ * kind; the journal keeps this order, so a roll forward does the same.
+ */
+static void
+order_ops(struct txn *t)
+{
+	static const int rank[] = { 1, 0, 0, 2 };	/* RENAME REMOVE SAVE RMDIR */
+	struct op *o = xmalloc(t->nop * sizeof(*o) + 1);
+	size_t i, n = 0;
+	int r;
+
+	for (r = 0; r < 3; r++)
+		for (i = 0; i < t->nop; i++)
+			if (rank[t->op[i].kind] == r)
+				o[n++] = t->op[i];
+	free(t->op);
+	t->op = o;
+}
+
+/* every installed package that owns a path of the new versions: updated as
+ * well, if the catalog has a newer version (it may have dropped the path) */
+static int
+plan_owners(const struct image *im, const struct catalog *cat, const struct installed *in,
+    size_t nin, struct plan *p)
+{
+	struct owners w;
+	size_t i, k;
+	int r = 0;
+
+	owners_load(im, in, nin, &w);
+	for (i = 0; r == 0 && i < p->n; i++)	/* p->n grows: the added ones too */
+		for (k = 0; r == 0 && p->c[i].version && k < p->c[i].m.n; k++) {
+			const char *path = action_get(&p->c[i].m.act[k], "path");
+			const struct owner *o;
+			char *s;
+
+			if (!path || !strcmp(p->c[i].m.act[k].type, "dir"))
+				continue;
+			o = owners_find(&w, path, p->c[i].stem, 1);
+			if (!o || o->stem == SVR4_OWNER || plan_find(p, o->stem))
+				continue;
+			s = xstrdup(o->stem);
+			r = plan_add(im, cat, in, nin, p, s, NULL, NULL, 1);
+			free(s);
+		}
+	owners_free(&w);
+	return r;
+}
+
+/* the running pkg itself is updated alone first, then run again: the rest of
+ * the plan is then done by the new pkg (which may know things the old one
+ * does not, as moving a file between packages) */
+#define SELF_STEM "sysutils/amix-pkg"
+int putenv(char *);		/* XSI: hidden by _POSIX_C_SOURCE on the host */
+char **self_argv;		/* main's argv, for the run again */
+
 static int
 run(struct image *im, const char *cmd, struct plan *p, const struct installed *in,
     size_t nin, int removing)
@@ -1300,7 +1400,7 @@ run(struct image *im, const char *cmd, struct plan *p, const struct installed *i
 			}
 		}
 		if (c->old)
-			queue_rmdirs(&c->old->m, c->version ? &c->m : NULL, &w, c->stem, &t);
+			queue_rmdirs(&c->old->m, c->version ? &c->m : NULL, &w, c->stem, p, &t);
 		/* the installed manifest, renamed with the files */
 		{
 			char *qs = url_quote(c->stem);
@@ -1353,6 +1453,7 @@ run(struct image *im, const char *cmd, struct plan *p, const struct installed *i
 		goto out;
 	}
 	crash_point("prepared");
+	order_ops(&t);
 	if (journal_write(im, &t, 1) < 0) {
 		warnx("cannot write the journal: %s", strerror(errno));
 		goto undo;
@@ -1437,9 +1538,37 @@ cmd_install(struct image *im, int argc, char **argv, int update)
 		}
 		fmri_free(&f);
 	}
+	if (plan_owners(im, &cat, in, nin, &p) < 0)
+		goto out;
 	if (!p.n) {
 		printf("nothing to do\n");
 		r = 0;
+		goto out;
+	}
+	if (p.n > 1 && plan_find(&p, SELF_STEM) && inst_find(in, nin, SELF_STEM) &&
+	    self_argv && !getenv("PKG_SELF_UPDATED")) {
+		struct plan s = { 0 };
+
+		printf("pkg updates itself first\n");
+		if (plan_add(im, &cat, in, nin, &s, SELF_STEM, NULL, NULL, 1) < 0 ||
+		    run(im, update ? "update" : "install", &s, in, nin, 0) != 0) {
+			plan_free(&s);
+			goto out;
+		}
+		plan_free(&s);
+		if (dry_run) {
+			printf("(dry run: the rest after pkg's own update)\n");
+			r = 0;
+			goto out;
+		}
+		unlock();
+		putenv((char *)"PKG_SELF_UPDATED=1");	/* AMIX has no setenv */
+		fflush(NULL);
+		if (!strcmp(im->root, "/"))
+			execv("/usr/bin/pkg", self_argv);
+		execvp(self_argv[0], self_argv);
+		warnx("cannot run pkg again (%s): %s; run the same command again",
+		    self_argv[0], strerror(errno));
 		goto out;
 	}
 	r = run(im, update ? "update" : "install", &p, in, nin, 0);

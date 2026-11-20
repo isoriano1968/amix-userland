@@ -3,7 +3,7 @@
 #   make test    a host build, its unit tests and tests/run.sh against tests/repo
 #   make stage   build/stage/usr/bin/pkg
 COMPONENT_NAME    = amix-pkg
-COMPONENT_VERSION = 0.4.3
+COMPONENT_VERSION = 0.5.1
 
 include ../../../make-rules/shared.mk
 
@@ -16,24 +16,36 @@ HOSTFLAGS = -O2 -g -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L -DPKG_TESTIN
 build: $(BUILD_DIR)/pkg
 
 # 68020 to 68060: pkg runs on every AMIX machine, an A3000 with its 030 too
-CFLAGS68 = -O2 -m68020-60 -D__amix__ -D__svr4__ -DSVR4 -Wall -Isrc
+# (the AMIX baseline, doc/CPU-TARGET-68020-60.md)
+CFLAGS68 = -O2 $(AMIX_CPU_BASELINE) -D__amix__ -D__svr4__ -DSVR4 -Wall -Isrc
 OBJ68    = $(patsubst src/%.c,$(BUILD_DIR)/obj/%.o,$(SRC))
 
 $(BUILD_DIR)/obj/%.o: src/%.c $(HDR)
 	mkdir -p $(BUILD_DIR)/obj
 	m68k-elf-gcc $(CFLAGS68) `$(PKG_CONFIG) --cflags zlib` -c $< -o $@
 
-# libamixc99 (snprintf and friends) linked in from its archive: pkg is the
-# installer's bootstrap and the first package on a stock AMIX, which has no
-# libamixc99.so.1.  The archive is the sysroot's, else library/amixc99's
-# stage; --as-needed drops the shared libamixc99.so.1 the compiler would add.
-AMIXC99_A ?= $(firstword $(wildcard $(AMIX_SYSROOT)/usr/local/lib/libamixc99.a \
-	../../library/amixc99/build/stage/usr/local/lib/libamixc99.a))
+# libamixc99 (snprintf and friends) linked in, from an archive of its own:
+# pkg is the installer's bootstrap and the first package on a stock AMIX,
+# which has no /usr/lib/libamixc99.so.1 yet (library/amixc99 brings it).  The
+# archive is built here from developer/gcc-14's compat/ sources with the
+# baseline flags; --as-needed drops the shared libamixc99.so.1 the compiler
+# would add.
+COMPAT     = ../../developer/gcc-14/compat
+COMPAT_SRC = $(filter-out $(COMPAT)/amix_init.c,$(wildcard $(COMPAT)/*.c))
+AMIXC99_A  = $(BUILD_DIR)/compat/libamixc99.a
 
-$(BUILD_DIR)/pkg: $(OBJ68)
-	@test -n "$(AMIXC99_A)" || { echo "no libamixc99.a: make -C ../../library/amixc99 stage"; exit 1; }
+$(AMIXC99_A): $(COMPAT_SRC)
+	rm -rf $(BUILD_DIR)/compat && mkdir -p $(BUILD_DIR)/compat
+	for s in $(COMPAT_SRC); do \
+		m68k-elf-gcc $(AMIX_CPU_BASELINE) -O2 -fno-strict-aliasing \
+			-U__linux__ -U__gnu_linux__ -Ulinux -D__amix__ -D__svr4__ \
+			-c $$s -o $(BUILD_DIR)/compat/`basename $$s .c`.o || exit 1; \
+	done
+	m68k-elf-ar rcs $@ $(BUILD_DIR)/compat/*.o
+
+$(BUILD_DIR)/pkg: $(OBJ68) $(AMIXC99_A)
 	../../../tools/amix-fpu-scan -q $(OBJ68)
-	m68k-elf-gcc -m68020-60 $(OBJ68) $(AMIXC99_A) -Wl,--as-needed \
+	m68k-elf-gcc $(AMIX_CPU_BASELINE) $(OBJ68) $(AMIXC99_A) -Wl,--as-needed \
 		`$(PKG_CONFIG) --libs zlib` -lsocket -lnsl -lgen \
 		-Wl,-rpath-link,$(AMIX_SYSROOT)/usr/lib -Wl,-rpath-link,$(AMIX_SYSROOT)/usr/local/lib \
 		-o $@
@@ -53,5 +65,6 @@ stage: build
 	rm -rf $(STAGE_DIR)
 	mkdir -p $(STAGE_DIR)/usr/bin
 	cp $(BUILD_DIR)/pkg $(STAGE_DIR)/usr/bin/pkg
+	$(CPU_SCAN) $(STAGE_DIR)
 
 .PHONY: build test stage

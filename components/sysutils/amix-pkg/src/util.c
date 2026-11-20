@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 #include "pkg.h"
@@ -275,4 +276,23 @@ link_to_dir(const char *path, const struct stat *lst)
 	struct stat st;
 
 	return S_ISLNK(lst->st_mode) && stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+/*
+ * A 68060 here?  The port kernel names the CPU in uname's machine string
+ * ("Amiga (Unlimited) 68060-..."; amix-gate port/src/inituname040.s); stock
+ * AMIX names none, and runs on the A3000's 68030.  PKG_CPU=060 or 030
+ * decides instead (tests).
+ */
+int
+cpu_has_060(void)
+{
+	const char *e = getenv("PKG_CPU");
+	struct utsname u;
+
+	if (e && *e)
+		return strstr(e, "60") != NULL;
+	if (uname(&u) < 0)
+		return 0;
+	return strstr(u.machine, "68060") != NULL;
 }
