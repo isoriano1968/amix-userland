@@ -369,6 +369,17 @@ else
 	echo "skip hold (no tools/amix-publish)"
 fi
 
+# patterns (0.5.6): 'demo/*' and '*pp' as IPS takes them
+if [ -n "$H" ] && [ -d "$H/var/pkg" ]; then
+	expect "pattern: list demo/*"  0 "demo/app"      "$PKG" -R "$H" list 'demo/*'
+	expect "pattern: list *pp"     0 "demo/app"      "$PKG" -R "$H" list '*pp'
+	expect "pattern: none"         1 ""              "$PKG" -R "$H" list 'nosuch/*'
+	expect "pattern: info d*/app"  0 "demo/app"      "$PKG" -R "$H" info 'd*/app'
+	expect "pattern: install -n (installed)" 0 "nothing to do" "$PKG" -R "$H" --min-free 0 install -n 'demo/e*'
+	expect "pattern: no match"     1 "matches no known package" "$PKG" -R "$H" --min-free 0 install -n 'zz*'
+	expect "pattern: uninstall -n" 0 "demo/app"      "$PKG" -R "$H" --min-free 0 uninstall -n 'demo/a?p'
+fi
+
 # amix-hw: the boards, PKG_HW for the test (no board on the host)
 if [ -n "$HW" ]; then
 	expect "amix-hw: none on the host" 0 ""         sh -c "env -u PKG_HW '$HW' | grep -q . && exit 1 || exit 0"

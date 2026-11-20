@@ -153,6 +153,9 @@ int image_remove_origin(struct image *im, const char *url);
 int image_origin_off(struct image *im, const char *url, int off);
 /* does this machine have a 68060 (the kernel's uname tag; PKG_CPU=060|030 for tests) */
 int cpu_has_060(void);
+int glob_match(const char *pat, const char *s);
+int has_glob(const char *p);
+int stem_match(const char *pat, const char *stem);
 /* hw.c: the boards (org.amix.hw); PKG_HW overrides */
 const char *hw_list(void);
 int hw_has(const char *want);

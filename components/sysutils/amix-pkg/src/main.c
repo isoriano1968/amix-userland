@@ -13,7 +13,7 @@
 
 #include "pkg.h"
 
-#define VERSION_STRING	"0.5.5"
+#define VERSION_STRING	"0.5.6"
 
 static struct image im;
 
@@ -118,17 +118,10 @@ match(const char *stem, int argc, char **argv)
 
 	if (argc <= 0)
 		return 1;
-	for (i = 0; i < argc; i++) {
-		const char *p = argv[i];
-		size_t l = strlen(stem), pl = strlen(p);
-
-		if (!strncmp(p, "pkg:/", 5))
-			p += 5;
-		pl = strlen(p);
-		/* whole stem, or its last part ("hello" for demo/hello) */
-		if (!strcmp(stem, p) || (l > pl && stem[l - pl - 1] == '/' && !strcmp(stem + l - pl, p)))
+	/* the whole stem or a part after a "/", patterns too (stem_match) */
+	for (i = 0; i < argc; i++)
+		if (stem_match(argv[i], stem))
 			return 1;
-	}
 	return 0;
 }
 

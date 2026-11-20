@@ -1633,6 +1633,63 @@ requested_change(const struct image *im, char **add, size_t nadd, char **del, si
 	free(f);
 }
 
+/*
+ * Names with a pattern (gnu/ then a star, a star then bash) become every stem that matches
+ * (stem_match: the whole stem or a part after a "/"): from the catalog to
+ * install, from what is installed to update or uninstall.  Plain names stay
+ * as they are.  NULL: a pattern matched nothing (said).
+ */
+static char **
+expand_names(const struct catalog *cat, const struct installed *in, size_t nin, int argc,
+    char **argv, int from_installed, int *nout)
+{
+	char **out = NULL;
+	int i, n = 0;
+	size_t k;
+
+	for (i = 0; i < argc; i++) {
+		int hits = 0;
+
+		if (!has_glob(argv[i])) {
+			out = xrealloc(out, (n + 1) * sizeof(*out));
+			out[n++] = xstrdup(argv[i]);
+			continue;
+		}
+		if (from_installed) {
+			for (k = 0; k < nin; k++)
+				if (stem_match(argv[i], in[k].stem)) {
+					out = xrealloc(out, (n + 1) * sizeof(*out));
+					out[n++] = xstrdup(in[k].stem);
+					hits++;
+				}
+		} else if (cat) {
+			for (k = 0; k < cat->n; k++)
+				if (stem_match(argv[i], cat->pkg[k].stem)) {
+					out = xrealloc(out, (n + 1) * sizeof(*out));
+					out[n++] = xstrdup(cat->pkg[k].stem);
+					hits++;
+				}
+		}
+		if (!hits) {
+			warnx("%s: matches no %s package", argv[i], from_installed ? "installed" : "known");
+			while (n > 0)
+				free(out[--n]);
+			free(out);
+			return NULL;
+		}
+	}
+	*nout = n;
+	return out;
+}
+
+static void
+names_free(char **v, int n)
+{
+	while (n > 0)
+		free(v[--n]);
+	free(v);
+}
+
 int
 cmd_install(struct image *im, int argc, char **argv, int update)
 {
@@ -1641,6 +1698,8 @@ cmd_install(struct image *im, int argc, char **argv, int update)
 	struct catalog cat;
 	struct plan p = { 0 };
 	int r = 1, nheld = 0;
+	char **names = NULL;
+	int nnames = 0;
 
 	if (lock(im) < 0)
 		return 1;
@@ -1651,6 +1710,12 @@ cmd_install(struct image *im, int argc, char **argv, int update)
 		return 1;
 	}
 	installed_list(im, &in, &nin);
+	if (argc > 0) {
+		if (!(names = expand_names(&cat, in, nin, argc, argv, update, &nnames)))
+			goto out;
+		argc = nnames;
+		argv = names;
+	}
 	if (update && argc == 0) {
 		for (i = 0; i < nin; i++) {
 			size_t n0 = p.n;
@@ -1747,6 +1812,7 @@ cmd_install(struct image *im, int argc, char **argv, int update)
 		free(names);
 	}
 out:
+	names_free(names, nnames);
 	plan_free(&p);
 	installed_free(in, nin);
 	catalog_free(&cat);
@@ -1759,7 +1825,8 @@ cmd_uninstall(struct image *im, int argc, char **argv)
 	struct installed *in;
 	size_t nin, i, k;
 	struct plan p = { 0 };
-	int r = 1;
+	int r = 1, nnames = 0;
+	char **names;
 
 	if (argc == 0) {
 		warnx("uninstall what?");
@@ -1768,6 +1835,12 @@ cmd_uninstall(struct image *im, int argc, char **argv)
 	if (lock(im) < 0 || journal_recover(im) < 0)
 		return 1;
 	installed_list(im, &in, &nin);
+	if (!(names = expand_names(NULL, in, nin, argc, argv, 1, &nnames))) {
+		installed_free(in, nin);
+		return 1;
+	}
+	argc = nnames;
+	argv = names;
 	for (i = 0; i < (size_t)argc; i++) {
 		const struct installed *ip = NULL;
 		size_t nl = strlen(argv[i]);
@@ -1820,6 +1893,7 @@ cmd_uninstall(struct image *im, int argc, char **argv)
 		free(names);
 	}
 out:
+	names_free(names, nnames);
 	plan_free(&p);
 	installed_free(in, nin);
 	return r;

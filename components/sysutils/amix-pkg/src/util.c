@@ -296,3 +296,66 @@ cpu_has_060(void)
 		return 0;
 	return strstr(u.machine, "68060") != NULL;
 }
+
+/* shell-style pattern: *, ? and [set] (SVR4.0 has no fnmatch) */
+int
+glob_match(const char *p, const char *s)
+{
+	for (; *p; p++, s++) {
+		if (*p == '*') {
+			while (p[1] == '*')
+				p++;
+			if (!p[1])
+				return 1;
+			for (; *s; s++)
+				if (glob_match(p + 1, s))
+					return 1;
+			return 0;
+		}
+		if (!*s)
+			return 0;
+		if (*p == '?')
+			continue;
+		if (*p == '[') {
+			const char *q = p + 1;
+			int neg = (*q == '!' || *q == '^'), hit = 0;
+
+			if (neg)
+				q++;
+			for (; *q && *q != ']'; q++)
+				if (q[1] == '-' && q[2] && q[2] != ']') {
+					hit |= *s >= q[0] && *s <= q[2];
+					q += 2;
+				} else
+					hit |= *s == *q;
+			if (!*q || hit == neg)
+				return 0;
+			p = q;
+			continue;
+		}
+		if (*p != *s)
+			return 0;
+	}
+	return !*s;
+}
+
+int
+has_glob(const char *p)
+{
+	return strpbrk(p, "*?[") != NULL;
+}
+
+/* IPS's rule: the pattern matches the whole stem, or a part of it that
+ * starts after a "/" ("hello" and "h*" for demo/hello, "gnu/" and a star for gnu/sed) */
+int
+stem_match(const char *pat, const char *stem)
+{
+	const char *s;
+
+	if (!strncmp(pat, "pkg:/", 5))
+		pat += 5;
+	for (s = stem; s; s = strchr(s, '/') ? strchr(s, '/') + 1 : NULL)
+		if (has_glob(pat) ? glob_match(pat, s) : !strcmp(pat, s))
+			return 1;
+	return 0;
+}

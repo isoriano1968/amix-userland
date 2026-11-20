@@ -28,6 +28,11 @@ Version 0.5: the read side, the write side, several origins, search and the CPU 
     pkg autoremove [-n]                  # what nothing requires and was not asked for
     pkg history
 
+A name may be a pattern with `*`, `?` and `[...]`, matched as IPS does
+against the whole name or a part of it after a `/`: `pkg list 'gnu/*'`,
+`pkg info '*bash'`; install takes the catalog's matches, update and
+uninstall the installed ones.
+
 A package for the 68060 only (`set name=org.amix.cpu value=68060`) is refused on a
 machine whose kernel names no 68060 (uname); `PKG_CPU=060|030` decides in tests.
 A package that needs a board (`set name=org.amix.hw value=z3660-core1`,
