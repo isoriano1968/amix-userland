@@ -290,6 +290,39 @@ def cpu_problems(repo, stem):
     return out
 
 
+# paths of a build machine that a program must never carry: the X11R6.3 build
+# tree (dtlogin ran /usr/x11r6/xc/exports/bin/xrdb, 2026-11-20) and the
+# components' own build directories
+TREE_PATHS = (b"/usr/x11r6/xc/", b"/build/stage/", b"/build/work/")
+
+
+def tree_paths(repo, stem):
+    """Build-machine paths compiled into the newest published stem's
+    programs and libraries (ELF files; scripts are rewritten at staging):
+    one line per file."""
+    man = _newest(repo, stem)
+    if man is None:
+        return []
+    out = []
+    for line in man.splitlines():
+        t, h, kv = _act(line)
+        if t != "file" or "path" not in kv:
+            continue
+        f = os.path.join(repo, "publisher", PUBLISHER, "file", h[:2], h)
+        try:
+            with gzip.open(f) as g:
+                data = g.read()
+        except OSError:
+            continue
+        if data[:4] != b"\x7fELF":
+            continue
+        hit = [x.decode() for x in TREE_PATHS if x in data]
+        if hit:
+            out.append("%s: /%s has a build machine's path compiled in (%s)"
+                       % (stem, kv["path"].lstrip("/"), ", ".join(hit)))
+    return out
+
+
 def _all_newest(repo):
     pk = os.path.join(repo, "publisher", PUBLISHER, "pkg")
     for qs in sorted(os.listdir(pk)) if os.path.isdir(pk) else []:

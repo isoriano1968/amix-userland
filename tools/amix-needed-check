@@ -22,6 +22,7 @@ def main():
     bad = []
     for s in stems:
         bad += amix_needed.check_published(repo, s, base)
+        bad += amix_needed.tree_paths(repo, s)
     bad += amix_needed.path_conflicts(repo, None if len(sys.argv) < 3 else stems)
     for b in bad:
         print(b)

@@ -315,12 +315,13 @@ def main():
         for _, stem, _ in done:
             bad += amix_needed.check_published(a.repo, stem, base)
             bad += amix_needed.cpu_problems(a.repo, stem)
+            bad += amix_needed.tree_paths(a.repo, stem)
         bad += amix_needed.path_conflicts(a.repo, [stem for _, stem, _ in done])
         if bad:
             for _, _, f in done:
                 if f:
                     os.remove(f)
-            sys.exit("amix-publish: not published (dependencies, a path another package delivers, or 68040/060 code in a package not tagged for the 68060):\n  "
+            sys.exit("amix-publish: not published (dependencies, a path another package delivers, a build machine's path in a program, or 68040/060 code in a package not tagged for the 68060):\n  "
                      + "\n  ".join(bad))
     for fmri, _, _ in done:
         print(fmri)
