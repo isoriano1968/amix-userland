@@ -78,6 +78,28 @@ window: `amix-installer --serve [--repo DIR] [--local] [--port N]`, until
 Ctrl-C. A network install serves the packages itself on the same port, so
 the two do not run at once.
 
+**Build** (0.8): the third tab builds AMIX packages on this computer from
+amix-userland. The source is a checkout here, or a git URL (`#branch` or
+`#commit` after it; the default is the project's GitHub repository, cloned
+into `~/.cache/amix-installer`). **Look** lists the components that are new,
+newer, or changed since the repository's version (the revision is the
+component's commit count, `.1` for edits not committed). **Build** builds the
+chosen ones with the AMIX cross compiler installed here
+(developer/amix/gcc-14 in `/opt/m68k-amix/bin`, or `AMIX_TOOLS`) against a
+sysroot made from the installed base sysroot (developer/amix/sysroot,
+`/opt/m68k-amix-sysroot`, or `AMIX_SYSROOT_BASE`) and the packages the
+component requires, unpacked from the repository. Each passes the same gates
+as every published package (the source's `tools/amix-p5m` and
+`tools/amix-publish`: shared libraries, used files, the CPU scan, a path two
+packages deliver, a new revision for new content) and goes into your own
+repository, `~/.local/share/amix-installer/repo`: a copy of the bundled one
+at first, the bundled one's newer packages merged in later. Serve Packages
+serves that repository from then on, so `pkg update` on AMIX gets what you
+built. Without a window: `amix-installer --build-list [--from SOURCE]` and
+`amix-installer --build COMPONENT... [--from SOURCE]`. A component that
+fetches its upstream source needs the network, and some need host tools of
+their own (their README says which).
+
 ## Needs
 
 Python 3.9 or later, PyGObject, GTK 4.12 or later, libadwaita 1.4 or later,

@@ -182,12 +182,15 @@ class Window(Adw.ApplicationWindow):
         self.content_page = Adw.NavigationPage.new(self._build_content(), "Base system")
         self.split.set_content(self.content_page)
 
-        # two tabs: the install steps, and Serve Packages (servepage.py)
+        # three tabs: the install steps, Serve Packages (servepage.py), Build (buildpage.py)
         from .servepage import ServePage
+        from .buildpage import BuildPage
         self.serve = ServePage(self, self._tabs)
+        self.builder = BuildPage(self, self._tabs)
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
         self.stack.add_named(self.split, "install")
         self.stack.add_named(self.serve.build(), "serve")
+        self.stack.add_named(self.builder.build(), "build")
         self.stack.set_visible_child_name("install")
 
         self.toasts = Adw.ToastOverlay()
@@ -214,7 +217,7 @@ class Window(Adw.ApplicationWindow):
         """The Install / Serve Packages switch, for a header bar (one per tab)."""
         box = Gtk.Box()
         box.add_css_class("linked")
-        for name, title in (("install", "Install"), ("serve", "Serve Packages")):
+        for name, title in (("install", "Install"), ("serve", "Serve Packages"), ("build", "Build")):
             b = Gtk.ToggleButton(label=title)
             b.set_active(name == active)
             b.connect("toggled", self._tab_toggled, name)
@@ -237,6 +240,8 @@ class Window(Adw.ApplicationWindow):
         self._tab_syncing = False
         if name == "serve":
             self.serve.refresh()
+        if name == "build":
+            self.builder.refresh()
 
     # -- frame -------------------------------------------------------------
     def _build_sidebar(self):

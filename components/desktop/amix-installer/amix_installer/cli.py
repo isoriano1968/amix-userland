@@ -55,6 +55,14 @@ def main(argv=None):
     ap.add_argument("--local", action="store_true",
                     help="with --serve: only this computer (FS-UAE), not the network")
     ap.add_argument("--port", type=int, default=8069, help="with --serve: the HTTP port (8069)")
+    ap.add_argument("--build", nargs="+", metavar="COMPONENT",
+                    help="build these amix-userland components here and publish them into the "
+                         "local repository (~/.local/share/amix-installer/repo), which --serve serves")
+    ap.add_argument("--build-list", action="store_true",
+                    help="list the components that are new or newer than the repository")
+    ap.add_argument("--from", dest="build_from", metavar="SOURCE",
+                    help="with --build/--build-list: an amix-userland checkout, or a git URL[#ref] "
+                         "(default: the project's GitHub repository)")
     ap.add_argument("--screenshot", metavar="DIR",
                     help="render every step to DIR/*.png and quit (tests)")
     ex = ap.add_mutually_exclusive_group()
@@ -65,6 +73,9 @@ def main(argv=None):
                     help="keep files of the same name in --out as <name>.<date>-<time>.bak")
     ap.add_argument("--version", action="version", version="%(prog)s " + __version__)
     args = ap.parse_args(argv)
+    if args.build or args.build_list:
+        from . import build
+        return build.main_cli(args.build_from, args.build or [], list_only=args.build_list)
     if args.serve:
         from . import plan, serve
         repo = args.repo or plan.default_repo()

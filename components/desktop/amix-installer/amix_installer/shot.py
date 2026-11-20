@@ -78,6 +78,9 @@ def run(win, outdir):
     if os.environ.get("AMIX_SHOT_SERVE"):
         # the Serve Packages tab: stopped, then serving (the repository found)
         scenes = [("v-serve-off", {}, {}, 0), ("v-serve-on", {}, {}, 0)]
+    if os.environ.get("AMIX_SHOT_BUILD"):
+        # the Build tab: a looked-at source, one component chosen, a log
+        scenes = [("v-build", {}, {}, 0)]
     out = os.environ.get("AMIX_SHOT_OUT")
     if out and getattr(win, "source_state", None):
         win.paths["out_dir"] = out
@@ -112,6 +115,20 @@ def run(win, outdir):
                              ("12:03:10", "10.0.2.15", "Find on Network", "answered", 0)):
                     win.serve._log(*line)
             GLib.timeout_add(400, lambda: after_paint(serve_grab) and False)
+            return False
+        if name.startswith("v-build"):
+            win.stack.set_transition_type(Gtk.StackTransitionType.NONE)
+            win._tab_toggled(dict(win._tab_buttons)["build"], "build")
+            b = win.builder
+            b.rows = [("sysutils/amixtop", "2,2.1-1", "2", "3.1", "changed"),
+                      ("library/zlib", "1.3.1,2.1-5", "1.3.2", "6", "newer"),
+                      ("demos/halloween", None, "1", "7", "new")]
+            b.chosen = {"sysutils/amixtop"}
+            b.lines = ["sysroot: library/amixc99 2,2.1-14", "sysroot: library/ncurses 6.5,2.1-9.1",
+                       "== building sysutils/amixtop", "amix-cpu-scan: 1 files, none with 68040/060-only instructions",
+                       "published pkg://amix/sysutils/amixtop@2,2.1-3.1:20261120T193000Z"]
+            b.refresh()
+            GLib.timeout_add(400, lambda: after_paint(grab) and False)
             return False
         if name.endswith("-end"):
             after_paint(to_end)
