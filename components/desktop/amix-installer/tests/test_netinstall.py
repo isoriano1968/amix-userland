@@ -236,8 +236,10 @@ class Bootstrap(unittest.TestCase):
                 p5m = os.path.join(d, c.replace("/", "_") + ".p5m")
                 subprocess.run([os.path.join(ROOT, "tools", "amix-p5m"), comp, "-o", p5m],
                                check=True, stderr=subprocess.DEVNULL)
-                subprocess.run([os.path.join(ROOT, "tools", "amix-publish"), "-s", repo,
-                                "-d", os.path.join(comp, "build", "stage"), "-d", comp, p5m],
+                # one at a time into an empty repository, as mkrepo.sh does: the
+                # shared library gate would see requirements not published yet
+                subprocess.run([os.path.join(ROOT, "tools", "amix-publish"), "--no-needed-check",
+                                "-s", repo, "-d", os.path.join(comp, "build", "stage"), "-d", comp, p5m],
                                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             ds = netinstall.bootstrap(repo)
         a1, a2 = archives(ds)
@@ -715,12 +717,15 @@ class Picasso(unittest.TestCase):
             os.unlink(f.name)
 
 
-def fake_repo(d, pkgs):
-    """A repository with pkgs: stem -> (requirements, file sizes)."""
+def fake_repo(d, pkgs, cpu=None):
+    """A repository with pkgs: stem -> (requirements, file sizes); cpu:
+    stem -> its org.amix.cpu."""
     for stem, (reqs, sizes) in pkgs.items():
         pd = os.path.join(d, "publisher", "amix", "pkg", urllib.parse.quote(stem, safe=""))
         os.makedirs(pd)
         lines = ["set name=pkg.fmri value=pkg://amix/%s@1,2.1-1:20261118T000000Z" % stem]
+        if cpu and stem in cpu:
+            lines.append("set name=org.amix.cpu value=%s" % cpu[stem])
         lines += ["depend fmri=pkg:/%s@1 type=require" % r for r in reqs]
         lines += ["file %d path=f%d pkg.size=%d pkg.csize=%d" % (i, i, 3 * n, n)
                   for i, n in enumerate(sizes)]
@@ -891,6 +896,86 @@ class InstalledOnSource(unittest.TestCase):
         cfg.on["vscode"] = True
         s = netinstall.steps_script(cfg, "10.0.2.2", now=time.gmtime(0), agent_key="k" * 64)
         self.assertIn("$PKG --min-free $M update", s.split('step 6 ')[1])
+
+
+class CpuGuard(unittest.TestCase):
+    """0.6.9 put 68060-built X, Motif and CDE onto the FS-UAE A3000 (68030 +
+    68882): dtsession died on an fdmul in libXm ("Bad System Call").  A
+    package tagged org.amix.cpu 68060, or one that needs such a package,
+    stays off a machine without a 68060, and the plan says why."""
+
+    def repo(self, d, xm_cpu):
+        fake_repo(d, dict({p: ([], [1000]) for p in netinstall.FOUNDATION_PKGS + ["sysutils/amix-pkg"]},
+                          **{"desktop/cde": (["desktop/motif", "x11/x11r6.3"], [1000]),
+                             "desktop/motif": (["x11/x11r6.3"], [1000]),
+                             "x11/x11r6.3": ([], [1000]),
+                             "desktop/cde-dtlogin": (["desktop/cde"], [1000]),
+                             netinstall.X_SERVER: ([], [1000])}),
+                  cpu={"desktop/motif": xm_cpu, "x11/x11r6.3": "68020", "desktop/cde": "68020"})
+
+    def steps(self, d, accel):
+        cfg = model.Config(sel={"mach": "a3000" if accel != "none" else "uae", "accel": accel,
+                                "desk": "cde", "gfx": "picasso2", "kern": "stock"})
+        return netinstall.steps_script(cfg, "10.0.2.2", repo=d, now=time.gmtime(0))
+
+    def test_060_code_left_out_of_a_030(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.repo(d, "68060")
+            self.assertEqual(netinstall.needs_060(d, "desktop/cde"), "desktop/motif")
+            self.assertIsNone(netinstall.needs_060(d, "x11/x11r6.3"))
+            s = self.steps(d, "none")
+        Scripts.sh_ok(self, s)
+        six = s.split("step 6 ")[1]
+        self.assertNotIn("install desktop/cde", six)
+        self.assertNotIn(" desktop/cde-dtlogin", six.split("|| fail")[0])
+        self.assertIn("desktop/cde (needs desktop/motif, 68060 code: this machine has no 68060)", s)
+
+    def test_baseline_installs_on_a_030(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.repo(d, "68020")
+            s = self.steps(d, "none")
+        self.assertIn("desktop/cde", s.split("step 6 ")[1])
+        self.assertNotIn("68060 code", s)
+
+    def test_060_code_on_a_060(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.repo(d, "68060")
+            cfg = model.Config(sel={"mach": "a3000", "accel": "z3660", "desk": "cde"})
+            self.assertIn("060", cfg.tags())
+            s = netinstall.steps_script(cfg, "10.0.2.2", repo=d, now=time.gmtime(0))
+        self.assertNotIn("68060 code", s)
+        self.assertIn("desktop/cde", s.split("step 6 ")[1])
+
+
+LIBXP = os.path.join(ROOT, "components/x11/libxp/build/stage/usr/x11r6/lib/libXp.so.7")
+
+
+@unittest.skipUnless(os.path.isfile(LIBXP), "x11/libxp not staged")
+class NeededGate(unittest.TestCase):
+    """tools/amix_needed.py, amix-publish's gate: CDE 2.1-26 NEEDED
+    libamixc99.so.1 that no package delivered (xhold died at startcde)."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import amix_needed
+        self.n = amix_needed
+        with open(LIBXP, "rb") as f:
+            self.data = f.read()
+
+    def test_reads_needed(self):
+        needed, rpath, is_lib = self.n.dynamic(self.data)
+        self.assertTrue(is_lib)
+        self.assertIn("libX11.so.7", needed)
+        self.assertIsNone(self.n.dynamic(b"#!/bin/sh\n"))
+
+    def test_missing_and_delivered(self):
+        f = [("/usr/x11r6/lib/libXp.so.7", self.data)]
+        needed = self.n.dynamic(self.data)[0]
+        base = self.n.base_libs()
+        bad = self.n.check_files("x11/libxp", f, set(), base)
+        self.assertTrue(any("NEEDS libX11.so.7" in b for b in bad), bad)
+        have = set("/usr/x11r6/lib/" + n for n in needed) | set("/usr/lib/" + n for n in needed)
+        self.assertEqual(self.n.check_files("x11/libxp", f, have, base), [])
 
 
 class AgentKeyFile(unittest.TestCase):

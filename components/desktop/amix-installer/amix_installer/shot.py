@@ -75,6 +75,9 @@ def run(win, outdir):
                       ("n-fetch-net", {"src": "run"}, {}, 0),
                       ("n-agent-fsuae-net", {"src": "run"}, {}, 0),
                       ("n-done-fsuae-net", {"src": "run"}, {}, 0)]
+    if os.environ.get("AMIX_SHOT_SERVE"):
+        # the Serve Packages tab: stopped, then serving (the repository found)
+        scenes = [("v-serve-off", {}, {}, 0), ("v-serve-on", {}, {}, 0)]
     out = os.environ.get("AMIX_SHOT_OUT")
     if out and getattr(win, "source_state", None):
         win.paths["out_dir"] = out
@@ -99,6 +102,17 @@ def run(win, outdir):
         if "-agent-" in name:
             win.cfg = m.agent_only(win.cfg)
         win.show_step(step)
+        if name.startswith("v-serve"):
+            win.stack.set_transition_type(Gtk.StackTransitionType.NONE)   # no half-faded shot
+            win._tab_toggled(dict(win._tab_buttons)["serve"], "serve")
+            if name.endswith("-on"):
+                win.serve.start_serving()
+                for line in (("12:02:41", "10.0.2.15", "publisher/amix/catalog/catalog.attrs", 200, 610),
+                             ("12:02:44", "10.0.2.15", "publisher/amix/pkg/desktop%2Fcde/2.2.4.1...", 200, 18211),
+                             ("12:03:10", "10.0.2.15", "Find on Network", "answered", 0)):
+                    win.serve._log(*line)
+            GLib.timeout_add(400, lambda: after_paint(serve_grab) and False)
+            return False
         if name.endswith("-end"):
             after_paint(to_end)
         elif name.endswith("-run"):
@@ -138,6 +152,11 @@ def run(win, outdir):
     def net_grab():
         grab()
         win._net_stop()
+        return False
+
+    def serve_grab():
+        grab()
+        win.serve.stop()
         return False
 
     def after_paint(then):

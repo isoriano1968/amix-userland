@@ -66,6 +66,18 @@ That key is also left in `vscode-agent.key` (mode 600) in
 Code, run **AMIX: Set Agent Key** and choose "Use the AMIX Installer's
 key": it reads the first one, so it is always the newest install's.
 
+**Serve Packages** (0.7): the window's second tab makes this computer the
+package server of your AMIX machines. Start serves the AMIX package
+repository (the packaged one, or a folder you choose) read-only over HTTP on
+port 8069 at `/repo/`, shows the line to type on AMIX for FS-UAE here
+(`pkg set-publisher -O http://10.0.2.2:8069/repo amix`) and for an Amiga on
+the network, and lists what the Amigas fetch. It answers the AMIX Software
+Center's **Find on Network** (UDP port 8070), unless that is switched off;
+**Only this computer** listens on 127.0.0.1 alone, for FS-UAE. Without a
+window: `amix-installer --serve [--repo DIR] [--local] [--port N]`, until
+Ctrl-C. A network install serves the packages itself on the same port, so
+the two do not run at once.
+
 ## Needs
 
 Python 3.9 or later, PyGObject, GTK 4.12 or later, libadwaita 1.4 or later,
@@ -97,6 +109,9 @@ and pycairo to make the icons.
                         # the VS Code agent alone, for a quick test: no
                         # foundation, no other package; tests/e2e/agent-only-fsuae.sh
                         # runs this from end to end in FS-UAE, headless
+    ./amix-installer --serve             # serve the package repository to AMIX
+                        # machines (port 8069, Find on Network on UDP 8070)
+                        # until Ctrl-C; --local: this computer only (FS-UAE)
     ./amix-installer ... --apply --backup      # keep files of the same name as .bak
     ./amix-installer ... --apply --overwrite   # replace them, also ones not ours
 
@@ -128,7 +143,9 @@ pvmk build in `$AMIX_PVMK_DIR` or `~/Sources/usr-amix/pvmk/build`
       hdf.py                reads an HDF (RDB, UFS, packages), read-only
       plan.py               the plan, and running it (.part, read back, rename)
       rdb.py                the empty data disk, RDB copied from the core disk
-      cli.py                --plan and --apply without a window
+      cli.py                --plan, --apply and --serve without a window
+      serve.py              Serve Packages: the repository over HTTP, Find on Network
+      servepage.py          the Serve Packages tab
       app.py                the window
       shot.py               headless screenshots
     data/                   stylesheet, desktop entry

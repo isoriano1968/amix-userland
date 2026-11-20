@@ -74,6 +74,20 @@ class FsUae(object):
         return [p for _, p in sorted(roms, reverse=True)]
 
 
+# host ports forwarded into AMIX (FS-UAE's slirp): telnet and ftp from this
+# computer, 127.0.0.1:2323 and :2121 (0: none)
+TELNET_PORT = 2323
+FTP_PORT = 2121
+
+
+def slirp_redir(telnet=TELNET_PORT, ftp=FTP_PORT):
+    """The value of uae_slirp_redir: each forward "tcp:HOSTPORT:GUESTPORT:",
+    joined by ":", as our FS-UAE (3.2.35, slirp-hostfwd patch) reads it; None
+    when neither is wanted.  A FS-UAE without the patch ignores the key."""
+    fw = ["tcp:%d:%d:" % (h, g) for h, g in ((telnet, 23), (ftp, 21)) if h]
+    return ":".join(fw) if fw else None
+
+
 def _documents():
     try:
         out = subprocess.run(["xdg-user-dir", "DOCUMENTS"], stdout=subprocess.PIPE,

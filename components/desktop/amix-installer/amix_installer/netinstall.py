@@ -365,6 +365,44 @@ def missing_in_repo(repo, stem, _seen=None):
     return None
 
 
+def _cpu(manifest):
+    """The CPU a published package's code needs (org.amix.cpu: 68020 is the
+    baseline, 68060 a 68060 only), or None: built before the tag."""
+    for line in manifest.splitlines():
+        w = line.split()
+        if w[:2] == ["set", "name=org.amix.cpu"] and len(w) > 2 and w[2].startswith("value="):
+            return w[2][6:]
+    return None
+
+
+def needs_060(repo, stem, _seen=None):
+    """The first package down stem's requirements that holds 68060-only
+    code (org.amix.cpu 68060), or None.  A 68020/030 stops on its first
+    68040/060 instruction with "Bad System Call" (fdmul in libXm killed
+    dtsession on the FS-UAE A3000 in 0.6.9), so such a package must not go
+    onto a machine without a 68060."""
+    seen = _seen if _seen is not None else set()
+    if stem in seen:
+        return None
+    seen.add(stem)
+    try:
+        _, man = _newest(repo, stem)
+    except KeyError:
+        return None
+    if _cpu(man) == "68060":
+        return stem
+    for line in man.splitlines():
+        w = line.split()
+        if w and w[0] == "depend" and "type=require" in w:
+            fmri = [x[5:] for x in w if x.startswith("fmri=")]
+            if fmri:
+                dep = fmri[0].replace("pkg://amix/", "").replace("pkg:/", "").split("@")[0]
+                m = needs_060(repo, dep, seen)
+                if m:
+                    return m
+    return None
+
+
 def fetch_size(repo, stems, skip=None):
     """(files, bytes) pkg fetches from repo to install stems: their files and
     their requirements', without the packages in skip (installed before; the
@@ -821,6 +859,12 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
                              for p, m in gone if m]
         pkgs = [p for p, m in gone if not m]
         have = [p for p in FOUNDATION_PKGS if not missing_in_repo(repo, p)]
+        if "060" not in cfg.tags():
+            fast = [(p, needs_060(repo, p)) for p in pkgs]
+            missing = missing + [("%s (68060 code: this machine has no 68060)" % p) if m == p else
+                                 ("%s (needs %s, 68060 code: this machine has no 68060)" % (p, m))
+                                 for p, m in fast if m]
+            pkgs = [p for p, m in fast if not m]
     sizes = {}
     if repo:
         # what each install fetches, in the order the script installs them

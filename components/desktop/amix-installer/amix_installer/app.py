@@ -173,6 +173,7 @@ class Window(Adw.ApplicationWindow):
         self._syncing = False
         self._rows = []        # (group, option, ActionRow, control)
         self._extra = []       # callables run by _sync()
+        self._tab_buttons = []  # the Install / Serve Packages switches, one per header
 
         self.split = Adw.NavigationSplitView()
         self.split.set_min_sidebar_width(240)
@@ -181,8 +182,16 @@ class Window(Adw.ApplicationWindow):
         self.content_page = Adw.NavigationPage.new(self._build_content(), "Base system")
         self.split.set_content(self.content_page)
 
+        # two tabs: the install steps, and Serve Packages (servepage.py)
+        from .servepage import ServePage
+        self.serve = ServePage(self, self._tabs)
+        self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
+        self.stack.add_named(self.split, "install")
+        self.stack.add_named(self.serve.build(), "serve")
+        self.stack.set_visible_child_name("install")
+
         self.toasts = Adw.ToastOverlay()
-        self.toasts.set_child(self.split)
+        self.toasts.set_child(self.stack)
         self.set_content(self.toasts)
 
         bp = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 640sp"))
@@ -198,18 +207,42 @@ class Window(Adw.ApplicationWindow):
         if self.net is not None:          # the network install's servers end with the window
             self.net.stop()
             self.net = None
+        self.serve.stop()                 # and Serve Packages
         return False
+
+    def _tabs(self, active):
+        """The Install / Serve Packages switch, for a header bar (one per tab)."""
+        box = Gtk.Box()
+        box.add_css_class("linked")
+        for name, title in (("install", "Install"), ("serve", "Serve Packages")):
+            b = Gtk.ToggleButton(label=title)
+            b.set_active(name == active)
+            b.connect("toggled", self._tab_toggled, name)
+            self._tab_buttons.append((name, b))
+            box.append(b)
+        return box
+
+    def _tab_toggled(self, b, name):
+        if getattr(self, "_tab_syncing", False):
+            return
+        if not b.get_active():          # a tab stays chosen until the other is
+            self._tab_syncing = True
+            b.set_active(self.stack.get_visible_child_name() == name)
+            self._tab_syncing = False
+            return
+        self.stack.set_visible_child_name(name)
+        self._tab_syncing = True
+        for n, other in self._tab_buttons:
+            other.set_active(n == name)
+        self._tab_syncing = False
+        if name == "serve":
+            self.serve.refresh()
 
     # -- frame -------------------------------------------------------------
     def _build_sidebar(self):
         tv = Adw.ToolbarView()
         hb = Adw.HeaderBar()
-        tbox = Gtk.Box(spacing=10)
-        icon = Gtk.Image.new_from_icon_name(APP_ID)
-        icon.set_pixel_size(28)
-        tbox.append(icon)
-        tbox.append(label("AMIX Installer", ("heading",), wrap=False))
-        hb.set_title_widget(tbox)
+        hb.set_title_widget(self._tabs("install"))
         tv.add_top_bar(hb)
 
         self.steplist = Gtk.ListBox()
@@ -1407,6 +1440,10 @@ class Window(Adw.ApplicationWindow):
         why = net.missing or netinstall.not_ready(net.repo)
         if why:
             self._alert("Not ready to install over the network", why[0].upper() + why[1:])
+            return
+        if self.serve.serving:
+            self._alert("Packages are being served", "Serve Packages uses the network install's "
+                        "port %d.  Stop it on the Serve Packages tab, then install." % netinstall.HTTP_PORT)
             return
         try:
             self.net = netinstall.Session(self.cfg, net.repo, host=host, data_disk=data_disk,

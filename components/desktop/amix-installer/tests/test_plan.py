@@ -782,3 +782,19 @@ class PatchLevel(Base):
         c.source.patch = None
         a = plan.DriverKernel(self.src, ["rtgfb"], patch_missing=True)
         self.assertIn("Patch Disk 1-2a", a.missing)
+
+
+class SlirpRedir(unittest.TestCase):
+    """telnet and ftp into AMIX from this computer: our FS-UAE's slirp
+    forwards (uae_slirp_redir, its hostfwd patch of 2026-11-15)."""
+
+    def test_default_and_choices(self):
+        from amix_installer import fsuae
+        self.assertEqual(fsuae.slirp_redir(), "tcp:2323:23::tcp:2121:21:")
+        self.assertEqual(fsuae.slirp_redir(telnet=2424, ftp=0), "tcp:2424:23:")
+        self.assertIsNone(fsuae.slirp_redir(0, 0))
+        t = plan.FsUaeConfig({"core": "c.hdf"}, "/k.rom", "/out").text()
+        self.assertIn("uae_slirp_redir = tcp:2323:23::tcp:2121:21:\n", t)
+        self.assertIn("127.0.0.1:2323 (telnet) and :2121 (ftp)", t)
+        t = plan.FsUaeConfig({"core": "c.hdf"}, "/k.rom", "/out", telnet=0, ftp=0).text()
+        self.assertNotIn("slirp", t)

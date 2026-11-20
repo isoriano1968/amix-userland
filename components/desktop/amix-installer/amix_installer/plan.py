@@ -888,7 +888,7 @@ class FsUaeConfig(Action):
     """An FS-UAE A3000 with an A2065 and the new disks: the machine the
     network install fills (0.4).  The Kickstart is the user's own file."""
 
-    def __init__(self, names, kickstart, out, gfx=None):
+    def __init__(self, names, kickstart, out, gfx=None, telnet=None, ftp=None):
         disks = [n for n in (names.get("pvmk"), names.get("core"), names.get("data")) if n]
         missing = None if kickstart else "choose your A3000 Kickstart ROM on the Base system page"
         super(FsUaeConfig, self).__init__(
@@ -899,6 +899,8 @@ class FsUaeConfig(Action):
         self.kickstart = kickstart
         self.out = out
         self.gfx = gfx
+        self.telnet = fsuae.TELNET_PORT if telnet is None else telnet
+        self.ftp = fsuae.FTP_PORT if ftp is None else ftp
 
     def text(self):
         out = ["# AMIX installation machine, written by amix-installer %s" % __version__,
@@ -908,6 +910,12 @@ class FsUaeConfig(Action):
                "network_card = a2065"]
         if self.gfx in FSUAE_CARD:
             out.append("graphics_card = %s" % FSUAE_CARD[self.gfx])
+        redir = fsuae.slirp_redir(self.telnet, self.ftp)
+        if redir:
+            out += ["# telnet and ftp into AMIX from this computer: 127.0.0.1:%s"
+                    % " and :".join("%d (%s)" % (p, w) for p, w in ((self.telnet, "telnet"),
+                                                                     (self.ftp, "ftp")) if p),
+                    "uae_slirp_redir = %s" % redir]
         n = 0
         for role in ("pvmk", "core", "data"):
             name = self.names.get(role)
@@ -1112,7 +1120,8 @@ def make_plan(cfg, paths, fs=None, written=False):
     kick = paths.get("kickstart")
     if not kick and fs.a3000_kickstarts():
         kick = fs.a3000_kickstarts()[0]      # the newest A3000 ROM in FS-UAE's folder
-    fsc = FsUaeConfig(names, kick, out, sel.get("gfx"))
+    fsc = FsUaeConfig(names, kick, out, sel.get("gfx"), telnet=paths.get("fs_uae_telnet"),
+                      ftp=paths.get("fs_uae_ftp"))
     pl.actions.append(fsc)
 
     # what AMIX does in FS-UAE over the emulated A2065 (0.4)

@@ -43,6 +43,18 @@ def main(argv=None):
     ap.add_argument("--with-motif", action="store_true",
                     help="with --agent-only: also the Motif and X11 run time (desktop/motif, "
                     "x11/x11r6.3) that Motif and CDE programs need")
+    ap.add_argument("--fs-uae-telnet", type=int, metavar="PORT",
+                    help="the FS-UAE configuration forwards this computer's 127.0.0.1:PORT to "
+                    "AMIX's telnet (default 2323; 0: none)")
+    ap.add_argument("--fs-uae-ftp", type=int, metavar="PORT",
+                    help="the same for AMIX's ftp (default 2121; 0: none)")
+    ap.add_argument("--serve", action="store_true",
+                    help="serve the AMIX package repository (--repo, else the usual one) to "
+                    "AMIX machines over HTTP on port 8069, and answer the Software Center's "
+                    "Find on Network, until Ctrl-C (no window)")
+    ap.add_argument("--local", action="store_true",
+                    help="with --serve: only this computer (FS-UAE), not the network")
+    ap.add_argument("--port", type=int, default=8069, help="with --serve: the HTTP port (8069)")
     ap.add_argument("--screenshot", metavar="DIR",
                     help="render every step to DIR/*.png and quit (tests)")
     ex = ap.add_mutually_exclusive_group()
@@ -53,6 +65,16 @@ def main(argv=None):
                     help="keep files of the same name in --out as <name>.<date>-<time>.bak")
     ap.add_argument("--version", action="version", version="%(prog)s " + __version__)
     args = ap.parse_args(argv)
+    if args.serve:
+        from . import plan, serve
+        repo = args.repo or plan.default_repo()
+        if not repo:
+            print("amix-installer: %s" % plan.NO_REPO, file=sys.stderr)
+            return 1
+        return serve.main_cli(os.path.abspath(repo), port=args.port, local=args.local)
+    if args.local:
+        print("amix-installer: --local goes with --serve", file=sys.stderr)
+        return 1
     # every command-line action runs here: only none of them opens the window
     if args.plan or args.apply or args.net or args.add_data_disk:
         return run_plan(args)
@@ -94,6 +116,13 @@ def run_plan(args):
         return 1
     if args.fs_uae_config:
         paths["fs_uae_config"] = os.path.abspath(args.fs_uae_config)
+    for key in ("fs_uae_telnet", "fs_uae_ftp"):
+        v = getattr(args, key)
+        if v is not None:
+            if not 0 <= v < 65536:
+                print("amix-installer: --%s: a port, 0 to 65535" % key.replace("_", "-"), file=sys.stderr)
+                return 1
+            paths[key] = v
     if args.running:
         if args.running == "fs-uae":
             # the machine is FS-UAE's A3000, its network card the A2065: a
