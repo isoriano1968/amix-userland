@@ -1,6 +1,8 @@
 # name, version and what building and running it needs
 name     developer/vscode-agent
 version  0.1.2
+# the 68020..68060 baseline, tools/amix-cpu-scan clean
+cpu      68020
 summary  vscode-agent: runs programs from VS Code on AMIX (dials out, shared-key sign-in)
 # libamixc99 (snprintf, vsnprintf) is linked in: nothing beyond a stock AMIX
 # but the description of VS Code's terminal (TERM=xterm-256color; the agent

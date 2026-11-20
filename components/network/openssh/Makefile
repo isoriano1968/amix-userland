@@ -13,7 +13,7 @@ S  = openssh-$(COMPONENT_VERSION)
 R  = $(AMIX_SYSROOT)
 W  = -Wno-error=implicit-function-declaration -Wno-error=int-conversion \
 	-Wno-error=incompatible-pointer-types -Wno-error=implicit-int
-CC_AMIX = m68k-elf-gcc -m68060 -fcommon -std=gnu99 -U__linux__ -Ulinux -D__amix__ -DSVR4 -w $(W)
+CC_AMIX = m68k-elf-gcc $(AMIX_CPU_BASELINE) -fcommon -std=gnu99 -U__linux__ -Ulinux -D__amix__ -DSVR4 -w $(W)
 
 build: $(COMPONENT_ARCHIVE)
 	rm -rf $(S) build

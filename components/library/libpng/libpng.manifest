@@ -1,6 +1,10 @@
 # name, version and what building and running it needs
 name     library/libpng
 version  1.6.44
+# the 68020..68060 baseline, tools/amix-cpu-scan clean
+cpu      68020
 summary  PNG library
 require  library/zlib
+# libamixc99.so.1 (gcc 14's specs make objects that call C99 functions NEED it)
+require  library/amixc99 >= 2
 provide  libpng16

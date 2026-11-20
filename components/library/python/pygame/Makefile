@@ -48,7 +48,7 @@ pkg-config = '$(CURDIR)/build/pkg-config'
 python = '$(CURDIR)/build/amixpy'
 
 [built-in options]
-c_args = ['-m68060', '-fPIC', '-fcommon', '-U__linux__', '-Ulinux', '-D__amix__', '-DSVR4', '-O2', '-fno-strict-aliasing', '-std=gnu11', '-I$(PYINC)/amixcompat', '-I$(AMIX_SYSROOT)/usr/local/gnu/include', '-include', '$(PYINC)/amix-python.h', '-I$(CURDIR)/files/amix', '-include', '$(CURDIR)/files/amix/amix-pygame.h']
+c_args = ['-mcpu=68020', '-mtune=68060', '-fexcess-precision=fast', '-fPIC', '-fcommon', '-U__linux__', '-Ulinux', '-D__amix__', '-DSVR4', '-O2', '-fno-strict-aliasing', '-std=gnu11', '-I$(PYINC)/amixcompat', '-I$(AMIX_SYSROOT)/usr/local/gnu/include', '-include', '$(PYINC)/amix-python.h', '-I$(CURDIR)/files/amix', '-include', '$(CURDIR)/files/amix/amix-pygame.h']
 c_link_args = ['-L$(AMIX_SYSROOT)$(PREFIX)/lib', '-lm060', '-Wl,--exclude-libs,ALL']
 
 [properties]

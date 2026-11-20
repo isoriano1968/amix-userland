@@ -52,7 +52,7 @@ compat="$project/build/python-compat"
 mkdir -p "$compat" "$build"
 "$cc" --version > "$build/amix-compiler.txt"
 for name in math wide clock time environ inet connect; do
-    "$cc" -O2 -m68060 -fno-strict-aliasing -Iports/python/include \
+    "$cc" -O2 -mcpu=68020 -mtune=68060 -fexcess-precision=fast -fno-strict-aliasing -Iports/python/include \
         -c "ports/python/amix-$name.c" -o "$compat/amix-$name.o"
 done
 # an archive, not objects in LIBS: configure prepends -l tests to LIBS and
@@ -64,7 +64,7 @@ tools="$(dirname "$cc")"
 export CC="$cc" AR="$tools/m68k-elf-ar" RANLIB="$tools/m68k-elf-ranlib"
 export READELF="$tools/m68k-elf-readelf" PKG_CONFIG="$top/tools/amix-pkg-config"
 export AMIX_SYSROOT="$sysroot"
-export CFLAGS='-O2 -m68060 -fno-strict-aliasing'
+export CFLAGS="-O2 -mcpu=68020 -mtune=68060 -fexcess-precision=fast -fno-strict-aliasing"
 export CPPFLAGS="-I$project/ports/python/include -I$sysroot/usr/local/gnu/include -I$sysroot/usr/local/include"
 # The runpath is the only one AMIX's ld.so.1 searches when an extension module
 # is dlopened (the libraries' own runpaths are not used), so it names the X

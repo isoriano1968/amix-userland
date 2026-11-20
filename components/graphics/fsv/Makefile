@@ -23,7 +23,7 @@ build: $(COMPONENT_ARCHIVE)
 	for p in patches/*.patch; do patch -p1 < $$p || exit 1; done
 	cp files/config.h $(S)/
 	$(MAKE) -C $(S) -f $(CURDIR)/files/Makefile.motif \
-		CC="m68k-elf-gcc -m68060" CFLAGS="-O2 -fno-split-wide-types -std=gnu99 -w" \
+		CC="m68k-elf-gcc $(AMIX_CPU_BASELINE)" CFLAGS="-O2 -fno-split-wide-types -std=gnu99 -w" \
 		EXTRA_CPPFLAGS="-I$(CURDIR)/files/amix -include $(CURDIR)/files/amix/amix-fsv.h -U__linux__ -D__amix__ -DSVR4 -DHAVE_STRING_H -DDOCDIR=\\\"$(DOC)\\\"" \
 		EXTRA_SRC="lib/scandir.c $(CURDIR)/files/amix/fnmatch.c" \
 		XCFLAGS="$$($(PKG_CONFIG) --cflags xm gl glu)" \

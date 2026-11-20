@@ -12,7 +12,7 @@ include ../../../make-rules/shlib.mk
 export PATH := $(AMIX_TOOLS):$(PATH)
 S = glu-$(COMPONENT_VERSION)
 L = $(AMIX_SYSROOT)/usr/local/lib
-FLAGS = -O2 -m68060 -fPIC -w -U__linux__ -Ulinux -D__amix__ -DSVR4 -DNDEBUG -DLIBRARYBUILD \
+FLAGS = -O2 $(AMIX_CPU_BASELINE) -fPIC -w -U__linux__ -Ulinux -D__amix__ -DSVR4 -DNDEBUG -DLIBRARYBUILD \
 	-I$(S)/include -I$(S)/src/include -I$(S)/src/libnurbs/internals -I$(S)/src/libnurbs/interface \
 	-I$(S)/src/libnurbs/nurbtess -I$(S)/src/libtess -I$(S)/src/libutil \
 	-I$(AMIX_SYSROOT)/usr/local/include -I$(AMIX_SYSROOT)/usr/x11r6/include

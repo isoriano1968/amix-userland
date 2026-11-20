@@ -37,7 +37,7 @@ build: $(ZLIB_TGZ)
 	$(C1MAKE) TARGET=core1 OUT=$(BUILD_DIR)/core1
 	$(C1MAKE) TARGET=host OUT=$(BUILD_DIR)/host
 	mkdir -p $(BUILD_DIR)/amix
-	$(AMIX_CC) -O2 -m68060 -Wall -I$(Z3660_CORE1)/cores/h264bench -Ifiles/core1 \
+	$(AMIX_CC) -O2 $(AMIX_CPU_BASELINE) -Wall -I$(Z3660_CORE1)/cores/h264bench -Ifiles/core1 \
 	    files/amix/c1uae.c -o $(BUILD_DIR)/amix/c1uae
 	sh files/bench/build.sh $(BUILD_DIR)/bench
 

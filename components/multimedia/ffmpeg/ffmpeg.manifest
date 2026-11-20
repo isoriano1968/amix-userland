@@ -1,6 +1,13 @@
 # name, version and what building and running it needs
 name     multimedia/ffmpeg
 version  4.4.8
+# the 68020..68060 baseline, tools/amix-cpu-scan clean
+cpu      68020
+# amix_sqrt/amix_sqrtf (compat/amix-math.c): fdsqrt/fssqrt only on a 68040/060
+cpu-allow fdsqrtx=1 run-time choice: the 68040/060 rounding forms, fsqrt on a 68881/68882
+cpu-allow fssqrtx=1 run-time choice: the 68040/060 rounding forms, fsqrt on a 68881/68882
+# vplay's copy to the board (src/libs3d/s3d.c to_board): move16 only on a 68040/060
+cpu-allow move16=2 run-time choice: the 68040/060 burst copy, memcpy on a 68020/030
 summary  FFmpeg 4.4.8
 require  library/pth
 require  library/sdl2

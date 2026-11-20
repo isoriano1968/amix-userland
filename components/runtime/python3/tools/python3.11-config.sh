@@ -15,7 +15,7 @@ for option in "$@"; do
     case "$option" in
     --prefix|--exec-prefix) echo "$prefix";;
     --includes) echo "-I$include -I$include/amixcompat -I/usr/local/gnu/include";;
-    --cflags) echo "-I$include -I$include/amixcompat -I/usr/local/gnu/include -include $include/amix-python.h -O2 -m68060 -std=gnu11 -fno-strict-aliasing";;
+    --cflags) echo "-I$include -I$include/amixcompat -I/usr/local/gnu/include -include $include/amix-python.h -O2 -mcpu=68020 -mtune=68060 -fexcess-precision=fast -std=gnu11 -fno-strict-aliasing";;
     --libs) echo "$libs";;
     --ldflags) echo "-L$prefix/lib -L$config -L/usr/local/gnu/lib $libs";;
     --configdir) echo "$config";;

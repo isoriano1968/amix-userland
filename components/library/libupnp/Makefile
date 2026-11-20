@@ -12,6 +12,9 @@ COMPONENT_SHA256  = 33b1dcb23a824a348ef4553f38b22a37f4d17e27d0998b3f33c156b3dcd8
 
 include ../../../make-rules/shared.mk
 
+# the AMIX baseline for cmake's compiles too (make-rules/amix-toolchain.cmake reads it)
+export AMIX_CPU = $(AMIX_CPU_BASELINE)
+
 R   = $(AMIX_SYSROOT)
 G   = /usr/local/gnu
 # files/amix-upnp.h: the socket prototypes, address types and the rest SVR4
@@ -28,7 +31,7 @@ CMAKE_OPTIONS = -DCMAKE_EXE_LINKER_FLAGS="-L$(R)$(G)/lib -Wl,-rpath-link,$(R)$(G
 # the shared targets' objects (internals hidden, the API exported, as
 # upstream's shared libraries) into -fPIC archives, with our amix-upnp.c
 define BUILD_POST
-	m68k-elf-gcc -m68060 $(CMAKE_CFLAGS) -c files/amix-upnp.c -o build/amix-upnp.o
+	m68k-elf-gcc $(AMIX_CPU_BASELINE) $(CMAKE_CFLAGS) -c files/amix-upnp.c -o build/amix-upnp.o
 	rm -f build/libixml-pic.a build/libupnp-pic.a
 	m68k-elf-ar rc build/libixml-pic.a `find build/cmake/ixml/CMakeFiles/ixml_shared.dir -name '*.obj'`
 	m68k-elf-ar rc build/libupnp-pic.a `find build/cmake/upnp/CMakeFiles/upnp_shared.dir -name '*.obj'` build/amix-upnp.o

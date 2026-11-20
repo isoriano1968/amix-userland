@@ -26,7 +26,7 @@ build: $(COMPONENT_ARCHIVE)
 	tar xzf $(COMPONENT_ARCHIVE)
 	mkdir -p build
 	cd $(S) && CC=m68k-elf-gcc AR=m68k-elf-ar RANLIB=m68k-elf-ranlib \
-		CFLAGS='-O2 -m68060 -std=gnu89 -fno-strict-aliasing -fPIC' \
+		CFLAGS='-O2 $(AMIX_CPU_BASELINE) -std=gnu89 -fno-strict-aliasing -fPIC' \
 		./configure --host=m68k-cbm-sysv4 --build=x86_64-linux-gnu --prefix=$(PREFIX) \
 		--enable-pthread --disable-shared --enable-static $(PTH_MCTX) > ../build/configure.log 2>&1
 	# after configure: 0002 changes the generated pthread.h

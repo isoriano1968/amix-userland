@@ -1,6 +1,10 @@
 # name, version and what building and running it needs
 name     library/libnslog
 version  0.1.3
+# the 68020..68060 baseline, tools/amix-cpu-scan clean
+cpu      68020
 summary  NetSurf's logging library
 provide  libnslog
 require  developer/netsurf-buildsystem
+# libamixc99.so.1 (gcc 14's specs make objects that call C99 functions NEED it)
+require  library/amixc99 >= 2

@@ -1,6 +1,8 @@
 # name, version and what building and running it needs
 name     runtime/python3
 version  3.11.18
+# the 68020..68060 baseline, tools/amix-cpu-scan clean
+cpu      68020
 summary  Python 3.11, all stdlib modules built in, pip through ensurepip
 require  library/pth
 require  library/zlib

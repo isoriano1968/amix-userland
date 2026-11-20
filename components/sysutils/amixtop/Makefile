@@ -11,7 +11,7 @@ STUB_DIR = $(STAGE_DIR)/usr/local/share/amix-stubs/$(notdir $(CURDIR))
 
 build:
 	mkdir -p $(BUILD_DIR)
-	m68k-elf-gcc -O2 -m68060 -D__amix__ -D__svr4__ -DSVR4 -fcommon `$(PKG_CONFIG) --cflags ncurses amixstat` -c amixtop.c -o $(BUILD_DIR)/amixtop.o
+	m68k-elf-gcc -O2 $(AMIX_CPU_BASELINE) -D__amix__ -D__svr4__ -DSVR4 -fcommon `$(PKG_CONFIG) --cflags ncurses amixstat` -c amixtop.c -o $(BUILD_DIR)/amixtop.o
 	m68k-elf-gcc $(BUILD_DIR)/amixtop.o `$(PKG_CONFIG) --libs ncurses amixstat` -o $(BUILD_DIR)/amixtop
 	m68k-elf-strip $(BUILD_DIR)/amixtop
 	../../../tools/amix-fix-needed $(BUILD_DIR)/amixtop > /dev/null

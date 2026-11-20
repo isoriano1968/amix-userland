@@ -98,7 +98,7 @@ put(project / 'docs/PORT-NOTES.md', documentation + '/PORT-NOTES.md')
 for name in ('python3-smoke.py', 'python3-stdlib.py'):
     put(project / 'tests' / name, documentation + '/' + name)
 put(project / 'probes/python-embed.c', documentation + '/python-embed.c')
-generated('Python 3.11.18 AMIX; GCC 14.2; -O2 -m68060; GNU Pth pthread emulation\n'
+generated('Python 3.11.18 AMIX; GCC 14.2; -O2 -mcpu=68020 -mtune=68060 -fexcess-precision=fast; GNU Pth pthread emulation\n'
           'Install prefix: /usr/local; shared GNU Pth in /usr/local/gnu/lib; shared OpenSSL,\n'
           'zlib, bzip2 and expat in /usr/local/lib; all stdlib modules built in\n'
           'Executable SHA256: ' + hashlib.sha256(binary.read_bytes()).hexdigest() + '\n',

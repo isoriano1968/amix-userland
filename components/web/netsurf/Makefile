@@ -31,7 +31,7 @@ FONTS = $(PREFIX)/share/fonts
 DT    = $(STAGE_DIR)/etc/dt/appconfig
 
 # NetSurf adds to CFLAGS and LDFLAGS with +=: ours come through the environment
-NS_ENV = CFLAGS="-O2 -m68060 -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4 -U__STRICT_ANSI__ \
+NS_ENV = CFLAGS="-O2 $(AMIX_CPU_BASELINE) -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4 -U__STRICT_ANSI__ \
 	-fno-split-wide-types -Wno-error -include $(CURDIR)/files/amix-netsurf.h -I$(NS_INCLUDE) -I$(GNU_COMPAT)/getopt \
 	$(M99_CFLAGS) -I$(R)$(PREFIX)/include" \
 	LDFLAGS="$(CURDIR)/build/libamixns.a -L$(R)$(PREFIX)/lib -Wl,-R,$(PREFIX)/lib:/usr/x11r6/lib -Wl,-u,_sys_siglist $(M99_LIBS) -liconv -lamixc99 -lsocket -lnsl -lgen"
@@ -56,8 +56,8 @@ build: $(COMPONENT_ARCHIVE) $(NSGENBIND_DIR)/bin/nsgenbind
 	for p in $(wildcard patches/*.patch); do (cd $(S) && patch -p1 < ../$$p) || exit 1; done
 	cp files/quickjs/duk_qjs.c files/quickjs/duk_qjs.h $(S)/content/handlers/javascript/duktape/
 	mkdir -p build
-	m68k-elf-gcc -O2 -m68060 -D__amix__ -c files/amix-netsurf.c -o build/amix-netsurf.o
-	m68k-elf-gcc -O2 -m68060 -D__amix__ -c $(GNU_COMPAT)/amix-getopt.c -o build/amix-getopt.o
+	m68k-elf-gcc -O2 $(AMIX_CPU_BASELINE) -D__amix__ -c files/amix-netsurf.c -o build/amix-netsurf.o
+	m68k-elf-gcc -O2 $(AMIX_CPU_BASELINE) -D__amix__ -c $(GNU_COMPAT)/amix-getopt.c -o build/amix-getopt.o
 	m68k-elf-ar rcs build/libamixns.a build/amix-netsurf.o build/amix-getopt.o
 	$(NS_MAKE) > build/make.log 2>&1 || { grep -E ' error|Error|undefined reference' build/make.log | head -30; exit 1; }
 

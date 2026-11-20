@@ -1,7 +1,7 @@
 prefix=@PREFIX@
-libdir=${prefix}/lib
+libdir=/usr/lib
 
 Name: amixc99
 Description: what current libraries want from libc beyond AMIX's, and libgen and libm
-Version: 1
+Version: 2
 Libs: -L${libdir} -lamixc99 -lgen -lm

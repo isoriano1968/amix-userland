@@ -9,7 +9,7 @@ V=$(cd "$(dirname "$0")" && pwd); B=$V/build-ff
 X=${AMIX_SYSROOT:-$HOME/opt/m68k-amix-sysroot}/usr/x11r6
 [ -n "$SHM_LIBS" ] && [ -f "$SHM_LIBS/libshmsys.a" ] || {
 	echo "SHM_LIBS must name a directory with libshmsys.a"; exit 1; }
-m68k-elf-gcc -O2 -m68060 -fno-strict-aliasing -Wall -Wno-deprecated-declarations \
+m68k-elf-gcc -O2 -mcpu=68020 -mtune=68060 -fexcess-precision=fast -fno-strict-aliasing -Wall -Wno-deprecated-declarations \
   -Wno-error=incompatible-pointer-types -Wno-implicit-int -I$V/compat/include \
   -DVPLAY_S3D -DVPLAY_ZZMPEG -I$V/ffmpeg-4.4.8 -I$B -I$X/include -o $V/vplay $V/src/vplay.c $V/src/libs3d/s3d.c \
   $V/src/zzmpeg.c $V/src/zzav.c \

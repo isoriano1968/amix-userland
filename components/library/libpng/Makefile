@@ -14,7 +14,7 @@ export PATH := $(AMIX_TOOLS):$(PATH)
 S = libpng-$(COMPONENT_VERSION)
 SRCS = png pngerror pngget pngmem pngpread pngread pngrio pngrtran pngrutil pngset pngtrans \
 	pngwio pngwrite pngwtran pngwutil
-CFLAGS = -O2 -m68060 -fPIC -w -U__linux__ -Ulinux -D__amix__ -DSVR4 -DPNG_ARM_NEON_OPT=0 \
+CFLAGS = -O2 $(AMIX_CPU_BASELINE) -fPIC -w -U__linux__ -Ulinux -D__amix__ -DSVR4 -DPNG_ARM_NEON_OPT=0 \
 	-I$(S) -Ibuild -I$(AMIX_SYSROOT)$(PREFIX)/include
 
 build: $(COMPONENT_ARCHIVE)

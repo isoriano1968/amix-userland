@@ -37,7 +37,7 @@ python3 "$H/amix/mkconfig.py" "$B/include/SDL_config.h.cmake" > "$B/include/SDL_
 # every file sees gnu-pth's pthread.h: read, write, select, poll and the sleeps
 # become calls that let the other threads run.  Hidden by default, as
 # upstream builds it: the library exports SDL's API (DECLSPEC) and no more.
-CF="-O2 -m68060 -fPIC -fvisibility=hidden -fno-strict-aliasing -D_REENTRANT -DUSING_GENERATED_CONFIG_H
+CF="-O2 -mcpu=68020 -mtune=68060 -fexcess-precision=fast -fPIC -fvisibility=hidden -fno-strict-aliasing -D_REENTRANT -DUSING_GENERATED_CONFIG_H
 	-I$B/include -I$B/src -I$G/include -include $G/include/pthread.h -include $H/amix/include/SDL_amix.h
 	-I$X/include
 	-Wno-implicit-int -Wno-error=incompatible-pointer-types -Wno-deprecated-declarations"

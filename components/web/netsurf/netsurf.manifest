@@ -1,6 +1,8 @@
 # name, version and what building and running it needs
 name     web/netsurf
 version  3.11
+# the 68020..68060 baseline, tools/amix-cpu-scan clean
+cpu      68020
 summary  NetSurf web browser (framebuffer frontend on libnsfb's Xlib surface)
 build    developer/netsurf-buildsystem
 build    developer/nsgenbind
@@ -30,3 +32,5 @@ require  library/libpng
 require  library/zlib
 require  library/openssl
 require  network/curl
+# the X surface links libX11.so.7 and libXext.so.7
+require  x11/x11r6.3 >= 6.3

@@ -14,7 +14,7 @@ S  = curl-$(COMPONENT_VERSION)
 R  = $(AMIX_SYSROOT)
 # amix-curl.h: socklen_t and the socket prototypes SVR4's headers lack;
 # -fno-split-wide-types: gcc 14's 64-bit subtraction bug (sub.l mem,mem)
-CC_AMIX = m68k-elf-gcc -m68060 -fcommon -std=gnu99 -U__linux__ -Ulinux -D__amix__ -DSVR4 \
+CC_AMIX = m68k-elf-gcc $(AMIX_CPU_BASELINE) -fcommon -std=gnu99 -U__linux__ -Ulinux -D__amix__ -DSVR4 \
 	-include $(CURDIR)/files/amix-curl.h
 
 build: $(COMPONENT_ARCHIVE)

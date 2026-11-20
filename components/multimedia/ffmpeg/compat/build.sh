@@ -11,7 +11,7 @@ C=$(cd "$(dirname "$0")" && pwd)
 cd "$C"
 rm -f libvplaycompat.a
 for f in amix-ll amix-math amix-mem amix-clock amix-net; do
-	m68k-elf-gcc -O2 -m68060 -fno-strict-aliasing -Iinclude -c $f.c -o $f.o
+	m68k-elf-gcc -O2 -mcpu=68020 -mtune=68060 -fexcess-precision=fast -fno-strict-aliasing -Iinclude -c $f.c -o $f.o
 done
 m68k-elf-ar rc libvplaycompat.a amix-ll.o amix-math.o amix-mem.o amix-clock.o amix-net.o
 m68k-elf-ranlib libvplaycompat.a

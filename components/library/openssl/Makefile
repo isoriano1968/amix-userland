@@ -20,7 +20,7 @@ build: $(COMPONENT_ARCHIVE)
 	mkdir -p build
 	sh files/configure-amix.sh $(CURDIR)/$(S) > build/configure.log 2>&1
 	$(MAKE) -C $(S) -j8 build_libs > build/make.log 2>&1
-	m68k-elf-gcc -O2 -m68060 -fPIC -w -c files/amix-ssl.c -o build/amix-ssl.o
+	m68k-elf-gcc -O2 $(AMIX_CPU_BASELINE) -fPIC -w -c files/amix-ssl.c -o build/amix-ssl.o
 	../../../tools/amix-got-check build/amix-ssl.o `find $(S) -name 'libcrypto-lib-*.o' -o -name 'libssl-lib-*.o' | grep -v '/test/'`
 	m68k-elf-gcc -shared -Wl,-h,libcrypto.so.3 -Wl,--whole-archive $(S)/libcrypto.a -Wl,--no-whole-archive \
 		build/amix-ssl.o -lamixc99 -o build/libcrypto.so.3

@@ -35,7 +35,7 @@ build: $(COMPONENT_ARCHIVE) $(CPU6502_ARCHIVE)
 	cp build/6502/sources/6502.c build/6502/API/emulation/CPU/6502.h $(S)/src/
 	for p in patches/*.patch; do patch -d $(S) -p1 < $$p || exit 1; done
 	$(MAKE) -C $(S)/src -f $(CURDIR)/files/Makefile.amix REVISION=v$(COMPONENT_VERSION) \
-		CC="m68k-elf-gcc -m68060" CFLAGS="-O2 -std=gnu99 -fno-strict-aliasing -w" \
+		CC="m68k-elf-gcc $(AMIX_CPU_BASELINE)" CFLAGS="-O2 -std=gnu99 -fno-strict-aliasing -w" \
 		EXTRA_CPPFLAGS="-I$(CURDIR)/files/amix -include $(CURDIR)/files/amix/amix-grafx2.h -D__amix__ -DSVR4 -DAMIX_BINDIR=\\\"$(PREFIX)/bin\\\"" \
 		XCFLAGS="$$($(PKG_CONFIG) --cflags $(PKGS))" \
 		XLIBS="$$($(PKG_CONFIG) --libs $(PKGS))"

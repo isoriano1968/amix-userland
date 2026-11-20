@@ -39,7 +39,7 @@ cd "$V/$BD"
  --enable-cross-compile --arch=m68k --cpu=68060 --target-os=none \
  --cc=m68k-elf-gcc --ar=m68k-elf-ar --ranlib=m68k-elf-ranlib --nm=m68k-elf-nm --strip=m68k-elf-strip \
  $( [ -n "$S2" ] || echo --pkg-config=false ) \
- --extra-cflags="-m68060 -fno-strict-aliasing -D_XOPEN_SOURCE=600 $EXTRA_CF -I$C/include -include $C/include/amix-ff.h -Wno-error=incompatible-pointer-types" \
+ --extra-cflags="-mcpu=68020 -mtune=68060 -fexcess-precision=fast -fno-strict-aliasing -D_XOPEN_SOURCE=600 $EXTRA_CF -I$C/include -include $C/include/amix-ff.h -Wno-error=incompatible-pointer-types" \
  --extra-ldflags="-L$C" --extra-libs="-lvplaycompat $EXTRA_LIBS -lsocket -lnsl -lm" \
  --disable-autodetect --disable-asm --disable-pthreads --disable-doc --disable-debug \
  $PLAY --disable-ffprobe --enable-static --disable-shared \

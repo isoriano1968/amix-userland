@@ -14,7 +14,7 @@ S = freeglut-$(COMPONENT_VERSION)
 L = $(AMIX_SYSROOT)/usr/local/lib
 XL = $(AMIX_SYSROOT)/usr/x11r6/lib
 # no XInput2, Xrandr, XF86VidMode or joystick on R6.3: files/config.h says so
-FLAGS = -O2 -m68060 -fPIC -w -std=gnu99 -U__linux__ -Ulinux -D__amix__ -DSVR4 -D__unix__ -DHAVE_CONFIG_H -DFREEGLUT_EXPORTS \
+FLAGS = -O2 $(AMIX_CPU_BASELINE) -fPIC -w -std=gnu99 -U__linux__ -Ulinux -D__amix__ -DSVR4 -D__unix__ -DHAVE_CONFIG_H -DFREEGLUT_EXPORTS \
 	-include sys/time.h -Ifiles -I$(S)/include -I$(S)/src -I$(AMIX_SYSROOT)/usr/local/include \
 	-I$(AMIX_SYSROOT)/usr/x11r6/include
 SRCS = fg_callbacks fg_cursor fg_display fg_ext fg_font fg_font_data fg_gamemode fg_geometry fg_gl2 \

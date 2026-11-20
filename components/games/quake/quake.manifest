@@ -1,6 +1,8 @@
 # name, version and what building and running it needs
 name     games/quake
 version  1.09
+# 68060 only: core 1 builds for the Z3660's 68060 (lib060, zzgl)
+cpu      68060
 summary  GLQuake on core 1 (zzgl); Mesa 18 and software builds stay in the repo
 require  x11/mesa-183
 require  x11/x11r6.3

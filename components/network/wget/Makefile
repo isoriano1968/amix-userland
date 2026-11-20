@@ -16,9 +16,9 @@ R   = $(AMIX_SYSROOT)
 GNU = $(CURDIR)/../../gnu/compat
 W   = -Wno-error=implicit-function-declaration -Wno-error=int-conversion \
 	-Wno-error=incompatible-pointer-types -Wno-error=implicit-int
-CC_BASE = m68k-elf-gcc -m68060 -std=gnu99 -D__amix__ -DSVR4 -w $(W)
+CC_BASE = m68k-elf-gcc $(AMIX_CPU_BASELINE) -std=gnu99 -D__amix__ -DSVR4 -w $(W)
 # -fno-split-wide-types: gcc 14 m68k makes a sub.l of two memory operands without it
-CC_AMIX = m68k-elf-gcc -m68060 -fcommon -std=gnu99 -DO_CLOEXEC=0 -U__linux__ -Ulinux \
+CC_AMIX = m68k-elf-gcc $(AMIX_CPU_BASELINE) -fcommon -std=gnu99 -DO_CLOEXEC=0 -U__linux__ -Ulinux \
 	-D__amix__ -DSVR4 -w $(W)
 
 build: $(COMPONENT_ARCHIVE)
@@ -35,7 +35,7 @@ build: $(COMPONENT_ARCHIVE)
 		LIBS="-L$(CURDIR)/build -lamixgnu -lamixc99 -lsocket -lnsl -lgen" \
 		PKG_CONFIG=$(CURDIR)/../../../tools/amix-pkg-config \
 		ac_cv_func_getprogname=yes ac_cv_func_strtoll=yes ac_cv_func_strtoull=yes \
-		../$(S)/configure --host=m68k-elf --build=x86_64-linux-gnu --prefix=$(PREFIX) --sysconfdir=/etc \
+		am_cv_func_iconv=no ../$(S)/configure --host=m68k-elf --build=x86_64-linux-gnu --prefix=$(PREFIX) --sysconfdir=/etc \
 		--with-ssl=openssl --with-zlib --without-libpsl --disable-nls --disable-iri --without-libidn \
 		--without-libuuid --disable-pcre --disable-pcre2 --without-metalink --without-cares \
 		--disable-threads --disable-year2038 > configure.log 2>&1

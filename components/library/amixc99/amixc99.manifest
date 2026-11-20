@@ -1,5 +1,14 @@
 # name, version and what building and running it needs
 name     library/amixc99
-version  1
-summary  libamixc99, amixc99.pc and the C99 headers AMIX's gcc 2.7 lacks
+version  2
+cpu      68020
+summary  libamixc99.so.1, amixc99.pc and the C99 headers AMIX's gcc 2.7 lacks
 provide  amixc99
+file     /usr/lib/libamixc99.so.1
+file     /usr/lib/libamixc99.so devel
+file     /usr/local/lib/pkgconfig/amixc99.pc devel
+file     /usr/local/include/stdint.h devel
+file     /usr/local/include/stdbool.h devel
+file     /usr/local/include/inttypes.h devel
+file     /usr/local/share/amix-stubs/amixc99/libamixc99.so.1.s devel
+file     /usr/local/share/amix-stubs/amixc99/LIST devel

@@ -1,6 +1,8 @@
 # name, version and what building and running it needs
 name     sysutils/amixtop
 version  2
+# the 68020..68060 baseline, tools/amix-cpu-scan clean
+cpu      68020
 summary  curses system monitor
 require  library/ncurses
 require  library/amixstat

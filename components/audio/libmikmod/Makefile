@@ -12,7 +12,7 @@ COMPONENT_VERSION = 3.1.23
 include ../../../make-rules/shared.mk
 
 GATE = $(abspath ../../../../amix-gate/usr/src/firmware/core1)
-BASE = -O2 -m68060 -fcommon -w -Wno-error=implicit-function-declaration -Wno-error=int-conversion \
+BASE = -O2 $(AMIX_CPU_BASELINE) -fcommon -w -Wno-error=implicit-function-declaration -Wno-error=int-conversion \
        -Wno-error=incompatible-pointer-types -D__amix__ -DSVR4 -DHAVE_CONFIG_H -Dunix
 
 export PATH := $(AMIX_TOOLS):$(PATH)

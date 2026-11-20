@@ -1,6 +1,8 @@
 # name, version and what building and running it needs
 name     graphics/grafx2
 version  2.9
+# the 68020..68060 baseline, tools/amix-cpu-scan clean
+cpu      68020
 summary  Grafx2: 256-colour pixel art paint program inspired by Deluxe Paint, X11 front end
 require  x11/x11r6.3
 require  library/libpng

@@ -11,7 +11,7 @@ include ../../../make-rules/shared.mk
 include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
-CC     = m68k-elf-gcc -m68060
+CC     = m68k-elf-gcc $(AMIX_CPU_BASELINE)
 CFLAGS = -O2 -Wall
 
 SHLIBS                          = libamixstat.so.1

@@ -1,6 +1,8 @@
 # name, version and what building and running it needs
 name     library/quickjs-ng
 version  0.18.0
+# the 68020..68060 baseline, tools/amix-cpu-scan clean
+cpu      68020
 summary  QuickJS-ng JavaScript engine (ES2023+): libqjs, qjs, qjsc
 provide  qjs
 require  library/libm99

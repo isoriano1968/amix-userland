@@ -39,7 +39,7 @@ export PATH := $(AMIX_TOOLS):$(PATH)
 
 CC68    = m68k-elf-gcc
 M99     = $(shell $(PKG_CONFIG) --cflags libm99)
-CFLAGS  = -O2 -m68060 -std=gnu11 -D__amix__ -DSVR4 -D_GNU_SOURCE -DQJS_BUILD_LIBC \
+CFLAGS  = -O2 $(AMIX_CPU_BASELINE) -std=gnu11 -D__amix__ -DSVR4 -D_GNU_SOURCE -DQJS_BUILD_LIBC \
 	-fno-split-wide-types -Wno-error=incompatible-pointer-types \
 	-include $(CURDIR)/files/amix-ieee-math.h $(M99)
 LIBSRCS = quickjs libregexp libunicode dtoa quickjs-libc
@@ -58,7 +58,7 @@ build: $(COMPONENT_ARCHIVE)
 	for b in $(BUILTINS); do python3 -I files/js2c.py qjsc_builtin_`echo $$b | tr - _` \
 		$(S)/builtin-$$b.js $(S)/builtin-$$b.src.h || exit 1; done
 	for f in $(LIBSRCS); do $(CC68) $(CFLAGS) -fPIC -c $(S)/$$f.c -o build/pic/$$f.o || exit 1; done
-	$(CC68) -O2 -m68060 -fPIC -c files/amix-ieee-math.c -o build/pic/amix-ieee-math.o
+	$(CC68) -O2 $(AMIX_CPU_BASELINE) -fPIC -c files/amix-ieee-math.c -o build/pic/amix-ieee-math.o
 	$(TOOLS)/amix-got-check build/pic/*.o
 	# 060 traps: movep only, gcc's switch tables in .text read as code
 	# (the scan's documented false hit); anything else stops the build
@@ -67,10 +67,10 @@ build: $(COMPONENT_ARCHIVE)
 	$(mkshlibs)
 	$(CC68) $(CFLAGS) -c $(S)/qjs.c -o build/obj/qjs.o
 	$(CC68) $(CFLAGS) -c $(S)/qjsc.c -o build/obj/qjsc.o
-	$(CC68) -O2 -m68060 -c files/qjs-nobytecode.c -o build/obj/qjs-nobytecode.o
-	$(CC68) -m68060 -o build/qjs build/obj/qjs.o build/obj/qjs-nobytecode.o -Lbuild -lqjs \
+	$(CC68) -O2 $(AMIX_CPU_BASELINE) -c files/qjs-nobytecode.c -o build/obj/qjs-nobytecode.o
+	$(CC68) $(AMIX_CPU_BASELINE) -o build/qjs build/obj/qjs.o build/obj/qjs-nobytecode.o -Lbuild -lqjs \
 		-Wl,-rpath-link,$(AMIX_SYSROOT)/usr/lib -Wl,-R,$(PREFIX)/lib $(LIBDEPS)
-	$(CC68) -m68060 -o build/qjsc build/obj/qjsc.o -Lbuild -lqjs \
+	$(CC68) $(AMIX_CPU_BASELINE) -o build/qjsc build/obj/qjsc.o -Lbuild -lqjs \
 		-Wl,-rpath-link,$(AMIX_SYSROOT)/usr/lib -Wl,-R,$(PREFIX)/lib $(LIBDEPS)
 	m68k-elf-strip build/qjs build/qjsc
 	$(TOOLS)/amix-fix-needed build/qjs > /dev/null

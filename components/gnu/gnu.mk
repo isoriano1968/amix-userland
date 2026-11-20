@@ -13,9 +13,11 @@ PREFIX = $(GNU_PREFIX)
 S = $(COMPONENT_NAME)-$(COMPONENT_VERSION)
 W = -Wno-error=implicit-function-declaration -Wno-error=int-conversion \
 	-Wno-error=incompatible-pointer-types -Wno-error=implicit-int
-CC_BASE = m68k-elf-gcc -m68060 -std=gnu99 -D__amix__ -DSVR4 -w $(W)
+# no iconv (am_cv_func_iconv=no below): the tools never used it, and a sysroot
+# holding library/libiconv's headers must not change what they link
+CC_BASE = m68k-elf-gcc $(AMIX_CPU_BASELINE) -std=gnu99 -D__amix__ -DSVR4 -w $(W)
 # -fno-split-wide-types: gcc 14 m68k makes a sub.l of two memory operands without it
-CC_AMIX = m68k-elf-gcc -m68060 -fcommon -std=gnu99 $(COMPAT:%=-I$(GNU)/compat/%) -DO_CLOEXEC=0 -U__linux__ -Ulinux -D__amix__ -DSVR4 -w $(W)
+CC_AMIX = m68k-elf-gcc $(AMIX_CPU_BASELINE) -fcommon -std=gnu99 $(COMPAT:%=-I$(GNU)/compat/%) -DO_CLOEXEC=0 -U__linux__ -Ulinux -D__amix__ -DSVR4 -w $(W)
 
 build: $(COMPONENT_ARCHIVE)
 	rm -rf $(S) build
@@ -27,7 +29,7 @@ build: $(COMPONENT_ARCHIVE)
 	$(CC_BASE) -O2 -c $(GNU)/compat/amix-printf.c -o build/amix-printf.o
 	m68k-elf-ar rcs build/libamixgnu.a build/amix-gnu.o build/amix-getopt.o build/amix-printf.o
 	cd build && CC="$(CC_AMIX)" CFLAGS="-O2 -fno-split-wide-types" LIBS="-L$(CURDIR)/build -lamixgnu -lamixc99 $(EXTRA_LIBS)" LDFLAGS=-Wl,--allow-multiple-definition \
-		ac_cv_func_getprogname=yes ac_cv_func_strtoll=yes ac_cv_func_strtoull=yes $(EXTRA_ENV) \
+		ac_cv_func_getprogname=yes ac_cv_func_strtoull=yes ac_cv_func_strtoll=yes am_cv_func_iconv=no $(EXTRA_ENV) \
 		../$(S)/configure --host=m68k-elf --build=x86_64-linux-gnu --prefix=$(PREFIX) --disable-nls --disable-year2038 $(EXTRA_CONF) > configure.log 2>&1
 	# the forced header only now: configure takes what cc -E prints for flags
 	$(MAKE) -C build -j8 CFLAGS="-O2 -fno-split-wide-types -include $(GNU)/compat/amix-gnu.h $(EXTRA_CFLAGS)" $(MAKE_TARGET) > build/make.log 2>&1 || { grep -E ' error|undefined reference' build/make.log | head -20; exit 1; }

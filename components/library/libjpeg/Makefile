@@ -11,7 +11,7 @@ include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 S  = jpeg-$(COMPONENT_VERSION)
-CC_AMIX = m68k-elf-gcc -m68060 -fcommon -std=gnu99 -U__linux__ -Ulinux -D__amix__ -DSVR4
+CC_AMIX = m68k-elf-gcc $(AMIX_CPU_BASELINE) -fcommon -std=gnu99 -U__linux__ -Ulinux -D__amix__ -DSVR4
 
 build: $(COMPONENT_ARCHIVE)
 	rm -rf $(S) build

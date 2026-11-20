@@ -1,5 +1,5 @@
 # NumPy for the system Python 3.11 of AMIX (runtime/python3): the C and C++
-# modules cross-built with gcc 14 (-m68060) by numpy's own (vendored) Meson,
+# modules cross-built with gcc 14 (the 68020-68060 baseline) by numpy's own (vendored) Meson,
 # without BLAS/LAPACK (numpy.linalg on its bundled lapack-lite), without SIMD
 # dispatch (m68k has none), installed into /usr/local/lib/python3.11/site-packages.
 # 2.2.6: the last release of the 2.2 series, which PyDPainter 2.2.1 pins
@@ -83,7 +83,7 @@ mlist   = [$(foreach a,$(1),'$(a)',)]
 STAGE_DROP ?= distutils f2py
 OPT        ?= -O2
 
-COMMON  = -m68060 -fPIC -U__linux__ -Ulinux -D__amix__ -DSVR4 $(OPT) \
+COMMON  = $(AMIX_CPU_BASELINE) -fPIC -U__linux__ -Ulinux -D__amix__ -DSVR4 $(OPT) \
 	-U__INTPTR_TYPE__ -D__INTPTR_TYPE__=int -U__UINTPTR_TYPE__ -D__UINTPTR_TYPE__=unsigned_int \
 	$(M99) -I$(PYINC) -I$(PYINC)/amixcompat -I$(AMIX_SYSROOT)/usr/local/gnu/include
 
@@ -121,8 +121,8 @@ build: $(COMPONENT_ARCHIVE)
 	$(pyext_glue)
 	m68k-elf-gcc -c files/so-init/begin.s -o $(SOI)/begin.o
 	m68k-elf-gcc -c files/so-init/end.s -o $(SOI)/end.o
-	m68k-elf-gcc -m68060 -O2 -fPIC -c files/so-init/init.c -o $(SOI)/init.o
-	m68k-elf-gcc -m68060 -O2 -fPIC -c files/amix/amix-math.c -o build/amix-math.o
+	m68k-elf-gcc $(AMIX_CPU_BASELINE) -O2 -fPIC -c files/so-init/init.c -o $(SOI)/init.o
+	m68k-elf-gcc $(AMIX_CPU_BASELINE) -O2 -fPIC -c files/amix/amix-math.c -o build/amix-math.o
 	$(TOOLS)/amix-got-check $(SOI)/init.o build/amix-math.o
 	m68k-elf-ar rc build/libamixmath.a build/amix-math.o
 	for c in gcc g++; do sed -e "s|@CC@|$(AMIX_TOOLS)/m68k-elf-$$c|g" \

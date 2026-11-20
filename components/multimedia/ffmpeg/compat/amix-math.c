@@ -9,9 +9,13 @@
  *
  * fmove.l to a data register and fint round in the FPCR's mode, which is
  * round-to-nearest-even; fintrz truncates.  All are 68060 hardware
- * instructions (fdsqrt/fssqrt too), none is emulated.
+ * instructions; fdsqrt/fssqrt (040/060 only) are chosen at run time, fsqrt
+ * on a 68881/68882 (has_dsqrt below).
  */
 #include <math.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/utsname.h>
 
 #ifdef __mc68000__
 
@@ -102,20 +106,58 @@ long long amix_llrintf(float x)
 	return (long long)amix_rint(x);
 }
 
+/* the FPU rounds square roots straight to double or single itself on the
+ * 68040/060 (fdsqrt/fssqrt); a 68881/68882 has only fsqrt, in extended, and
+ * the result is rounded once more on the store.  Which one: uname, once (the
+ * port kernel names the CPU, "68040-"/"68060-"; stock AMIX, a 68030, none);
+ * AMIX_CPU=30|40|60 decides in tests.  The 040/060 forms are spelled as
+ * words with fixed registers: the 68020-68060 baseline assembler refuses
+ * them, and they run only where uname named a 68040/060. */
+static int dsqrt_ok = -1;
+
+static int has_dsqrt(void)
+{
+	if (dsqrt_ok < 0) {
+		const char *e = getenv("AMIX_CPU");
+		struct utsname u;
+
+		if (e && *e)
+			dsqrt_ok = strstr(e, "40") != 0 || strstr(e, "60") != 0;
+		else
+			dsqrt_ok = uname(&u) >= 0 && (strstr(u.machine, "68040") != 0 ||
+						      strstr(u.machine, "68060") != 0);
+	}
+	return dsqrt_ok;
+}
+
 double amix_sqrt(double x)
 {
-	double r;
+	if (has_dsqrt()) {
+		register double r __asm__("fp0") = x;
 
-	__asm__("fdsqrt.x %1,%0" : "=f"(r) : "f"(x));	/* rounded to double */
-	return r;
+		__asm__(".word 0xf200,0x0045" : "+f"(r));	/* fdsqrt.x %fp0,%fp0: rounded to double */
+		return r;
+	} else {
+		double r;
+
+		__asm__("fsqrt.x %1,%0" : "=f"(r) : "f"(x));
+		return r;
+	}
 }
 
 float amix_sqrtf(float x)
 {
-	float r;
+	if (has_dsqrt()) {
+		register float r __asm__("fp0") = x;
 
-	__asm__("fssqrt.x %1,%0" : "=f"(r) : "f"(x));	/* rounded to single */
-	return r;
+		__asm__(".word 0xf200,0x0041" : "+f"(r));	/* fssqrt.x %fp0,%fp0: rounded to single */
+		return r;
+	} else {
+		float r;
+
+		__asm__("fsqrt.x %1,%0" : "=f"(r) : "f"(x));
+		return r;
+	}
 }
 
 #endif

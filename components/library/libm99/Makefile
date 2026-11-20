@@ -86,7 +86,7 @@ MUSL_CFLAGS = -std=c99 -nostdinc -ffreestanding -fexcess-precision=standard -fro
 musl_inc = -I$(S)/arch/$(1) -I$(S)/arch/generic -I$(2)/include -I$(S)/src/include \
 	-I$(S)/src/internal -I$(S)/include
 CC68   = m68k-elf-gcc
-CFLAGS = -O2 -m68060 -fPIC $(MUSL_CFLAGS) $(call musl_inc,m68k,build)
+CFLAGS = -O2 $(AMIX_CPU_BASELINE) -fPIC $(MUSL_CFLAGS) $(call musl_inc,m68k,build)
 
 
 SHLIBS                    = libm99.so.1
@@ -94,7 +94,7 @@ SHLIB_ARCHIVE_libm99.so.1 = build/libm99_pic.a
 SHLIB_ARGS_libm99.so.1    =
 
 TOOLS = $(abspath ../../../tools)
-TEST_CFLAGS = -O2 -m68060 -Wall -Ifiles/include
+TEST_CFLAGS = -O2 $(AMIX_CPU_BASELINE) -Wall -Ifiles/include
 
 build: $(COMPONENT_ARCHIVE)
 	$(unpack)
@@ -133,7 +133,7 @@ check-exports:
 test-amix:
 	$(CC68) $(TEST_CFLAGS) -fno-builtin -fno-jump-tables -c tests/libm99-test.c -Itests -o build/libm99-test.o
 	$(TOOLS)/amix-fpu-scan build/libm99-test.o
-	$(CC68) -m68060 -o build/libm99-test build/libm99-test.o -Lbuild -lm99 -lm -Wl,-R,$(PREFIX)/lib
+	$(CC68) $(AMIX_CPU_BASELINE) -o build/libm99-test build/libm99-test.o -Lbuild -lm99 -lm -Wl,-R,$(PREFIX)/lib
 	$(TOOLS)/amix-fix-needed build/libm99-test > /dev/null
 
 scan:

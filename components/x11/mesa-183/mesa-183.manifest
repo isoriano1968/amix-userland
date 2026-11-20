@@ -1,6 +1,9 @@
 # name, version and what building and running it needs
 name     x11/mesa-183
 version  18.3.6
+# 68060 only: libzzgl and the zz3660 driver are built by amix-gate's core1
+# (the Z3660's ARM core 1, so always beside a 68060), as the 060 build they are
+cpu      68060
 summary  Mesa 18.3: OpenGL, GLSL, zz3660, libzzgl
 require  x11/x11r6.3
 provide  gl

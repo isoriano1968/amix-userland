@@ -1,7 +1,11 @@
 # name, version and what building and running it needs
 name     network/wget
 version  1.25.0
+# the 68020..68060 baseline, tools/amix-cpu-scan clean
+cpu      68020
 summary  GNU Wget: HTTP, HTTPS and FTP downloads
 require  library/openssl
 require  library/zlib
 require  network/ca-certificates
+# libamixc99.so.1 (gcc 14's specs make objects that call C99 functions NEED it)
+require  library/amixc99 >= 2

@@ -29,6 +29,7 @@
  *   0x0C00000-0x23FFFFF  textures (24 MB, mapped a texture at a time)
  *   0x2400000          prefs, state, vertex batch, owner record
  */
+#include <sys/utsname.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -553,13 +554,35 @@ static void apply_state(const struct s3d_state *d)
 
 /* --- triangles ------------------------------------------------------------ */
 
+#ifdef __m68k__
+/* move16 only where uname names a 68040/060 (the port kernel's "68040-" or
+ * "68060-"): a ZZ9000 also sits in a 68030 Amiga, where move16 is illegal.
+ * AMIX_CPU=30|40|60 decides in tests. */
+static int has_move16(void)
+{
+    static int ok = -1;
+
+    if (ok < 0) {
+        const char *e = getenv("AMIX_CPU");
+        struct utsname u;
+
+        if (e && *e)
+            ok = strstr(e, "40") != 0 || strstr(e, "60") != 0;
+        else
+            ok = uname(&u) >= 0 && (strstr(u.machine, "68040") != 0 ||
+                                    strstr(u.machine, "68060") != 0);
+    }
+    return ok;
+}
+#endif
+
 static void to_board(struct point3D *dst, const struct point3D *src, int n)
 {
 #ifdef __m68k__
     register const struct point3D *s __asm__("a0") = src;
     register struct point3D *d __asm__("a1") = dst;
 
-    if (((unsigned long) src | (unsigned long) dst) & 15) {
+    if ((((unsigned long) src | (unsigned long) dst) & 15) || !has_move16()) {
         memcpy(dst, src, n * sizeof *src);
         return;
     }

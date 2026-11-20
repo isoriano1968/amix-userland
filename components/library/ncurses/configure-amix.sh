@@ -13,7 +13,7 @@ export PATH=$HOME/opt/m68k-amix/bin:$PATH
 W="-Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=return-mismatch -Wno-error=implicit-int"
 mkdir -p "$H/build" && cd "$H/build"
 CC=m68k-elf-gcc CXX=m68k-elf-g++ AR=m68k-elf-ar RANLIB=m68k-elf-ranlib \
-CFLAGS="-O2 -fPIC -U__linux__ -Ulinux -D__amix__ -D__svr4__ -DSVR4 -fcommon $W" \
+CFLAGS="-O2 ${AMIX_CPU:--mcpu=68020 -mtune=68060 -fexcess-precision=fast} -fPIC -U__linux__ -Ulinux -D__amix__ -D__svr4__ -DSVR4 -fcommon $W" \
 BUILD_CC=gcc BUILD_CFLAGS=-O2 \
 	"$H/ncurses-6.6/configure" --host=m68k-elf --build=x86_64-pc-linux-gnu \
 	--prefix=/usr/local --program-prefix=n \

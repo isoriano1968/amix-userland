@@ -14,7 +14,7 @@ include ../../../make-rules/unpack.mk
 include ../../../make-rules/shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
-CC     = m68k-elf-gcc -m68060 -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4
+CC     = m68k-elf-gcc $(AMIX_CPU_BASELINE) -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4
 CFLAGS = -O2 -fPIC -D_FILE_OFFSET_BITS=64 -Wall -Winline -fno-strength-reduce
 LIBOBJ = blocksort huffman crctable randtable compress decompress bzlib
 
