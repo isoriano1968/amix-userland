@@ -717,15 +717,17 @@ class Picasso(unittest.TestCase):
             os.unlink(f.name)
 
 
-def fake_repo(d, pkgs, cpu=None):
+def fake_repo(d, pkgs, cpu=None, hw=None):
     """A repository with pkgs: stem -> (requirements, file sizes); cpu:
-    stem -> its org.amix.cpu."""
+    stem -> its org.amix.cpu; hw: stem -> its org.amix.hw."""
     for stem, (reqs, sizes) in pkgs.items():
         pd = os.path.join(d, "publisher", "amix", "pkg", urllib.parse.quote(stem, safe=""))
         os.makedirs(pd)
         lines = ["set name=pkg.fmri value=pkg://amix/%s@1,2.1-1:20261118T000000Z" % stem]
         if cpu and stem in cpu:
             lines.append("set name=org.amix.cpu value=%s" % cpu[stem])
+        if hw and stem in hw:
+            lines.append("set name=org.amix.hw value=%s" % hw[stem])
         lines += ["depend fmri=pkg:/%s@1 type=require" % r for r in reqs]
         lines += ["file %d path=f%d pkg.size=%d pkg.csize=%d" % (i, i, 3 * n, n)
                   for i, n in enumerate(sizes)]
@@ -945,6 +947,45 @@ class CpuGuard(unittest.TestCase):
             s = netinstall.steps_script(cfg, "10.0.2.2", repo=d, now=time.gmtime(0))
         self.assertNotIn("68060 code", s)
         self.assertIn("desktop/cde", s.split("step 6 ")[1])
+
+
+class HwGuard(unittest.TestCase):
+    """A package that needs a board (org.amix.hw: the Z3660's core 1, the
+    ZZ9000) stays off a machine without it, and the plan says why; the
+    user saw core 1 apps offered on the FS-UAE A3000 (2026-11-20)."""
+
+    def repo(self, d):
+        fake_repo(d, dict({p: ([], [1000]) for p in netinstall.FOUNDATION_PKGS + ["sysutils/amix-pkg"]},
+                          **{"desktop/cde-apps": ([], [1000]),
+                             "desktop/cde-z3660": (["desktop/cde-apps"], [1000]),
+                             "games/ioquake3": ([], [1000]),
+                             "desktop/cde-amixq3": (["desktop/cde-apps", "games/ioquake3"], [1000]),
+                             "multimedia/ffmpeg": ([], [1000])}),
+                  hw={"desktop/cde-z3660": "z3660-core1", "games/ioquake3": "z3660-core1",
+                      "desktop/cde-amixq3": "z3660-core1"})
+
+    def test_machine_hw(self):
+        self.assertEqual(netinstall.machine_hw({"z3660", "060"}), {"z3660", "z3660-core1"})
+        self.assertEqual(netinstall.machine_hw({"hw_zz9000"}), {"zz9000"})
+        self.assertEqual(netinstall.machine_hw({"picasso2"}), set())
+
+    def test_needs_hw(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.repo(d)
+            self.assertEqual(netinstall.needs_hw(d, "desktop/cde-amixq3", set()),
+                             ("desktop/cde-amixq3", "z3660-core1"))
+            self.assertIsNone(netinstall.needs_hw(d, "desktop/cde-amixq3", {"z3660-core1"}))
+            self.assertIsNone(netinstall.needs_hw(d, "desktop/cde-apps", set()))
+            self.assertIsNone(netinstall.needs_hw(d, "desktop/cde-z3660", {"zz9000", "z3660-core1"}))
+
+    def test_on_a_z3660(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.repo(d)
+            cfg = model.Config(sel={"mach": "a3000", "accel": "z3660", "desk": "cde"})
+            cfg.on["media"] = True
+            s = netinstall.steps_script(cfg, "10.0.2.2", repo=d, now=time.gmtime(0))
+        self.assertNotIn("needs the board", s)
+        self.assertIn("desktop/cde-z3660", s.split("step 6 ")[1])
 
 
 LIBXP = os.path.join(ROOT, "components/x11/libxp/build/stage/usr/x11r6/lib/libXp.so.7")

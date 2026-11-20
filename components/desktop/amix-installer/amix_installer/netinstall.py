@@ -40,8 +40,8 @@ BOOT_DIR = "/opt/amixboot"
 # reported, not installed
 PACKAGES = {
     "cde": ["desktop/cde", "desktop/cde-dtlogin"], "mwm": ["desktop/motif"], "netsurf": ["web/netsurf"],
-    "media": ["multimedia/ffmpeg", "desktop/cde-apps"], "grafx2": ["graphics/grafx2"],
-    "sysmon": ["desktop/cde-apps"], "games": ["games/quake", "games/ioquake3"],
+    "media": ["multimedia/ffmpeg", "desktop/cde-apps", "desktop/cde-z3660"], "grafx2": ["graphics/grafx2"],
+    "sysmon": ["desktop/cde-apps"], "games": ["games/quake", "games/ioquake3", "desktop/cde-amixq3"],
     # gcc14/gcc27: developer/gcc-14 and gcc-27 are cross compilers on the PC; a
     # compiler that runs on AMIX is not packaged yet (reported as such)
     "pkgconf": ["developer/pkgconf"], "gnu": ["gnu/gnu-tools"], "python": ["runtime/python3"],
@@ -372,6 +372,53 @@ def _cpu(manifest):
         w = line.split()
         if w[:2] == ["set", "name=org.amix.cpu"] and len(w) > 2 and w[2].startswith("value="):
             return w[2][6:]
+    return None
+
+
+def _hw(manifest):
+    """The board a published package needs (org.amix.hw: z3660, z3660-core1,
+    zz9000, alternatives with |), or None."""
+    for line in manifest.splitlines():
+        w = line.split()
+        if w[:2] == ["set", "name=org.amix.hw"] and len(w) > 2 and w[2].startswith("value="):
+            return w[2][6:]
+    return None
+
+
+def machine_hw(tags):
+    """The boards (amix-hw's names) the installer's choices give the machine."""
+    hw = set()
+    if "z3660" in tags:
+        hw |= {"z3660", "z3660-core1"}
+    if "hw_zz9000" in tags or "zz9000" in tags:
+        hw.add("zz9000")
+    return hw
+
+
+def needs_hw(repo, stem, hw, _seen=None):
+    """(package, board) for the first package down stem's requirements that
+    needs a board (org.amix.hw) this machine does not have, or None.  pkg
+    refuses it there too; its panel controls would show nothing."""
+    seen = _seen if _seen is not None else set()
+    if stem in seen:
+        return None
+    seen.add(stem)
+    try:
+        _, man = _newest(repo, stem)
+    except KeyError:
+        return None
+    want = _hw(man)
+    if want and not any(x in hw for x in want.split("|")):
+        return (stem, want)
+    for line in man.splitlines():
+        w = line.split()
+        if w and w[0] == "depend" and "type=require" in w:
+            fmri = [x[5:] for x in w if x.startswith("fmri=")]
+            if fmri:
+                dep = fmri[0].replace("pkg://amix/", "").replace("pkg:/", "").split("@")[0]
+                m = needs_hw(repo, dep, hw, seen)
+                if m:
+                    return m
     return None
 
 
@@ -865,6 +912,12 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
                                  ("%s (needs %s, 68060 code: this machine has no 68060)" % (p, m))
                                  for p, m in fast if m]
             pkgs = [p for p, m in fast if not m]
+        hw = machine_hw(cfg.tags())
+        board = [(p, needs_hw(repo, p, hw)) for p in pkgs]
+        missing = missing + [("%s (needs the board %s: this machine has none)" % (p, m[1])) if m[0] == p else
+                             ("%s (needs %s, which needs the board %s: this machine has none)" % (p, m[0], m[1]))
+                             for p, m in board if m]
+        pkgs = [p for p, m in board if not m]
     sizes = {}
     if repo:
         # what each install fetches, in the order the script installs them
