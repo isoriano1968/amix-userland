@@ -11,4 +11,16 @@ EXTRA_ENV         = bash_cv_type_socklen_t=yes ac_cv_func_gethostname=yes bash_c
 EXTRA_LIBS        = $(shell $(PKG_CONFIG) --libs ncurses)
 MAKE_TARGET       = bash
 EXTRA_CFLAGS      = -DAMIX_RUSAGE -Dsocklen_t=int -include signal.h
+# the system-wide startup files (patch 0002: SYS_BASHRC, SYS_BASH_LOGOUT in
+# /etc/bash, as OpenIndiana), and the skeleton for new users' homes, also
+# under /usr/share/bash/skel to copy by hand
+define STAGE_EXTRA
+mkdir -p $(STAGE_DIR)/etc/bash/bashrc.d $(STAGE_DIR)/etc/skel $(STAGE_DIR)/usr/share/bash/skel
+cp files/bashrc files/bash_logout $(STAGE_DIR)/etc/bash/
+cp files/skel.bashrc $(STAGE_DIR)/etc/skel/.bashrc
+cp files/skel.bash_profile $(STAGE_DIR)/etc/skel/.bash_profile
+cp files/skel.bashrc $(STAGE_DIR)/usr/share/bash/skel/.bashrc
+cp files/skel.bash_profile $(STAGE_DIR)/usr/share/bash/skel/.bash_profile
+chmod 644 $(STAGE_DIR)/etc/bash/* $(STAGE_DIR)/etc/skel/.bash* $(STAGE_DIR)/usr/share/bash/skel/.bash*
+endef
 include ../../gnu/gnu.mk
