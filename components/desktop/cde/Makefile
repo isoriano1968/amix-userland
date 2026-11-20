@@ -27,7 +27,7 @@ COMPONENT_VERSION = 2.2.4a
 include ../../../make-rules/shared.mk
 include ../../../make-rules/shlib.mk
 
-AMIX_CPU ?= -m68060
+AMIX_CPU ?= $(AMIX_CPU_BASELINE)
 HOST_CC  ?= gcc
 HOST_CXX ?= g++
 export AMIX_SYSROOT AMIX_TOOLS AMIX_CPU HOST_CC HOST_CXX
@@ -117,6 +117,7 @@ stage: build
 		{ echo "manifest: $$f not in the stage"; exit 1; }; done
 	@test "`cd $(STAGE_DIR) && find . -type f -o -type l | wc -l`" = "`$(MANIFEST_FILES) | wc -l`" || \
 		{ echo "the stage and cde.manifest list different files"; exit 1; }
+	$(CPU_SCAN) $(STAGE_DIR)
 	tar --format=ustar --numeric-owner --owner=2 --group=2 -C $(STAGE_DIR) \
 		-cf build/$(COMPONENT_NAME)-amix.tar usr
 	@test ! -s $(STAGE_DIR)/../MISSING || echo "not built (expected, see README): `wc -l < $(STAGE_DIR)/../MISSING` files, listed in build/MISSING"

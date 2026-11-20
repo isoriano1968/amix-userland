@@ -6,10 +6,9 @@
 # several, e.g.  RTG_MODE=800x600 startcde.  STARTX=program uses another X
 # starter, as CDE's own /usr/dt/bin/startcde.  Session log: $HOME/.dt/startlog
 XINITRC=/usr/dt/config/xinitrc.amix; export XINITRC
-PATH=/usr/dt/bin:/usr/x11r6/bin:$PATH:/usr/X/bin; export PATH
+PATH=/usr/dt/bin:/usr/x11r6/bin:$PATH; export PATH
 [ -z "$STARTX" ] || exec /usr/dt/bin/startcde "$@"
-X=/usr/x11r6/bin/xinit
-[ -x $X ] || X=/usr/X/bin/xinit
-[ -x $X ] || { echo "startcde: no xinit (/usr/x11r6/bin, /usr/X/bin)" >&2; exit 1; }
+X=/usr/x11r6/bin/xinit		# x11/x11r6.3's (no longer stock AMIX's /usr/X/bin)
+[ -x $X ] || { echo "startcde: no /usr/x11r6/bin/xinit: pkg install x11/x11r6.3" >&2; exit 1; }
 [ -x /usr/dt/bin/Xamix-dt ] || { echo "startcde: no /usr/dt/bin/Xamix-dt" >&2; exit 1; }
 exec $X $XINITRC -- /usr/dt/bin/Xamix-dt :0 "$@"

@@ -22,10 +22,12 @@ here, and your own AMIX installation.
 
 ### The Amiga
 
-- **A 68040 or 68060 CPU.** gcc14-cross-amix builds for the 68060, including
-  the 68040/68060 floating-point instructions a 68881/68882 does not have.
-  The binaries do not run on a 68030 (an Amiga 3000's own CPU).
-- **AMIX 2.1 with a 68040/68060 kernel** (the
+- **A 68020/68030 with a 68881/68882, or a 68040/68060.** gcc14-cross-amix
+  builds for the AMIX baseline (`-mcpu=68020 -mtune=68060
+  -fexcess-precision=fast`, doc/CPU-TARGET-68020-60.md): one build that runs
+  on an Amiga 3000's own 68030 + 68882 and is tuned for the 68060;
+  `tools/amix-cpu-scan` checks the stage for 68040/060-only instructions.
+- **AMIX 2.1**, its own kernel or the 68040/68060 one (the
   [amix-040-060-port](https://github.com/asokero/amix-040-060-port)).
 - **X11R6.3, libXp and Motif** from their components, installed on the
   machine, and an X server for your display.
@@ -112,8 +114,8 @@ their files in `/var/tmp`:
 | | |
 |---|---|
 | `files/dtlogin/` | Motif, TWM and OPEN LOOK sessions for dtlogin next to CDE (dtlogin itself, `dtconfig`, `Xamix-dt` and `startcde` on the PATH are the package desktop/cde-dtlogin). `mklogo.py` turns a picture of your choice into a dtlogin logo; none is included. |
-| `target/keymap/` | The console's keyboard layout for X. `kmap2xmodmap.py` converts your machine's `/usr/amiga/lib/kmap/*` into xmodmap tables, and `xkeymap-amiga` loads the one that matches the console. |
-| `target/extra/XLC_LOCALE.C.amix` | A C locale for X11R6.3 with both halves of ISO 8859-1, so dtterm shows umlauts and other 8-bit characters. |
+| (keymap) | The console's keyboard layout for X is its own package now, x11/amix-xkeymap (tables made by `tools/kmap2xmodmap.py`, `xkeymap-amiga`, the session hook); this package's Xsetup calls it on the login screen when it is installed. |
+| (C locale) | X11R6.3's locale database, with AMIX's C locale (both halves of ISO 8859-1, umlauts in dtterm), is part of x11/x11r6.3 now. |
 
 ## What builds and what does not
 

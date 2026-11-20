@@ -10,7 +10,7 @@
 LC_ALL=C; export LC_ALL
 TOP=$(cd "$(dirname "$0")/.." && pwd)
 SYSROOT=${AMIX_SYSROOT:?AMIX_SYSROOT is not set}
-CPU=${AMIX_CPU:--m68060}
+CPU=${AMIX_CPU:--mcpu=68020 -mtune=68060 -fexcess-precision=fast}
 HOST_CC=${HOST_CC:-gcc}
 X11=$SYSROOT/usr/x11r6                    # X11R6.3: include/, lib/
 WORK=$TOP/build/work

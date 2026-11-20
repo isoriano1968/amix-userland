@@ -3,7 +3,7 @@
 # files (files/), and desktop/cde's Xconfig for /etc/dt/config.
 #   make stage   build/stage
 COMPONENT_NAME    = cde-dtlogin
-COMPONENT_VERSION = 1.0.1
+COMPONENT_VERSION = 1.0.2
 
 include ../../../make-rules/shared.mk
 

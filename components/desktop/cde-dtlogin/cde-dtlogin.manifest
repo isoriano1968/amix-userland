@@ -1,9 +1,18 @@
 # name, version and what building and running it needs
 name     desktop/cde-dtlogin
-version  1.0.1
+version  1.0.2
 summary  How CDE starts: startcde from the console, and dtlogin (installed off: dtconfig -e turns it on)
 require  desktop/cde >= 2.2.4
 require  x11/xserver-amix
+require  x11/x11r6.3-fonts >= 6.3
+# what Xamix-dt gives the server (-fp): the gate checks they are delivered
+uses     /usr/x11r6/lib/X11/fonts/misc/fonts.dir
+uses     /usr/x11r6/lib/X11/fonts/75dpi/fonts.dir
+uses     /usr/x11r6/lib/X11/fonts/100dpi/fonts.dir
+uses     /usr/dt/config/xfonts/C/fonts.dir
+uses     /usr/x11r6/bin/Xamix
+# startcde starts X with it
+uses     /usr/x11r6/bin/xinit
 file     /usr/bin/startcde
 file     /usr/dt/bin/Xamix-dt
 file     /usr/dt/bin/dtconfig

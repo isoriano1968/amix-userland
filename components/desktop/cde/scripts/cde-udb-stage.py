@@ -139,9 +139,19 @@ for fs in filesets:
                 if body.startswith(b"#!") and body != data:
                     data = body
                     fixed.append(tgt)
-                # CDE's scripts name the X11R6.3 build tree's bin (X11ProjectRoot);
-                # AMIX's X clients (xset, xrdb) are in /usr/X/bin
-                data = data.replace(b"/usr/x11r6/xc/exports/bin", b"/usr/X/bin")
+                # CDE's scripts name the X11R6.3 build tree's bin (X11ProjectRoot):
+                # x11/x11r6.3's X programs (xset, xsetroot, xrdb, xterm) are in
+                # /usr/x11r6/bin (until 2026-11-20 stock AMIX's /usr/X/bin)
+                data = data.replace(b"/usr/x11r6/xc/exports/bin", b"/usr/x11r6/bin")
+                if tgt.endswith("/config/Xsetup"):
+                    # the login screen's setup: its xset is x11/x11r6.3's (the
+                    # source names /usr/bin), and the console's keyboard
+                    # layout when x11/amix-xkeymap is installed
+                    data = data.replace(b"XDIR=/usr/bin", b"XDIR=/usr/x11r6/bin")
+                    if b"xkeymap-amiga" not in data:
+                        data = data.rstrip(b"\n") + (b"\n\n# AMIX: the console's keyboard layout "
+                                                      b"(x11/amix-xkeymap)\n[ -x /opt/amix/bin/"
+                                                      b"xkeymap-amiga ] && /opt/amix/bin/xkeymap-amiga || :\n")
                 open(dst, "wb").write(data)
             mode = rec.get("mode", "0444")
             os.chmod(dst, int(mode, 8) & 0o7777 if re.fullmatch(r"0?[0-7]+", mode) else 0o444)

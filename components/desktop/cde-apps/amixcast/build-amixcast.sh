@@ -7,10 +7,11 @@ set -e
 T=$(cd "$(dirname "$0")/../../../../tools" && pwd)
 P=$T/amix-pkg-config
 cd "$(dirname "$0")"
-F="-O2 -m68060 -fno-strict-aliasing -Wno-implicit-int -Wno-implicit-function-declaration \
+F="-O2 ${AMIX_CPU:--mcpu=68020 -mtune=68060 -fexcess-precision=fast} -fno-strict-aliasing -Wno-implicit-int -Wno-implicit-function-declaration \
   -Wno-incompatible-pointer-types -Wno-int-conversion -DFUNCPROTO=15"
 m68k-elf-gcc $F $($P --variable=pth_cflags pth) $($P --cflags libupnp) -c dlna.c -o dlna.o
 m68k-elf-gcc $F $($P --cflags xm) -I../../../multimedia/ffmpeg/arm/h264bench -c amixcast.c -o amixcast.o
-m68k-elf-gcc -o amixcast amixcast.o dlna.o $($P --libs libupnp pth xm)
+# libXtInherit.a: cde-apps build.sh makes it (XTI, relative to cde-apps)
+m68k-elf-gcc -o amixcast amixcast.o dlna.o -L../${XTI:-build/xtinherit} $($P --libs libupnp pth xm)
 rm -f amixcast.o dlna.o
 ls -l amixcast

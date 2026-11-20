@@ -16,7 +16,8 @@ a local sysroot), and writes `build/motif-amix.tar`.
   while it builds (makestrs, wml) for the build host (host cc, flex and the
   host's X11 headers).
 - `scripts/build-shared.sh` cross-builds Motif with gcc 14 (`AMIX_CPU`,
-  default `-m68060`, `--sysroot` = `AMIX_SYSROOT`), makes the shared
+  default `-mcpu=68020 -mtune=68060 -fexcess-precision=fast`, the AMIX
+  baseline for every 68020..68060 machine, `--sysroot` = `AMIX_SYSROOT`), makes the shared
   libraries from the `-fPIC` archives (libtool does not know this target),
   writes the `.pc` files and links `mwm`. configure cannot run test programs
   for AMIX, so `files/motif-amix.cache` holds its answers.

@@ -8,25 +8,25 @@ WM=${1:-mwm}
 # the user's environment as in a CDE session (PATH, SHELL, LD_LIBRARY_PATH)
 [ -r $HOME/.dtprofile ] && . $HOME/.dtprofile
 /opt/amix/bin/xkeymap-amiga
-[ -r $HOME/.Xdefaults ] && /usr/X/bin/xrdb -merge $HOME/.Xdefaults
-/usr/X/bin/xsetroot -solid '#5a7a95' 2> /dev/null
+[ -r $HOME/.Xdefaults ] && /usr/x11r6/bin/xrdb -merge $HOME/.Xdefaults
+/usr/x11r6/bin/xsetroot -solid '#5a7a95' 2> /dev/null
 cd $HOME
 case $WM in
 mwm)
 	/usr/X/bin/xclock -geometry 100x100-1+1 &
-	/usr/X/bin/xterm -geometry 80x28+20+20 -ls &
+	/usr/x11r6/bin/xterm -geometry 80x28+20+20 -ls &
 	exec /opt/motif/mwm-opaque.sh
 	;;
 twm)
 	/usr/X/bin/xclock -geometry 100x100-1+1 &
-	/usr/X/bin/xterm -geometry 80x28+20+20 -ls &
+	/usr/x11r6/bin/xterm -geometry 80x28+20+20 -ls &
 	exec /usr/x11r6/xc/programs/twm/twm
 	;;
 olwm)
 	# olwsm owns the workspace menu's Exit; olwm keeps running after it,
 	# so olwsm is the session's last process (as in OpenWindows)
 	/usr/X/bin/olwm &
-	/usr/X/bin/xterm -geometry 80x28+20+20 -ls &
+	/usr/x11r6/bin/xterm -geometry 80x28+20+20 -ls &
 	exec /usr/X/bin/olwsm
 	;;
 esac

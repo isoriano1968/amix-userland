@@ -21,6 +21,10 @@ export LD_LIBRARY_PATH
 # not ${MODE:+-mode $MODE}: AMIX's sh calls a $ inside ${...+word} a "bad
 # substitution"
 [ -z "$MODE" ] || set -- "$@" -mode "$MODE"
+# the fonts of x11/x11r6.3-fonts (the server's own default path) and CDE's,
+# the colour names from the server's rgb.txt: nothing of stock AMIX's X11R5
+# (/usr/X/lib, Commodore's Xcore, which an AMIX may not have)
+F=/usr/x11r6/lib/X11/fonts
 exec /usr/x11r6/bin/Xamix "$@" \
-	-fp /usr/X/lib/fonts/misc/,/usr/X/lib/fonts/Xol/,/usr/X/lib/fonts/75dpi/,/usr/X/lib/fonts/100dpi/,/usr/dt/config/xfonts/C/ \
-	-co /usr/X/lib/rgb -kb >> /var/dt/Xamix.log 2>&1
+	-fp $F/misc/,$F/75dpi/,$F/100dpi/,$F/Speedo/,$F/Type1/,/usr/dt/config/xfonts/C/ \
+	-kb >> /var/dt/Xamix.log 2>&1

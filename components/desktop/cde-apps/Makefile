@@ -14,5 +14,6 @@ stage: build
 	mkdir -p $(STAGE_DIR)
 	sh stage.sh $(STAGE_DIR)
 	@$(manifest_files)
+	$(CPU_SCAN) $(STAGE_DIR)
 
 .PHONY: build stage

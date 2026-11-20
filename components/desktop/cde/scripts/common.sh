@@ -10,7 +10,7 @@
 TOP=$(cd "$(dirname "$0")/.." && pwd)
 SYSROOT=${AMIX_SYSROOT:?AMIX_SYSROOT is not set}
 AMIX_TOOLS=${AMIX_TOOLS:-$HOME/opt/m68k-amix/bin}
-CPU=${AMIX_CPU:--m68060}
+CPU=${AMIX_CPU:--mcpu=68020 -mtune=68060 -fexcess-precision=fast}
 HOST_CC=${HOST_CC:-gcc}
 HOST_CXX=${HOST_CXX:-g++}
 export PATH="$AMIX_TOOLS:$PATH"
