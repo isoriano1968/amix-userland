@@ -410,10 +410,36 @@ class Window(Adw.ApplicationWindow):
         btn = Gtk.Button(label="Only the VS Code agent", valign=Gtk.Align.CENTER)
         btn.add_css_class("pill")
 
-        def only(_b):
+        def console(_b=None):
             model.vscode_only(self.cfg)
             self.show_step(self.step)
             self.toast("Console system with the VS Code agent")
+
+        def only(_b):
+            # a desktop chosen: never drop it without asking (0.6.8 turned a
+            # CDE install into a console one here, without a word)
+            desk = self.cfg.sel.get("desk")
+            if desk in (None, "console"):
+                return console()
+            title = model.find_group("desk").option(desk).title
+            dlg = Adw.AlertDialog(
+                heading="Leave out %s?" % title,
+                body="Only the VS Code agent makes a console system: no %s, no X, no "
+                     "applications or tools on the Amiga. To keep %s and add the agent, "
+                     "keep %s: the VS Code agent switch is on." % (title, title, title))
+            dlg.add_response("keep", "Keep %s" % title)
+            dlg.add_response("console", "Console Only")
+            dlg.set_default_response("keep")
+
+            def answer(_d, r):
+                if r == "console":
+                    console()
+                else:
+                    self.cfg.set_on("vscode", True)
+                    self.show_step(self.step)
+                    self.toast("%s with the VS Code agent" % title)
+            dlg.connect("response", answer)
+            dlg.present(self)
         btn.connect("clicked", only)
         btns = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, valign=Gtk.Align.CENTER)
         btns.append(btn)

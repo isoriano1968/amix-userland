@@ -28,6 +28,8 @@ NOT_BOURNE = [
     ("function", re.compile(r"(^|[;&|]\s*)function\s")),
     ("export VAR=value", re.compile(r"(^|[;&|]\s*)export\s+\w+=")),
     ("${var%...} / ${var#...} / ${#var} / ${var/...}", re.compile(r"\$\{#|\$\{\w+(%|#|/)")),
+    # AMIX's sh: "bad substitution" (seen on AMIX in FS-UAE, 2026-11-20)
+    ("$ inside ${var+word}", re.compile(r"\$\{\w+:?[-+=?][^}]*\$")),
     ("test -e", re.compile(r"\[\s+(!\s+)?-e\s")),
     ("==", re.compile(r"\[\s[^]]*\s==\s")),
     ("<<<", re.compile(r"<<<")),
@@ -104,7 +106,9 @@ def scripts():
 AMIX_FILES = ["tests/e2e/go2.sh",
               "../cde-dtlogin/files/startcde", "../cde-dtlogin/files/Xamix-dt",
               "../cde-dtlogin/files/dtlogin.rc", "../cde-dtlogin/files/dtconfig",
-              "../../developer/vscode-agent/files/vscode-agent.rc"]
+              "../../developer/vscode-agent/files/vscode-agent.rc",
+              "../cde/target/xinitrc.amix", "../cde/target/startcde",
+              "../cde/files/dtlogin/Xsession.wm", "../cde/files/dtlogin/boot-install.sh"]
 
 
 class Bourne(unittest.TestCase):
@@ -112,6 +116,8 @@ class Bourne(unittest.TestCase):
         self.assertTrue(problems("  ! /usr/lib/fs/ufs/fstyp $D || fail x\n", "t"))
         self.assertTrue(problems("a=$(uname)\n", "t"))
         self.assertTrue(problems("export X=1\n", "t"))
+        self.assertTrue(problems("exec X ${MODE:+-mode $MODE}\n", "t"))
+        self.assertFalse(problems("MODE=${RTG_MODE-}\n", "t"))
         self.assertFalse(problems("[ ! -f /x ] || exit 1\n", "t"))
         self.assertFalse(problems("echo '! $(x)'\n", "t"))
         self.assertFalse(problems("cat <<E\n! $(x)\nE\n", "t"))

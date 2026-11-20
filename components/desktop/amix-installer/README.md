@@ -61,8 +61,10 @@ x11/x11r6.3 for Motif and CDE programs. The network install writes
 - it runs programs as the first login user, or as a new user `developer`;
 - it signs in with a new key.
 
-That key is also left in `vscode-agent.key` (mode 600) beside the
-foundation report. In VS Code, run **AMIX: Set Agent Key** and paste it.
+That key is also left in `vscode-agent.key` (mode 600) in
+`~/.local/share/amix-installer` and beside the foundation report. In VS
+Code, run **AMIX: Set Agent Key** and choose "Use the AMIX Installer's
+key": it reads the first one, so it is always the newest install's.
 
 ## Needs
 

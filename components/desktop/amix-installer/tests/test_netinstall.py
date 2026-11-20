@@ -867,3 +867,43 @@ class Foundation(unittest.TestCase):
                 lines = f.read().splitlines()
         self.assertEqual(lines[1:], ["foundation patch present 2.1p2a (kernel 2.1c 0800430)",
                                      "foundation sysutils/setclk installed"])
+
+
+class InstalledOnSource(unittest.TestCase):
+    """0.6.8 on the MacBook: the source disk had the VS Code agent, so step 6
+    said "packages: none" and the agent never got its new key."""
+
+    def test_packaged_options_install_anyway(self):
+        from amix_installer import hdf
+        src = hdf.SourceInfo()
+        src.found = {"/usr/local/bin/vscode-agent", "/usr/dt/bin/dtwm"}
+        cfg = model.Config(sel={"mach": "uae", "accel": "none", "desk": "cde", "gfx": "picasso2", "kern": "stock"},
+                           source=src)
+        self.assertEqual(cfg.sel["desk"], "cde")
+        cfg.on["vscode"] = True
+        pkgs, _ = netinstall.packages_for(cfg)
+        for p in ("developer/vscode-agent", "desktop/cde", "desktop/cde-dtlogin",
+                  netinstall.X_SERVER):
+            self.assertIn(p, pkgs)
+
+    def test_step6_updates_too(self):
+        cfg = model.Config(sel={"mach": "uae", "accel": "none", "desk": "console"})
+        cfg.on["vscode"] = True
+        s = netinstall.steps_script(cfg, "10.0.2.2", now=time.gmtime(0), agent_key="k" * 64)
+        self.assertIn("$PKG --min-free $M update", s.split('step 6 ')[1])
+
+
+class AgentKeyFile(unittest.TestCase):
+    def test_both_places(self):
+        with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as out:
+            old = os.environ.get("HOME")
+            os.environ["HOME"] = home
+            try:
+                f = netinstall.write_agent_key("ab" * 32, out)
+            finally:
+                os.environ["HOME"] = old
+            state = os.path.join(home, ".local", "share", "amix-installer", "vscode-agent.key")
+            self.assertEqual(f, state)
+            for p in (state, os.path.join(out, "vscode-agent.key")):
+                self.assertEqual(open(p).read().strip(), "ab" * 32)
+                self.assertEqual(os.stat(p).st_mode & 0o777, 0o600)

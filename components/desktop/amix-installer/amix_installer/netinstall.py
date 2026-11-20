@@ -205,7 +205,11 @@ exec /bin/sh /tmp/amix-steps
 
 
 def packages_for(cfg):
-    """IPS packages for the chosen options, and the options not packaged yet."""
+    """IPS packages for the chosen options, and the options not packaged yet.
+    A packaged option is installed even when the source disk has it already:
+    pkg leaves an installed package as it is, updates an older one and puts
+    its own over a copy made by hand.  Skipping it (0.6.8) left out the VS
+    Code agent of a disk that had one, and with it the agent's new key."""
     pkgs, missing = [], []
     for s in model.STEPS:
         for g in s.groups:
@@ -214,14 +218,14 @@ def packages_for(cfg):
                         "netif", "gfxhw", "memory"):
                 continue
             for o in g.options:
-                if not cfg.chosen(g, o) or cfg.installed(o) or o.id == "headers":
+                if not cfg.chosen(g, o) or o.id == "headers":
                     continue
                 if o.id in PACKAGES:
                     pkgs += [p for p in PACKAGES[o.id] if p not in pkgs]
-                elif o.mb:
+                elif o.mb and not cfg.installed(o):
                     missing.append(o.title)
     desk = cfg.sel.get("desk")
-    if desk in PACKAGES and not cfg.installed(model.find_group("desk").option(desk)):
+    if desk in PACKAGES:
         pkgs = [p for p in PACKAGES[desk] if p not in pkgs] + pkgs
     if "x11" in cfg.tags() and X_SERVER not in pkgs:
         pkgs = [X_SERVER] + pkgs
@@ -291,6 +295,23 @@ def report_path(pl=None):
         out = os.path.expanduser(STATE_DIR)
         os.makedirs(out, mode=0o700, exist_ok=True)
     return os.path.join(out, "foundation-report.txt")
+
+
+def write_agent_key(key, out_dir):
+    """The agent key, mode 600, in out_dir/vscode-agent.key and in
+    STATE_DIR/vscode-agent.key (vscode-amix reads that one); returns the
+    STATE_DIR file, the one to name."""
+    state = os.path.expanduser(STATE_DIR)
+    os.makedirs(state, mode=0o700, exist_ok=True)
+    files = [os.path.join(state, "vscode-agent.key")]
+    if os.path.realpath(out_dir) != os.path.realpath(state):
+        files.append(os.path.join(out_dir, "vscode-agent.key"))
+    for f in files:
+        fd = os.open(f, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(key + "\n")
+    return files[0]
 
 
 def sysv_sum(data):
@@ -887,7 +908,11 @@ def steps_script(cfg, host, http_port=HTTP_PORT, data_disk=None, repo=None, kern
     if pkgs:
         if "\0options" in sizes:
             lines += [fetching("%d packages" % len(pkgs), sizes["\0options"])]
+        # install leaves an older installed version as it is (the source disk
+        # may have one, e.g. vscode-agent 0.1.1): update brings it up to date
         lines += ["$PKG --min-free $M install %s >>$LOG 2>&1 || fail 'installing packages'"
+                  % " ".join(pkgs),
+                  "$PKG --min-free $M update %s >>$LOG 2>&1 || fail 'updating packages'"
                   % " ".join(pkgs)]
     if missing:
         lines += ["report 'not packaged yet, left out: %s'" % ", ".join(missing).replace("'", "")]
@@ -973,7 +998,7 @@ def unboot_lines():
     C = "/var/sadm/install/contents"
     return ["",
             "unboot() {",
-            "  report 'pkgrm %s failed: removing its files and records itself'" % BOOT_PKG,
+            "  # the usual case on AMIX: no failure, nothing to report until the end",
             "  n=`/usr/bin/grep -c ' %s$' %s`" % (BOOT_PKG, C),
             "  m=`/usr/bin/grep -c '^%s[/ ].* %s$' %s`" % (BOOT_DIR, BOOT_PKG, C),
             "  [ \"$n\" -eq \"$m\" ] || { report \"%s owns $n lines, $m under %s: remove it by hand\"; return; }"
@@ -989,7 +1014,7 @@ def unboot_lines():
             "report 'the contents would lose more than %s: remove it by hand'; return; }" % (C, BOOT_PKG),
             "  /usr/bin/mv %s.new %s || { report 'writing %s failed'; return; }" % (C, C, C),
             "  /usr/bin/rm -rf %s /var/sadm/pkg/%s" % (BOOT_DIR, BOOT_PKG),
-            "  report '%s removed'" % BOOT_PKG,
+            "  report '%s removed (its files and records directly: AMIX pkgrm cannot read the contents file)'" % BOOT_PKG,
             "}"]
 
 
@@ -1233,10 +1258,10 @@ class Session(object):
         if cfg.on.get("vscode"):
             self.agent_key = secrets.token_hex(32)
             if report:
-                self.agent_key_file = os.path.join(os.path.dirname(report), "vscode-agent.key")
-                fd = os.open(self.agent_key_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-                with os.fdopen(fd, "w") as f:
-                    f.write(self.agent_key + "\n")
+                # beside the report, and always where vscode-amix's "Use the
+                # AMIX Installer's key" reads it (STATE_DIR): 0.6.8 wrote only
+                # the first, and VS Code offered the key of an older install
+                self.agent_key_file = write_agent_key(self.agent_key, os.path.dirname(report))
                 self.log("VS Code agent key in %s: AMIX: Set Agent Key in VS Code" % self.agent_key_file)
         self.http = _HttpServer((bind, http_port), _Handler)
         self.http.state = self
