@@ -126,6 +126,21 @@ class LocalRepo(unittest.TestCase):
                 build.LOCAL_REPO = old
 
 
+class Gcc27(unittest.TestCase):
+    def test_needs(self):
+        with tempfile.TemporaryDirectory() as t:
+            with open(os.path.join(t, "Makefile"), "w") as f:
+                f.write("GCC27_TOOLS ?= $(HOME)/opt/amix-cross/bin\n")
+            self.assertTrue(build.needs_gcc27(t))
+            with open(os.path.join(t, "Makefile"), "w") as f:
+                f.write("build:\n")
+            self.assertFalse(build.needs_gcc27(t))
+
+    def test_x11r63_needs_it(self):
+        self.assertTrue(build.needs_gcc27(os.path.join(ROOT, "components/x11/x11r6.3")))
+        self.assertFalse(build.needs_gcc27(os.path.join(ROOT, "components/sysutils/amixtop")))
+
+
 class Problems(unittest.TestCase):
     def test_no_toolchain(self):
         env = dict(os.environ)

@@ -98,7 +98,10 @@ serves that repository from then on, so `pkg update` on AMIX gets what you
 built. Without a window: `amix-installer --build-list [--from SOURCE]` and
 `amix-installer --build COMPONENT... [--from SOURCE]`. A component that
 fetches its upstream source needs the network, and some need host tools of
-their own (their README says which).
+their own (their README says which). The Build tab builds userland with gcc 14 only; a component
+whose Makefile also uses gcc 2.7.2.3 (x11/x11r6.3) needs developer/amix/gcc-27
+(`/opt/amix-cross/bin` or `GCC27_TOOLS`). Kernels and drivers are never built
+here: they need gcc 2.7.2.3 and come with the install's kernel step.
 
 ## Needs
 

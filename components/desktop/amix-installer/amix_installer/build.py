@@ -58,6 +58,26 @@ def toolchain():
     return None
 
 
+def toolchain27():
+    """gcc 2.7.2.3 (m68k-cbm-sysv4-gcc, developer/amix/gcc-27), or None: the
+    compiler AMIX itself was built with.  Kernels and drivers need it (the
+    installer's kernel path builds them, never this tab); among the
+    components only x11/x11r6.3, whose Makefiles imake writes for its tools."""
+    for d in (os.environ.get("GCC27_TOOLS"), "/opt/amix-cross/bin", os.path.expanduser("~/opt/amix-cross/bin")):
+        if d and os.access(os.path.join(d, "m68k-cbm-sysv4-gcc"), os.X_OK):
+            return d
+    return None
+
+
+def needs_gcc27(comp_dir):
+    """Does the component's Makefile name gcc 2.7's tools (GCC27_TOOLS)?"""
+    try:
+        with open(os.path.join(comp_dir, "Makefile")) as f:
+            return "GCC27_TOOLS" in f.read()
+    except OSError:
+        return False
+
+
 def base_sysroot():
     """The installed AMIX base sysroot (its marker file present), or None."""
     for d in (os.environ.get("AMIX_SYSROOT_BASE"), "/opt/m68k-amix-sysroot",
@@ -479,6 +499,11 @@ def build(src, stem, repo, log=None):
     env.update(AMIX_TOOLS=tools, AMIX_SYSROOT=sysroot,
                PATH=tools + os.pathsep + gnu + env.get("PATH", ""))
     d = comps[stem]["dir"]
+    if needs_gcc27(d):
+        if not toolchain27():
+            raise BuildError("%s needs gcc 2.7.2.3 as well (developer/amix/gcc-27, "
+                             "/opt/amix-cross/bin, or GCC27_TOOLS)" % stem)
+        env["GCC27_TOOLS"] = toolchain27()
     _say(log, "== building %s" % stem)
     # build, then stage: not every component's stage target depends on its build
     _run([gmake(), "-C", d, "build"], log, env=env)
