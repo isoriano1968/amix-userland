@@ -4,7 +4,9 @@ and the build log.  What it builds lands in the local repository, which
 Serve Packages then serves."""
 import json
 import os
+import sys
 import threading
+import time
 
 import gi
 gi.require_version("Gtk", "4.0")
@@ -14,6 +16,7 @@ from gi.repository import Adw, GLib, Gtk  # noqa: E402
 from . import build, plan  # noqa: E402
 
 LOG_LINES = 400
+AMIX_CHECK_GAP = 300        # s: a pkg refresh on AMIX checks the source at most this often
 SETTINGS = os.path.expanduser("~/.config/amix-installer/build.json")
 STATE_TEXT = {"new": "new", "newer": "newer version", "changed": "changed since published",
               "same": "as published"}
@@ -42,7 +45,10 @@ class BuildPage(object):
     def __init__(self, win, tabs):
         self.win = win
         self.tabs = tabs
-        self.source = _load().get("source", build.DEFAULT_SOURCE)
+        st = _load()
+        self.source = st.get("source", build.DEFAULT_SOURCE)
+        self.auto = bool(st.get("auto_build", False))
+        self.last_check = 0.0
         self.rows = []              # (stem, state, ...) from build.compare
         self.chosen = set()
         self.show_all = False
@@ -67,6 +73,10 @@ class BuildPage(object):
         sc.set_child(clamp)
         tv.set_content(sc)
         self.refresh()
+        # at start: the source brought up to date (git pull) and compared
+        # (not in a screenshot run: those show prepared states)
+        if not any(k.startswith("AMIX_SHOT") for k in os.environ) and "--screenshot" not in sys.argv:
+            GLib.timeout_add_seconds(2, lambda: (self.look(reason="start"), False)[1])
         return tv
 
     def _clear(self):
@@ -103,16 +113,24 @@ class BuildPage(object):
 
         pg = Adw.PreferencesGroup(title="Source",
                                   description="An amix-userland checkout on this computer, or a "
-                                  "git URL (#branch or #commit after it).")
+                                  "git URL (#branch or #commit after it). It is updated (git pull, "
+                                  "keeping your own edits) when the installer starts, on Refresh, "
+                                  "and when an Amiga runs pkg refresh against Serve Packages.")
         er = Adw.EntryRow(title="amix-userland")
         er.set_text(self.source)
         er.set_sensitive(self.busy is None)
         er.connect("changed", lambda e: setattr(self, "source", e.get_text().strip()))
-        look = Gtk.Button(label="Look", valign=Gtk.Align.CENTER)
+        look = Gtk.Button(label="Refresh", valign=Gtk.Align.CENTER)
         look.set_sensitive(self.busy is None)
         look.connect("clicked", lambda _b: self.look())
         er.add_suffix(look)
         pg.add(er)
+        ab = Adw.SwitchRow(title="Build what is newer or changed by itself",
+                           subtitle="After each update of the source: the packages are published for "
+                           "the next pkg update on AMIX")
+        ab.set_active(self.auto)
+        ab.connect("notify::active", lambda s, _p: self._set_auto(s.get_active()))
+        pg.add(ab)
         self.box.append(pg)
 
         local = os.path.isfile(os.path.join(build.LOCAL_REPO, "pkg5.repository"))
@@ -122,8 +140,8 @@ class BuildPage(object):
         if self.busy == "look":
             pg.add(Adw.ActionRow(title="Looking…", subtitle="Fetching and comparing the source"))
         elif not self.rows:
-            pg.add(Adw.ActionRow(title="Nothing looked at yet",
-                                 subtitle="Look lists what is new or newer than the repository"))
+            pg.add(Adw.ActionRow(title="Not compared yet",
+                                 subtitle="Refresh lists what is new or newer than the repository"))
         else:
             shown = [r for r in self.rows if self.show_all or r[4] != "same"]
             if not shown:
@@ -187,29 +205,57 @@ class BuildPage(object):
             return build.LOCAL_REPO
         return plan.default_repo()
 
-    def look(self):
-        _save({"source": self.source})
+    def _save(self):
+        _save({"source": self.source, "auto_build": self.auto})
+
+    def _set_auto(self, on):
+        self.auto = on
+        self._save()
+
+    def look(self, reason="refresh"):
+        """The source updated (git pull) and compared, in a thread; reason:
+        start, refresh (the button), amix (a pkg refresh on an Amiga)."""
+        if self.busy is not None:
+            return
+        self._save()
         self.busy = "look"
+        self.last_check = time.time()
         self.refresh()
 
         def work():
             try:
-                d = build.source_dir(self.source, self._log)
+                d = build.source_dir(self.source, self._log, update=True)
                 rows = build.compare(d, self._repo())
                 err = None
             except (build.BuildError, OSError) as e:
                 d, rows, err = None, [], str(e)
-            GLib.idle_add(self._looked, d, rows, err)
+            GLib.idle_add(self._looked, d, rows, err, reason)
         threading.Thread(target=work, daemon=True).start()
 
-    def _looked(self, d, rows, err):
+    def check_from_amix(self, client):
+        """Serve Packages saw an Amiga fetch the catalog (pkg refresh)."""
+        if self.busy is None and time.time() - self.last_check >= AMIX_CHECK_GAP:
+            self._add_line("pkg refresh from %s: checking the source" % client)
+            self.look(reason="amix")
+        return False
+
+    def _looked(self, d, rows, err, reason="refresh"):
         self.busy = None
         self.src_dir = d
         self.rows = rows
         self.chosen &= {r[0] for r in rows}
         if err:
             self.win.toast(err)
+            self.refresh()
+            return False
+        todo = [r[0] for r in rows if r[4] in ("newer", "changed")]
+        if todo and reason != "refresh":
+            self.win.toast("amix-userland: %d component%s newer or changed than the repository"
+                           % (len(todo), "" if len(todo) == 1 else "s"))
         self.refresh()
+        if todo and self.auto and not build.problems():
+            self.chosen = set(todo)
+            self.start_build()
         return False
 
     def start_build(self):

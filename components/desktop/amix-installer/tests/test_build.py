@@ -89,6 +89,44 @@ class Compare(unittest.TestCase):
                 build.source_dir(t)
 
 
+class Pull(unittest.TestCase):
+    def test_pull_fast_forward_keeps_edits(self):
+        with tempfile.TemporaryDirectory() as t:
+            up, down = os.path.join(t, "amix-userland"), os.path.join(t, "down")
+            checkout(up, {"library/a": ("1.0", [])})
+            subprocess.check_call(["git", "clone", "-q", up, down], stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL)
+            with open(os.path.join(up, "components/library/a/a.manifest"), "a") as f:
+                f.write("# upstream\n")
+            git(up, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "two")
+            with open(os.path.join(down, "tools", "amix-p5m"), "w") as f:
+                f.write("local edit\n")          # an edit here, not committed
+            msg = build.pull(down)
+            self.assertIn("git pull:", msg)
+            with open(os.path.join(down, "components/library/a/a.manifest")) as f:
+                self.assertIn("# upstream", f.read())
+            with open(os.path.join(down, "tools", "amix-p5m")) as f:
+                self.assertEqual(f.read(), "local edit\n")
+            self.assertIn("up to date", build.pull(down))
+
+    def test_master_only(self):
+        self.assertTrue(build.is_master("https://github.com/isoriano1968/amix-userland.git"))
+        self.assertTrue(build.is_master("git@github.com:isoriano1968/amix-userland"))
+        self.assertTrue(build.is_master("/export/home/u/src/amix-userland/"))
+        self.assertFalse(build.is_master("https://github.com/someone/fork-of-something.git"))
+        with tempfile.TemporaryDirectory() as t:
+            up, down = os.path.join(t, "other"), os.path.join(t, "down")
+            checkout(up, {"library/a": ("1.0", [])})
+            subprocess.check_call(["git", "clone", "-q", up, down], stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL)
+            self.assertIn("not amix-userland", build.pull(down))
+
+    def test_no_upstream(self):
+        with tempfile.TemporaryDirectory() as t:
+            checkout(t, {"library/a": ("1.0", [])})
+            self.assertIn("no upstream", build.pull(t))
+
+
 class Unpack(unittest.TestCase):
     def test_files_and_links(self):
         with tempfile.TemporaryDirectory() as t:
@@ -139,6 +177,30 @@ class Gcc27(unittest.TestCase):
     def test_x11r63_needs_it(self):
         self.assertTrue(build.needs_gcc27(os.path.join(ROOT, "components/x11/x11r6.3")))
         self.assertFalse(build.needs_gcc27(os.path.join(ROOT, "components/sysutils/amixtop")))
+
+
+class ServeMerge(unittest.TestCase):
+    """Serve Packages: a newer bundled repository reaches the local copy
+    without a source tree (amix-publish shipped with the installer)."""
+
+    def test_merge_without_source(self):
+        self.assertIsNotNone(build.publish_tool())
+        with tempfile.TemporaryDirectory() as t:
+            bundled, local = os.path.join(t, "bundled"), os.path.join(t, "local")
+            publish(bundled, os.path.join(t, "p"), "desktop/x", "1.0.4,2.1-5.1")
+            old = build.LOCAL_REPO
+            build.LOCAL_REPO = local
+            try:
+                build.ensure_local_repo(bundled)
+                publish(bundled, os.path.join(t, "p"), "desktop/x", "1.0.5,2.1-6.1")
+                said = []
+                build.ensure_local_repo(bundled, None, said.append)
+                self.assertTrue(any(s.startswith("merged 1 ") for s in said))
+                self.assertTrue(build.repo_versions(local)["desktop/x"].startswith("1.0.5"))
+                with open(os.path.join(local, "publisher/amix/catalog/catalog.base.C")) as f:
+                    self.assertIn("1.0.5", f.read())
+            finally:
+                build.LOCAL_REPO = old
 
 
 class Problems(unittest.TestCase):

@@ -10,7 +10,7 @@
 #                     never opens a window on a real display
 #   make run          start it from the source tree (on your own display)
 COMPONENT_NAME    = amix-installer
-COMPONENT_VERSION = 0.8.0
+COMPONENT_VERSION = 0.8.1
 
 include ../../../make-rules/shared.mk
 
@@ -37,6 +37,11 @@ host-stage: build
 		$(HOST_STAGE)/share/amix-installer $(HOST_STAGE)/share/applications
 	cp amix-installer $(HOST_STAGE)/bin/
 	cp $(SOURCES) $(HOST_STAGE)/lib/amix-installer/amix_installer/
+	# amix-userland's repository tool: the local repository's catalog after the
+	# bundled one's newer packages are merged in (build.py, at Serve Packages)
+	mkdir -p $(HOST_STAGE)/lib/amix-installer/tools
+	cp ../../../tools/amix-publish ../../../tools/amix_needed.py ../../../tools/amix-base-libs \
+		$(HOST_STAGE)/lib/amix-installer/tools/
 	cp data/style.css data/style-dark.css $(LOGO) $(HOST_STAGE)/share/amix-installer/
 	cp data/org.amix.Installer.desktop $(HOST_STAGE)/share/applications/
 	cp -R $(BUILD_DIR)/icons $(HOST_STAGE)/share/

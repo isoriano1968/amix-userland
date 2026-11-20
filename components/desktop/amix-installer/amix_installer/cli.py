@@ -82,6 +82,12 @@ def main(argv=None):
         if not repo:
             print("amix-installer: %s" % plan.NO_REPO, file=sys.stderr)
             return 1
+        from . import build
+        if os.path.abspath(repo) == os.path.abspath(build.LOCAL_REPO):
+            try:                # the bundled repository's newer packages first
+                build.ensure_local_repo(build.bundled_repo(), None, print)
+            except build.BuildError as e:
+                print("amix-installer: %s" % e, file=sys.stderr)
         return serve.main_cli(os.path.abspath(repo), port=args.port, local=args.local)
     if args.local:
         print("amix-installer: --local goes with --serve", file=sys.stderr)

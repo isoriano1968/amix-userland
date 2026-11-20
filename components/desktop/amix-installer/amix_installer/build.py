@@ -121,14 +121,62 @@ def is_checkout(d):
     return os.path.isfile(os.path.join(d, "tools", "amix-p5m")) and os.path.isdir(os.path.join(d, "components"))
 
 
-def source_dir(src, log=None):
-    """A local checkout as it is, or a git URL[#ref] cloned (and fetched)
-    into the cache; returns the directory."""
+def is_master(url):
+    """Is url the amix-userland repository (GitHub, or a copy named so)?"""
+    u = url.rstrip("/")
+    if u.endswith(".git"):
+        u = u[:-4]
+    return u.rsplit("/", 1)[-1] == "amix-userland" or u.rsplit(":", 1)[-1].endswith("/amix-userland")
+
+
+def pull(d, log=None):
+    """A local checkout brought up to its upstream: git pull --ff-only, which
+    keeps edits not committed and refuses a branch that went its own way.
+    Returns a line for the log; never fails the caller."""
+    if not os.path.isdir(os.path.join(d, ".git")) or not shutil.which("git"):
+        return "%s: not a git checkout: used as it is" % d
+    up = subprocess.run(["git", "-C", d, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True)
+    if up.returncode != 0:
+        msg = "%s: its branch follows no upstream, not amix-userland: used as it is" % d
+        _say(log, msg)
+        return msg
+    # amix-userland is the master repository: a checkout that follows another
+    # one is used as it is, and said so
+    remote = up.stdout.strip().split("/", 1)[0]
+    url = subprocess.run(["git", "-C", d, "remote", "get-url", remote], stdout=subprocess.PIPE,
+                         stderr=subprocess.DEVNULL, universal_newlines=True).stdout.strip()
+    if not is_master(url):
+        msg = ("%s follows %s, not amix-userland (the master repository): not pulled, used as "
+               "it is" % (d, url or remote))
+        _say(log, msg)
+        return msg
+    old = subprocess.run(["git", "-C", d, "rev-parse", "--short", "HEAD"], stdout=subprocess.PIPE,
+                         universal_newlines=True).stdout.strip()
+    r = subprocess.run(["git", "-C", d, "pull", "--ff-only", "--quiet"], stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT, universal_newlines=True)
+    new = subprocess.run(["git", "-C", d, "rev-parse", "--short", "HEAD"], stdout=subprocess.PIPE,
+                         universal_newlines=True).stdout.strip()
+    if r.returncode != 0:
+        msg = "git pull in %s failed (%s): used as it is" % (d, (r.stdout.strip().splitlines() or ["?"])[-1])
+    elif old != new:
+        msg = "git pull: %s %s..%s (%s)" % (d, old, new, up.stdout.strip())
+    else:
+        msg = "git pull: %s is up to date (%s, %s)" % (d, new, up.stdout.strip())
+    _say(log, msg)
+    return msg
+
+
+def source_dir(src, log=None, update=False):
+    """A local checkout (git pull --ff-only first when update), or a git
+    URL[#ref] cloned, else fetched, into the cache; returns the directory."""
     src = src or DEFAULT_SOURCE
     if os.path.isdir(os.path.expanduser(src)):
         d = os.path.abspath(os.path.expanduser(src))
         if not is_checkout(d):
             raise BuildError("%s is not an amix-userland checkout (no tools/amix-p5m)" % d)
+        if update:
+            pull(d, log)
         return d
     url, _, ref = src.partition("#")
     name = re.sub(r"[^A-Za-z0-9_.-]+", "_", url.split("://", 1)[-1]).strip("_")
@@ -253,10 +301,33 @@ def compare(src, repo, comps=None):
     return out
 
 
-def ensure_local_repo(bundled, src, log=None):
+def publish_tool(src=None):
+    """amix-publish: the source's, else the one shipped with the installer
+    (lib/amix-installer/tools), else the source tree this installer runs from."""
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for d in ([os.path.join(src, "tools")] if src else []) + [
+            os.path.join(here, "tools"), os.path.join(here, "..", "..", "..", "tools")]:
+        p = os.path.join(d, "amix-publish")
+        if os.path.isfile(p):
+            return os.path.abspath(p)
+    return None
+
+
+def bundled_repo():
+    """The repository the installer brings (or AMIX_REPO, or the source
+    tree's): the first usable one that is not the local repository."""
+    for d in plan.repo_candidates():
+        if os.path.abspath(d) == os.path.abspath(LOCAL_REPO):
+            continue
+        if os.path.isfile(os.path.join(d, "pkg5.repository")) and not plan.repo_problem(d):
+            return d
+    return None
+
+
+def ensure_local_repo(bundled, src=None, log=None):
     """The local repository: a copy of the bundled one at first; the bundled
-    one's newer packages merged in later (the catalog rebuilt by src's
-    amix-publish)."""
+    one's newer packages merged in every time after (at Serve Packages' start
+    and before a build), the catalog rebuilt by amix-publish."""
     if not os.path.isfile(os.path.join(LOCAL_REPO, "pkg5.repository")):
         if not bundled:
             raise BuildError("no bundled repository to start the local one from")
@@ -281,9 +352,11 @@ def ensure_local_repo(bundled, src, log=None):
                         shutil.copy2(os.path.join(top, f), t)
                         added += sub == "pkg"
         if added:
+            tool = publish_tool(src)
+            if not tool:
+                raise BuildError("no amix-publish to rebuild %s's catalog" % LOCAL_REPO)
             _say(log, "merged %d package versions of %s" % (added, bundled))
-            _run([sys.executable, os.path.join(src, "tools", "amix-publish"), "-s", LOCAL_REPO,
-                  "--no-needed-check"], log)
+            _run([sys.executable, tool, "-s", LOCAL_REPO, "--no-needed-check"], log)
     return LOCAL_REPO
 
 
@@ -531,7 +604,7 @@ def build(src, stem, repo, log=None):
 def build_many(src_spec, stems, bundled=None, log=None):
     """The CLI's and the window's way in: source, local repository, builds."""
     src = source_dir(src_spec, log)
-    repo = ensure_local_repo(bundled or plan.default_repo(), src, log)
+    repo = ensure_local_repo(bundled or bundled_repo(), src, log)
     done = []
     for s in stems:
         done.append((s, build(src, s, repo, log)))

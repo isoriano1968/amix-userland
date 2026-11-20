@@ -165,6 +165,11 @@ class ServePage(object):
         line = "%s  %-15s %-44s %s%s" % (t, client, rel[:44], code,
                                          "  %s" % _size(nbytes) if nbytes else "")
         GLib.idle_add(self._add_line, line)
+        # an Amiga's pkg refresh (it fetches the catalog first): the Build tab
+        # updates its amix-userland source and compares it (rate-limited there)
+        if str(rel).endswith("catalog/catalog.attrs") and str(code) == "200" and \
+                getattr(self.win, "builder", None) is not None:
+            GLib.idle_add(self.win.builder.check_from_amix, client)
 
     def _add_line(self, line):
         self.lines = (self.lines + [line])[-LOG_LINES:]
@@ -181,6 +186,9 @@ class ServePage(object):
         if self.win.net is not None:
             self.win.toast("A network install is running: it serves the packages itself")
             return
+        merged = _merge_bundled(self.repo)
+        if merged:
+            self.win.toast(merged)
         try:
             self.srv = serve.RepoServer(self.repo, local=self.local, discovery=self.discovery,
                                         log=self._log).start()
@@ -207,6 +215,21 @@ class ServePage(object):
     @property
     def serving(self):
         return self.srv is not None
+
+
+def _merge_bundled(repo):
+    """Serving the local repository: the bundled one's newer packages first
+    (an updated desktop/amix-installer/repository), so AMIX gets them too."""
+    from . import build
+    if os.path.abspath(repo) != os.path.abspath(build.LOCAL_REPO):
+        return None
+    lines = []
+    try:
+        build.ensure_local_repo(build.bundled_repo(), None, lines.append)
+    except (build.BuildError, OSError) as e:
+        return "The bundled packages could not be merged into your repository: %s" % e
+    merged = [s for s in lines if s.startswith("merged ")]
+    return merged[0] if merged else None
 
 
 def _size(n):

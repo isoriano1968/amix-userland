@@ -81,7 +81,11 @@ the two do not run at once.
 **Build** (0.8): the third tab builds AMIX packages on this computer from
 amix-userland. The source is a checkout here, or a git URL (`#branch` or
 `#commit` after it; the default is the project's GitHub repository, cloned
-into `~/.cache/amix-installer`). **Look** lists the components that are new,
+into `~/.cache/amix-installer`). amix-userland is the master repository: the source is brought up to date
+from it (`git pull --ff-only`, which keeps your own edits; a checkout that
+follows another repository is used as it is, and the log says so) when the installer starts, on **Refresh**, and when an Amiga runs
+`pkg refresh` against Serve Packages (at most every 5 minutes). Each time,
+the tab lists the components that are new,
 newer, or changed since the repository's version (the revision is the
 component's commit count, `.1` for edits not committed). **Build** builds the
 chosen ones with the AMIX cross compiler installed here
@@ -95,7 +99,8 @@ packages deliver, a new revision for new content) and goes into your own
 repository, `~/.local/share/amix-installer/repo`: a copy of the bundled one
 at first, the bundled one's newer packages merged in later. Serve Packages
 serves that repository from then on, so `pkg update` on AMIX gets what you
-built. Without a window: `amix-installer --build-list [--from SOURCE]` and
+built. **Build what is newer or changed by itself** (off by default) builds
+them after each update of the source, for the next `pkg update` on AMIX. Without a window: `amix-installer --build-list [--from SOURCE]` and
 `amix-installer --build COMPONENT... [--from SOURCE]`. A component that
 fetches its upstream source needs the network, and some need host tools of
 their own (their README says which). The Build tab builds userland with gcc 14 only; a component
