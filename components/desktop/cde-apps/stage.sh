@@ -12,8 +12,8 @@
 # which the session searches only when amix-hw finds the Z3660.
 # Owners and setuid bits are not set here: the manifests give them
 # (mode=4755 group=sys ...), and pkg applies them.  Left out: amixdisplay's
-# hook in /etc/dt/config/Xsetup (a file of the system's, which a package
-# cannot edit; install.sh adds it on the box).
+# hook: /etc/dt/config/Xsetup.d/0012.amixdisplay, which desktop/cde's Xsetup
+# runs (no edit of the system's Xsetup).
 set -e
 cd "$(dirname "$0")"
 D=${1:?usage: stage.sh DIR [base|z3660|amixuae|amixq3]}
@@ -50,6 +50,9 @@ base)
 	cp amixdisplay/setlogin $D/opt/amix/lib/amixdisplay/setlogin
 	cp amixdisplay/0012.amixdisplay $D/etc/dt/config/Xsession.d/
 	chmod 755 $D/etc/dt/config/Xsession.d/0012.amixdisplay
+	mkdir -p $D/etc/dt/config/Xsetup.d
+	cp amixdisplay/Xsetup.amixdisplay $D/etc/dt/config/Xsetup.d/0012.amixdisplay
+	chmod 755 $D/etc/dt/config/Xsetup.d/0012.amixdisplay
 	entry AmixDisplay
 
 	app amixprinters amixprinters.dt AmixPrinters

@@ -36,3 +36,6 @@ $CC14 -O2 $CPU -w -I"$X11/include" -o "$O/usr/dt/bin/xhold" "$TOP/target/xhold.c
 m68k-elf-strip "$O/usr/dt/bin/xhold"
 cp "$TOP/target/startcde" "$O/usr/dt/bin/startcde" && chmod 555 "$O/usr/dt/bin/startcde"
 cp "$TOP/target/xinitrc.amix" "$O/usr/dt/config/xinitrc.amix" && chmod 555 "$O/usr/dt/config/xinitrc.amix"
+# the session's root window cursor (an arrow, not X's cross)
+cp "$TOP/target/0080.amix-root" "$O/usr/dt/config/Xsession.d/0080.amix-root" && \
+	chmod 555 "$O/usr/dt/config/Xsession.d/0080.amix-root"

@@ -1,7 +1,10 @@
 #!/bin/sh
 # dtconfig -- CDE configuration utility (AMIX), after the Solaris one:
-#   dtconfig -e        enable the graphical login at boot (S99dtlogin)
-#   dtconfig -d        disable it
+#   dtconfig -e        enable the graphical login at boot (S99dtlogin); stock
+#                      AMIX's xdm (the SAF port monitor "xdm" in _sactab,
+#                      /usr/amiga/lib/amixxdm) is turned off, as amixxdm's
+#                      "Disable" does, so there is one login manager
+#   dtconfig -d        disable it; xdm comes back if dtconfig turned it off
 #   dtconfig -kill     stop dtlogin (and its X server) now
 #   dtconfig -reset    make dtlogin reread its configuration (SIGHUP)
 #   dtconfig -status   is it enabled at boot, is it running
@@ -10,6 +13,8 @@ S2=/etc/rc2.d/S99dtlogin
 K0=/etc/rc0.d/K10dtlogin
 K1=/etc/rc1.d/K10dtlogin
 PIDFILE=/var/dt/Xpid
+SAC=/etc/saf/_sactab
+XDMOFF=/etc/dt/config/xdm-was-on   # dtconfig -e turned stock xdm off
 prg=`basename $0`
 
 usage() {
@@ -26,6 +31,29 @@ running() {
 	[ -f $PIDFILE ] && kill -0 `cat $PIDFILE` 2> /dev/null
 }
 
+# stock xdm: enabled when its _sactab line has no "x" flag (amixxdm's test)
+xdm_on() {
+	[ -f $SAC ] && grep '^xdm:xdm::' $SAC > /dev/null 2>&1
+}
+
+# amixxdm's "Disable": the x flag, the port monitor stopped, the console back
+xdm_off() {
+	sed 's/^.*xdm:xdm::/xdm:xdm:x:/' < $SAC > $SAC.dtconfig && cp $SAC.dtconfig $SAC &&
+		rm -f $SAC.dtconfig || { echo "$prg: could not change $SAC"; return 1; }
+	sacadm -k -p xdm > /dev/null 2>&1
+	pmadm -e -p screens -s con10 > /dev/null 2>&1
+	return 0
+}
+
+# amixxdm's "Enable"
+xdm_back() {
+	sed 's/^.*xdm:xdm:x:/xdm:xdm::/' < $SAC > $SAC.dtconfig && cp $SAC.dtconfig $SAC &&
+		rm -f $SAC.dtconfig || { echo "$prg: could not change $SAC"; return 1; }
+	pmadm -d -p screens -s con10 > /dev/null 2>&1
+	sacadm -s -p xdm > /dev/null 2>&1
+	return 0
+}
+
 case "$1" in
 -e)
 	[ -x $RC ] || { echo "$prg: $RC missing"; exit 1; }
@@ -33,10 +61,17 @@ case "$1" in
 	ln $RC $S2 && ln $RC $K0 && ln $RC $K1
 	rm -f /etc/dt/nodtlogin
 	echo "$prg: graphical login enabled at boot ($S2)"
+	if xdm_on && xdm_off; then
+		echo "on" > $XDMOFF
+		echo "$prg: stock xdm turned off (dtconfig -d turns it on again)"
+	fi
 	;;
 -d)
 	rm -f $S2 $K0 $K1
 	echo "$prg: graphical login disabled at boot"
+	if [ -f $XDMOFF ]; then
+		xdm_back && rm -f $XDMOFF && echo "$prg: stock xdm turned on again"
+	fi
 	running && echo "$prg: dtlogin is still running; '$prg -kill' stops it"
 	;;
 -kill)
@@ -57,6 +92,7 @@ case "$1" in
 	;;
 -status)
 	if [ -f $S2 ]; then echo "enabled at boot ($S2)"; else echo "disabled at boot"; fi
+	xdm_on && echo "stock xdm is on as well (/usr/amiga/lib/amixxdm)"
 	[ -f /etc/dt/nodtlogin ] && echo "/etc/dt/nodtlogin exists: the boot start is skipped"
 	if running; then echo "running (pid `cat $PIDFILE`)"; else echo "not running"; fi
 	;;

@@ -17,6 +17,14 @@ start)
 		echo "dtlogin: already running"
 		exit 0
 	fi
+	# every user's session writes here (dtappgather, dtsession): sticky and
+	# world-writable, as on Solaris; set on each start, so a disk whose
+	# directories an earlier root session made 755 is fixed too
+	for d in /var/dt /var/dt/tmp /var/dt/appconfig /var/dt/appconfig/appmanager; do
+		[ -d $d ] || mkdir $d
+	done
+	chmod 755 /var/dt /var/dt/appconfig
+	chmod 1777 /var/dt/tmp /var/dt/appconfig/appmanager
 	echo "Starting the CDE graphical login (dtlogin)"
 	LANG=C; export LANG
 	/usr/dt/bin/dtlogin -daemon < /dev/null > /dev/null 2>&1 &

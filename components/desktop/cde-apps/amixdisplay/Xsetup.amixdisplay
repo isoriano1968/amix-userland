@@ -1,0 +1,6 @@
+#!/bin/sh
+# AMIX (desktop/cde-apps): before each login screen, the mode chosen for it
+# in Display (/etc/dt/config/rtg-mode); run by desktop/cde's Xsetup, which
+# runs /etc/dt/config/Xsetup.d/* as root
+[ -x /opt/amix/bin/amixdisplay ] && /opt/amix/bin/amixdisplay -system
+exit 0

@@ -1,0 +1,25 @@
+From: isoriano1968 <81116077+isoriano1968@users.noreply.github.com>
+Date: Fri, 20 Nov 2026 21:30:00 +0100
+Subject: [PATCH] host.def: X11ProjectRoot is /usr/x11r6, as x11/x11r6.3
+ installs it
+
+dtlogin compiled the build tree's /usr/x11r6/xc/exports/bin into its
+xrdb, failsafe xterm, X server and PATH defaults ("xrdb: not found"
+at every login).
+---
+--- a/config/cf/host.def
++++ b/config/cf/host.def
+@@ -79,9 +79,11 @@
+  * the links there point into the sysroot:
+  *   imports/x11/include, lib   -> AmixSysroot/usr/x11r6/xc/exports/...
+  *   imports/motif/include, lib -> AmixSysroot/usr/motif/...
+- * X11ProjectRoot/MotifProjectRoot are the paths on the AMIX machine.
++ * X11ProjectRoot/MotifProjectRoot are the paths on the AMIX machine: X11R6.3
++ * as x11/x11r6.3 installs it (/usr/x11r6/bin, /usr/x11r6/lib), not the build
++ * tree's exports/ (dtlogin had its xrdb, xterm, X and PATH from there).
+  */
+-#define X11ProjectRoot		/usr/x11r6/xc/exports
++#define X11ProjectRoot		/usr/x11r6
+ /* where the build finds the imported Motif archives (Motif.tmpl defaults to exports/lib) */
+ #define MBuildLibDir		$(TOP)/imports/motif/lib
+ #define MotifProjectRoot	/usr/motif

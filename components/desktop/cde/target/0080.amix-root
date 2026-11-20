@@ -1,0 +1,3 @@
+# AMIX (desktop/cde): the session's root window gets the arrow cursor (X's
+# default is the cross); the login screen gets it from Xsetup
+[ -x /usr/x11r6/bin/xsetroot ] && /usr/x11r6/bin/xsetroot -cursor_name left_ptr

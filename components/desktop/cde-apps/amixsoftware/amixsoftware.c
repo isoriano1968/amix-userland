@@ -1052,7 +1052,9 @@ static int matches(const struct pkg *p, const char *q)
 
 static void state_word(const struct pkg *p, char *out)
 {
-	if (p->update)
+	if (p->update && cpu_bad(p))
+		strcpy(out, "held back");	/* the newer version cannot run here */
+	else if (p->update)
 		strcpy(out, "update");
 	else if (p->original)
 		strcpy(out, "Amix 2.1");
@@ -1279,11 +1281,17 @@ static void show_details(void)
 	}
 	p = &pk[sel];
 	set_label(d_name, p->name);
-	sprintf(s, "%s  -  %s  -  %s%s%s", src_name[p->src], p->version[0] ? p->version : "?", p->cat,
-		p->cpu[0] ? "  -  " : "", !p->cpu[0] ? "" : !strcmp(p->cpu, "68060") ? "68060 only" : "68020-68060");
+	/* what it runs on: a board (its code runs there, an ARM core) or the CPU */
+	sprintf(s, "%s  -  %s  -  %s%s%s%s", src_name[p->src], p->version[0] ? p->version : "?", p->cat,
+		p->hw[0] || p->cpu[0] ? "  -  " : "", p->hw[0] ? "needs the board " : "",
+		p->hw[0] ? p->hw : !p->cpu[0] ? "" : !strcmp(p->cpu, "68060") ? "68060 only" : "68020-68060");
 	set_label(d_sub, s);
 	XmTextSetString(d_desc, p->desc);
-	if (p->update)
+	if (p->update && hw_bad(p))
+		sprintf(s, "Installed %s; %s needs the board %s: held back", p->iver, p->version, p->hw);
+	else if (p->update && cpu_bad(p))
+		sprintf(s, "Installed %s; %s needs a 68060: held back", p->iver, p->version);
+	else if (p->update)
 		sprintf(s, "Installed %s, %s available", p->iver, p->version);
 	else if (p->original)
 		strcpy(s, "Installed, part of the original Amix 2.1");
@@ -1361,9 +1369,13 @@ static void update_warning(void)
 		sprintf(s, "IPS pkg was not found at %s: its packages are not shown.", cfg.ips_path);
 		warn = 1;
 	}
-	if (cfg.apkg_on && !apkg_ok) {
-		sprintf(s + strlen(s), "%sapkg was not found at %s: its packages can be browsed, not changed.",
-			warn ? "\n" : "", cfg.apkg_path);
+	/* apkg (amigaux's package tool) missing: worth a word only when its
+	   catalog is here, so its packages are listed but cannot be installed;
+	   without either, apkg is simply not in use on this machine */
+	if (cfg.apkg_on && !apkg_ok && apkg_state == 0 && access(catalog, R_OK) == 0) {
+		sprintf(s + strlen(s), "%sapkg, the amigaux package tool, is not installed (%s): its "
+			"catalog's packages are shown, but only apkg can install them. Install apkg, or "
+			"switch apkg off in Preferences.", warn ? "\n" : "", cfg.apkg_path);
 		warn = 1;
 	}
 	if (!cfg.ips_on && !cfg.apkg_on) {

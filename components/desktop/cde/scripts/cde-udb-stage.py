@@ -152,6 +152,16 @@ for fs in filesets:
                         data = data.rstrip(b"\n") + (b"\n\n# AMIX: the console's keyboard layout "
                                                       b"(x11/amix-xkeymap)\n[ -x /opt/amix/bin/"
                                                       b"xkeymap-amiga ] && /opt/amix/bin/xkeymap-amiga || :\n")
+                    if b"Xsetup.d" not in data:
+                        data = data.rstrip(b"\n") + (
+                            b"\n\n# AMIX: the login screen's background and the arrow cursor (X's\n"
+                            b"# defaults are black and the cross)\n"
+                            b"[ -x /usr/x11r6/bin/xsetroot ] && /usr/x11r6/bin/xsetroot "
+                            b"-cursor_name left_ptr -solid \"#4f6f8f\" || :\n"
+                            b"\n# AMIX: what packages add to the login screen's setup, as root\n"
+                            b"for f in /etc/dt/config/Xsetup.d/*; do\n"
+                            b"\t[ -x \"$f\" ] && \"$f\"\n"
+                            b"done\n")
                 open(dst, "wb").write(data)
             mode = rec.get("mode", "0444")
             os.chmod(dst, int(mode, 8) & 0o7777 if re.fullmatch(r"0?[0-7]+", mode) else 0o444)

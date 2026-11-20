@@ -42,6 +42,7 @@ file     /etc/dt/appconfig/types/C/amixsoftware.fp
 file     /etc/dt/appconfig/types/C/amixsysmon.dt
 file     /etc/dt/appconfig/types/C/amixsysmon.fp
 file     /etc/dt/config/Xsession.d/0012.amixdisplay
+file     /etc/dt/config/Xsetup.d/0012.amixdisplay
 file     /opt/amix/bin/amixdisplay
 file     /opt/amix/bin/amixprinters
 file     /opt/amix/bin/amixsoftware

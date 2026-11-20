@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
-"""mklogo.py SRC OUT.pm [SIZE] -- the AMIX dtlogin logo: a square crop around the
-logo, scaled to SIZE (default 239, the size of CDE's own Dtlogo.pm) and
-reduced to a small palette, written as XPM for Dtlogin*logo*bitmapFile."""
+"""mklogo.py SRC OUT.pm [SIZE [COLOURS]] -- the AMIX dtlogin logo: a square crop
+around the logo, scaled to SIZE (default 239, the size of CDE's own Dtlogo.pm)
+and reduced to COLOURS (default 16: an 8-bit screen such as the Picasso II's
+shares its 256 with CDE's palette), written as XPM for Dtlogin*logo*bitmapFile."""
 import sys
 from PIL import Image
 src, out = sys.argv[1], sys.argv[2]
 size = int(sys.argv[3]) if len(sys.argv) > 3 else 239
+ncol = int(sys.argv[4]) if len(sys.argv) > 4 else 16
 im = Image.open(src).convert('RGB')
 w, h = im.size
 s = int(min(w, h) * 0.955)                       # trim the outer border a little
 im = im.crop(((w - s) // 2, (h - s) // 2, (w + s) // 2, (h + s) // 2))
 im = im.resize((size, size), Image.LANCZOS)
-q = im.quantize(colors=32, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
-pal = q.getpalette()[:3 * 32]
+q = im.quantize(colors=ncol, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+pal = q.getpalette()[:3 * ncol]
 used = sorted(set(q.getdata()))
 chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 code = {c: chars[i] for i, c in enumerate(used)}

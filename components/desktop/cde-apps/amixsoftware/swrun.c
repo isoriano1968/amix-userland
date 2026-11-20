@@ -95,10 +95,24 @@ static int good_verb(const char *s)
 	       !strcmp(s, "remove") || !strcmp(s, "download");
 }
 
-/* root's, and nobody else may write it */
+/* a system account's (root, or bin and sys, which own AMIX's own /usr and
+   /usr/bin as SVR4 has them), and nobody else may write it */
 static int safe(const struct stat *st)
 {
-	return st->st_uid == 0 && !(st->st_mode & (S_IWGRP | S_IWOTH));
+	static int got = 0;
+	static uid_t bin = 0, sys = 0;
+
+	if (!got) {
+		struct passwd *p;
+
+		if ((p = getpwnam("bin")) != NULL)
+			bin = p->pw_uid;
+		if ((p = getpwnam("sys")) != NULL)
+			sys = p->pw_uid;
+		got = 1;
+	}
+	return (st->st_uid == 0 || (bin && st->st_uid == bin) || (sys && st->st_uid == sys)) &&
+	    !(st->st_mode & (S_IWGRP | S_IWOTH));
 }
 
 static void check_program(const char *path)
@@ -113,15 +127,22 @@ static void check_program(const char *path)
 	if (!S_ISREG(st.st_mode))
 		die("the program must be a regular file, not a link");
 	if (!safe(&st) || !(st.st_mode & S_IXUSR))
-		die("the program must be root's and writable by nobody else");
+		die("the program must be a system account's (root, bin, sys) and writable by nobody else");
+	/* every directory up to /: one another user could write would let him
+	   put another program in its place */
 	strcpy(dir, path);
-	slash = strrchr(dir, '/');
-	if (slash == dir)
-		slash[1] = 0;
-	else
-		*slash = 0;
-	if (stat(dir, &st) < 0 || !S_ISDIR(st.st_mode) || !safe(&st))
-		die("the program's directory must be root's and writable by nobody else");
+	for (;;) {
+		slash = strrchr(dir, '/');
+		if (slash == dir)
+			slash[1] = 0;
+		else
+			*slash = 0;
+		if (stat(dir, &st) < 0 || !S_ISDIR(st.st_mode) || !safe(&st))
+			die("the program's directories must be a system account's (root, bin, sys) "
+			    "and writable by nobody else");
+		if (!strcmp(dir, "/"))
+			break;
+	}
 }
 
 static void check_password(void)
