@@ -2,9 +2,11 @@
  * amix-hw -- the boards this machine has (hw.c): one tag a line, for
  * scripts, the CDE session (Xsession.d/0013.amix-hw) and the installer.
  *
- *   amix-hw            z3660, z3660-core1, zz9000: those found
- *   amix-hw -q TAG     exit 0 if the machine has TAG (alternatives: a|b)
- *   amix-hw -v         and what the probe looked at, on stderr
+ *   amix-hw            z3660, z3660-core1, zz9000: those found (none: no
+ *                      output); exit 0 whenever the probe ran
+ *   amix-hw -q TAG     exit 0 if the machine has TAG (alternatives: a|b),
+ *                      1 if not: the test for scripts
+ *   amix-hw -v         the list, and what the probe looked at, on stderr
  */
 #include <stdio.h>
 #include <stdlib.h>

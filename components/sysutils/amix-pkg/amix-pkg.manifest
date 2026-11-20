@@ -1,6 +1,6 @@
 # name, version and what building and running it needs
 name     sysutils/amix-pkg
-version  0.5.2
+version  0.5.3
 # the 68020..68060 baseline, tools/amix-cpu-scan clean
 cpu      68020
 summary  pkg, the AMIX IPS client: install, update, uninstall, verify from an IPS repository

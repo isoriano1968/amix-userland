@@ -13,7 +13,7 @@
 
 #include "pkg.h"
 
-#define VERSION_STRING	"0.5.2"
+#define VERSION_STRING	"0.5.3"
 
 static struct image im;
 
@@ -37,6 +37,7 @@ usage(void)
 	    "  install [-n] name[@version]...  with what they require (-n: only show)\n"
 	    "  update [-n] [name...]           to the newest versions (all installed: no names)\n"
 	    "  uninstall [-n] name...          remove; changed files stay as .pkgsave\n"
+	    "  autoremove [-n]                 remove what nothing requires and was not asked for\n"
 	    "  history                         what was changed, and when\n"
 	    "  http get URL [FILE] | put URL   plain HTTP (the installer's bootstrap)\n"
 	    "  version\n"
@@ -811,6 +812,11 @@ cmd_change(int argc, char **argv, int what)
 	argv += optidx;
 	if (what == 2)
 		return cmd_uninstall(&im, argc, argv);
+	if (what == 3) {
+		if (argc)
+			usage();
+		return cmd_autoremove(&im);
+	}
 	if (what == 0 && argc == 0)
 		usage();
 	return cmd_install(&im, argc, argv, what == 1);
@@ -944,6 +950,8 @@ main(int argc, char **argv)
 		return cmd_change(argc, argv, 1);
 	if (!strcmp(argv[0], "uninstall"))
 		return cmd_change(argc, argv, 2);
+	if (!strcmp(argv[0], "autoremove"))
+		return cmd_change(argc, argv, 3);
 	if (!strcmp(argv[0], "history"))
 		return cmd_history(&im);
 	if (!strcmp(argv[0], "version")) {

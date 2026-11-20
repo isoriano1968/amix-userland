@@ -201,6 +201,7 @@ extern unsigned long min_free_mb;
 int journal_recover(const struct image *im);
 int cmd_install(struct image *im, int argc, char **argv, int update);
 int cmd_uninstall(struct image *im, int argc, char **argv);
+int cmd_autoremove(struct image *im);
 int cmd_history(const struct image *im);
 
 #endif

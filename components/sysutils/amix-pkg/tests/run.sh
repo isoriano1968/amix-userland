@@ -318,6 +318,48 @@ else
 	echo "skip move (no tools/amix-publish)"
 fi
 
+# a whole update holds back what this machine cannot run any more, and
+# autoremove takes what nothing needs (0.5.3)
+if [ -x "$PUB" ] && command -v python3 >/dev/null 2>&1; then
+	mkdir -p "$T/hbsrc"; echo a > "$T/hbsrc/a"; echo b > "$T/hbsrc/b"
+	hbpkg() {	# hbpkg STEM VERSION "extra set/depend lines" [FILE PATH]
+		s=$1 v=$2 x=$3; shift 3
+		{ echo "set name=pkg.fmri value=pkg://amix/$s@$v"
+		  echo "set name=pkg.summary value=\"$s\""
+		  [ -n "$x" ] && printf '%s\n' "$x"
+		  echo 'dir path=usr owner=root group=sys mode=0755'
+		  echo 'dir path=usr/local owner=root group=bin mode=0755'
+		  echo 'dir path=usr/local/share owner=root group=bin mode=0755'
+		  [ $# -ge 2 ] && echo "file $1 path=$2 owner=root group=bin mode=0444"; } > "$T/hb.p5m"
+		"$PUB" -s "$T/hbrepo" -d "$T/hbsrc" "$T/hb.p5m" >/dev/null 2>&1 || echo "(publish $s@$v refused)"
+	}
+	hbpkg demo/emu 1.0,2.1-1 "" a usr/local/share/emu
+	hbpkg demo/app 1.0,2.1-1 "depend fmri=pkg:/demo/emu@1.0 type=require" b usr/local/share/app
+	H="$T/hbroot"; mkdir -p "$H/etc"; cp "$M/etc/passwd" "$M/etc/group" "$H/etc/"
+	"$PKG" -R "$H" set-publisher -O "$T/hbrepo" amix && "$PKG" -R "$H" refresh
+	expect "hold: install app (+ emu)" 0 "install    demo/emu" "$PKG" -R "$H" --min-free 0 install demo/app
+	expect "hold: requested kept"  0 "^demo/app$"     cat "$H/var/pkg/requested"
+	expect "hold: emu not requested" 0 ""            sh -c "! grep -q demo/emu '$H/var/pkg/requested'"
+	hbpkg demo/emu 1.0,2.1-2 "set name=org.amix.hw value=z3660-core1" a usr/local/share/emu
+	hbpkg demo/app 1.0,2.1-2 "" b usr/local/share/app
+	"$PKG" -R "$H" refresh
+	expect "hold: whole update goes on" 0 "held back  demo/emu 1.0,2.1-1: its newest version needs the board z3660-core1" env PKG_HW=none "$PKG" -R "$H" --min-free 0 update
+	expect "hold: app updated"     0 "demo/app *1.0,2.1-2" "$PKG" -R "$H" list
+	expect "hold: emu kept"        0 "demo/emu *1.0,2.1-1" "$PKG" -R "$H" list
+	expect "hold: named update refused" 1 "needs the board z3660-core1" env PKG_HW=none "$PKG" -R "$H" --min-free 0 update demo/emu
+	expect "hold: uninstall hint"  0 "nothing installed needs it: pkg uninstall demo/emu" env PKG_HW=none "$PKG" -R "$H" --min-free 0 update -n
+	expect "autoremove -n: emu"    0 "uninstall  demo/emu\|remove     demo/emu" "$PKG" -R "$H" --min-free 0 autoremove -n
+	expect "autoremove"            0 ""              "$PKG" -R "$H" --min-free 0 autoremove
+	expect "autoremove: emu gone"  0 ""              sh -c "! '$PKG' -R '$H' list | grep -q demo/emu"
+	expect "autoremove: app stays" 0 "demo/app"      "$PKG" -R "$H" list
+	expect "autoremove: again nothing" 0 "nothing to remove" "$PKG" -R "$H" --min-free 0 autoremove
+	rm -f "$H/var/pkg/requested"
+	expect "autoremove: no record, list only" 0 "no record of what you asked for" "$PKG" -R "$H" --min-free 0 autoremove
+	expect "autoremove: app still there" 0 "demo/app" "$PKG" -R "$H" list
+else
+	echo "skip hold (no tools/amix-publish)"
+fi
+
 # amix-hw: the boards, PKG_HW for the test (no board on the host)
 if [ -n "$HW" ]; then
 	expect "amix-hw: none on the host" 0 ""         sh -c "env -u PKG_HW '$HW' | grep -q . && exit 1 || exit 0"

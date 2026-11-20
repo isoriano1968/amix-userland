@@ -25,6 +25,7 @@ Version 0.5: the read side, the write side, several origins, search and the CPU 
     pkg install [-n] name[@version]...   # with what they require
     pkg update [-n] [name...]            # all installed, without names
     pkg uninstall [-n] name...           # refused while another package needs it
+    pkg autoremove [-n]                  # what nothing requires and was not asked for
     pkg history
 
 A package for the 68060 only (`set name=org.amix.cpu value=68060`) is refused on a
@@ -38,6 +39,15 @@ ZZ9000); `amix-hw -q TAG` answers by exit status; `PKG_HW=tag,tag` (or
 `/etc/dt/appconfig-hw/TAG`; `/etc/dt/config/Xsession.d/0013.amix-hw` adds
 that directory to the session's search path only when the board is there,
 so its panel controls and App Manager entries show only with the board.
+
+`pkg update` without names holds back an installed package whose newest
+version this machine cannot run (68060 only, or a board it lacks): it keeps
+its version, the line says why (and, when nothing needs it, how to remove
+it), and everything else is updated. Named, such an update is refused.
+`pkg install NAME` notes NAME in `var/pkg/requested` (from 0.5.3 on); `pkg
+autoremove` removes what no installed package requires and was not asked
+for, again until nothing more goes (pkg itself stays). An image from before
+0.5.3 has no such record: autoremove only lists the candidates there.
 
 Every change is checked first: no path of another IPS package, of stock
 AMIX or an SVR4 package (`/var/sadm/install/contents`; directories may be

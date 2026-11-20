@@ -507,6 +507,24 @@ cat_match(const struct catalog *cat, const char *name)
 	return hit;
 }
 
+/*
+ * A version this machine cannot run (org.amix.cpu 68060 without a 68060,
+ * org.amix.hw without the board): plan_add gives -2.  In a whole update
+ * (pkg update, no names) such a package keeps its installed version
+ * ("held back") and the rest goes on; the reason is kept for the message.
+ */
+#define REFUSED (-2)
+static int refuse_quiet;
+static char refuse_why[200];
+
+static void
+refuse(const char *stem, const char *why)
+{
+	snprintf(refuse_why, sizeof(refuse_why), "%s", why);
+	if (!refuse_quiet)
+		warnx("%s: %s", stem, why);
+}
+
 /* add stem (at least version min, or exactly want) and what it requires */
 static int
 plan_add(const struct image *im, const struct catalog *cat, const struct installed *in,
@@ -566,9 +584,8 @@ plan_add(const struct image *im, const struct catalog *cat, const struct install
 		const char *cpu = manifest_set(&c->m, "org.amix.cpu");
 
 		if (cpu && !strcmp(cpu, "68060") && !cpu_has_060()) {
-			warnx("%s: built for the 68060 only (org.amix.cpu), and this machine has none",
-			    stem);
-			return -1;
+			refuse(stem, "built for the 68060 only (org.amix.cpu), and this machine has none");
+			return REFUSED;
 		}
 	}
 	{
@@ -576,9 +593,12 @@ plan_add(const struct image *im, const struct catalog *cat, const struct install
 		const char *hw = manifest_set(&c->m, "org.amix.hw");
 
 		if (hw && !hw_has(hw)) {
-			warnx("%s: needs the board %s (org.amix.hw), and this machine has %s", stem,
+			char why[160];
+
+			snprintf(why, sizeof(why), "needs the board %s (org.amix.hw), and this machine has %s",
 			    hw, *hw_list() ? hw_list() : "none");
-			return -1;
+			refuse(stem, why);
+			return REFUSED;
 		}
 	}
 	for (i = 0; i < c->m.n; i++) {
@@ -594,10 +614,23 @@ plan_add(const struct image *im, const struct catalog *cat, const struct install
 		r = plan_add(im, cat, in, nin, p, f.stem, f.version, NULL, 0);
 		fmri_free(&f);
 		if (r < 0)
-			return -1;
+			return r;	/* REFUSED stays REFUSED: the whole update holds it back */
 		c = plan_find(p, stem);	/* the array may have moved */
 	}
 	return 0;
+}
+
+static void
+plan_cut(struct plan *p, size_t n)	/* drop the changes from n on */
+{
+	while (p->n > n) {
+		struct change *c = &p->c[--p->n];
+
+		free(c->stem);
+		free(c->version);
+		manifest_free(&c->m);
+		free(c->sig);
+	}
 }
 
 static void
@@ -1309,7 +1342,15 @@ plan_owners(const struct image *im, const struct catalog *cat, const struct inst
 			if (!o || o->stem == SVR4_OWNER || plan_find(p, o->stem))
 				continue;
 			s = xstrdup(o->stem);
-			r = plan_add(im, cat, in, nin, p, s, NULL, NULL, 1);
+			{
+				size_t n0 = p->n;
+
+				r = plan_add(im, cat, in, nin, p, s, NULL, NULL, 1);
+				if (r == REFUSED) {	/* it stays as it is: conflicts() decides */
+					plan_cut(p, n0);
+					r = 0;
+				}
+			}
 			free(s);
 		}
 	owners_free(&w);
@@ -1504,6 +1545,94 @@ out:
 	return r;
 }
 
+/* does another installed package require stem? */
+static int
+needed_by_other(const struct installed *in, size_t nin, const char *stem)
+{
+	size_t k, a;
+
+	for (k = 0; k < nin; k++) {
+		if (!strcmp(in[k].stem, stem))
+			continue;
+		for (a = 0; a < in[k].m.n; a++) {
+			const struct action *ac = &in[k].m.act[a];
+			const char *fm = action_get(ac, "fmri"), *ty = action_get(ac, "type");
+			struct fmri f;
+			int hit;
+
+			if (strcmp(ac->type, "depend") || !fm || (ty && strcmp(ty, "require")) ||
+			    fmri_parse(fm, &f) < 0)
+				continue;
+			hit = !strcmp(f.stem, stem);
+			fmri_free(&f);
+			if (hit)
+				return 1;
+		}
+	}
+	return 0;
+}
+
+/*
+ * var/pkg/requested: the packages pkg install was asked for by name (since
+ * 0.5.3), one stem a line; what they pulled in is not there.  pkg
+ * autoremove takes away what nothing requires and nobody asked for.
+ */
+static int
+requested_has(const struct buf *b, const char *stem)
+{
+	const char *s = b->data;
+	size_t l = strlen(stem);
+
+	while (s && *s) {
+		if (!strncmp(s, stem, l) && (s[l] == '\n' || s[l] == 0))
+			return 1;
+		s = strchr(s, '\n');
+		if (s)
+			s++;
+	}
+	return 0;
+}
+
+static void
+requested_change(const struct image *im, char **add, size_t nadd, char **del, size_t ndel)
+{
+	char *f = image_path(im, "requested");
+	struct buf b = { 0 }, o = { 0 };
+	const char *s, *e;
+	size_t i;
+
+	if (dry_run) {
+		free(f);
+		return;
+	}
+	if (read_file(f, &b) < 0)
+		buf_add(&b, "", 0);
+	buf_add(&o, "", 0);
+	for (s = b.data; s && *s; s = e ? e + 1 : NULL) {
+		int gone = 0;
+		size_t l;
+
+		e = strchr(s, '\n');
+		l = e ? (size_t)(e - s) : strlen(s);
+		for (i = 0; i < ndel; i++)
+			if (strlen(del[i]) == l && !strncmp(s, del[i], l))
+				gone = 1;
+		if (!gone && l) {
+			buf_add(&o, s, l);
+			buf_str(&o, "\n");
+		}
+	}
+	for (i = 0; i < nadd; i++)
+		if (!requested_has(&o, add[i])) {
+			buf_str(&o, add[i]);
+			buf_str(&o, "\n");
+		}
+	write_atomic(f, o.data, o.len);
+	buf_free(&b);
+	buf_free(&o);
+	free(f);
+}
+
 int
 cmd_install(struct image *im, int argc, char **argv, int update)
 {
@@ -1511,7 +1640,7 @@ cmd_install(struct image *im, int argc, char **argv, int update)
 	size_t nin, i;
 	struct catalog cat;
 	struct plan p = { 0 };
-	int r = 1;
+	int r = 1, nheld = 0;
 
 	if (lock(im) < 0)
 		return 1;
@@ -1523,9 +1652,29 @@ cmd_install(struct image *im, int argc, char **argv, int update)
 	}
 	installed_list(im, &in, &nin);
 	if (update && argc == 0) {
-		for (i = 0; i < nin; i++)
-			if (plan_add(im, &cat, in, nin, &p, in[i].stem, NULL, NULL, 1) < 0)
+		for (i = 0; i < nin; i++) {
+			size_t n0 = p.n;
+			int ra;
+
+			refuse_quiet = 1;
+			ra = plan_add(im, &cat, in, nin, &p, in[i].stem, NULL, NULL, 1);
+			refuse_quiet = 0;
+			if (ra == REFUSED) {
+				plan_cut(&p, n0);
+				{
+					char *v = version_short(in[i].version);
+
+					printf("held back  %s %s: its newest version %s\n", in[i].stem,
+					    v ? v : in[i].version, refuse_why);
+					free(v);
+				}
+				nheld++;
+				if (!needed_by_other(in, nin, in[i].stem))
+					printf("           nothing installed needs it: pkg uninstall %s\n",
+					    in[i].stem);
+			} else if (ra < 0)
 				goto out;
+		}
 	}
 	for (i = 0; i < (size_t)argc; i++) {
 		struct fmri f;
@@ -1551,7 +1700,7 @@ cmd_install(struct image *im, int argc, char **argv, int update)
 	if (plan_owners(im, &cat, in, nin, &p) < 0)
 		goto out;
 	if (!p.n) {
-		printf("nothing to do\n");
+		printf(nheld ? "nothing else to do\n" : "nothing to do\n");
 		r = 0;
 		goto out;
 	}
@@ -1582,6 +1731,21 @@ cmd_install(struct image *im, int argc, char **argv, int update)
 		goto out;
 	}
 	r = run(im, update ? "update" : "install", &p, in, nin, 0);
+	if (r == 0 && !update && argc > 0) {
+		char **names = xmalloc(argc * sizeof(*names));
+		int k, nn = 0;
+
+		for (k = 0; k < argc; k++) {
+			struct fmri f;
+			const struct catpkg *cp;
+
+			if (fmri_parse(argv[k], &f) == 0 && (cp = cat_match(&cat, f.stem)))
+				names[nn++] = cp->stem;
+			fmri_free(&f);
+		}
+		requested_change(im, names, nn, NULL, 0);
+		free(names);
+	}
 out:
 	plan_free(&p);
 	installed_free(in, nin);
@@ -1647,9 +1811,102 @@ cmd_uninstall(struct image *im, int argc, char **argv)
 		}
 	}
 	r = run(im, "uninstall", &p, in, nin, 1);
+	if (r == 0) {
+		char **names = xmalloc((p.n + 1) * sizeof(*names));
+
+		for (k = 0; k < p.n; k++)
+			names[k] = p.c[k].stem;
+		requested_change(im, NULL, 0, names, p.n);
+		free(names);
+	}
 out:
 	plan_free(&p);
 	installed_free(in, nin);
+	return r;
+}
+
+/*
+ * pkg autoremove [-n]: what nothing installed requires and nobody asked for
+ * (var/pkg/requested), again and again until nothing more goes; never pkg
+ * itself.  Without the record (an image from before 0.5.3) only the list.
+ */
+int
+cmd_autoremove(struct image *im)
+{
+	struct installed *in;
+	size_t nin, i;
+	struct buf req = { 0 };
+	char *f = image_path(im, "requested");
+	char **gone = NULL;
+	size_t ngone = 0;
+	int have_req = read_file(f, &req) == 0, more = 1, r = 0;
+
+	free(f);
+	if (!have_req)
+		buf_add(&req, "", 0);
+	installed_list(im, &in, &nin);
+	while (more) {
+		more = 0;
+		for (i = 0; i < nin; i++) {
+			size_t k, a;
+			int needed = 0, out = 0;
+
+			for (k = 0; k < ngone; k++)
+				if (!strcmp(gone[k], in[i].stem))
+					out = 1;
+			if (out || !strcmp(in[i].stem, SELF_STEM) || requested_has(&req, in[i].stem))
+				continue;
+			for (k = 0; k < nin && !needed; k++) {
+				int kgone = 0;
+
+				for (a = 0; a < ngone; a++)
+					if (!strcmp(gone[a], in[k].stem))
+						kgone = 1;
+				if (k == i || kgone)
+					continue;
+				for (a = 0; a < in[k].m.n && !needed; a++) {
+					const struct action *ac = &in[k].m.act[a];
+					const char *fm = action_get(ac, "fmri"), *ty = action_get(ac, "type");
+					struct fmri fr;
+
+					if (strcmp(ac->type, "depend") || !fm || (ty && strcmp(ty, "require")) ||
+					    fmri_parse(fm, &fr) < 0)
+						continue;
+					needed = !strcmp(fr.stem, in[i].stem);
+					fmri_free(&fr);
+				}
+			}
+			if (!needed) {
+				gone = xrealloc(gone, (ngone + 1) * sizeof(*gone));
+				gone[ngone++] = in[i].stem;
+				more = 1;
+			}
+		}
+	}
+	if (!ngone)
+		printf("nothing to remove\n");
+	else if (!have_req) {
+		printf("nothing installed requires these; pkg has no record of what you asked for\n"
+		    "(it keeps one from 0.5.3 on): remove the ones you do not want with pkg uninstall\n");
+		for (i = 0; i < ngone; i++)
+			printf("  %s\n", gone[i]);
+	} else {
+		char **names = xmalloc(ngone * sizeof(*names));
+
+		for (i = 0; i < ngone; i++)
+			names[i] = xstrdup(gone[i]);
+		installed_free(in, nin);
+		in = NULL;
+		nin = 0;
+		r = cmd_uninstall(im, (int)ngone, names);
+		for (i = 0; i < ngone; i++)
+			free(names[i]);
+		free(names);
+	}
+	free(gone);
+	buf_free(&req);
+	if (in)
+		installed_free(in, nin);
 	return r;
 }
 
