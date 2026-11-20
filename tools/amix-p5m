@@ -18,6 +18,9 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PUBLISHER = "amix"
+# the boards amix-hw (sysutils/amix-pkg) detects: z3660 the Z3660's RTG,
+# z3660-core1 programs on its ARM core 1, zz9000 the MNT ZZ9000
+HW_TAGS = ("z3660", "z3660-core1", "zz9000")
 BUILD_RELEASE = "2.1"
 
 
@@ -39,7 +42,7 @@ def read_manifest(path):
                 m["file"][w[0]] = "devel" in w[1:]
                 # mode=4755 owner=root group=sys: setuid helpers and the like
                 m.setdefault("attrs", {})[w[0]] = dict(x.split("=", 1) for x in w[1:] if "=" in x)
-            elif key in ("name", "version", "summary", "cpu"):
+            elif key in ("name", "version", "summary", "cpu", "hw"):
                 m[key] = value
             elif key == "uses":
                 m["uses"].append(value)
@@ -132,6 +135,16 @@ def generate(comp_dir, contents=None, rev=None):
         if m["cpu"] not in ("68020", "68060"):
             raise SystemExit("%s: cpu %s: 68020 or 68060" % (comp_dir, m["cpu"]))
         lines.append("set name=org.amix.cpu value=%s" % m["cpu"])
+    # the board it needs beyond the CPU (amix-hw names what a machine has):
+    # one tag, or alternatives with |.  pkg, the Software Center and the
+    # AMIX Installer leave it off a machine without the board, with the
+    # reason; its CDE files live in /etc/dt/appconfig-hw/TAG, which the
+    # session adds to CDE's search path only when amix-hw finds the board.
+    if m.get("hw"):
+        bad = [x for x in m["hw"].split("|") if x not in HW_TAGS]
+        if bad:
+            raise SystemExit("%s: hw %s: one of %s, alternatives with |" % (comp_dir, m["hw"], " ".join(HW_TAGS)))
+        lines.append("set name=org.amix.hw value=%s" % m["hw"])
     # files it needs at run time beyond its libraries (data, programs it
     # runs): tools/amix_needed.py checks that its closure delivers them
     for key in ("cpu-allow", "cpu-skip"):

@@ -249,7 +249,7 @@ def rebuild_catalog(repo, now):
                 elif a["type"] == "set" and attr(a, "name") in ("variant.arch",):
                     sets.append(fmt_action(a))
                 elif a["type"] == "set" and attr(a, "name") in ("pkg.summary", "pkg.description",
-                                                                "org.amix.cpu"):
+                                                                "org.amix.cpu", "org.amix.hw"):
                     sums.append(fmt_action(a))
             dep.setdefault(stem, []).append({"actions": deps + sets, "version": version})
             summ.setdefault(stem, []).append({"actions": sums, "version": version})

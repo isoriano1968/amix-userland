@@ -74,6 +74,12 @@ def read(path):
             # a file it needs at run time (amix-p5m, tools/amix_needed.py)
             if not value.startswith("/") or len(value.split()) != 1:
                 sys.exit("%s:%d: uses takes one absolute path: %s" % (path, n, line))
+        elif key == "hw":
+            # the board it needs (amix-p5m): z3660, z3660-core1 or zz9000,
+            # alternatives with |
+            if not value or any(x not in ("z3660", "z3660-core1", "zz9000") for x in value.split("|")):
+                sys.exit("%s:%d: hw takes z3660, z3660-core1 or zz9000 (alternatives with |): %s"
+                         % (path, n, line))
         elif key == "cpu":
             # the CPU the code needs: 68020 (the baseline) or 68060 (amix-p5m)
             if value not in ("68020", "68060"):
