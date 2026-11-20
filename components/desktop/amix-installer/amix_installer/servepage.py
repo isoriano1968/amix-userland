@@ -2,6 +2,7 @@
 machines (serve.py), with the address lines to type on AMIX, the repository
 served, and what the Amigas fetch."""
 import os
+import threading
 
 import gi
 gi.require_version("Gtk", "4.0")
@@ -186,9 +187,7 @@ class ServePage(object):
         if self.win.net is not None:
             self.win.toast("A network install is running: it serves the packages itself")
             return
-        merged = _merge_bundled(self.repo)
-        if merged:
-            self.win.toast(merged)
+
         try:
             self.srv = serve.RepoServer(self.repo, local=self.local, discovery=self.discovery,
                                         log=self._log).start()
@@ -202,6 +201,15 @@ class ServePage(object):
             return
         self.lines = []
         self.refresh()
+        # serving already: the bundled repository's newer packages merged in
+        # behind it (the catalog is replaced part by part, attrs last)
+        repo = self.repo
+
+        def work():
+            merged = _merge_bundled(repo)
+            if merged:
+                GLib.idle_add(lambda: (self.win.toast(merged), self.refresh(), False)[2])
+        threading.Thread(target=work, daemon=True).start()
 
     def stop_serving(self):
         self.stop()

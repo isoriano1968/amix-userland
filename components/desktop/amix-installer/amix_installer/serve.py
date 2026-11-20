@@ -224,8 +224,10 @@ def _say(text):
     print(text, flush=True)
 
 
-def main_cli(repo, port=HTTP_PORT, local=False, out=_say):
-    """amix-installer --serve: until Ctrl-C (or SIGTERM)."""
+def main_cli(repo, port=HTTP_PORT, local=False, out=_say, after_start=None):
+    """amix-installer --serve: until Ctrl-C (or SIGTERM).  after_start runs in
+    a thread once the server listens (the bundled packages' merge: the
+    catalog served meanwhile is the one there, replaced part by part)."""
     import signal
     from . import plan
 
@@ -251,6 +253,8 @@ def main_cli(repo, port=HTTP_PORT, local=False, out=_say):
     for what, url in srv.urls():
         out("  %-24s %s" % (what + ":", command(url)))
     out("Find on Network answers on UDP port %d.  Ctrl-C stops." % srv.discovery_port)
+    if after_start is not None:
+        threading.Thread(target=after_start, daemon=True).start()
     try:
         while True:
             time.sleep(1)
