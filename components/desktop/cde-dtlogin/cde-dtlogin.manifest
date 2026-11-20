@@ -1,6 +1,8 @@
 # name, version and what building and running it needs
 name     desktop/cde-dtlogin
-version  1.0.5
+version  1.0.6
+# dtdetach: the 68020..68060 baseline, tools/amix-cpu-scan clean
+cpu      68020
 summary  How CDE starts: startcde from the console, and dtlogin (installed off: dtconfig -e turns it on)
 require  desktop/cde >= 2.2.4
 require  x11/xserver-amix
@@ -16,6 +18,7 @@ uses     /usr/x11r6/bin/xinit
 file     /usr/bin/startcde
 file     /usr/dt/bin/Xamix-dt
 file     /usr/dt/bin/dtconfig
+file     /usr/dt/bin/dtdetach
 file     /etc/init.d/dtlogin
 file     /etc/dt/config/Xconfig
 file     /etc/dt/config/Xservers

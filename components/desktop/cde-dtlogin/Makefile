@@ -3,7 +3,7 @@
 # files (files/), and desktop/cde's Xconfig for /etc/dt/config.
 #   make stage   build/stage
 COMPONENT_NAME    = cde-dtlogin
-COMPONENT_VERSION = 1.0.5
+COMPONENT_VERSION = 1.0.6
 
 include ../../../make-rules/shared.mk
 
@@ -15,6 +15,11 @@ build:
 	@test -f $(CDE_XCONFIG) || { echo "no $(CDE_XCONFIG): make -C ../cde stage"; exit 1; }
 	sh -n files/startcde && sh -n files/Xamix-dt && sh -n files/dtlogin.rc && sh -n files/dtconfig
 	mkdir -p $(BUILD_DIR)
+	# dtdetach: dtlogin in a session of its own (the start script); the
+	# 68020..68060 baseline, libc only
+	$(AMIX_TOOLS)/m68k-elf-gcc -O2 $(AMIX_CPU_BASELINE) -Wall -o $(BUILD_DIR)/dtdetach files/dtdetach.c
+	$(AMIX_TOOLS)/m68k-elf-strip $(BUILD_DIR)/dtdetach
+	../../../tools/amix-fix-needed $(BUILD_DIR)/dtdetach > /dev/null
 	# the login screen: the AMIX logo (16 colours, 8-bit safe) and greeting,
 	# in the site's Xresources (/etc/dt/config, read before /usr/dt/config):
 	# CDE's own file with the AMIX lines after it
@@ -36,8 +41,9 @@ stage: build
 	cp files/startcde $(STAGE_DIR)/usr/bin/startcde
 	cp files/Xamix-dt $(STAGE_DIR)/usr/dt/bin/Xamix-dt
 	cp files/dtconfig $(STAGE_DIR)/usr/dt/bin/dtconfig
+	cp $(BUILD_DIR)/dtdetach $(STAGE_DIR)/usr/dt/bin/dtdetach
 	chmod 755 $(STAGE_DIR)/usr/bin/startcde $(STAGE_DIR)/usr/dt/bin/Xamix-dt \
-		$(STAGE_DIR)/usr/dt/bin/dtconfig
+		$(STAGE_DIR)/usr/dt/bin/dtconfig $(STAGE_DIR)/usr/dt/bin/dtdetach
 	# off: no rc2.d link (dtconfig -e makes S99dtlogin and the K10 links)
 	cp files/dtlogin.rc $(STAGE_DIR)/etc/init.d/dtlogin
 	chmod 744 $(STAGE_DIR)/etc/init.d/dtlogin
@@ -48,5 +54,6 @@ stage: build
 	chmod 644 $(STAGE_DIR)/etc/dt/config/Xconfig $(STAGE_DIR)/etc/dt/config/Xservers \
 		$(STAGE_DIR)/etc/dt/config/C/Xresources $(STAGE_DIR)/usr/dt/appconfig/icons/C/AmixLogo.pm
 	$(manifest_files)
+	$(CPU_SCAN) $(STAGE_DIR)
 
 .PHONY: build stage
