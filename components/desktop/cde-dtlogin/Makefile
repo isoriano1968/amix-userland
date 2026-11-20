@@ -3,7 +3,7 @@
 # files (files/), and desktop/cde's Xconfig for /etc/dt/config.
 #   make stage   build/stage
 COMPONENT_NAME    = cde-dtlogin
-COMPONENT_VERSION = 1.0.4
+COMPONENT_VERSION = 1.0.5
 
 include ../../../make-rules/shared.mk
 
@@ -22,6 +22,9 @@ build:
 	{ cat $(CDE_XRES); printf '%s\n' '' \
 		'!!######################################################################' \
 		'!!  AMIX (desktop/cde-dtlogin): the AMIX logo and greeting' \
+		'!!  the full-screen area behind the login box (dtgreet''s table covers' \
+		'!!  the root window that Xsetup paints)' \
+		'Dtlogin*table.background:	#4f6f8f' \
 		'Dtlogin*logo*bitmapFile:	/usr/dt/appconfig/icons/C/AmixLogo.pm' \
 		'Dtlogin*greeting.labelString:	Welcome to AMIX on %LocalHost%' \
 		'Dtlogin*greeting.persLabelString:	Welcome to AMIX, %s'; } > $(BUILD_DIR)/Xresources
