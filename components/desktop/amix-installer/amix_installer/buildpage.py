@@ -135,8 +135,10 @@ class BuildPage(object):
 
         local = os.path.isfile(os.path.join(build.LOCAL_REPO, "pkg5.repository"))
         pg = Adw.PreferencesGroup(title="Components",
-                                  description=("Compared with your repository (%s)" % build.LOCAL_REPO)
-                                  if local else "Compared with the bundled repository")
+                                  description=(("Compared with your repository (%s)" % build.LOCAL_REPO)
+                                               if local else "Compared with the bundled repository")
+                                  + ". AMIX packages only: the AMIX Installer itself is a host app, "
+                                  "updated with pkg (OpenIndiana) or apt (Debian).")
         if self.busy == "look":
             pg.add(Adw.ActionRow(title="Looking…", subtitle="Fetching and comparing the source"))
         elif not self.rows:

@@ -1,3 +1,3 @@
 """AMIX Installer: makes an AMIX disk for one machine from the user's own core system."""
-__version__ = "0.8.2"
+__version__ = "0.8.3"
 APP_ID = "org.amix.Installer"

@@ -37,6 +37,12 @@ LOCAL_REPO = os.path.expanduser(os.environ.get("AMIX_LOCAL_REPO", "~/.local/shar
 DEFAULT_SOURCE = "https://github.com/isoriano1968/amix-userland.git"
 PUBLISHER = "amix"
 SYSROOT_MARK = "etc/amix-sysroot.release"
+# host components (the manifest's "host" key): programs of the PC, packaged
+# for OpenIndiana or Debian, never AMIX packages.  Known ones, for a local
+# repository that was copied from a bundled one that still had them
+HOST_STEMS = ("desktop/amix-installer", "developer/gcc-14", "developer/gcc-27",
+              "developer/vscode", "system/pvmk")
+HOST_HINT = {"desktop/amix-installer": "a host app: update it with pkg (OpenIndiana) or apt (Debian)"}
 
 
 class BuildError(Exception):
@@ -195,21 +201,22 @@ def source_dir(src, log=None, update=False):
 
 
 def read_manifest(path):
-    m = {"name": None, "version": None, "require": []}
+    m = {"name": None, "version": None, "require": [], "host": None}
     with open(path) as f:
         for line in f:
             w = line.split()
             if not w or w[0].startswith("#"):
                 continue
-            if w[0] in ("name", "version") and len(w) > 1:
+            if w[0] in ("name", "version", "host") and len(w) > 1:
                 m[w[0]] = w[1]
             elif w[0] == "require" and len(w) > 1:
                 m["require"].append(w[1])
     return m
 
 
-def components(src):
-    """stem -> {"dir", "version", "require"} of every component with a manifest."""
+def components(src, host=False):
+    """stem -> {"dir", "version", "require"} of every AMIX component with a
+    manifest; host=True: the host components (manifest key host) as well."""
     out = {}
     base = os.path.join(src, "components")
     for top, dirs, files in os.walk(base):
@@ -219,9 +226,34 @@ def components(src):
         if len(man) != 1:
             continue
         m = read_manifest(os.path.join(top, man[0]))
-        if m["name"] and m["name"] == os.path.relpath(top, base):
+        if m["name"] and m["name"] == os.path.relpath(top, base) and (host or not m["host"]):
             out[m["name"]] = {"dir": top, "version": m["version"] or "0", "require": m["require"]}
     return out
+
+
+def host_components(src):
+    """The host components of src (manifest key host)."""
+    a = components(src, host=True)
+    return sorted(set(a) - set(components(src)))
+
+
+def resolve(src, name):
+    """A component's stem from what was typed: the stem, or its last part
+    (amix-installer -> desktop/amix-installer); BuildError with a hint
+    when it is a host component, unknown or ambiguous."""
+    every = components(src, host=True)
+    amix = components(src)
+    hits = [name] if name in every else sorted(s for s in every if s.split("/")[-1] == name)
+    if not hits:
+        near = sorted(s for s in amix if name in s)[:6]
+        raise BuildError("%s: no such component%s" % (name, ("; perhaps " + ", ".join(near)) if near else ""))
+    if len(hits) > 1:
+        raise BuildError("%s: more than one component: %s" % (name, ", ".join(hits)))
+    stem = hits[0]
+    if stem not in amix:
+        raise BuildError("%s: %s" % (stem, HOST_HINT.get(stem, "a host component, not an AMIX package: "
+                                                         "packaged for OpenIndiana or Debian")))
+    return stem
 
 
 def source_revision(src, comp_dir):
@@ -337,6 +369,7 @@ def ensure_local_repo(bundled, src=None, log=None):
         shutil.rmtree(tmp, ignore_errors=True)
         shutil.copytree(bundled, tmp, symlinks=True)
         os.rename(tmp, LOCAL_REPO)
+        drop_host(LOCAL_REPO, src, log)
         return LOCAL_REPO
     if bundled and os.path.abspath(bundled) != os.path.abspath(LOCAL_REPO):
         added = 0
@@ -357,7 +390,26 @@ def ensure_local_repo(bundled, src=None, log=None):
                 raise BuildError("no amix-publish to rebuild %s's catalog" % LOCAL_REPO)
             _say(log, "merged %d package versions of %s" % (added, bundled))
             _run([sys.executable, tool, "-s", LOCAL_REPO, "--no-needed-check"], log)
+    drop_host(LOCAL_REPO, src, log)
     return LOCAL_REPO
+
+
+def drop_host(repo, src=None, log=None):
+    """Host components are no AMIX packages: an old bundled repository still
+    had desktop/amix-installer; out of repo with them, catalog rebuilt."""
+    stems = set(HOST_STEMS) | set(host_components(src) if src else [])
+    d = _pkgdir(repo)
+    gone = [s for s in sorted(stems) if os.path.isdir(os.path.join(d, urllib.parse.quote(s, safe="")))]
+    if not gone:
+        return []
+    tool = publish_tool(src)
+    if not tool:
+        raise BuildError("no amix-publish to rebuild %s's catalog" % repo)
+    for s in gone:
+        shutil.rmtree(os.path.join(d, urllib.parse.quote(s, safe="")))
+    _say(log, "removed host packages from %s: %s" % (repo, ", ".join(gone)))
+    _run([sys.executable, tool, "-s", repo, "--no-needed-check"], log)
+    return gone
 
 
 # -- the sysroot of a build ------------------------------------------------------
@@ -562,8 +614,7 @@ def build(src, stem, repo, log=None):
     if bad:
         raise BuildError("; ".join(bad))
     comps = components(src)
-    if stem not in comps:
-        raise BuildError("%s: no such component in %s" % (stem, src))
+    stem = resolve(src, stem)
     sysroot = build_sysroot(repo, comps, stem, log)
     env = dict(os.environ)
     # the recipes use GNU tar, sed and friends: illumos keeps them in /usr/gnu/bin
@@ -604,6 +655,7 @@ def build(src, stem, repo, log=None):
 def build_many(src_spec, stems, bundled=None, log=None):
     """The CLI's and the window's way in: source, local repository, builds."""
     src = source_dir(src_spec, log)
+    stems = [resolve(src, s) for s in stems]
     repo = ensure_local_repo(bundled or bundled_repo(), src, log)
     done = []
     for s in stems:
@@ -623,6 +675,7 @@ def main_cli(src_spec, stems, list_only=False):
                 if state != "same":
                     print("%-8s %-36s %-24s source %s (%s)" % (state, stem, rv or "-", sv, rev))
             return 0
+        stems = [resolve(src, s) for s in stems]       # short names; host components refused
         bad = problems()
         if bad:
             for b in bad:

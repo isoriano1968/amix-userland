@@ -19,8 +19,9 @@ def git(d, *a):
     subprocess.check_call(["git", "-C", d] + list(a), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def checkout(d, comps):
-    """A git checkout with tools/amix-p5m and components: stem -> (version, requires)."""
+def checkout(d, comps, host=()):
+    """A git checkout with tools/amix-p5m and components: stem -> (version,
+    requires); the stems in host get the manifest key host."""
     os.makedirs(os.path.join(d, "tools"))
     open(os.path.join(d, "tools", "amix-p5m"), "w").close()
     for stem, (ver, req) in comps.items():
@@ -30,6 +31,8 @@ def checkout(d, comps):
             f.write("# test\nname     %s\nversion  %s\n" % (stem, ver))
             for r in req:
                 f.write("require  %s\n" % r)
+            if stem in host:
+                f.write("host     yes\n")
     git(d, "init", "-q")
     git(d, "-c", "user.name=t", "-c", "user.email=t@t", "add", ".")
     git(d, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "one")
@@ -87,6 +90,65 @@ class Compare(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             with self.assertRaises(build.BuildError):
                 build.source_dir(t)
+
+
+class Host(unittest.TestCase):
+    """Host components (the installer, the cross compilers) are no AMIX
+    packages: not compared, not built, out of the local repository."""
+
+    def test_hidden_and_refused(self):
+        with tempfile.TemporaryDirectory() as t:
+            src, repo = os.path.join(t, "src"), os.path.join(t, "repo")
+            checkout(src, {"desktop/amix-installer": ("0.8.3", []), "sysutils/amixtop": ("1.0", []),
+                           "sysutils/top2": ("1.0", [])}, host=("desktop/amix-installer",))
+            publish(repo, os.path.join(t, "p"), "desktop/amix-installer", "0.6.7,2.1-39.1")
+            stems = [r[0] for r in build.compare(src, repo)]
+            self.assertNotIn("desktop/amix-installer", stems)
+            self.assertIn("sysutils/amixtop", stems)
+            self.assertEqual(build.host_components(src), ["desktop/amix-installer"])
+            for name in ("amix-installer", "desktop/amix-installer"):
+                with self.assertRaises(build.BuildError) as e:
+                    build.resolve(src, name)
+                self.assertIn("host app", str(e.exception))
+
+    def test_short_names(self):
+        with tempfile.TemporaryDirectory() as t:
+            checkout(t, {"sysutils/amixtop": ("1.0", []), "library/x": ("1", []), "games/x": ("1", [])})
+            self.assertEqual(build.resolve(t, "amixtop"), "sysutils/amixtop")
+            self.assertEqual(build.resolve(t, "sysutils/amixtop"), "sysutils/amixtop")
+            with self.assertRaises(build.BuildError) as e:
+                build.resolve(t, "x")
+            self.assertIn("more than one", str(e.exception))
+            with self.assertRaises(build.BuildError) as e:
+                build.resolve(t, "amixto")
+            self.assertIn("perhaps sysutils/amixtop", str(e.exception))
+
+    def test_dropped_from_local_repo(self):
+        with tempfile.TemporaryDirectory() as t:
+            bundled, local = os.path.join(t, "bundled"), os.path.join(t, "local")
+            publish(bundled, os.path.join(t, "p"), "desktop/amix-installer", "0.6.7,2.1-39.1")
+            publish(bundled, os.path.join(t, "p"), "library/a", "1.0,2.1-1")
+            old = build.LOCAL_REPO
+            build.LOCAL_REPO = local
+            try:
+                build.ensure_local_repo(bundled)
+                self.assertNotIn("desktop/amix-installer", build.repo_versions(local))
+                self.assertIn("library/a", build.repo_versions(local))
+                with open(os.path.join(local, "publisher/amix/catalog/catalog.base.C")) as f:
+                    cat = f.read()
+                self.assertNotIn("amix-installer", cat)
+                self.assertIn("library/a", cat)
+                build.ensure_local_repo(bundled)        # merged again: still out
+                self.assertNotIn("desktop/amix-installer", build.repo_versions(local))
+            finally:
+                build.LOCAL_REPO = old
+
+    def test_p5m_refuses(self):
+        r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "amix-p5m"),
+                            os.path.join(ROOT, "components/desktop/amix-installer"), "-o", os.devnull],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("host component", r.stderr)
 
 
 class Pull(unittest.TestCase):

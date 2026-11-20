@@ -15,4 +15,7 @@
 name     system/pvmk
 version  2026.11.8
 summary  pvmk, the Amiga 3000 boot loader for AMIX: boot block, image and disk tools for the installer
+# a program of the PC: packaged for OpenIndiana / Debian, never into the
+# AMIX repository (amix-p5m refuses it, the installer's Build tab hides it)
+host     yes
 build    developer/gcc-14

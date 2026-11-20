@@ -12,6 +12,8 @@ A manifest is NAME.manifest in the component.  Lines:
                               the same, but only to build this one (a tool of
                               the build machine): not a requirement on AMIX,
                               so amix-p5m leaves it out of the IPS package
+  host     yes                a program of the PC (OI, Linux), never an AMIX
+                              package: amix-p5m refuses it
   provide  PKG                a pkg-config name it installs
   file     /path [devel]      a path on AMIX it installs (checked in its stage
                               by $(manifest_files)); "devel" marks a development
@@ -80,6 +82,11 @@ def read(path):
             if not value or any(x not in ("z3660", "z3660-core1", "zz9000") for x in value.split("|")):
                 sys.exit("%s:%d: hw takes z3660, z3660-core1 or zz9000 (alternatives with |): %s"
                          % (path, n, line))
+        elif key == "host":
+            # a program of the PC, never an AMIX package (amix-p5m refuses it)
+            if value != "yes":
+                sys.exit("%s:%d: host takes yes: %s" % (path, n, line))
+            m[key] = value
         elif key == "cpu":
             # the CPU the code needs: 68020 (the baseline) or 68060 (amix-p5m)
             if value not in ("68020", "68060"):

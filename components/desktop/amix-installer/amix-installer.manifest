@@ -4,5 +4,8 @@
 # pycairo (icons at build time).  OpenIndiana: library/desktop/gtk4,
 # library/desktop/libadwaita, library/python/pygobject-39.
 name     desktop/amix-installer
-version  0.8.2
+version  0.8.3
 summary  Makes an AMIX disk for one machine from the user's own core system
+# a program of the PC: packaged for OpenIndiana / Debian, never into the
+# AMIX repository (amix-p5m refuses it, the installer's Build tab hides it)
+host     yes

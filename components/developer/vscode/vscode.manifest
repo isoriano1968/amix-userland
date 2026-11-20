@@ -2,3 +2,6 @@
 name     developer/vscode
 version  0.6.8
 summary  VS Code helpers for AMIX
+# a program of the PC: packaged for OpenIndiana / Debian, never into the
+# AMIX repository (amix-p5m refuses it, the installer's Build tab hides it)
+host     yes

@@ -42,7 +42,7 @@ def read_manifest(path):
                 m["file"][w[0]] = "devel" in w[1:]
                 # mode=4755 owner=root group=sys: setuid helpers and the like
                 m.setdefault("attrs", {})[w[0]] = dict(x.split("=", 1) for x in w[1:] if "=" in x)
-            elif key in ("name", "version", "summary", "cpu", "hw"):
+            elif key in ("name", "version", "summary", "cpu", "hw", "host"):
                 m[key] = value
             elif key == "uses":
                 m["uses"].append(value)
@@ -122,6 +122,10 @@ def generate(comp_dir, contents=None, rev=None):
         l.split()[:2] == ["include", "../../../make-rules/meta.mk"] for l in open(mk))
     if name.startswith("meta/") or uses_meta_mk:
         stage = None
+    # host: a program of the PC (OpenIndiana, Linux), packaged there (OI
+    # p5m, Debian), never into the AMIX repository
+    if m.get("host"):
+        raise SystemExit("%s: host component (%s): packaged for the host, not for AMIX" % (comp_dir, m["host"]))
     problems = []
     lines = ["set name=pkg.fmri value=pkg://%s/%s@%s,%s-%s"
              % (PUBLISHER, name, ips_version(m["version"]), BUILD_RELEASE, rev or revision(comp_dir)),
