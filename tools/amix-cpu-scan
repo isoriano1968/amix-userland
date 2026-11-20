@@ -1,0 +1,119 @@
+#!/bin/sh
+# amix-cpu-scan [-v] [-a CPU [-r REASON]] [-x MNEMONIC=N]... FILE|DIR...: the
+# instructions in m68k
+# objects, archives, shared libraries and programs that a 68020/030 with a
+# 68881/2 cannot execute -- the build gate for the CPU target of every AMIX
+# package (doc/CPU-TARGET-68020-60.md: -mcpu=68020 -mtune=68060
+# -fexcess-precision=fast).  A directory is searched for ELF files.
+#
+# Classes, per file and mnemonic:
+#   030BAD   not on a 68020/030 + 68881/2: the 040/060 rounding-precision FPU
+#            forms (fsmove fdmove fsadd fdadd fssub fdsub fsmul fdmul fsdiv
+#            fddiv fsabs fdabs fsneg fdneg fssqrt fdsqrt), move16
+#   060TRAP  emulated on the 68060 (as tools/amix-fpu-scan), information
+#   040TRAP  emulated on the 68040 only: fint, fintrz (the 060 and the
+#            68881/2 do them in hardware), information
+# gcc's switch tables sit in .text and disassemble as junk, often movep:
+# those are 060TRAP false hits (tools/amix-fpu-scan explains them).
+#
+# Exit 1 if a file has a 030BAD instruction, unless the component declares
+# itself CPU-specific: -a 060 (CPU_SPECIFIC = 060 in its Makefile, with the
+# reason in CPU_SPECIFIC_REASON) reports the same and exits 0.  -x move16=2
+# lets up to 2 move16 per file pass as declared: a hand-written 040/060 path
+# that only runs where the hardware guarantees a 68040/060 (soft3D's to_board
+# needs the Z3660), declared with its reason in CPU_SCAN_ALLOW; one more than
+# declared fails.  -v prints every hit with its function.
+#
+# Written for the Bourne shell and POSIX awk; OBJDUMP names the objdump
+# (default m68k-elf-objdump from gcc-14's bin directory or PATH).
+me=amix-cpu-scan
+v= allow= reason= except=
+while [ $# -gt 0 ]; do
+	case $1 in
+	-v) v=1; shift ;;
+	-x) except="$except $2"; shift 2 ;;
+	-a) allow=$2; shift 2 ;;
+	-r) reason=$2; shift 2 ;;
+	--) shift; break ;;
+	-*) echo "usage: $me [-v] [-a CPU [-r REASON]] [-x MNEMONIC=N]... FILE|DIR..." >&2; exit 2 ;;
+	*) break ;;
+	esac
+done
+[ $# -gt 0 ] || { echo "usage: $me [-v] [-a CPU [-r REASON]] [-x MNEMONIC=N]... FILE|DIR..." >&2; exit 2; }
+OBJDUMP=${OBJDUMP:-m68k-elf-objdump}
+command -v "$OBJDUMP" >/dev/null 2>&1 || OBJDUMP=$HOME/opt/m68k-amix/bin/m68k-elf-objdump
+[ -x "$OBJDUMP" ] || command -v "$OBJDUMP" >/dev/null 2>&1 || { echo "$me: no $OBJDUMP" >&2; exit 2; }
+
+# ELF (\177ELF) or an ar archive (!<arch>)
+is_obj() {
+	m=`od -An -c -N4 "$1" 2>/dev/null | tr -d ' '`
+	case $m in '177ELF'|'!<ar') return 0 ;; esac
+	return 1
+}
+
+list=`mktemp "${TMPDIR:-/tmp}/$me.XXXXXX"` || exit 2
+trap 'rm -f "$list"' 0 1 2 15
+for a in "$@"; do
+	if [ -d "$a" ]; then
+		find "$a" -type f \( -name '*.o' -o -name '*.a' -o -name '*.so*' -o -perm -100 \) -print |
+		while read f; do if is_obj "$f"; then echo "$f"; fi; done
+	elif [ -f "$a" ]; then
+		echo "$a"
+	else
+		echo "$me: no $a" >&2; exit 2
+	fi
+done > "$list" || exit 2
+
+nfiles=0 nbad=0
+while read f; do
+	nfiles=`expr $nfiles + 1`
+	# m68k code only: an ELF for another machine (a host tool) has no m68k
+	# disassembly and is skipped
+	"$OBJDUMP" -d --no-show-raw-insn "$f" 2>/dev/null | awk -v v="$v" -v F="$f" -v X="$except" '
+/^[0-9a-f]+ <.*>:$/ { fn = $2; next }
+/^ *[0-9a-f]+:\t/ {
+	line = $0; sub(/^ *[0-9a-f]+:\t/, "", line)
+	m = line; sub(/[ \t].*/, "", m)
+	ops = line; sub(/^[^ \t]*[ \t]*/, "", ops)
+	top = ops; gsub(/\([^)]*\)/, "", top); nops = split(top, o, ",")
+	c = ""
+	if (m ~ /^f[sd](move|add|sub|mul|div|abs|neg|sqrt)[bwlsdxp]?$/ || m ~ /^move16/) c = "030BAD"
+	else if (m ~ /^f(acos|asin|atan|atanh|cos|cosh|etox|etoxm1|getexp|getman|log10|log2|logn|lognp1|mod|rem|scale|sin|sincos|sinh|tan|tanh|tentox|twotox|movecr)[bwlsdxp]?$/) c = "060TRAP"
+	else if (m ~ /^fs(f|eq|ogt|oge|olt|ole|ogl|or|un|ueq|ugt|uge|ult|ule|ne|t|sf|seq|gt|ge|lt|le|gl|gle|ngle|ngl|nle|nlt|nge|ngt|sne|st)b?$/) c = "060TRAP"
+	else if (m ~ /^fdb/ || m ~ /^ftrap/ || m ~ /^ftp/) c = "060TRAP"
+	else if (m ~ /^f[a-z]*p$/ && m != "fnop") c = "060TRAP"
+	else if (m == "fmovemx" && ops ~ /(^|,)%d[0-7]($|,)/) c = "060TRAP"
+	else if (m ~ /^(divsl|divul|mulsl|mulul)$/ && nops == 3) c = "060TRAP"
+	else if (m ~ /^(divs|divu|muls|mulu)\.l$/ && nops == 2 && ops ~ /%d[0-7]:%d[0-7]/) c = "060TRAP"
+	else if (m ~ /^(movep|cas2|chk2|cmp2)/) c = "060TRAP"
+	else if (m ~ /^fint(rz)?[bwlsdx]?$/) c = "040TRAP"
+	if (c != "") { n[c]++; k[c " " m]++; if (v || c == "030BAD") hit[++nh] = c " " fn " " line }
+}
+END {
+	# declared exceptions: up to N of a mnemonic pass
+	bad = n["030BAD"]; nx = split(X, xs, " ")
+	for (i = 1; i <= nx; i++) {
+		split(xs[i], kv, "="); c = k["030BAD " kv[1]]
+		if (c > 0) { d = (c < kv[2] + 0) ? c : kv[2] + 0; bad -= d; decl = decl " " kv[1] "=" d }
+	}
+	if (!n["030BAD"] && !v) exit 0
+	printf "%s:", F; for (c in n) printf " %s=%d", c, n[c]; printf "\n"
+	for (x in k) printf "    %6d %s\n", k[x], x
+	for (i = 1; i <= nh && (v || i <= 20); i++) printf "      %s\n", hit[i]
+	if (!v && nh > 20) printf "      ... %d more (-v)\n", nh - 20
+	if (decl != "") printf "    declared:%s\n", decl
+	exit bad > 0 ? 1 : 0
+}' || nbad=`expr $nbad + 1`
+done < "$list"
+# (the while loop runs in this shell: no pipe into it)
+
+if [ $nbad -eq 0 ]; then
+	echo "$me: $nfiles files, none with 68040/060-only instructions"
+	exit 0
+fi
+if [ -n "$allow" ]; then
+	echo "$me: $nfiles files, $nbad with 68040/060-only instructions: declared $allow-only${reason:+ ($reason)}"
+	exit 0
+fi
+echo "$me: $nfiles files, $nbad with 68040/060-only instructions (030BAD): they do not run on a 68020/030" >&2
+exit 1

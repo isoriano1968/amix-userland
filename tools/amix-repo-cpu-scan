@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""amix-repo-cpu-scan REPO [STEM...] -- tools/amix-cpu-scan over the newest
+published version of every package (or the STEMs): each ELF file the
+package delivers, from the repository's payloads.  A package that is not
+tagged org.amix.cpu=68060 must hold no 68040/060-only instruction (it may be
+installed on a 68020/030); exit 1 with one line per offending file.  The same
+check runs on every publish (tools/amix-publish, through amix_needed.py)."""
+import os
+import sys
+import urllib.parse
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import amix_needed  # noqa: E402
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit("usage: amix-repo-cpu-scan REPO [STEM...]")
+    repo = sys.argv[1]
+    pk = os.path.join(repo, "publisher", amix_needed.PUBLISHER, "pkg")
+    stems = sys.argv[2:] or sorted(urllib.parse.unquote(s) for s in os.listdir(pk))
+    bad = []
+    for s in stems:
+        bad += amix_needed.cpu_problems(repo, s)
+    for b in bad:
+        print(b)
+    print("amix-repo-cpu-scan: %d packages, %d problems" % (len(stems), len(bad)))
+    sys.exit(1 if bad else 0)
+
+
+if __name__ == "__main__":
+    main()

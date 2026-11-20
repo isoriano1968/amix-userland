@@ -19,7 +19,7 @@ NS_INCLUDE = $(abspath $(dir $(lastword $(MAKEFILE_LIST))))/netsurf-include
 
 # NetSurf's Makefiles put their own flags before $(CFLAGS): ours come
 # through the environment, which a make command line would override
-NS_ENV = CFLAGS="-O2 -m68060 -fPIC -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4 -U__STRICT_ANSI__ -fno-split-wide-types -Wno-error \
+NS_ENV = CFLAGS="-O2 $(AMIX_CPU_BASELINE) -fPIC -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4 -U__STRICT_ANSI__ -fno-split-wide-types -Wno-error \
 	-I$(NS_INCLUDE) -I$(AMIX_SYSROOT)$(PREFIX)/include $(NS_CFLAGS)" \
 	LDFLAGS="-L$(AMIX_SYSROOT)$(PREFIX)/lib"
 NS_MAJOR = $(firstword $(subst ., ,$(COMPONENT_VERSION)))

@@ -36,8 +36,8 @@ strip = '$(AMIX_TOOLS)/m68k-elf-strip'
 pkg-config = '$(PKG_CONFIG)'
 
 [built-in options]
-c_args = $(call mlist,-m68060 -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4 $(MESON_CFLAGS))
-cpp_args = $(call mlist,-m68060 -U__linux__ -Ulinux -D__amix__ -DSVR4 $(MESON_CFLAGS))
+c_args = $(call mlist,$(AMIX_CPU_BASELINE) -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4 $(MESON_CFLAGS))
+cpp_args = $(call mlist,$(AMIX_CPU_BASELINE) -U__linux__ -Ulinux -D__amix__ -DSVR4 $(MESON_CFLAGS))
 
 [properties]
 sys_root = '$(AMIX_SYSROOT)'

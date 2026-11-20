@@ -17,6 +17,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import shlex
 import sys
 import urllib.parse
@@ -116,6 +117,31 @@ def store(repo, data):
     return h, gz
 
 
+def existing_versions(d, base):
+    """(version, manifest text) of every published version base:<timestamp>."""
+    out = []
+    if not os.path.isdir(d):
+        return out
+    for qv in os.listdir(d):
+        if qv.endswith(".part"):
+            continue
+        v = urllib.parse.unquote(qv)
+        if v.split(":")[0] == base:
+            with open(os.path.join(d, qv)) as fh:
+                out.append((v, fh.read()))
+    return out
+
+
+def normalize(text):
+    """A manifest without its timestamp: what makes two publishes the same."""
+    lines = []
+    for ln in text.splitlines():
+        if ln.startswith("set name=pkg.fmri "):
+            ln = re.sub(r":\d{8}T\d{6}Z", "", ln)
+        lines.append(ln)
+    return "\n".join(lines)
+
+
 def publish(repo, p5m, dirs, ts):
     with open(p5m) as f:
         lines = [ln.rstrip("\n") for ln in f if ln.strip() and not ln.lstrip().startswith("#")]
@@ -149,14 +175,49 @@ def publish(repo, p5m, dirs, ts):
                            ("pkg.content-hash", "gzip:sha512t_256:" + sha512_256(gz))]
         out.append(a)
     out.sort(key=sort_key)
-    text = "".join(fmt_action(a) + "\n" for a in out)
     d = os.path.join(repo, "publisher", PUBLISHER, "pkg", urllib.parse.quote(stem, safe=""))
+
+    def render(ver):
+        for a in out:
+            if a["type"] == "set" and attr(a, "name") == "pkg.fmri":
+                a["attrs"] = [("name", "pkg.fmri"), ("value", "pkg://%s/%s@%s" % (PUBLISHER, stem, ver))]
+        return "".join(fmt_action(a) + "\n" for a in out)
+
+    # A version is published once.  The same content again: nothing new (no
+    # new timestamp that would make pkg update it); other content under that
+    # version: a build of an uncommitted tree (branch "N.k", amix-p5m) moves
+    # to the next free N.k, a committed revision is refused.  2026-11-20:
+    # cde, motif and libxp came out three times as 2.1-26.1 and so on, told
+    # apart only by their timestamps.
+    base = version.split(":")[0]
+    while True:
+        same = existing_versions(d, base)
+        if not same:
+            break
+        mine = normalize(render(base + ":" + ts))
+        for v, text_v in same:
+            if normalize(text_v) == mine:
+                sys.stderr.write("amix-publish: %s@%s: unchanged, already published as %s\n"
+                                 % (stem, base, v))
+                return "pkg://%s/%s@%s" % (PUBLISHER, stem, v), stem, None
+        rel, _, branch = base.partition("-")
+        if "." not in branch:
+            raise SystemExit("amix-publish: %s@%s is already published with other content: "
+                             "commit the change (a new revision) before publishing it"
+                             % (stem, base))
+        head, _, k = branch.rpartition(".")
+        nb = "%s-%s.%d" % (rel, head, int(k) + 1)
+        sys.stderr.write("amix-publish: %s@%s already published with other content: as %s\n"
+                         % (stem, base, nb))
+        base = nb
+    version = base + ":" + ts
+    text = render(version)
     os.makedirs(d, exist_ok=True)
     f = os.path.join(d, urllib.parse.quote(version, safe=""))
     with open(f + ".part", "w") as o:
         o.write(text)
     os.replace(f + ".part", f)
-    return "pkg://%s/%s@%s" % (PUBLISHER, stem, version)
+    return "pkg://%s/%s@%s" % (PUBLISHER, stem, version), stem, f
 
 
 def signed(obj):
@@ -187,7 +248,8 @@ def rebuild_catalog(repo, now):
                     deps.append(fmt_action(a))
                 elif a["type"] == "set" and attr(a, "name") in ("variant.arch",):
                     sets.append(fmt_action(a))
-                elif a["type"] == "set" and attr(a, "name") in ("pkg.summary", "pkg.description"):
+                elif a["type"] == "set" and attr(a, "name") in ("pkg.summary", "pkg.description",
+                                                                "org.amix.cpu"):
                     sums.append(fmt_action(a))
             dep.setdefault(stem, []).append({"actions": deps + sets, "version": version})
             summ.setdefault(stem, []).append({"actions": sums, "version": version})
@@ -226,6 +288,9 @@ def main():
     ap = argparse.ArgumentParser(prog="amix-publish")
     ap.add_argument("-s", "--repo", required=True)
     ap.add_argument("-d", "--dir", action="append", default=[])
+    ap.add_argument("--no-needed-check", action="store_true",
+                    help="leave the shared library dependency gate to a later "
+                         "amix-needed-check over the whole repository (mkrepo.sh)")
     ap.add_argument("manifests", nargs="*")
     a = ap.parse_args()
     os.makedirs(a.repo, exist_ok=True)
@@ -235,8 +300,30 @@ def main():
             f.write(REPO_CFG)
     now = datetime.datetime.now(datetime.timezone.utc)
     ts = now.strftime("%Y%m%dT%H%M%SZ")
+    done = []
     for m in a.manifests:
-        print(publish(a.repo, m, a.dir or ["."], ts))
+        fmri, stem, f = publish(a.repo, m, a.dir or ["."], ts)
+        done.append((fmri, stem, f))
+    # the gate (tools/amix_needed.py): every DT_NEEDED delivered by the
+    # package, a package it requires or the AMIX base system.  A miss takes
+    # this call's new versions out again; the catalog stays as it was.
+    if not a.no_needed_check:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import amix_needed
+        base = amix_needed.base_libs()
+        bad = []
+        for _, stem, _ in done:
+            bad += amix_needed.check_published(a.repo, stem, base)
+            bad += amix_needed.cpu_problems(a.repo, stem)
+        bad += amix_needed.path_conflicts(a.repo, [stem for _, stem, _ in done])
+        if bad:
+            for _, _, f in done:
+                if f:
+                    os.remove(f)
+            sys.exit("amix-publish: not published (dependencies, a path another package delivers, or 68040/060 code in a package not tagged for the 68060):\n  "
+                     + "\n  ".join(bad))
+    for fmri, _, _ in done:
+        print(fmri)
     n, v = rebuild_catalog(a.repo, now.strftime("%Y%m%dT%H%M%S.%fZ"))
     sys.stderr.write("amix-publish: %s: %d packages, %d versions\n" % (a.repo, n, v))
 

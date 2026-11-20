@@ -22,7 +22,7 @@ include $(RULES)shlib.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 
-AMIX_CPPFLAGS    ?= -m68060 -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4
+AMIX_CPPFLAGS    ?= $(AMIX_CPU_BASELINE) -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4
 CONFIGURE_CC     ?= m68k-elf-gcc $(AMIX_CPPFLAGS)
 CONFIGURE_CFLAGS ?= -O2 -fPIC
 CONFIGURE_SCRIPT ?= $(S)/configure

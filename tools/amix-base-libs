@@ -1,0 +1,26 @@
+# The shared objects of the AMIX 2.1 base system (the stock core disk), which
+# every AMIX has: tools/amix_needed.py accepts a DT_NEEDED for one of them
+# without a package dependency.  One absolute path per line.
+/usr/lib/ld.so.1
+/usr/lib/libc.so.1
+/usr/lib/libnsl.so
+/usr/lib/libsocket.so
+/usr/lib/libsockdns.so
+/usr/lib/libsockhost.so
+/usr/lib/resolv.so
+/usr/lib/straddr.so
+/usr/lib/tcpip.so
+/usr/lib/libscreen.so
+/usr/amiga/lib/libscreen.so
+/usr/lib/libX11.so
+/usr/lib/libXaw.so
+/usr/lib/libXmu.so
+/usr/lib/libXol.so
+/usr/lib/libXt.so
+/usr/lib/liboldX.so
+/usr/X/lib/libX11.so
+/usr/X/lib/libXaw.so
+/usr/X/lib/libXmu.so
+/usr/X/lib/libXt.so
+/usr/X/lib/liboldX.so
+/usr/X/lib/libXol.so

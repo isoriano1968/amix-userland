@@ -66,6 +66,19 @@ def read(path):
             m[key].append(value)
         elif key in ("name", "version", "summary"):
             m[key] = value
+        elif key in ("cpu-allow", "cpu-skip"):
+            # 68040/060 code the CPU gate lets pass, with the reason after it
+            if len(value.split()) < 2:
+                sys.exit("%s:%d: %s takes what and a reason: %s" % (path, n, key, line))
+        elif key == "uses":
+            # a file it needs at run time (amix-p5m, tools/amix_needed.py)
+            if not value.startswith("/") or len(value.split()) != 1:
+                sys.exit("%s:%d: uses takes one absolute path: %s" % (path, n, line))
+        elif key == "cpu":
+            # the CPU the code needs: 68020 (the baseline) or 68060 (amix-p5m)
+            if value not in ("68020", "68060"):
+                sys.exit("%s:%d: cpu takes 68020 or 68060: %s" % (path, n, line))
+            m[key] = value
         else:
             sys.exit("%s:%d: unknown line: %s" % (path, n, line))
     return m

@@ -22,7 +22,8 @@ BUILD_RELEASE = "2.1"
 
 
 def read_manifest(path):
-    m = {"require": [], "file": {}, "version": None, "summary": "", "name": None}
+    m = {"require": [], "file": {}, "version": None, "summary": "", "name": None, "uses": [],
+         "cpu-allow": [], "cpu-skip": []}
     with open(path) as f:
         for n, line in enumerate(f, 1):
             line = line.strip()
@@ -38,8 +39,14 @@ def read_manifest(path):
                 m["file"][w[0]] = "devel" in w[1:]
                 # mode=4755 owner=root group=sys: setuid helpers and the like
                 m.setdefault("attrs", {})[w[0]] = dict(x.split("=", 1) for x in w[1:] if "=" in x)
-            elif key in ("name", "version", "summary"):
+            elif key in ("name", "version", "summary", "cpu"):
                 m[key] = value
+            elif key == "uses":
+                m["uses"].append(value)
+            elif key in ("cpu-allow", "cpu-skip"):
+                # declared 68040/060 code: "MNEMONIC=N reason" (a run-time
+                # chosen path) or "PATH reason" (not AMIX code); the first word
+                m[key].append(value.split()[0])
     return m
 
 
@@ -63,7 +70,10 @@ def revision(comp_dir):
     try:
         n = subprocess.check_output(["git", "-C", ROOT, "rev-list", "--count", "HEAD", "--", rel],
                                     universal_newlines=True).strip()
-        dirty = subprocess.call(["git", "-C", ROOT, "diff", "--quiet", "HEAD", "--", rel]) != 0
+        # changed, or not in git at all (a new component): a build, N.1
+        dirty = (subprocess.call(["git", "-C", ROOT, "diff", "--quiet", "HEAD", "--", rel]) != 0 or
+                 bool(subprocess.check_output(["git", "-C", ROOT, "status", "--porcelain", "--", rel],
+                                              universal_newlines=True).strip()))
     except (OSError, subprocess.CalledProcessError):
         return "0.1"
     return n + (".1" if dirty else "")
@@ -115,6 +125,20 @@ def generate(comp_dir, contents=None, rev=None):
              "set name=pkg.summary value=%s" % q(m["summary"] or name),
              "set name=variant.arch value=m68k",
              "set name=org.amix.component value=%s" % name]
+    # the CPU its code needs (doc/CPU-TARGET-68020-60.md): 68020 = the baseline,
+    # every machine; 68060 = a 68060 only.  The AMIX Installer leaves a 68060
+    # package out of a machine without one, with the reason.
+    if m.get("cpu"):
+        if m["cpu"] not in ("68020", "68060"):
+            raise SystemExit("%s: cpu %s: 68020 or 68060" % (comp_dir, m["cpu"]))
+        lines.append("set name=org.amix.cpu value=%s" % m["cpu"])
+    # files it needs at run time beyond its libraries (data, programs it
+    # runs): tools/amix_needed.py checks that its closure delivers them
+    for key in ("cpu-allow", "cpu-skip"):
+        if m.get(key):
+            lines.append("set name=org.amix.%s %s" % (key, " ".join("value=%s" % q(u) for u in m[key])))
+    if m.get("uses"):
+        lines.append("set name=org.amix.uses %s" % " ".join("value=%s" % q(u) for u in m["uses"]))
     lic = os.path.splitext(mans[0])[0] + ".license"
     if os.path.exists(os.path.join(comp_dir, lic)):
         lines.append("license %s license=%s" % (lic, name))
@@ -137,7 +161,7 @@ def generate(comp_dir, contents=None, rev=None):
                     files.append(dname)
                     continue
                 o, g, mode = stock.get(p, ("root", "bin", "0755"))
-                body.append("dir path=%s owner=%s group=%s mode=%s" % (p, o, g, mode))
+                body.append("dir path=%s owner=%s group=%s mode=%s" % (q(p), o, g, mode))
             for fname in sorted(files):
                 p = os.path.normpath(os.path.join(relt, fname))
                 full = os.path.join(stage, p)
@@ -146,14 +170,14 @@ def generate(comp_dir, contents=None, rev=None):
                 facet = " facet.devel=true" if devel else ""
                 paths.add("/" + p)
                 if stat.S_ISLNK(st.st_mode):
-                    body.append("link path=%s target=%s%s" % (p, q(os.readlink(full)), facet))
+                    body.append("link path=%s target=%s%s" % (q(p), q(os.readlink(full)), facet))
                     continue
                 if not stat.S_ISREG(st.st_mode):
                     problems.append("/%s: not a file, directory or link" % p)
                     continue
                 key = (st.st_dev, st.st_ino)
                 if st.st_nlink > 1 and key in seen_ino:
-                    body.append("hardlink path=%s target=/%s%s" % (p, seen_ino[key], facet))
+                    body.append("hardlink path=%s target=%s%s" % (q(p), q("/" + seen_ino[key]), facet))
                     continue
                 seen_ino[key] = p
                 if p.startswith("etc/"):        # configuration: kept when changed
@@ -164,7 +188,7 @@ def generate(comp_dir, contents=None, rev=None):
                     extra = ""
                 at = m.get("attrs", {}).get("/" + p, {})
                 body.append("file %s path=%s owner=%s group=%s mode=%s%s%s"
-                            % (p, p, at.get("owner", "root"), at.get("group", "bin"),
+                            % (q(p), q(p), at.get("owner", "root"), at.get("group", "bin"),
                                at.get("mode", mode), extra, facet))
     if m["file"]:
         listed = set(m["file"])

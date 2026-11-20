@@ -21,7 +21,7 @@ if [ -n "$init" ]; then
 	w=$out/so-init; mkdir -p "$w"
 	$CC -c "$T/so-init/begin.s" -o "$w/begin.o" &&
 	$CC -c "$T/so-init/end.s" -o "$w/end.o" &&
-	$CC -O2 -m68060 -fPIC -c "$T/so-init/init.c" -o "$w/init.o" &&
+	$CC -O2 ${AMIX_CPU:--mcpu=68020 -mtune=68060 -fexcess-precision=fast} -fPIC -c "$T/so-init/init.c" -o "$w/init.o" &&
 	"$T/amix-got-check" "$w/init.o" || exit 1
 	begin=$w/begin.o; end="$w/init.o $w/end.o"
 fi

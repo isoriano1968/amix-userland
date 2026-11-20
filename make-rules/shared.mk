@@ -13,6 +13,14 @@ PKG_CONFIG    = $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../tools/amix-pkg-c
 SYSROOT_CHECK = $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../tools/amix-sysroot-check)
 export AMIX_SYSROOT
 
+# The CPU every AMIX object can run on: 68020/030 with a 68881/2 up to the
+# 68060, tuned for the 060 (doc/CPU-TARGET-68020-60.md: integer code is
+# byte-identical to -m68060, FP code differs only in mnemonics).  Components
+# take it as AMIX_CPU ?= $(AMIX_CPU_BASELINE); CPU_SCAN is the gate: 68040/060-only
+# instructions in a staged file fail the stage.
+AMIX_CPU_BASELINE = -mcpu=68020 -mtune=68060 -fexcess-precision=fast
+CPU_SCAN = OBJDUMP=$(AMIX_TOOLS)/m68k-elf-objdump $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../tools/amix-cpu-scan)
+
 # out of the source tree, one per component; git ignores them
 BUILD_DIR  = $(CURDIR)/build
 STAGE_DIR  = $(CURDIR)/build/stage

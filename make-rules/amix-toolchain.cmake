@@ -25,9 +25,17 @@ set(CMAKE_RANLIB "${_amix_tools}/m68k-elf-ranlib" CACHE FILEPATH "")
 set(CMAKE_STRIP "${_amix_tools}/m68k-elf-strip" CACHE FILEPATH "")
 set(PKG_CONFIG_EXECUTABLE "${_amix_rules}/../tools/amix-pkg-config" CACHE FILEPATH "")
 
+# the CPU: AMIX_CPU from the environment, else the AMIX baseline
+# (doc/CPU-TARGET-68020-60.md; make-rules/shared.mk's AMIX_CPU_BASELINE)
+if(DEFINED ENV{AMIX_CPU} AND NOT "$ENV{AMIX_CPU}" STREQUAL "")
+	set(_amix_cpu "$ENV{AMIX_CPU}")
+else()
+	set(_amix_cpu "-mcpu=68020 -mtune=68060 -fexcess-precision=fast")
+endif()
+
 # what every AMIX build defines: not Linux, SVR4, and AMIX itself
-set(CMAKE_C_FLAGS_INIT "-m68060 -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4")
-set(CMAKE_CXX_FLAGS_INIT "-m68060 -U__linux__ -Ulinux -D__amix__ -DSVR4")
+set(CMAKE_C_FLAGS_INIT "${_amix_cpu} -fcommon -U__linux__ -Ulinux -D__amix__ -DSVR4")
+set(CMAKE_CXX_FLAGS_INIT "${_amix_cpu} -U__linux__ -Ulinux -D__amix__ -DSVR4")
 
 set(CMAKE_FIND_ROOT_PATH "${_amix_sysroot}")
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
