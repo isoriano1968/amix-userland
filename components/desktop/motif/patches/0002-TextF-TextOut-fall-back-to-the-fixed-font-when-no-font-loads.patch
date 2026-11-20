@@ -1,0 +1,124 @@
+From: isoriano1968 <81116077+isoriano1968@users.noreply.github.com>
+Date: Fri, 20 Nov 2026 17:00:00 +0100
+Subject: [PATCH] TextF.c, TextOut.c: fall back to the "fixed" font when no
+ font loads
+
+Xt does not clear a new widget, nor does XmText clear its output data.
+When neither the font list nor the default render table yields a font (no
+fonts, or a font set without the Xlib locale data), the font and
+use_fontset fields kept heap garbage and the first draw faulted in
+XmbTextEscapement (dtfile on AMIX).
+---
+--- a/lib/Xm/TextF.c
++++ b/lib/Xm/TextF.c
+@@ -762,6 +762,7 @@
+ static void Validates(XmTextFieldWidget tf);
+ 
+ static Boolean LoadFontMetrics(XmTextFieldWidget tf);
++static void FallbackFont(XmTextFieldWidget tf);
+ 
+ static void ValidateString(XmTextFieldWidget tf,
+ 			   char *value,
+@@ -7012,6 +7013,31 @@
+   return True;
+ }
+ 
++/*
++ * Neither the widget's font list nor the default render table gave a font
++ * (no fonts installed, or a font set without the Xlib locale data): Xt does
++ * not clear a new widget, so text.font and use_fontset would stay whatever
++ * the heap held, and the first draw faults (dtfile, 2026-11-20: a piece of a
++ * translation string passed to XmbTextEscapement).  Fall back to the core
++ * "fixed" font; without even that, no font and no font set.
++ */
++static void
++FallbackFont(XmTextFieldWidget tf)
++{
++  XFontStruct *fs = XLoadQueryFont(XtDisplay((Widget)tf), "fixed");
++
++  TextF_UseFontSet(tf) = False;
++#ifdef USE_XFT
++  TextF_UseXft(tf) = False;
++#endif
++  tf->text.font = NULL;
++  if (fs == NULL)
++    return;
++  XmFontListFree(TextF_FontList(tf));
++  TextF_FontList(tf) = XmFontListCreate(fs, XmFONTLIST_DEFAULT_TAG);
++  (void)LoadFontMetrics(tf);
++}
++
+ 
+ /* ValidateString makes the following assumption:  if MB_CUR_MAX == 1, value
+  * is a char*, otherwise value is a wchar_t*.  The Boolean "is_wchar" indicates
+@@ -7291,7 +7317,8 @@
+       XmeGetDefaultRenderTable((Widget)tf, (unsigned char) XmTEXT_FONTLIST);
+   
+     TextF_FontList(tf) = (XmFontList)XmFontListCopy(TextF_FontList(tf));
+-    (void)LoadFontMetrics(tf);
++    if (!LoadFontMetrics(tf))
++      FallbackFont(tf);
+    } else {
+      TextF_FontList(tf) = (XmFontList)XmFontListCopy(TextF_FontList(tf));
+      if(!LoadFontMetrics(tf)) {/*if failed use default */
+@@ -7300,7 +7327,8 @@
+           XmeGetDefaultRenderTable((Widget)tf, (unsigned char) XmTEXT_FONTLIST);
+ 
+         TextF_FontList(tf) = (XmFontList)XmFontListCopy(TextF_FontList(tf));
+-        (void)LoadFontMetrics(tf);
++        if (!LoadFontMetrics(tf))
++          FallbackFont(tf);
+      }
+    }
+   
+--- a/lib/Xm/TextOut.c
++++ b/lib/Xm/TextOut.c
+@@ -191,6 +191,7 @@
+ 			     Dimension *width,
+ 			     Dimension *height);
+ static Boolean LoadFontMetrics(XmTextWidget tw);
++static void FallbackFont(XmTextWidget tw);
+ static void LoadGCs(XmTextWidget tw,
+ 		    Pixel background,
+ 		    Pixel foreground);
+@@ -3936,6 +3937,30 @@
+   return True;
+ }
+ 
++/*
++ * Neither the font list nor the default render table gave a font (no
++ * fonts installed, or a font set without the Xlib locale data): the output
++ * data comes from XtMalloc, so font and use_fontset would stay whatever the
++ * heap held.  Fall back to the core "fixed" font (as TextF.c).
++ */
++static void
++FallbackFont(XmTextWidget tw)
++{
++  OutputData data = tw->text.output->data;
++  XFontStruct *fs = XLoadQueryFont(XtDisplay((Widget)tw), "fixed");
++
++  data->use_fontset = False;
++#ifdef USE_XFT
++  data->use_xft = False;
++#endif
++  data->font = NULL;
++  if (fs == NULL)
++    return;
++  XmFontListFree(data->fontlist);
++  data->fontlist = XmFontListCreate(fs, XmFONTLIST_DEFAULT_TAG);
++  (void)LoadFontMetrics(tw);
++}
++
+ 
+ static Boolean 
+ SetXOCOrientation(XmTextWidget tw,
+@@ -5676,7 +5701,8 @@
+     XmFontListFree(data->fontlist);
+     data->fontlist = XmRenderTableCopy(
+ 		       XmeGetDefaultRenderTable(wid, XmTEXT_FONTLIST), NULL, 0);
+-    (void)!LoadFontMetrics(tw);
++    if (!LoadFontMetrics(tw))
++      FallbackFont(tw);
+   }
+   data->rendertable = data->fontlist;
+   
