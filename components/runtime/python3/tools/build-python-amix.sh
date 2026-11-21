@@ -13,7 +13,7 @@ upstream=${PYTHON_UPSTREAM:-$HOME/src/upstream}
 source=${PYTHON_SOURCE:-$upstream/Python-3.11.18}
 build=${PYTHON_BUILD:-$HOME/build/python311-amix}
 host_python=${BUILD_PYTHON:-$HOME/build/python311-host/python}
-cc=${CC:-$HOME/opt/m68k-amix/bin/m68k-elf-gcc}
+cc=${CC:-${AMIX_TOOLS:-$HOME/opt/m68k-amix/bin}/m68k-elf-gcc}
 sysroot=${AMIX_SYSROOT:-$HOME/opt/m68k-amix-sysroot}
 case "$("$cc" -dumpversion)" in 14|14.*) ;; *) exit 1;; esac
 test "$("$cc" -dumpmachine)" = m68k-elf

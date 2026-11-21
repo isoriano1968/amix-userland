@@ -43,7 +43,8 @@ build: $(COMPONENT_ARCHIVE)
 
 stage:
 	rm -rf $(STAGE_DIR)
-	$(MAKE) -C $(S) install DESTDIR=$(STAGE_DIR) > build/install.log 2>&1 || { tail -20 build/install.log; exit 1; }
+	# -j1: its install makes the directories in one target and fills them in another
+	$(MAKE) -j1 -C $(S) install DESTDIR=$(STAGE_DIR) > build/install.log 2>&1 || { tail -20 build/install.log; exit 1; }
 	rm -rf $(STAGE_DIR)$(PREFIX)/lib/*.a $(STAGE_DIR)$(PREFIX)/lib/*.la $(STAGE_DIR)$(PREFIX)/share/man
 	cp -P build/libpth.so.20 build/libpth.so build/libpthread.so.20 build/libpthread.so $(STAGE_DIR)$(PREFIX)/lib/
 	mkdir -p $(STAGE_DIR)$(PREFIX)/lib/pkgconfig

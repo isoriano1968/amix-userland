@@ -12,6 +12,8 @@ CLEAN_FILES       = gzip-1.14 $(COMPONENT_ARCHIVE)
 GNU_PREFIX        = /usr/local
 PROGS             = gzip
 EXTRA_CONF        =
+# zless as before: configure makes it only when the build machine has less
+EXTRA_ENV         = ac_cv_prog_LESS=less
 COMPAT            =
 SCRIPTS           = gunzip gzexe zcat zcmp zdiff zegrep zfgrep zforce zgrep zless zmore znew
 # configure writes the build machine's shell into the first line: bash on AMIX;

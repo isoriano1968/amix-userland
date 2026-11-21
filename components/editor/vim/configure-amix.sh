@@ -4,8 +4,8 @@
 # features.  The run-time tests a cross build cannot do are answered in the
 # environment below (vim_cv_*).
 H=$(cd "$(dirname "$0")" && pwd)
-SR=$HOME/opt/m68k-amix-sysroot
-export PATH=$HOME/opt/m68k-amix/bin:$PATH
+SR=${AMIX_SYSROOT:-$HOME/opt/m68k-amix-sysroot}
+export PATH=${AMIX_TOOLS:-$HOME/opt/m68k-amix/bin}:$PATH
 W="-Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=return-mismatch -Wno-error=implicit-int"
 cd "$H/vim-9.1.0000/src"
 export vim_cv_toupper_broken=no vim_cv_terminfo=yes vim_cv_tgetent=zero \
