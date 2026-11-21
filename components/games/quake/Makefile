@@ -4,9 +4,9 @@ COMPONENT_VERSION = 1.09
 
 include ../../../make-rules/shared.mk
 
+# the package is GLQuake on core 1 only; Makefile.amix (Mesa 18 on the 060)
+# and Makefile.amix-sw (software) are built by hand
 build:
-	$(MAKE) -f Makefile.amix
-	$(MAKE) -f Makefile.amix-sw
 	$(MAKE) -f Makefile.amix-zzgl
 
 # on AMIX only GLQuake on core 1 (the manifest): /opt/quake; the game's data

@@ -5,13 +5,15 @@ COMPONENT_VERSION = 1
 
 include ../../../make-rules/shared.mk
 
-GATE = $(HOME)/Sources/usr-amix/amix-gate/usr/src/firmware/core1
-L060 = $(HOME)/Sources/usr-amix/amix-userland/components/library/lib060
-X    = $(HOME)/opt/m68k-amix-sysroot/usr/x11r6
+# amix-gate beside amix-userland (the Build tab and the rebuild clone it there);
+# lib060's archives and mesa-183's GL headers from the sysroot
+GATE = $(abspath ../../../../amix-gate)/usr/src/firmware/core1
+L060 = $(AMIX_SYSROOT)/usr/local/lib
+X    = $(AMIX_SYSROOT)/usr/x11r6
 CC   = $(AMIX_TOOLS)/m68k-elf-gcc
 CFLAGS = -O2 -DNDEBUG -m68060 -ffast-math -fno-strict-aliasing -fcommon -w -U__linux__ -Ulinux \
 	-D__amix__ -DSVR4 -fno-builtin-sin -fno-builtin-cos -fno-builtin-tan -fno-builtin-fmod \
-	-fno-builtin-sinf -fno-builtin-cosf -Iassets -I$(GATE)/zzgl -I$(GATE)/src/mesa-18.3.6/include -I$(GATE)/compat/amix -I$(GATE)/cores/h264bench -I$(X)/include
+	-fno-builtin-sinf -fno-builtin-cosf -Iassets -I$(GATE)/zzgl -I$(AMIX_SYSROOT)/usr/local/include -I$(GATE)/compat/amix -I$(GATE)/cores/h264bench -I$(X)/include
 
 # libmikmod with its HDMI driver comes from the sysroot: audio/libmikmod's sysroot-install
 build:
