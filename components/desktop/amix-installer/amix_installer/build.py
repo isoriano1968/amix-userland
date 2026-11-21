@@ -596,9 +596,15 @@ def _run(argv, log, cwd=None, env=None):
                                                          for i, a in enumerate(argv[:4])), "\n".join(tail[-12:])))
 
 
+# where the packages keep shared libraries: the linker follows a library's
+# NEEDED (libSDL2.so's libXext.so.7) only through -rpath-link
+LIB_DIRS = ("usr/lib", "usr/local/lib", "usr/x11r6/lib", "usr/motif/lib", "usr/local/gnu/lib")
+
+
 def tool_wrappers(tools, sysroot):
     """CACHE/tools: the compiler drivers with the build sysroot's /usr/lib
-    first in the library search, the other tools as they are.  gcc 14's
+    first in the library search and every LIB_DIRS for the libraries that
+    libraries NEED, the other tools as they are.  gcc 14's
     specs link -lamixc99 and libc through %R, its configured sysroot (the
     installed base one, without library/amixc99's shared library).  Not
     --sysroot: with it this compiler takes SYSROOT/usr/local/include as a
@@ -614,8 +620,9 @@ def tool_wrappers(tools, sysroot):
         w = os.path.join(d, name)
         if name.rsplit("-", 1)[-1] in ("gcc", "g++", "c++", "cpp") or name.endswith(("-gcc-14.2.0",)):
             with open(w, "w") as f:
-                f.write('#!/bin/sh\nexec "%s" "$@" -L"%s/usr/lib" -Wl,-rpath-link,"%s/usr/lib"\n'
-                        % (real, sysroot, sysroot))
+                f.write('#!/bin/sh\nexec "%s" "$@" -L"%s/usr/lib" %s\n'
+                        % (real, sysroot, " ".join('-Wl,-rpath-link,"%s/%s"' % (sysroot, l)
+                                                   for l in LIB_DIRS)))
             os.chmod(w, 0o755)
         else:
             os.symlink(real, w)
