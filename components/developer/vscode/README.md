@@ -251,10 +251,11 @@ Motif and X11R6.3 come from the gcc 14 sysroot for both compilers; the link
 line is ztopcde's:
 
 ```text
--lXm -lXmu -lXt -lSM -lICE -lXext -lX11 -lsocket -lnsl -lamixc99 -lgen -lm
+-lXm -lXmu -lXt -lSM -lICE -lXext -lX11 -lsocket -lnsl -lgen -lm
 ```
 
-with the runpath `/usr/motif/lib:/usr/x11r6/lib`. On the A3000, copy `hello`
+with the runpath `/usr/motif/lib:/usr/x11r6/lib`, and nothing else: the
+program needs no libamixc99 (libXm brings its own). On the A3000, copy `hello`
 over and start it from a CDE dtterm (`./hello`), or from an ssh login on the
 console's X server:
 

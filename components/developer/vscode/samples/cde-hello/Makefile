@@ -26,14 +26,14 @@ X = $(MOTIF_SYSROOT)/usr/x11r6
 
 CPPFLAGS += -DFUNCPROTO=15 -I$(M)/include -I$(X)/include
 
-# the libraries of ztopcde (amix-userland components/desktop/cde-apps);
-# libamixc99 gives libXm its snprintf: shared in usr/lib
-# (/usr/lib/libamixc99.so.1 on AMIX) where the sysroot has it, else the
-# static libamixc99.a in usr/local/lib (the OpenIndiana package
-# developer/amix/amixc99).  -L names the library sysroot for gcc 2.7.2.3.
+# the libraries of ztopcde (amix-userland components/desktop/cde-apps).
+# Nothing else: libXm brings its own needs (libamixc99.so.1 for its
+# snprintf, from library/amixc99, which desktop/motif requires).
+# -L names the library sysroot for gcc 2.7.2.3; -rpath-link lets ld find
+# what the shared libraries NEED there.
 XLIBS = -lXm -lXmu -lXt -lSM -lICE -lXext -lX11 \
-	-lsocket -lnsl -L$(MOTIF_SYSROOT)/usr/lib -L$(MOTIF_SYSROOT)/usr/local/lib \
-	-lamixc99 -lgen -lm
+	-lsocket -lnsl -L$(MOTIF_SYSROOT)/usr/lib -Wl,-rpath-link,$(MOTIF_SYSROOT)/usr/lib \
+	-lgen -lm
 
 PYTHON ?= python3
 
