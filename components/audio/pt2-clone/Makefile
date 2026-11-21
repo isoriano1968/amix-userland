@@ -28,4 +28,14 @@ build: $(SRC)/amix/build.sh
 	$(SHMSYS_BUILD)
 	cd $(SRC)/amix && AMIX_GATE=$(abspath ../../../../amix-gate) SHM_LIBS=$(SHM_LIBS) sh build.sh
 
-.PHONY: build
+# as on the box: the program in /opt/pt2, its launcher pt2 in /opt/amix/bin
+stage:
+	rm -rf $(STAGE_DIR)
+	mkdir -p $(STAGE_DIR)/opt/pt2 $(STAGE_DIR)/opt/amix/bin
+	cp $(SRC)/amix/pt2-clone $(STAGE_DIR)/opt/pt2/pt2-clone
+	m68k-elf-strip $(STAGE_DIR)/opt/pt2/pt2-clone
+	cp files/amix/pt2.sh $(STAGE_DIR)/opt/amix/bin/pt2
+	chmod 755 $(STAGE_DIR)/opt/pt2/pt2-clone $(STAGE_DIR)/opt/amix/bin/pt2
+	@$(manifest_files)
+
+.PHONY: build stage

@@ -37,7 +37,9 @@ cd "$MOTIF_PIC"
 cp "$MOTIF_HOST/config/util/makestrs" config/util/
 cp "$MOTIF_HOST/tools/wml/wml" "$MOTIF_HOST/tools/wml/wmluiltok" tools/wml/
 touch config/util/makestrs tools/wml/wml tools/wml/wmluiltok
-${MAKE:-make} -C lib/Xm XmStrDefs.c XmStrDefs.h XmStrDefs22.h XmStrDefs23.h XmStrDefsI.h > make-strs.log 2>&1
+# -j1 here and for the installs: their rules link and copy the same files
+# from more than one target (a MAKEFLAGS=-j from outside races)
+${MAKE:-make} -j1 -C lib/Xm XmStrDefs.c XmStrDefs.h XmStrDefs22.h XmStrDefs23.h XmStrDefsI.h > make-strs.log 2>&1
 ${MAKE:-make} -j"$JOBS" -C lib CFLAGS="$CF" > make-lib.log 2>&1 || { echo "failed: $MOTIF_PIC/make-lib.log"; exit 1; }
 "$TOP/../../../tools/amix-got-check" $(find lib -name '*.o')
 
@@ -71,8 +73,8 @@ echo "== headers"
 # Xm's and Mrm's headers are installed with their libraries (lib/*/Makefile):
 # a scratch install, of which only include/ is kept
 rm -rf "$WORK/inst"
-${MAKE:-make} -C lib install DESTDIR="$WORK/inst" > make-install-lib.log 2>&1
-${MAKE:-make} -C include install DESTDIR="$WORK/inst" > make-install-inc.log 2>&1
+${MAKE:-make} -j1 -C lib install DESTDIR="$WORK/inst" > make-install-lib.log 2>&1
+${MAKE:-make} -j1 -C include install DESTDIR="$WORK/inst" > make-install-inc.log 2>&1
 cp -R "$WORK/inst/usr/motif/include" "$ROOT/"
 rm -rf "$WORK/inst"
 
