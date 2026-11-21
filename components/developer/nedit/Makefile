@@ -8,15 +8,17 @@ COMPONENT_SHA256  = add9ac79ff973528ad36c86858238bac4f59896c27dbf285cbe6a4d425fc
 CLEAN_FILES       = nedit-$(COMPONENT_VERSION) $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/xtinherit.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 S = nedit-$(COMPONENT_VERSION)
 DT = $(STAGE_DIR)/etc/dt/appconfig
 export XCFLAGS := $(shell $(PKG_CONFIG) --cflags xm xt x11)
-export XLIBS := $(shell $(PKG_CONFIG) --libs xm xt x11) -lgen -lsocket -lnsl -lm
+export XLIBS := $(XTINHERIT_LIBS) $(shell $(PKG_CONFIG) --libs xm xt x11) -lgen -lsocket -lnsl -lm
 
 build: $(COMPONENT_ARCHIVE)
 	rm -rf $(S)
+	$(XTINHERIT_BUILD)
 	tar xzf $(COMPONENT_ARCHIVE)
 	cp files/Makefile.amix $(S)/makefiles/
 	-$(MAKE) -C $(S) amix    # its last step runs the program it built

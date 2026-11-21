@@ -8,6 +8,7 @@ COMPONENT_SHA256  = c73848c4ae283d9eaee7be3b276affbc3543380483555500d0dd2c9b7e1c
 CLEAN_FILES       = build-ff build-ffplay build-host ffmpeg-$(COMPONENT_VERSION) $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/shmsys.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 
@@ -28,9 +29,9 @@ ffplay: compat
 	$(MAKE) -C build-ffplay
 	../../../tools/amix-fix-needed build-ffplay/ffplay
 
-# vplay links MIT-SHM statically: libshmsys.a from x11/mesa-31's work tree
-SHM_LIBS ?= $(CURDIR)/../../x11/mesa-31/work/shm-static
+# vplay links MIT-SHM statically: libshmsys.a (make-rules/shmsys.mk)
 vplay: build
+	$(SHMSYS_BUILD)
 	SHM_LIBS=$(SHM_LIBS) sh build.sh
 	../../../tools/amix-fix-needed vplay
 

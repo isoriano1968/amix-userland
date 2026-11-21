@@ -8,6 +8,7 @@ COMPONENT_SHA256  = da236c2ae600684351d86f186242e3b4eebf421badaaa68eee884efe7f52
 CLEAN_FILES       = $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/shmsys.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 
@@ -24,6 +25,7 @@ $(SRC)/amix/build.sh: $(COMPONENT_ARCHIVE)
 build: $(SRC)/amix/build.sh
 	mkdir -p $(SRC)/amix/zzhdmi
 	cp $(ZZHDMI)/zzhdmi_board.c $(ZZHDMI)/zzhdmi_board.h $(SRC)/amix/zzhdmi/
-	cd $(SRC)/amix && AMIX_GATE=$(abspath ../../../../amix-gate) sh build.sh
+	$(SHMSYS_BUILD)
+	cd $(SRC)/amix && AMIX_GATE=$(abspath ../../../../amix-gate) SHM_LIBS=$(SHM_LIBS) sh build.sh
 
 .PHONY: build

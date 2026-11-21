@@ -11,6 +11,7 @@ COMPONENT_SHA256  = 6dccdbe5e602b9580c55d24a41807c888e71334084782e22bd66bd8a92c1
 CLEAN_FILES       = fsv-$(COMPONENT_COMMIT) $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/xtinherit.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
 S     = fsv-$(COMPONENT_COMMIT)
@@ -19,6 +20,7 @@ DT    = $(STAGE_DIR)/etc/dt/appconfig
 
 build: $(COMPONENT_ARCHIVE)
 	rm -rf $(S) build
+	$(XTINHERIT_BUILD)
 	tar xzf $(COMPONENT_ARCHIVE)
 	for p in patches/*.patch; do patch -p1 < $$p || exit 1; done
 	cp files/config.h $(S)/
@@ -27,7 +29,7 @@ build: $(COMPONENT_ARCHIVE)
 		EXTRA_CPPFLAGS="-I$(CURDIR)/files/amix -include $(CURDIR)/files/amix/amix-fsv.h -U__linux__ -D__amix__ -DSVR4 -DHAVE_STRING_H -DDOCDIR=\\\"$(DOC)\\\"" \
 		EXTRA_SRC="lib/scandir.c $(CURDIR)/files/amix/fnmatch.c" \
 		XCFLAGS="$$($(PKG_CONFIG) --cflags xm gl glu)" \
-		XLIBS="$$($(PKG_CONFIG) --libs xm gl glu)"
+		XLIBS="$(XTINHERIT_LIBS) $$($(PKG_CONFIG) --libs xm gl glu)"
 	mkdir -p build
 	cp $(S)/fsv build/
 	m68k-elf-strip build/fsv
