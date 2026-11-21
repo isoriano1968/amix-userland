@@ -602,7 +602,7 @@ LIB_DIRS = ("usr/lib", "usr/local/lib", "usr/x11r6/lib", "usr/motif/lib", "usr/l
 
 
 def tool_wrappers(tools, sysroot):
-    """CACHE/tools: the compiler drivers with the build sysroot's /usr/lib
+    """CACHE/tools/bin: the compiler drivers with the build sysroot's /usr/lib
     first in the library search and every LIB_DIRS for the libraries that
     libraries NEED, the other tools as they are.  gcc 14's
     specs link -lamixc99 and libc through %R, its configured sysroot (the
@@ -610,8 +610,11 @@ def tool_wrappers(tools, sysroot):
     --sysroot: with it this compiler takes SYSROOT/usr/local/include as a
     system directory after its include-fixed, drops the -I that pkg-config
     gives for it, and a stock header (curses.h) wins over the package's."""
-    d = os.path.join(CACHE, "tools")
-    shutil.rmtree(d, ignore_errors=True)
+    # CACHE/tools/bin: a toolchain prefix like /opt/m68k-amix, for recipes
+    # that call PREFIX/bin/m68k-elf-gcc with PREFIX the parent of AMIX_TOOLS
+    # (desktop/cde's imake config)
+    shutil.rmtree(os.path.join(CACHE, "tools"), ignore_errors=True)
+    d = os.path.join(CACHE, "tools", "bin")
     os.makedirs(d)
     for name in os.listdir(tools):
         real = os.path.join(tools, name)
