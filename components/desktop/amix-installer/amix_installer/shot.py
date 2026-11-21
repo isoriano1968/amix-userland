@@ -81,6 +81,9 @@ def run(win, outdir):
     if os.environ.get("AMIX_SHOT_BUILD"):
         # the Build tab: a looked-at source, one component chosen, a log
         scenes = [("v-build", {}, {}, 0)]
+    if os.environ.get("AMIX_SHOT_UPDATE"):
+        # the update banner over the first step, then its dialog
+        scenes = [("u-banner", {}, {}, 0), ("u-dialog", {}, {}, 0)]
     out = os.environ.get("AMIX_SHOT_OUT")
     if out and getattr(win, "source_state", None):
         win.paths["out_dir"] = out
@@ -115,6 +118,17 @@ def run(win, outdir):
                              ("12:03:10", "10.0.2.15", "Find on Network", "answered", 0)):
                     win.serve._log(*line)
             GLib.timeout_add(400, lambda: after_paint(serve_grab) and False)
+            return False
+        if name.startswith("u-"):
+            from . import selfupdate
+            win.updates._checked(selfupdate.Update(
+                "0.9.1", "deb", "## What is new\n- **Updates**: the installer finds its own new versions.",
+                "https://github.com/isoriano1968/linux-amix/releases", ("amix-installer_0.9.1-1_all.deb", "x"), "y"))
+            if name == "u-dialog":
+                win.updates._ask()
+                GLib.timeout_add(600, lambda: after_paint(shot_dialog) and False)
+            else:
+                GLib.timeout_add(400, lambda: after_paint(grab) and False)
             return False
         if name.startswith("v-build"):
             win.stack.set_transition_type(Gtk.StackTransitionType.NONE)
@@ -207,6 +221,15 @@ def run(win, outdir):
         name = scenes.pop(0)[0]
         path = os.path.join(outdir, name + (".dark" if dark else "") + ".png")
         save_png(win.get_content(), path)
+        print(path)
+        GLib.idle_add(setup)
+        return False
+
+    def shot_dialog():
+        # an AdwDialog is drawn inside the window, above its content
+        name = scenes.pop(0)[0]
+        path = os.path.join(outdir, name + (".dark" if dark else "") + ".png")
+        save_png(win, path)
         print(path)
         GLib.idle_add(setup)
         return False

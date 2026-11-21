@@ -78,6 +78,18 @@ window: `amix-installer --serve [--repo DIR] [--local] [--port N]`, until
 Ctrl-C. A network install serves the packages itself on the same port, so
 the two do not run at once.
 
+**Updates** (0.9): at start and once a day the installer looks, in the
+background, for a newer version of itself; offline it says nothing. A newer
+one shows a banner with Update, its release notes and Later (which hides
+that version until the next one). The update always goes through the
+system's package manager: on OpenIndiana `pkg update desktop/amix-installer`
+(the newest version in the publisher's catalog, or the oi-amix GitHub
+release), on Debian and Ubuntu the `.deb` of the newest linux-amix GitHub
+release, checked against its `SHA256SUMS` (any mismatch: nothing is
+installed) and installed with `pkexec apt-get install`. It waits for a
+running build or install, and offers a restart. **Check for Updates** in the
+main menu turns it off (`~/.config/amix-installer/update.json`).
+
 **Build** (0.8): the third tab builds AMIX packages on this computer from
 amix-userland. The source is a checkout here, or a git URL (`#branch` or
 `#commit` after it; the default is the project's GitHub repository, cloned

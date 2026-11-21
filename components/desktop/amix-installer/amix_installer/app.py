@@ -193,9 +193,18 @@ class Window(Adw.ApplicationWindow):
         self.stack.add_named(self.builder.build(), "build")
         self.stack.set_visible_child_name("install")
 
+        # a newer installer: the banner above all three tabs (updatebar.py)
+        from .updatebar import UpdateBar
+        self.updates = UpdateBar(self)
+        self.add_action(self.updates.action())
+        top = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        top.append(self.updates.banner)
+        self.stack.set_vexpand(True)
+        top.append(self.stack)
         self.toasts = Adw.ToastOverlay()
-        self.toasts.set_child(self.stack)
+        self.toasts.set_child(top)
         self.set_content(self.toasts)
+        self.running = False
 
         bp = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 640sp"))
         bp.add_setter(self.split, "collapsed", True)
@@ -205,6 +214,15 @@ class Window(Adw.ApplicationWindow):
         self.net = None
         self.connect("close-request", self._on_close)
         self.show_step(0)
+        self.updates.start()
+
+    def busy_reason(self):
+        """What an update must wait for, or None."""
+        if self.builder.busy == "build":
+            return "the build"
+        if self.running or self.net is not None:
+            return "the install"
+        return None
 
     def _on_close(self, _w):
         if self.net is not None:          # the network install's servers end with the window
@@ -295,6 +313,7 @@ class Window(Adw.ApplicationWindow):
         menu.append("Open Profile…", "win.open-profile")
         menu.append("Save Profile…", "win.save-profile")
         menu.append("Start Over", "win.reset")
+        menu.append("Check for Updates", "win.check-updates")
         menu.append("About AMIX Installer", "win.about")
         mb = Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu)
         mb.set_tooltip_text("Main Menu")
@@ -1202,6 +1221,7 @@ class Window(Adw.ApplicationWindow):
         threading.Thread(target=work, daemon=True).start()
 
     def _busy(self, on):
+        self.running = on
         self.steplist.set_sensitive(not on)
         self.back_btn.set_visible(not on)
         self.next_btn.set_visible(False if on else self.step < len(model.STEPS) - 1)

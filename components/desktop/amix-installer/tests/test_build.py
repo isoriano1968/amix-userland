@@ -86,6 +86,12 @@ class Compare(unittest.TestCase):
         self.assertGreater(build.vkey("1.10,2.1-3"), build.vkey("1.9,2.1-9"))
         self.assertGreater(build.vkey("1.0,2.1-6.2"), build.vkey("1.0,2.1-6.1"))
 
+    def test_no_repository(self):
+        with tempfile.TemporaryDirectory() as t:
+            checkout(t, {"library/a": ("1.0", [])})
+            self.assertEqual(build.repo_versions(None), {})
+            self.assertEqual([r[4] for r in build.compare(t, None)], ["new"])
+
     def test_not_a_checkout(self):
         with tempfile.TemporaryDirectory() as t:
             with self.assertRaises(build.BuildError):

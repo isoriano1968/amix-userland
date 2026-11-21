@@ -280,8 +280,8 @@ def _pkgdir(repo):
 def repo_versions(repo):
     """stem -> its newest version ("1.3,2.1-6.1") in repo."""
     out = {}
-    d = _pkgdir(repo)
-    if not repo or not os.path.isdir(d):
+    d = _pkgdir(repo) if repo else None
+    if not d or not os.path.isdir(d):
         return out
     for qs in os.listdir(d):
         stem = urllib.parse.unquote(qs)
@@ -541,6 +541,13 @@ def build_sysroot(repo, comps, stem, log=None):
     if os.path.isfile(rec):
         with open(rec) as f:
             state = json.load(f)
+    # only the base and stem's requirements: a package an earlier build
+    # unpacked and stem does not require (x11/x11r6.3 itself, say) starts
+    # the sysroot again from the base
+    needed = {"library/amixc99"} | set(requirements(comps, stem))
+    needed.discard(stem)
+    if state.get("base") == key and set(state.get("packages", {})) - needed:
+        state = {}
     if state.get("base") != key:
         paths = base_paths(base)
         _say(log, "the build sysroot: %s of %s" % ("a copy" if paths is None else
@@ -671,6 +678,9 @@ def main_cli(src_spec, stems, list_only=False):
         if list_only:
             bundled = plan.default_repo()
             repo = LOCAL_REPO if os.path.isfile(os.path.join(LOCAL_REPO, "pkg5.repository")) else bundled
+            if not repo:
+                print("no AMIX package repository here (desktop/amix-installer/repository, "
+                      "or AMIX_REPO): every component counts as new")
             for stem, rv, sv, rev, state in compare(src, repo):
                 if state != "same":
                     print("%-8s %-36s %-24s source %s (%s)" % (state, stem, rv or "-", sv, rev))

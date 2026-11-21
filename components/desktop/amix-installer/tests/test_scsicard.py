@@ -7,6 +7,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 from amix_installer import model, plan, scsicard  # noqa: E402
 from test_plan import Base  # noqa: E402
+import hoststubs  # noqa: E402
+
+hoststubs.use()
 
 IDS = {"core": 6, "pvmk": 5, "data": 1}
 NAMES = {"core": "HD60_512.hda", "pvmk": "HD50_512.hda", "data": "HD10_512.hda"}
@@ -182,6 +185,8 @@ class Z3660(unittest.TestCase):
 class Plans(Base):
     """make_plan with a card as the output folder."""
 
+    @hoststubs.needs_kernel
+
     def test_zulu_card(self):
         with open(os.path.join(self.out, "zuluscsi.ini"), "w") as f:
             f.write(ZULU_INI)
@@ -234,6 +239,8 @@ class Plans(Base):
             f.write(cfgtext.replace("autoconfig_rtg NO", "autoconfig_rtg YES"))
         pl = plan.make_plan(self.cfg(target="sd", boot="amixboot", kern="k040"), hdfdir)
         self.assertFalse(any("autoconfig_rtg" in p for p in pl.problems), pl.problems)
+
+    @hoststubs.needs_kernel
 
     def test_z3660_card(self):
         os.mkdir(os.path.join(self.out, "hdf"))

@@ -7,6 +7,9 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from amix_installer import fsuae, hdf, model, plan, safety  # noqa: E402
+import hoststubs  # noqa: E402
+
+hoststubs.use()
 
 
 def fake_source(path, found=(), pvmk=None, movable=0):
@@ -58,6 +61,7 @@ class Base(unittest.TestCase):
 
 
 class MakePlan(Base):
+    @hoststubs.needs_kernel
     def test_order_and_missing(self):
         pl = plan.make_plan(self.cfg(), self.paths())
         self.assertEqual(pl.problems, [])
@@ -97,6 +101,8 @@ class MakePlan(Base):
         c.source = None
         self.assertTrue(any("not been read" in p for p in plan.make_plan(c, self.paths()).problems))
 
+    @hoststubs.needs_kernel
+
     def test_card_names_and_ids(self):
         pl = plan.make_plan(self.cfg(target="card", mach="a2500", accel="gvp"), self.paths())
         self.assertEqual(pl.problems, [])
@@ -131,6 +137,8 @@ class MakePlan(Base):
         self.assertIn(("core-core.hdf", False), pl.existing)
         # a hand-made file of that name: asked about first, never silently
         self.assertTrue(any("not written by the installer" in p for p in pl.problems))
+
+    @hoststubs.needs_kernel
 
     def test_out_dir_is_source_dir_ok_but_never_source(self):
         pl = plan.make_plan(self.cfg(), {"core_hdf": self.src, "out_dir": self.d})
@@ -173,6 +181,7 @@ def fake_fs(base, installed=True, config=False, roms=()):
     return f
 
 
+@hoststubs.needs_real
 class FsUae(Base):
     def ids(self, fs, **paths):
         p = dict(self.paths(), **paths)
@@ -241,6 +250,7 @@ class FsUae(Base):
         self.assertEqual(fs.network_of(conf("own", fsc.text())), "a2065")
 
 
+@hoststubs.needs_real
 class Execute(Base):
     def only(self, pl, *ids):
         pl.actions = [a for a in pl.actions if a.id in ids]
@@ -616,6 +626,8 @@ class Cards(Base):
         self.assertEqual(len(d), 1)
         self.assertFalse(d[0].available)
 
+    @hoststubs.needs_kernel
+
     def test_disks_without_a_driver(self):
         """AMIX's disks on a controller only amigaux 1.1 drives: written, with a
         step in the plan that says AMIX does not boot from them yet"""
@@ -644,6 +656,8 @@ class Cards(Base):
         c.select("kern", "k040")
         self.assertEqual(plan.kernel_drivers(c), ["z3660scsi", "z3660rtg", "zz9000", "xsurf100",
                                                   "z3660eth"])
+
+    @hoststubs.needs_kernel
 
     def test_buddha(self):
         """the Buddha and Catweasel Z-II: the buddha kit with the stock and port
