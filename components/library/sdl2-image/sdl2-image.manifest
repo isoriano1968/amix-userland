@@ -14,3 +14,5 @@ file     /usr/local/lib/libSDL2_image.so
 file     /usr/local/lib/pkgconfig/SDL2_image.pc
 file     /usr/local/share/amix-stubs/sdl2-image/LIST
 file     /usr/local/share/amix-stubs/sdl2-image/libSDL2_image-2.0.so.0.s
+# the 68020..68060 baseline, tools/amix-cpu-scan clean
+cpu      68020

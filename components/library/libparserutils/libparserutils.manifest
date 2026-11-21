@@ -5,3 +5,7 @@ summary  parser building blocks (input streams, character sets)
 provide  libparserutils
 require  developer/netsurf-buildsystem
 require  library/libiconv
+# the 68020..68060 baseline, tools/amix-cpu-scan clean
+cpu      68020
+# libamixc99.so.1 (gcc 14's specs make objects that call C99 functions NEED it)
+require  library/amixc99 >= 2

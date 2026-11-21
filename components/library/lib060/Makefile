@@ -127,11 +127,11 @@ $(foreach g,$(GROUPS),$(eval $(call group_rule,$(g))))
 
 libm060.a: m060.o $(MUSL_OBJS)
 	rm -f $@
-	$(AR) rcs $@ m060.o $(MUSL_OBJS)
+	$(AR) rcsD $@ m060.o $(MUSL_OBJS)
 
 libc060.a: mem060.o
 	rm -f $@
-	$(AR) rcs $@ mem060.o
+	$(AR) rcsD $@ mem060.o
 
 m060.o: m060.c
 	$(CC) $(CFLAGS) -c m060.c
