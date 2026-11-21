@@ -14,9 +14,11 @@ S                 = libXrender-$(COMPONENT_VERSION)
 include ../../../make-rules/shared.mk
 include ../../../make-rules/unpack.mk
 include ../../../make-rules/shlib.mk
+include ../../../make-rules/xc.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
-X11_SRC ?= $(CURDIR)/../xserver-amix/src/xc
+# R6.3's own headers that the x11r6.3 package does not install (make-rules/xc.mk)
+XC_MEMBERS = xc/include/extensions/extutil.h xc/lib/X11/Xlibint.h xc/lib/X11/region.h
 SRCS = AddTrap Color Composite Cursor FillRect FillRects Filter Glyph Picture Poly Trap Tri Xrender
 CFLAGS = -O2 $(AMIX_CPU_BASELINE) -fPIC -fno-strict-aliasing -fcommon -Wno-error=implicit-function-declaration \
 	-Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=implicit-int \
@@ -28,9 +30,9 @@ SHLIBS                         = libXrender.so.1
 SHLIB_ARCHIVE_libXrender.so.1  = build/libXrender.a
 SHLIB_ARGS_libXrender.so.1     = `$(PKG_CONFIG) --libs x11`
 
-build: $(COMPONENT_ARCHIVE)
-	@test -f $(X11_SRC)/include/extensions/extutil.h || { echo "no R6.3 extutil.h: set X11_SRC"; exit 1; }
+build: $(COMPONENT_ARCHIVE) $(XC_TGZ)
 	$(unpack)
+	$(xc_extract)
 	: > build/config.h
 	for f in $(SRCS); do m68k-elf-gcc $(CFLAGS) -c $(S)/src/$$f.c -o build/$$f.o \
 		2>> build/build.log || { tail -20 build/build.log; exit 1; }; done

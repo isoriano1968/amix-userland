@@ -13,9 +13,11 @@ S                 = libXrandr-$(COMPONENT_VERSION)
 include ../../../make-rules/shared.mk
 include ../../../make-rules/unpack.mk
 include ../../../make-rules/shlib.mk
+include ../../../make-rules/xc.mk
 
 export PATH := $(AMIX_TOOLS):$(PATH)
-X11_SRC ?= $(CURDIR)/../xserver-amix/src/xc
+# R6.3's own headers that the x11r6.3 package does not install (make-rules/xc.mk)
+XC_MEMBERS = xc/include/extensions/extutil.h
 CFLAGS = -O2 -m68060 -fPIC -fno-strict-aliasing -fcommon -Wno-error=implicit-function-declaration \
 	-Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=implicit-int \
 	-U__linux__ -Ulinux -DSVR4 -DAMIX -D__amix__ -DMALLOC_0_RETURNS_NULL \
@@ -26,9 +28,9 @@ SHLIBS                        = libXrandr.so.2
 SHLIB_ARCHIVE_libXrandr.so.2  = build/libXrandr.a
 SHLIB_ARGS_libXrandr.so.2     = `$(PKG_CONFIG) --libs xrender xext x11`
 
-build: $(COMPONENT_ARCHIVE)
-	@test -f $(X11_SRC)/include/extensions/extutil.h || { echo "no R6.3 extutil.h: set X11_SRC"; exit 1; }
+build: $(COMPONENT_ARCHIVE) $(XC_TGZ)
 	$(unpack)
+	$(xc_extract)
 	: > build/config.h
 	mkdir -p build/X11/extensions && ln -sf $(X11_SRC)/include/extensions/extutil.h build/X11/extensions/
 	m68k-elf-gcc $(CFLAGS) -c $(S)/src/Xrandr.c -o build/Xrandr.o 2> build/build.log || \
