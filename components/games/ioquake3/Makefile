@@ -9,6 +9,7 @@ COMPONENT_SHA256  = 8c0c2cdc2326a5f303afe09914b445609780f1ff9337fab5224afc33607b
 CLEAN_FILES       = $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/z3660.mk
 
 SRC = $(BUILD_DIR)/ioq3-87a99d18206e878a20289f05ac3c16005dcae5c3
 
@@ -22,9 +23,8 @@ prep: $(COMPONENT_ARCHIVE)
 .PHONY: prep
 
 # --- the whole engine on the Z3660's core 1 (DESIGN-core1.md) ---
-ARM          = $(HOME)/opt/arm-none-eabi/bin
 Z3660_CORE1 ?= $(abspath ../../../../amix-gate/usr/src/firmware/core1)
-Z3660       ?= $(abspath ../../../../upstream/Z3660-beta21)
+# Z3660 and ARM: make-rules/z3660.mk
 C1MAKE       = PATH=$(ARM):$$PATH $(MAKE) -f $(CURDIR)/files/core1/Makefile SRC=$(SRC) \
                OUT=$(BUILD_DIR)/core1 Z3660_CORE1=$(Z3660_CORE1) Z3660=$(Z3660)
 # the demo's data for the qemu test (not in git)
@@ -32,7 +32,7 @@ Q3DATA      ?= $(abspath ../../../../private/quake/data)
 
 # the core 1 image (needs amix-gate's build/arm/libOSMesa.a: xbuild.py arm)
 # and c1q3, its 68k helper
-core1:
+core1: $(Z3660_TREE)
 	test -d $(SRC) || $(MAKE) prep
 	$(MAKE) -C ../../library/dlmalloc malloc-2.8.6.c
 	$(C1MAKE)

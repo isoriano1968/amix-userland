@@ -9,13 +9,13 @@ COMPONENT_SHA256  = e9d9626e1af3f046adb8495a3ac79f69154e77065d593463e0a1f3faf63c
 CLEAN_FILES       = $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/z3660.mk
 
 SRC       = $(BUILD_DIR)/src
-ARM       = $(HOME)/opt/arm-none-eabi/bin
 QEMU_ARM ?= $(HOME)/opt/qemu/usr/bin/qemu-arm
 # the core 1 harness (bench.h, lscript.ld) and the firmware's BSP
 Z3660_CORE1 ?= $(abspath ../../../../amix-gate/usr/src/firmware/core1)
-Z3660       ?= $(abspath ../../../../upstream/Z3660-beta21)
+# Z3660 and ARM: make-rules/z3660.mk
 ZLIB_TGZ     = $(abspath ../../library/zlib/zlib-1.3.1.tar.gz)
 C1MAKE       = PATH=$(ARM):$$PATH $(MAKE) -f $(CURDIR)/files/core1/Makefile SRC=$(SRC) \
                ZLIB_TGZ=$(ZLIB_TGZ) Z3660_CORE1=$(Z3660_CORE1) Z3660=$(Z3660)
@@ -32,7 +32,7 @@ $(ZLIB_TGZ):
 	$(MAKE) -C ../../library/zlib zlib-1.3.1.tar.gz
 
 # the core 1 image, the PC test build, the AMIX helper, the benchmark disk
-build: $(ZLIB_TGZ)
+build: $(ZLIB_TGZ) $(Z3660_TREE)
 	test -d $(SRC) || $(MAKE) prep
 	$(C1MAKE) TARGET=core1 OUT=$(BUILD_DIR)/core1
 	$(C1MAKE) TARGET=host OUT=$(BUILD_DIR)/host

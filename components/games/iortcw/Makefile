@@ -9,6 +9,7 @@ COMPONENT_SHA256  = e13b6e777f60163b2e0dbfd23be23606f7f3b933dcf0440b67d6457d7dc4
 CLEAN_FILES       = $(COMPONENT_ARCHIVE)
 
 include ../../../make-rules/shared.mk
+include ../../../make-rules/z3660.mk
 
 SRC = $(BUILD_DIR)/iortcw-438e7d413b5f7277187c35b032eb0ef9093ae778/SP
 
@@ -22,14 +23,13 @@ prep: $(COMPONENT_ARCHIVE)
 .PHONY: prep
 
 # --- the whole engine on the Z3660's core 1 (games/ioquake3 DESIGN-core1.md) ---
-ARM          = $(HOME)/opt/arm-none-eabi/bin
 Z3660_CORE1 ?= $(abspath ../../../../amix-gate/usr/src/firmware/core1)
-Z3660       ?= $(abspath ../../../../upstream/Z3660-beta21)
+# Z3660 and ARM: make-rules/z3660.mk
 C1MAKE       = PATH=$(ARM):$$PATH $(MAKE) -f $(CURDIR)/files/core1/Makefile SRC=$(SRC) \
                OUT=$(BUILD_DIR)/core1 Z3660_CORE1=$(Z3660_CORE1) Z3660=$(Z3660)
 
 # the core 1 image (the harness, glue and c1q3 are games/ioquake3's)
-core1:
+core1: $(Z3660_TREE)
 	test -d $(SRC) || $(MAKE) prep
 	$(MAKE) -C ../../library/dlmalloc malloc-2.8.6.c
 	$(C1MAKE)
