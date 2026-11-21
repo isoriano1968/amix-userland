@@ -2,3 +2,5 @@
 name     library/tinygl
 summary  TinyGL
 require  x11/x11r6.3
+# no package of its own: TinyGL, built into demos/amixintro
+source-only TinyGL, built into demos/amixintro

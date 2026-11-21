@@ -19,9 +19,10 @@ def git(d, *a):
     subprocess.check_call(["git", "-C", d] + list(a), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def checkout(d, comps, host=()):
+def checkout(d, comps, host=(), source=()):
     """A git checkout with tools/amix-p5m and components: stem -> (version,
-    requires); the stems in host get the manifest key host."""
+    requires); the stems in host get the manifest key host, those in source
+    the key source-only."""
     os.makedirs(os.path.join(d, "tools"))
     open(os.path.join(d, "tools", "amix-p5m"), "w").close()
     for stem, (ver, req) in comps.items():
@@ -33,6 +34,8 @@ def checkout(d, comps, host=()):
                 f.write("require  %s\n" % r)
             if stem in host:
                 f.write("host     yes\n")
+            if stem in source:
+                f.write("source-only GLU and GLUT, built into the programs\n")
     git(d, "init", "-q")
     git(d, "-c", "user.name=t", "-c", "user.email=t@t", "add", ".")
     git(d, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "one")
@@ -116,6 +119,23 @@ class Host(unittest.TestCase):
                 with self.assertRaises(build.BuildError) as e:
                     build.resolve(src, name)
                 self.assertIn("host app", str(e.exception))
+
+    def test_source_only(self):
+        """source-only components (tinygl, mesa-31's GLU): no package, not
+        compared, not built on their own; their users still list them."""
+        with tempfile.TemporaryDirectory() as t:
+            src, repo = os.path.join(t, "src"), os.path.join(t, "repo")
+            checkout(src, {"x11/mesa-31": ("3.1", []), "sysutils/amixtop": ("1.0", [])},
+                     source=("x11/mesa-31",))
+            publish(repo, os.path.join(t, "p"), "sysutils/amixtop", "1.0,2.1-1")
+            self.assertEqual(sorted(build.components(src)), ["sysutils/amixtop"])
+            self.assertIn("x11/mesa-31", build.components(src, source=True))
+            self.assertNotIn("x11/mesa-31", [r[0] for r in build.compare(src, repo)])
+            for name in ("mesa-31", "x11/mesa-31"):
+                with self.assertRaises(build.BuildError) as e:
+                    build.resolve(src, name)
+                self.assertIn("source only", str(e.exception))
+                self.assertIn("GLU and GLUT", str(e.exception))
 
     def test_short_names(self):
         with tempfile.TemporaryDirectory() as t:

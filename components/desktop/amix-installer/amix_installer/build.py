@@ -201,7 +201,7 @@ def source_dir(src, log=None, update=False):
 
 
 def read_manifest(path):
-    m = {"name": None, "version": None, "require": [], "host": None}
+    m = {"name": None, "version": None, "require": [], "host": None, "source": None}
     with open(path) as f:
         for line in f:
             w = line.split()
@@ -209,14 +209,18 @@ def read_manifest(path):
                 continue
             if w[0] in ("name", "version", "host") and len(w) > 1:
                 m[w[0]] = w[1]
+            elif w[0] == "source-only":
+                m["source"] = " ".join(w[1:]) or "built by the components that use it"
             elif w[0] == "require" and len(w) > 1:
                 m["require"].append(w[1])
     return m
 
 
-def components(src, host=False):
-    """stem -> {"dir", "version", "require"} of every AMIX component with a
-    manifest; host=True: the host components (manifest key host) as well."""
+def components(src, host=False, source=False):
+    """stem -> {"dir", "version", "require", "source"} of every AMIX component
+    with a manifest; host=True: the host components (manifest key host) as
+    well; source=True: the source-only ones (manifest key source-only: built
+    by the components that use them, no package of their own) as well."""
     out = {}
     base = os.path.join(src, "components")
     for top, dirs, files in os.walk(base):
@@ -226,8 +230,10 @@ def components(src, host=False):
         if len(man) != 1:
             continue
         m = read_manifest(os.path.join(top, man[0]))
-        if m["name"] and m["name"] == os.path.relpath(top, base) and (host or not m["host"]):
-            out[m["name"]] = {"dir": top, "version": m["version"] or "0", "require": m["require"]}
+        if (m["name"] and m["name"] == os.path.relpath(top, base) and (host or not m["host"])
+                and (source or not m["source"])):
+            out[m["name"]] = {"dir": top, "version": m["version"] or "0", "require": m["require"],
+                              "source": m["source"]}
     return out
 
 
@@ -240,8 +246,8 @@ def host_components(src):
 def resolve(src, name):
     """A component's stem from what was typed: the stem, or its last part
     (amix-installer -> desktop/amix-installer); BuildError with a hint
-    when it is a host component, unknown or ambiguous."""
-    every = components(src, host=True)
+    when it is a host or source-only component, unknown or ambiguous."""
+    every = components(src, host=True, source=True)
     amix = components(src)
     hits = [name] if name in every else sorted(s for s in every if s.split("/")[-1] == name)
     if not hits:
@@ -250,6 +256,8 @@ def resolve(src, name):
     if len(hits) > 1:
         raise BuildError("%s: more than one component: %s" % (name, ", ".join(hits)))
     stem = hits[0]
+    if every[stem]["source"]:
+        raise BuildError("%s: source only, no package of its own (%s)" % (stem, every[stem]["source"]))
     if stem not in amix:
         raise BuildError("%s: %s" % (stem, HOST_HINT.get(stem, "a host component, not an AMIX package: "
                                                          "packaged for OpenIndiana or Debian")))

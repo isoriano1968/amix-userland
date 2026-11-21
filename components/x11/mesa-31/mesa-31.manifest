@@ -3,3 +3,5 @@ name     x11/mesa-31
 version  3.1
 summary  Mesa 3.1, source of GLU and GLUT
 require  x11/x11r6.3
+# no package of its own: GLU and GLUT, built into demos/amixintro and graphics/blender
+source-only GLU and GLUT, built into demos/amixintro and graphics/blender
