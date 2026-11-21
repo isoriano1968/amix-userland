@@ -26,7 +26,12 @@
 # startup and no loader support is needed -- and --disable-threads turns the
 # pthread locking into no-ops.  That is the whole reason to build our own.
 #
-# Usage:  toolchain/build-cross.sh [--jobs N]
+# Usage:  toolchain/build-cross.sh [--jobs N] [--rebuild-gcc]
+#   --rebuild-gcc  configure, build and install gcc again although libstdc++
+#                  is installed (a change to the configure options or to the
+#                  gcc patches; for a change to the specs, the compat layer or
+#                  the headers alone toolchain/rebuild-target-libs.sh is
+#                  enough).  The source tree is unpacked fresh.
 # Reads AMIX_SYSROOT from config.sh; installs into $TC_PREFIX (see below).
 set -e
 cd "$(dirname "$0")/.."
@@ -44,7 +49,14 @@ JOBS=$(nproc)
 # Neither build needs its manuals, and texinfo is not installed here: without
 # this, binutils dies in doc/bfd.info with "makeinfo: not found".
 export MAKEINFO=true
-[ "$1" = "--jobs" ] && JOBS="$2"
+REBUILD_GCC=0
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--jobs) JOBS="$2"; shift 2 ;;
+	--rebuild-gcc) REBUILD_GCC=1; shift ;;
+	*) echo "build-cross.sh: unknown option $1" >&2; exit 2 ;;
+	esac
+done
 
 BINUTILS_VER=2.43.1
 GCC_VER=14.2.0
@@ -84,8 +96,12 @@ fi
 # place long before libstdc++ is built, so a run that failed there left a g++
 # behind, and testing for it made the next run skip everything and report
 # success with no C++ library.
-if [ ! -f "$TC_PREFIX/$TARGET/lib/libstdc++.a" ]; then
+if [ "$REBUILD_GCC" = 1 ] || [ ! -f "$TC_PREFIX/$TARGET/lib/libstdc++.a" ]; then
 	fetch "https://ftp.gnu.org/gnu/gcc/gcc-$GCC_VER/gcc-$GCC_VER.tar.xz" "gcc-$GCC_VER.tar.xz"
+	# the patches below are applied to the tree in place and not all of them
+	# can be applied twice: a rebuild starts from a fresh tree (and fetches
+	# gmp, mpfr and mpc into it again)
+	[ "$REBUILD_GCC" = 1 ] && rm -rf "$WORK/gcc-$GCC_VER"
 	if [ ! -d "$WORK/gcc-$GCC_VER" ]; then
 		tar -C "$WORK" -xf "$WORK/src/gcc-$GCC_VER.tar.xz"
 		cd "$WORK/gcc-$GCC_VER"
@@ -113,19 +129,24 @@ if [ ! -f "$TC_PREFIX/$TARGET/lib/libstdc++.a" ]; then
 	#   own libstdc++; on a host with a few gigabytes free that fills the disk
 	#   before the build finishes.  One library serves the whole 68020..68060
 	#   range, which is every machine this port targets.
-	# --with-cpu=68060: NOT a performance choice, a correctness one.  libgcc's
-	#   __udivmoddi4 compiled for a 68020 uses divul / divull / mulul -- the
+	# --with-cpu=68020 (+ -mtune=68060 from the specs' self_spec): the default
+	#   is the 68020 ISA tuned for the 68060, so one build runs on every AMIX
+	#   machine, a 68030 A3000 (FS-UAE, A2500/030) as well as the Z3660's 68060
+	#   (doc/CPU-TARGET-68020-60.md in amix-userland).  The tuning is a
+	#   CORRECTNESS setting, not a performance one: libgcc's __udivmoddi4
+	#   compiled tuned for a plain 68020 uses divul / divull / mulul -- the
 	#   32x64 divide and 64-bit multiply forms the 68060 REMOVED.  On the target
-	#   machine, a 68060, they trap as unimplemented integer instructions, and
-	#   with no ISP handler in the kernel the process dies with SIGKILL.
-	#   Measured: any 64-bit divide by a NON-CONSTANT killed the process, while
-	#   dividing by a constant was fine because GCC folds that into a multiply
-	#   and never calls libgcc -- which is what made it look like a bug in the
-	#   caller.  Telling GCC the CPU is a 68060 makes it avoid those
-	#   instructions everywhere, libgcc included, and the result still runs on
-	#   68020/030/040 because it only ever avoids instructions, never adds any.
-	#   This has to be the compiler DEFAULT: passing CFLAGS_FOR_TARGET does not
-	#   reach libgcc's own compile (measured -- the instructions survived).
+	#   machine they trap as unimplemented integer instructions, and with no ISP
+	#   handler in the kernel the process dies with SIGKILL.  Measured: any
+	#   64-bit divide by a NON-CONSTANT killed the process, while dividing by a
+	#   constant was fine because GCC folds that into a multiply.  m68k.md
+	#   avoids those forms when TUNE_68060 is set, and longlong.h sees
+	#   __mc68060__ (defined by -mtune=68060), so -mtune=68060 keeps libgcc
+	#   060-safe while -mcpu=68020 keeps out the 040/060-only FPU forms
+	#   (fsadd, fdmul, fsmove ...) that a 68030 + 68881/2 cannot execute.
+	#   This has to be the compiler DEFAULT (the specs add the tuning to the
+	#   injected -mcpu=68020): passing CFLAGS_FOR_TARGET does not reach libgcc's
+	#   own compile (measured -- the instructions survived).
 	# libstdc++ is built HOSTED -- containers, strings, the lot -- which is why
 	#   patch-libstdcxx-configure.py above has to tell its configure what the
 	#   AMIX C library declares.  See docs/TOOLCHAIN.md section 13.
@@ -139,7 +160,7 @@ if [ ! -f "$TC_PREFIX/$TARGET/lib/libstdc++.a" ]; then
 		--disable-libstdcxx-filesystem-ts --disable-libstdcxx-pch \
 		--disable-libstdcxx-backtrace \
 		--disable-multilib --disable-gcov \
-		--with-cpu=68060
+		--with-cpu=68020
 	make -j"$JOBS" MAKEINFO=true all-gcc
 	make install-gcc MAKEINFO=true
 
@@ -167,15 +188,16 @@ if [ ! -f "$TC_PREFIX/$TARGET/lib/libstdc++.a" ]; then
 	cp -R "$TC_PREFIX/lib/gcc/$TARGET/$GCCVER/include-fixed/." \
 	      "$WORK/build-gcc/gcc/include-fixed/"
 
-	# The compat layer, before anything tries to link.  The specs name
-	# amix_init.o as a startfile and -lamixc99 in the lib spec, so EVERY link
-	# needs both present -- including libstdc++'s configure link tests, which
-	# abort the build when they fail.  It needs the compiler that was just
-	# installed, which is why it cannot run earlier.
-	"$REPO/tools/build-compat.sh"
-
 	make -j"$JOBS" all-target-libgcc
 	make install-target-libgcc
+
+	# The compat layer, before anything links.  The specs name amix_init.o as
+	# a startfile and -lamixc99 in the lib spec, so EVERY link needs both
+	# present -- including libstdc++'s configure link tests, which abort the
+	# build when they fail.  It needs the compiler that was just installed
+	# and libgcc (libamixc99.so.1 is a -shared link, with __udivdi3 inside);
+	# libgcc's own build links nothing.
+	"$REPO/tools/build-compat.sh"
 	make -j"$JOBS" all-target-libstdc++-v3 || {
 		echo "!! libstdc++/libsupc++ failed -- C and libgcc are installed and usable."
 		echo "!! See the log above for the first missing declaration."

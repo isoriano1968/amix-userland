@@ -25,11 +25,18 @@ produces a **working binary that behaves wrongly** rather than a build error:
   strides by 16. It is set in the specs so it cannot be forgotten in one
   translation unit. The symptom when it is missing: `printf` works, `fprintf`
   writes nothing, and the program stops without a message.
-- **`--with-cpu=68060` is a correctness setting and must be the default.**
-  libgcc's 64-bit divide built for a 68020 uses instructions the 68060 removed;
-  without Motorola's ISP in the kernel they trap fatally. `CFLAGS_FOR_TARGET`
-  does not reach libgcc's own compile — measured. Code built this way still
-  runs on 68020/030/040, because it only ever avoids instructions.
+- **The default CPU is `-mcpu=68020 -mtune=68060 -fexcess-precision=fast`,
+  and the tuning is a correctness setting.** `--with-cpu=68020` makes the
+  driver inject `-mcpu=68020`; the specs' self_spec adds `-mtune=68060` and
+  `-fexcess-precision=fast` (amix-userland `doc/CPU-TARGET-68020-60.md`).
+  libgcc's 64-bit divide tuned for a plain 68020 uses instructions the 68060
+  removed; without Motorola's ISP in the kernel they trap fatally, and
+  `-mtune=68060` is what keeps them out. `CFLAGS_FOR_TARGET` does not reach
+  libgcc's own compile — measured — so it has to be the default. The 68020
+  ISA keeps out the 040/060-only FPU forms (`fsadd`, `fdmul` ...), so the
+  code, libgcc and libstdc++ included, runs on a 68030 as well;
+  `tools/amix-cpu-scan` in amix-userland checks it. Before 2026-11-16 the
+  default was `--with-cpu=68060`, whose code a 68030 cannot run.
 - **The target is `m68k-elf`, not `m68k-linux-gnu`.** The Debian m68k compiler
   looks like a shortcut: its `libgcc_eh.a` asks a dynamic loader
   (`_dl_find_object`) for exception tables and locks with pthreads, and AMIX has

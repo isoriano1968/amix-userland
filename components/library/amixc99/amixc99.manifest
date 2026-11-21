@@ -10,5 +10,6 @@ file     /usr/local/lib/pkgconfig/amixc99.pc devel
 file     /usr/local/include/stdint.h devel
 file     /usr/local/include/stdbool.h devel
 file     /usr/local/include/inttypes.h devel
+file     /usr/local/include/amix_cpu.h devel
 file     /usr/local/share/amix-stubs/amixc99/libamixc99.so.1.s devel
 file     /usr/local/share/amix-stubs/amixc99/LIST devel

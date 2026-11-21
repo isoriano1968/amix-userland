@@ -1,9 +1,10 @@
 # What every program for AMIX needs from the C99 world besides its compilers:
 # libamixc99.so.1, the part of a current libc that SVR4.0's lacks (snprintf
-# and friends, usleep, strcasecmp, __cxa_atexit, from developer/gcc-14's
-# compat/, built by its tools/build-compat.sh), with amixc99.pc, and
-# stdint.h, stdbool.h and inttypes.h for AMIX's gcc 2.7
-# (developer/gcc-27/include).
+# and friends, usleep, strcasecmp, __cxa_atexit, amix_cpu(), from
+# developer/gcc-14's compat/, built into the toolchain by its
+# tools/build-compat.sh, which checks that it needs nothing but libc.so.1's
+# exports), with amixc99.pc and amix_cpu.h, and stdint.h, stdbool.h and
+# inttypes.h for AMIX's gcc 2.7 (developer/gcc-27/include).
 #
 # A shared library in /usr/lib, beside libc.so.1: AMIX's ld.so.1 searches
 # /usr/lib and nothing else by default, and gcc 14's specs make a program or
@@ -35,6 +36,7 @@ stage:
 	sed 's|@PREFIX@|$(PREFIX)|' files/amixc99.pc.in > $(STAGE_DIR)$(PREFIX)/lib/pkgconfig/amixc99.pc
 	cp ../../developer/gcc-27/include/stdint.h ../../developer/gcc-27/include/stdbool.h \
 		../../developer/gcc-27/include/inttypes.h $(STAGE_DIR)$(PREFIX)/include/
+	cp ../../developer/gcc-14/compat/include/amix_cpu.h $(STAGE_DIR)$(PREFIX)/include/
 	$(stage_stubs)
 	chmod -R u+w,go-w,go+rX $(STAGE_DIR)
 	@$(manifest_files)

@@ -41,18 +41,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
 #include <sys/types.h>
-#include <sys/select.h>
+#ifndef AMIX_COMPAT_HOST_TEST
+#include <poll.h>
+#endif
 
 #include "amix_compat.h"
-
-/* AMIX's <sys/select.h> defines fd_set and the FD_* macros and stops there --
- * the same kind of gap as the missing gettimeofday prototype in <sys/time.h>.
- * libc exports the symbol; only the declaration is absent. */
-#ifndef AMIX_COMPAT_HOST_TEST
-extern int select(int, fd_set *, fd_set *, fd_set *, struct timeval *);
-#endif
 
 /* Output shorter than this needs no allocation. One conversion at a time, so
  * this covers everything except deliberately enormous field widths. */
@@ -351,14 +345,19 @@ int usleep(unsigned long usec)
 	return amix_usleep(usec);
 }
 
-/* select() with no descriptors is the SVR4 way to sleep with sub-second
- * resolution; poll() would round to milliseconds. */
+/* poll() with no descriptors, rounded up to whole milliseconds.  Not
+ * select(): AMIX's select is no export of libc.so.1 but a member of the
+ * link-time archive (select.o), so a shared library calling it depends on the
+ * program having pulled that member in, and a program that loads
+ * libamixc99.so.1 only through another library (pkg -> libz) has not:
+ * "relocation error: symbol not found".  AMIX's select.o is itself a poll()
+ * with milliseconds, so the resolution is the same. */
 int amix_usleep(unsigned long usec)
 {
-	struct timeval tv;
+	unsigned long ms = usec / 1000UL + (usec % 1000UL != 0);
 
-	tv.tv_sec = (long)(usec / 1000000UL);
-	tv.tv_usec = (long)(usec % 1000000UL);
-	return select(0, (fd_set *)0, (fd_set *)0, (fd_set *)0, &tv);
+	if (poll((struct pollfd *)0, 0UL, (int)ms) < 0)
+		return -1;
+	return 0;
 }
 #endif /* !AMIX_COMPAT_HOST_TEST */

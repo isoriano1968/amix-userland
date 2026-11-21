@@ -98,9 +98,12 @@ kernel; without one installed, they trap fatally. The symptom is that any
 64-bit division *by a variable* kills the process, while dividing by a constant
 is fine — because GCC folds that into a multiply and never calls libgcc at all.
 
-This is why the toolchain defaults to `--with-cpu=68060`. It has to be the
-default: `CFLAGS_FOR_TARGET` does not reach libgcc's own compile. Code built
-this way still runs on 68020/030/040, because it only ever avoids instructions.
+This is why the toolchain's default is tuned for the 68060: `--with-cpu=68020`
+plus `-mtune=68060` from the specs (with `-fexcess-precision=fast`). It has to
+be the default: `CFLAGS_FOR_TARGET` does not reach libgcc's own compile. The
+68020 instruction set keeps the code runnable on a 68020/030 with a 68881/2,
+and the 68060 tuning keeps out what the 68060 removed (amix-userland
+`doc/CPU-TARGET-68020-60.md`: the same code as `-m68060` for integer work).
 
 Anyone building m68k software for a 68060 without an ISP handler has the same
 problem, whatever their compiler.
@@ -134,8 +137,9 @@ toolchain/build-cross.sh              # once, about 25 minutes
 
 `build-cross.sh` refuses to start if `$AMIX_SYSROOT/usr/include` is not there,
 so the sysroot has to exist first. It builds binutils and GCC, installs the
-specs and the repaired headers, builds the compat layer, and then libgcc and
-libstdc++.
+specs and the repaired headers, then libgcc, the compat layer
+(`libamixc99.so.1`, which library/amixc99 delivers to `/usr/lib` on AMIX, and
+`amix_init.o`) and libstdc++.
 
 Two more steps, only if you are going to link X clients:
 
@@ -186,8 +190,8 @@ and mis-handles `ll` conversions -- the compat layer replaces `snprintf` and
 **MIT** — see [`LICENSE`](LICENSE).
 
 Permissive rather than copyleft for one concrete reason: `compat/` is a
-*runtime* library. `libamixc99.a` and `amix_init.o` are linked into every
-binary this toolchain produces, so a copyleft licence here would reach into
+*runtime* library. `libamixc99.so.1` is needed by, and `amix_init.o` linked
+into, every binary this toolchain produces, so a copyleft licence here would reach into
 other people's ports of other people's software. GCC solves the same problem
 with a separate runtime-library exception; MIT is the simpler way to the same
 place.

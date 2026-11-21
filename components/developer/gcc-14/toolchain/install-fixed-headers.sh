@@ -66,4 +66,7 @@ fi
 # system as it is (developer/amix/sysroot on OpenIndiana does the same).
 cp compat/include/stdint.h "$FIXED/stdint.h"
 echo "install-fixed-headers.sh: stdint.h (compat/include, whole)"
+# not a fixed header but libamixc99's own: amix_cpu() (compat/amix_cpu.c)
+cp compat/include/amix_cpu.h "$FIXED/amix_cpu.h"
+echo "install-fixed-headers.sh: amix_cpu.h (compat/include, libamixc99's)"
 echo "install-fixed-headers.sh: -> $FIXED"

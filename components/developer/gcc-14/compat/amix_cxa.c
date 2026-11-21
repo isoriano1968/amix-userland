@@ -32,10 +32,15 @@ static unsigned amix_cxa_count;
 static unsigned amix_cxa_capacity;
 static int amix_cxa_hooked;
 
-/* Address of this translation unit, for the ABI's dso argument. Normally
- * supplied by crtbegin; defined weakly here so a toolchain that does provide
- * one wins. */
-void *__dso_handle __attribute__((weak)) = &__dso_handle;
+/* No __dso_handle here.  It names the object that registers a destructor,
+ * so each program and each library needs its own, hidden one: crtbegin.o
+ * gives a program its own (the specs link it into every program), and a C++
+ * shared library takes one from its so-init (library/python/numpy).  This is
+ * the shared libamixc99.so.1, one copy for the whole process, so one defined
+ * here would be exported and stand in for all of them.
+ *
+ * One list for the whole process: the program and every library register
+ * here, and exit() runs them all, last registered first. */
 
 void __cxa_finalize(void *dso)
 {

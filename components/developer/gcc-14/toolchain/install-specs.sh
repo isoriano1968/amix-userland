@@ -69,8 +69,13 @@ replace("endfile",
 # usr/ccs/lib holds libc.so, the link-time stub for the shared libc, and is not
 # on any default search path.
 # libamixc99 holds what SVR4.0's libc is missing -- snprintf, vsnprintf,
-# usleep, __cxa_atexit.  Named before -lc because it calls into libc and not
-# the other way round.
+# usleep, strcasecmp, __cxa_atexit.  It is a shared library, libamixc99.so.1
+# in /usr/lib on AMIX (the loader's default directory, so no runpath), linked
+# here from the toolchain's own lib directory (tools/build-compat.sh), and
+# self-contained: it needs nothing but libc.so.1's exports.  --as-needed, for
+# programs and shared libraries alike: an object NEEDs it when it calls into
+# it (a library that calls snprintf carries the dependency, so a program that
+# only uses that library gets it from there), and nothing else loads it.
 #
 # %R/usr/lib/libc.so.1 after -lc names the shared libc to ld as an input file
 # of its own.  The archive usr/ccs/lib/libc.so carries libc.so.1 as a member,
@@ -83,15 +88,24 @@ replace("endfile",
 # output: the archive's members are bound first exactly as before, and ld
 # drops the file as already loaded (same SONAME) -- cde-hello links byte for
 # byte the same.  Only in the gcc 14 specs: gcc 2.7.2.3's wrapper names
-# libc.so.1 itself.
+# libc.so.1 itself, and its users take -lamixc99 from amixc99.pc.
 replace("lib",
-        "%{!nostdlib:%{!nodefaultlibs:-L%R/usr/ccs/lib -L%R/usr/lib %{!shared:-lamixc99 -lc %R/usr/lib/libc.so.1}%{shared:%R/usr/lib/libc.so.1}}}")
+        "%{!nostdlib:%{!nodefaultlibs:-L%R/usr/ccs/lib -L%R/usr/lib"
+        " --push-state --as-needed -lamixc99 --pop-state"
+        " %{!shared:-lc} %R/usr/lib/libc.so.1}}")
 # The platform identifies itself.  A generic m68k-elf compiler defines nothing
 # that says "AMIX", so portable code has no way to select a path for this
 # target -- and code that IS written for it, like a crash handler that reads
 # the fault PC out of a ucontext, silently compiles to nothing instead.  The
 # usual three spellings, as every Unix port does it.
-replace("cpp", "-D__amix__ -D__amix -Damix")
+# __amix_cpu_baseline__: the code may run on a 68020/030 (the compiler's
+# default, -mcpu=68020 -mtune=68060), as against a build for the 68040/060
+# only.  gcc's own __mc680x0__ macros follow the TUNING (-mtune=68060 defines
+# __mc68060__ and not __mc68020__), so they cannot tell a source whether
+# fdsqrt or move16 may be used; this macro can (doc/CPU-TARGET-68020-60.md).
+replace("cpp", "-D__amix__ -D__amix -Damix"
+        " %{!m68040:%{!m68060:%{!mcpu=68040:%{!mcpu=68060:%{!march=68040:%{!march=68060:"
+        "-D__amix_cpu_baseline__}}}}}}")
 
 # AMIX's system headers are C89 and declare plenty of functions with no return
 # type -- X11R5's Xlib.h alone does it for most of the library.  GCC 14 made
@@ -140,13 +154,29 @@ replace("cc1", "%(cc1_cpu) -Wno-error=implicit-int")
 # words, it writes the low half as sym+2@GOT, which is the wrong GOT slot, so a
 # string comes out wrong.  Hoisting that load out of a loop or block is what
 # leads there; tools/amix-got-check fails a build if one is left.
-replace("self_spec", "%{!mno-align-int:-malign-int} %{!ffold-mem-offsets:-fno-fold-mem-offsets} %{fPIC|fpic:-fno-gcse -fno-move-loop-invariants}")
+#
+# The CPU: the compiler is configured --with-cpu=68020, so the driver injects
+# -mcpu=68020 when no CPU option is given, BEFORE this self_spec runs.  A
+# 68020 ISA tuned for the 68060 is what every AMIX package is built for
+# (doc/CPU-TARGET-68020-60.md in amix-userland): it runs on the 68030 A3000
+# and A2500 and is the same code as -m68060 for integer work.
+#   -mtune=68060 is a correctness setting, as --with-cpu=68060 was before it:
+#   with TUNE_68060 m68k.md never emits the 64-bit mulu.l/divu.l forms the
+#   060 removed, -ffast-math never inlines fsin/fcos (patch-gcc-060-fpu.py)
+#   and float->int stays fintrz instead of seven instructions with two FPCR
+#   writes (what plain -m68020-60 gives).  Added only when no -mtune is given.
+#   -fexcess-precision=fast: with a 68020 ISA, FLT_EVAL_METHOD is 2 (68881
+#   extended intermediates), and in ISO modes (-ansi, -std=c99/c11, X11R6.3,
+#   FFmpeg) gcc's default "standard" rounds every assignment through memory;
+#   "fast" gives the same code as the GNU modes.
+replace("self_spec", "%{!mno-align-int:-malign-int} %{!ffold-mem-offsets:-fno-fold-mem-offsets} %{fPIC|fpic:-fno-gcse -fno-move-loop-invariants}"
+        " %{mcpu=68020|m68020:%{!mtune=*:-mtune=68060}} %{!fexcess-precision=*:-fexcess-precision=fast}")
 
 # Read off the machine's own /usr/bin/ls: libc.so.1 IS the runtime linker, text
 # starts at 0x80000000, and the hash table is the classic SysV one.  Nothing
 # AMIX ships carries a RELRO segment or a build-id note.  A shared library has
 # no interpreter and no fixed address; it takes no crt files, crtbegin.o and
-# amix_init.o included (they are not PIC), and no libamixc99.  It links libc.so.1
+# amix_init.o included (they are not PIC).  It links libc.so.1
 # itself: the stub usr/ccs/lib/libc.so is an archive of non-PIC pieces (select,
 # __iob) that belong in the program, which then provides them to the library.
 # gcc passes -shared on only from here.

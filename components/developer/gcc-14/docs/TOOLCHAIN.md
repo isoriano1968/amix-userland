@@ -216,7 +216,10 @@ ISP handler wired in yet, so the unimplemented-instruction trap becomes a fatal
 signal. `Killed` rather than a bus error, which is why it read as memory
 exhaustion at first.
 
-The fix is `--with-cpu=68060`, and it has to be the compiler's **default**:
+The fix was `--with-cpu=68060` (since 2026-11-16 `--with-cpu=68020` with
+`-mtune=68060` added by the specs, which avoids the same forms and also runs
+on a 68030: amix-userland `doc/CPU-TARGET-68020-60.md`), and it has to be the
+compiler's **default**:
 passing `CFLAGS_FOR_TARGET=-mcpu=68060` to a libgcc rebuild does not reach
 libgcc's own compile -- measured, the instructions survived it. Told the CPU is
 a 68060, GCC avoids those forms everywhere, and the result still runs on
