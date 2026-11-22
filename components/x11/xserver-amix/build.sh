@@ -10,23 +10,35 @@
 # patches/amix-z3660rtg.sha256 holds their sums.  No outside checkout is read.
 #   sh build.sh            full build from a fresh copy of the tree
 # Inputs:
-#   XC_SRC   the X11R6.3 tree (default usr-amix/usr/x11r6/xc; copied, never edited)
+#   XC_SRC   an X11R6.3 port tree to copy (never edited); default: a fresh
+#            one from x11/x11r6.3's install.sh (the pristine xc-1/2/3 archives
+#            and its port patch, in DISTFILES)
 #   DISTFILES  xorg-server-1.0.2 and randrproto-1.1.2 tarballs (default ./distfiles,
-#            checked against SOURCES.sha256)
-#   HDF      AMIX disk image for /usr/amiga and /usr/ucblib (read-only)
+#            checked against SOURCES.sha256; the Makefile fetches them)
+#   GCC27_TOOLS  gcc 2.7.2.3 for AMIX (developer/amix/gcc-27), default
+#            ~/opt/amix-cross/bin; its sysroot is the AMIX sysroot
+#   HDF      only for a sysroot without /usr/amiga: an AMIX disk image for
+#            /usr/amiga and /usr/ucblib (read-only)
 # Output: src/xc/programs/Xserver/Xamix (Xzz9000 before 2026-11-16)
 set -e
 W=$(cd "$(dirname "$0")" && pwd)
-UA=$(cd "$W/../../../.." && pwd)	# usr-amix, above amix-userland
-XC_SRC=${XC_SRC:-$UA/usr/x11r6/xc}
+# until the local patches are rebased onto x11/x11r6.3's port patch (it already
+# holds 11 of them and parts of 12 others: README.md), the default tree is the
+# port tree they were made on, where it is (usr-amix/usr/x11r6/xc)
+[ -z "$XC_SRC" ] && [ -d "$W/../../../../usr/x11r6/xc" ] && XC_SRC=$(cd "$W/../../../../usr/x11r6/xc" && pwd)
 DISTFILES=${DISTFILES:-$W/distfiles}
-HDF=${HDF:-"$HOME/Documents/FS-UAE/Hard Drives/hd0Z3660AMIX_AMIGA3000.hdf"}
-SYSROOT=$HOME/opt/amix-cross/m68k-cbm-sysv4/sysroot
+GCC27_TOOLS=${GCC27_TOOLS:-$HOME/opt/amix-cross/bin}
+SYSROOT=$(readlink -f "$GCC27_TOOLS/../m68k-cbm-sysv4/sysroot")
 mkdir -p "$W/log"
 (cd "$W" && sha256sum -c patches/amix-z3660rtg.sha256) > "$W/log/rtg-sha256.log"
 
 # 1. the tree: a copy, CRLF in the AMIX DDX converted, the fork's patches in order
-rm -rf "$W/src/xc"; mkdir -p "$W/src"; cp -a "$XC_SRC" "$W/src/"
+rm -rf "$W/src/xc"; mkdir -p "$W/src"
+if [ -n "$XC_SRC" ]; then
+	cp -a "$XC_SRC" "$W/src/"
+else
+	X11R63_DISTFILES=$DISTFILES sh "$W/../x11r6.3/install.sh" "$W/src" > "$W/log/00-install.log" 2>&1
+fi
 cd "$W/src/xc"
 # the server target is Xamix (x11r6.3's port patch since 2026-11-16); a tree
 # made from the port patch before then names it Xzz9000.  The local patches
@@ -150,9 +162,12 @@ sed -i 's|^/\* MIT-SHM is independent of shared libraries and is unsafe on AMIX.
 grep -q '^#define HasShm YES$' config/cf/amix.cf
 
 # 2. the mirror sysroot: the toolchain's plus /usr/amiga, libscreen.so, libdbm.a
-if [ ! -f "$W/disk/usr/amiga/lib/libscreen.so" ]; then
-	for d in /usr/amiga/include /usr/amiga/lib /usr/ucblib; do
-		python3 -I "$W/ufsget.py" "$HDF" 128 $d "$W/disk$d"
+# (the AMIX sysroot has them: developer/amix/sysroot; else from an HDF)
+D=$SYSROOT
+if [ ! -f "$D/usr/amiga/lib/libscreen.so" ]; then
+	D=$W/disk
+	[ -f "$D/usr/amiga/lib/libscreen.so" ] || for d in /usr/amiga/include /usr/amiga/lib /usr/ucblib; do
+		python3 -I "$W/ufsget.py" "$HDF" 128 $d "$D$d"
 	done
 fi
 # sysroot-mirror is a link into private/ (AMIX material): rebuild its target,
@@ -161,16 +176,16 @@ M=$W/sysroot-mirror
 [ -L "$M" ] && M=$(readlink -f "$M")
 rm -rf "$M"; cp -rs "$SYSROOT" "$M"
 rm "$M/usr/lib/libscreen.so" "$M/usr/ccs/lib/libdbm.a" "$M/usr/include/amiga"
-cp "$W/disk/usr/amiga/lib/libscreen.so" "$M/usr/lib/libscreen.so"
-cp "$W/disk/usr/ucblib/libdbm.a" "$M/usr/ccs/lib/libdbm.a"
-cp -r "$W/disk/usr/amiga/include/amiga" "$M/usr/include/amiga"
+cp "$D/usr/amiga/lib/libscreen.so" "$M/usr/lib/libscreen.so"
+cp "$D/usr/ucblib/libdbm.a" "$M/usr/ccs/lib/libdbm.a"
+cp -r "$D/usr/amiga/include/amiga" "$M/usr/include/amiga"
 mkdir -p "$M/usr/amiga" "$M/usr/ucblib"
-cp -r "$W/disk/usr/amiga/include" "$W/disk/usr/amiga/lib" "$M/usr/amiga/"
-cp "$W/disk/usr/ucblib/"*.a "$M/usr/ucblib/"
+cp -r "$D/usr/amiga/include" "$D/usr/amiga/lib" "$M/usr/amiga/"
+cp "$D/usr/ucblib/"*.a "$M/usr/ucblib/"
 
 # 3. the stub archive: libc.a members whose plain names libc.so.1 does not export.
 # The list is stub-members.txt (one member per line); stub/ is build output only.
-export PATH=$HOME/opt/amix-cross/bin:$PATH
+export PATH=$GCC27_TOOLS:$PATH
 rm -rf "$W/stub"; mkdir -p "$W/stub"; cd "$W/stub"
 MEMBERS=$(cat "$W/stub-members.txt")
 m68k-cbm-sysv4-ar x "$M/usr/ccs/lib/libc.a" $MEMBERS

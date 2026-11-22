@@ -11,11 +11,24 @@ COMPONENT_VERSION = 2
 include ../../../make-rules/shared.mk
 
 XS    = src/xc/programs/Xserver
-STRIP = $(HOME)/opt/amix-cross/bin/m68k-cbm-sysv4-strip
+GCC27_TOOLS ?= $(HOME)/opt/amix-cross/bin
+STRIP = $(GCC27_TOOLS)/m68k-cbm-sysv4-strip
 X11   = $(STAGE_DIR)/usr/x11r6
 
-build:
-	sh build.sh
+# RandR's DIX and headers, pristine from x.org (SOURCES.sha256); the X11R6.3
+# archives come with x11/x11r6.3's install.sh, into the same distfiles/
+DISTFILES = $(CURDIR)/distfiles
+RANDR_FILES = $(DISTFILES)/randrproto-1.1.2.tar.bz2 $(DISTFILES)/xorg-server-1.0.2.tar.bz2
+$(DISTFILES)/randrproto-1.1.2.tar.bz2:
+	mkdir -p $(DISTFILES)
+	curl -fL --retry 3 -o $@.part https://www.x.org/releases/individual/proto/randrproto-1.1.2.tar.bz2
+	mv $@.part $@
+$(DISTFILES)/xorg-server-1.0.2.tar.bz2:
+	mkdir -p $(DISTFILES)
+	curl -fL --retry 3 -o $@.part https://www.x.org/releases/individual/xserver/xorg-server-1.0.2.tar.bz2
+	mv $@.part $@
+
+build: $(XS)/Xamix
 
 # the server, the X link, rgb.txt (the colour names, UseRgbTxt), the SECURITY extension's policy (the server reads
 # /usr/x11r6/lib/X11/xserver/SecurityPolicy at start and complains without
@@ -42,7 +55,7 @@ stage: $(XS)/Xamix
 	tar --format=ustar --numeric-owner --owner=0 --group=0 --mode=go-w -C $(STAGE_DIR) \
 		-cf build/$(COMPONENT_NAME)-amix.tar usr
 
-$(XS)/Xamix:
-	sh build.sh
+$(XS)/Xamix: $(RANDR_FILES)
+	GCC27_TOOLS=$(GCC27_TOOLS) DISTFILES=$(DISTFILES) sh build.sh
 
 .PHONY: build stage

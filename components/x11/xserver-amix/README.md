@@ -54,6 +54,20 @@ rename.  Output: `src/xc/programs/Xserver/Xamix`.  Version 1's only
 difference to the last Xzz9000 build was the name (same sha256,
 876470510f35...; the imported patches give it too).
 
+### From the pristine sources (open)
+
+Without the old port tree, build.sh makes one with x11/x11r6.3's
+`install.sh` (the xc-1/2/3 archives and `0001-amix-port.patch`). That patch
+already holds 11 of the patches applied here (zz9000hw-modes, p5-1, p5-4,
+p5-7, rt07c, rt10, copywindow-order, paintwindow-tile, pattern-fill, bell,
+soft3d-swap); p5-5 and xtrans-unix-fifo apply; p5-2, p5-3, p5-6, rt04, rt07,
+rt07b, rt08, putimage-move16, randr-rates, rtg-cardops, rtg-cirrus and
+rtg-z3660 conflict, because the port patch has a different state of
+`hw/amix`. They are to be rebased onto it, then the old tree is no longer
+needed. RandR's two archives are fetched by the Makefile; /usr/amiga and
+/usr/ucblib come from the AMIX sysroot (developer/amix/sysroot), the HDF only
+for a sysroot without them.
+
 ## On the machine
 
 | file | what |
