@@ -18,6 +18,7 @@ build: $(COMPONENT_ARCHIVE)
 # vim's own install into the stage, without the man pages in other languages
 stage:
 	rm -rf $(STAGE_DIR)
+	mkdir -p $(BUILD_DIR)
 	$(MAKE) -C vim-$(COMPONENT_VERSION)/src install DESTDIR=$(STAGE_DIR) STRIP=m68k-elf-strip > $(BUILD_DIR)/install.log 2>&1 || \
 		{ tail -20 $(BUILD_DIR)/install.log; exit 1; }
 	find $(STAGE_DIR)/usr/local/share/man -mindepth 1 -maxdepth 1 ! -name "man*" -exec rm -rf {} +

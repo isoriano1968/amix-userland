@@ -8,7 +8,7 @@ project = Path.cwd()
 stage = Path(os.environ.get('PYTHON_STAGE', str(project / 'build/python-install')))
 sdk = stage / 'payload/usr/local'
 pth = os.environ.get('PTH_PREFIX', str(Path.home() / 'opt/pth-amix'))
-cc = os.environ.get('CC', str(Path.home() / 'opt/m68k-amix/bin/m68k-elf-gcc'))
+cc = os.environ.get('CC', str(Path(os.environ.get('AMIX_TOOLS', str(Path.home() / 'opt/m68k-amix/bin'))) / 'm68k-elf-gcc'))
 helper = sdk / 'bin/python3.11-config'
 
 def flags(*options):
