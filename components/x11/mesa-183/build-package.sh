@@ -1,12 +1,12 @@
 #!/bin/sh
-# build-package.sh STAGE -- Mesa 18 as the system's GL in STAGE/usr/local: libGL.so.18
-# from amix-gate (core1/build/libgl-amix.sh), the headers and the .pc files.
+# build-package.sh STAGE CORE1 -- Mesa 18 as the system's GL in STAGE/usr/local:
+# libGL.so.18 from CORE1/build/amix-glx (the Makefile's build), the headers and
+# the .pc files.
 # GLU and GLUT are library/glu and library/freeglut.
 set -e
 STAGE=$1
 H=$(cd "$(dirname "$0")" && pwd)
-export PATH=$HOME/opt/m68k-amix/bin:$PATH
-GATE=$H/../../../../amix-gate/usr/src/firmware/core1
+GATE=${2:-$H/build/core1}
 L=$STAGE/usr/local/lib
 I=$STAGE/usr/local/include
 XL=$STAGE/usr/x11r6/lib

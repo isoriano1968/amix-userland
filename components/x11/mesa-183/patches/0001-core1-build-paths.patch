@@ -1,0 +1,88 @@
+diff -ru a/build/libgl-amix.sh b/build/libgl-amix.sh
+--- a/build/libgl-amix.sh
++++ b/build/libgl-amix.sh
+@@ -3,10 +3,10 @@
+ # plain X.  amix_so.c's two ends must be first and last of the link, around all
+ # of .init_array.  STAGE has the shared X libraries.
+ set -e
+-export PATH=$HOME/opt/m68k-amix/bin:$PATH
++export PATH=${AMIX_TOOLS:-$HOME/opt/m68k-amix/bin}:$PATH
+ HERE=$(cd "$(dirname "$0")" && pwd)
+ C=$HERE/../compat/amix
+-T=$HERE/../../../../../../amix-userland/tools
++T=${AMIX_USERLAND_TOOLS:-$HERE/../../../../../../amix-userland/tools}
+ X=$1/usr/x11r6/lib
+ cd "$HERE/amix-glx"
+ m68k-elf-gcc -O2 -m68060 -fPIC -c "$C/amix_so.c" -o amix_so.o
+diff -ru a/build/xbuild.py b/build/xbuild.py
+--- a/build/xbuild.py
++++ b/build/xbuild.py
+@@ -16,6 +16,11 @@
+ from concurrent.futures import ThreadPoolExecutor
+ 
+ HOME = os.path.expanduser("~")
++# the compilers: AMIX_TOOLS (gcc 14 for AMIX), ARM (arm-none-eabi-gcc's bin);
++# the X headers of AMIX for amix-glx: X11_INCLUDE
++AMIX_BIN = os.environ.get("AMIX_TOOLS", HOME + "/opt/m68k-amix/bin")
++ARM_BIN = os.environ.get("ARM", HOME + "/opt/arm-none-eabi/bin")
++X11_INCLUDE = os.environ.get("X11_INCLUDE", HOME + "/Sources/usr-amix/private/shared-build/stage/usr/x11r6/include")
+ TOP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ HOST = os.path.join(TOP, "src", "host-osmesa")
+ 
+@@ -52,9 +57,9 @@
+ 
+ TARGETS = {
+     "amix": {
+-        "cc": HOME + "/opt/m68k-amix/bin/m68k-elf-gcc",
+-        "cxx": HOME + "/opt/m68k-amix/bin/m68k-elf-g++",
+-        "ar": HOME + "/opt/m68k-amix/bin/m68k-elf-ar",
++        "cc": AMIX_BIN + "/m68k-elf-gcc",
++        "cxx": AMIX_BIN + "/m68k-elf-g++",
++        "ar": AMIX_BIN + "/m68k-elf-ar",
+         "flags": ["-O2", "-DNDEBUG", "-m68060", "-fno-strict-aliasing", "-fcommon", "-w", "-U__linux__", "-Ulinux",
+                   "-D__amix__", "-DSVR4", "-DHAVE_ENDIAN_H",
+                   "-Wno-error=implicit-function-declaration", "-Wno-error=int-conversion",
+@@ -68,9 +73,9 @@
+         "cxxflags": ["-std=gnu++11"],
+     },
+     "arm": {
+-        "cc": HOME + "/opt/arm-none-eabi/bin/arm-none-eabi-gcc",
+-        "cxx": HOME + "/opt/arm-none-eabi/bin/arm-none-eabi-g++",
+-        "ar": HOME + "/opt/arm-none-eabi/bin/arm-none-eabi-ar",
++        "cc": ARM_BIN + "/arm-none-eabi-gcc",
++        "cxx": ARM_BIN + "/arm-none-eabi-g++",
++        "ar": ARM_BIN + "/arm-none-eabi-ar",
+         "flags": ["-O2", "-DNDEBUG", "-mcpu=cortex-a9", "-marm", "-mfpu=neon", "-fno-short-enums", "-mfloat-abi=hard", "-ffunction-sections",
+                   "-fdata-sections", "-w", "-D__z3660core__", "-DHAVE_ENDIAN_H",
+                   "-Wno-error=implicit-function-declaration", "-Wno-error=int-conversion",
+@@ -135,8 +140,7 @@
+     t = dict(TARGETS[target])
+     t["name"] = target
+     if glx:
+-        t["flags"] = t["flags"] + ["-fPIC", "-I" + os.path.expanduser(
+-            "~/Sources/usr-amix/private/shared-build/stage/usr/x11r6/include")]
++        t["flags"] = t["flags"] + ["-fPIC", "-I" + X11_INCLUDE]
+         target = "amix-glx"
+     jobs = int(sys.argv[sys.argv.index("-j") + 1]) if "-j" in sys.argv else os.cpu_count()
+     out = os.path.join(TOP, "build", target)
+@@ -179,7 +183,7 @@
+     lib = os.path.join(out, "libGL-objs.a" if glx else "libOSMesa.a")
+     if os.path.exists(lib):
+         os.remove(lib)
+-    subprocess.run([t["ar"], "rcs", lib] + [o for o, _ in res], check=True)
++    subprocess.run([t["ar"], "rcsD", lib] + [o for o, _ in res], check=True)
+     print("->", lib)
+ 
+ 
+diff -ru a/zzgl/build-shared.sh b/zzgl/build-shared.sh
+--- a/zzgl/build-shared.sh
++++ b/zzgl/build-shared.sh
+@@ -9,7 +9,7 @@
+ H=$(cd "$(dirname "$0")" && pwd)
+ TOOLS=${2:-$H/../../../../../../amix-userland/tools}
+ C=$H/..
+-export PATH=$HOME/opt/m68k-amix/bin:$PATH
++export PATH=${AMIX_TOOLS:-$HOME/opt/m68k-amix/bin}:$PATH
+ L=$STAGE/usr/local/lib
+ I=$STAGE/usr/local/include/zzgl
+ O=$(mktemp -d)

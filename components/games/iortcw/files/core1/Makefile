@@ -23,7 +23,8 @@ Q3C1    := $(abspath $(HERE)/../../../ioquake3/files/core1)
 Z3660_CORE1 ?= $(HOME)/Sources/usr-amix/amix-gate/usr/src/firmware/core1
 Z3660   ?= $(HOME)/Sources/usr-amix/upstream/Z3660-beta21
 HB      := $(abspath $(Z3660_CORE1))/cores/h264bench
-MESA    := $(abspath $(Z3660_CORE1))
+# Mesa 18.3 for core 1: x11/mesa-183's build/core1 (its make arm), or the gate's
+MESA    ?= $(abspath $(Z3660_CORE1))
 OSMESA  := $(MESA)/build/arm/libOSMesa.a
 BSP     := $(Z3660)/z3660-firmware/Z-TURN/vitis_ide/design_1_wrapper/ps7_cortexa9_1/standalone_ps7_cortexa9_1/bsp/ps7_cortexa9_1
 

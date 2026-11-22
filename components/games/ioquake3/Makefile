@@ -26,7 +26,9 @@ prep: $(COMPONENT_ARCHIVE)
 Z3660_CORE1 ?= $(abspath ../../../../amix-gate/usr/src/firmware/core1)
 # Z3660 and ARM: make-rules/z3660.mk
 C1MAKE       = PATH=$(ARM):$$PATH $(MAKE) -f $(CURDIR)/files/core1/Makefile SRC=$(SRC) \
-               OUT=$(BUILD_DIR)/core1 Z3660_CORE1=$(Z3660_CORE1) Z3660=$(Z3660)
+               OUT=$(BUILD_DIR)/core1 Z3660_CORE1=$(Z3660_CORE1) Z3660=$(Z3660) MESA=$(MESA_C1)
+# Mesa 18.3 for core 1 (libOSMesa.a for the ARM, its headers): x11/mesa-183 builds it
+MESA_C1      = $(abspath ../../x11/mesa-183/build/core1)
 # the demo's data for the qemu test (not in git)
 Q3DATA      ?= $(abspath ../../../../private/quake/data)
 
@@ -35,6 +37,7 @@ Q3DATA      ?= $(abspath ../../../../private/quake/data)
 core1: $(Z3660_TREE)
 	test -d $(SRC) || $(MAKE) prep
 	$(MAKE) -C ../../library/dlmalloc malloc-2.8.6.c
+	$(MAKE) -C ../../x11/mesa-183 arm
 	$(C1MAKE)
 	$(MAKE) c1q3
 
