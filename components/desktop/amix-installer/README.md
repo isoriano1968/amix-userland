@@ -115,7 +115,15 @@ built. **Build what is newer or changed by itself** (off by default) builds
 them after each update of the source, for the next `pkg update` on AMIX. Without a window: `amix-installer --build-list [--from SOURCE]` and
 `amix-installer --build COMPONENT... [--from SOURCE]`. A component that
 fetches its upstream source needs the network, and some need host tools of
-their own (their README says which). The Build tab builds userland with gcc 14 only; a component
+their own (their README says which). On Debian 13 every component builds
+with: `meson ninja-build cmake autoconf automake libtool gettext texinfo
+gperf libfl-dev x11proto-dev libx11-dev libxt-dev libxext-dev xfonts-utils
+python3-pil libpng-dev cython3 gcc-arm-none-eabi libnewlib-arm-none-eabi
+libstdc++-arm-none-eabi-newlib`, plus a host Python 3.11 for numpy and
+pygame (`python3.11` in PATH). Components marked `source-only` in their
+manifest (dlmalloc, soft3d, tinygl, mesa-31) are no packages of their own:
+the components that use them build them in, so the Build tab leaves them
+out (0.9.1). The Build tab builds userland with gcc 14 only; a component
 whose Makefile also uses gcc 2.7.2.3 (x11/x11r6.3) needs developer/amix/gcc-27
 (`/opt/amix-cross/bin` or `GCC27_TOOLS`). Kernels and drivers are never built
 here: they need gcc 2.7.2.3 and come with the install's kernel step.
