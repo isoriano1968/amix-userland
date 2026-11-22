@@ -119,7 +119,7 @@ their own (their README says which). On Debian 13 every component builds
 with: `meson ninja-build cmake autoconf automake libtool gettext texinfo
 gperf libfl-dev x11proto-dev libx11-dev libxt-dev libxext-dev xfonts-utils
 python3-pil libpng-dev cython3 gcc-arm-none-eabi libnewlib-arm-none-eabi
-libstdc++-arm-none-eabi-newlib`, plus a host Python 3.11 for numpy and
+libstdc++-arm-none-eabi-newlib python3-mako`, plus a host Python 3.11 for numpy and
 pygame (`python3.11` in PATH). Components marked `source-only` in their
 manifest (dlmalloc, soft3d, tinygl, mesa-31) are no packages of their own:
 the components that use them build them in, so the Build tab leaves them
