@@ -92,6 +92,12 @@ def read(path):
             if value not in ("68020", "68060"):
                 sys.exit("%s:%d: cpu takes 68020 or 68060: %s" % (path, n, line))
             m[key] = value
+        elif key == "source-only":
+            # no package of its own: the components that use it build it in
+            # (amix-p5m refuses it); the value says what it is part of
+            if not value:
+                sys.exit("%s:%d: source-only takes what the source is built into: %s" % (path, n, line))
+            m[key] = value
         else:
             sys.exit("%s:%d: unknown line: %s" % (path, n, line))
     return m
