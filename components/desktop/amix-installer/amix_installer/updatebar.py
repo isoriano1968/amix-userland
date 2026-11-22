@@ -82,7 +82,8 @@ class UpdateBar(object):
         u = self.update
         if u is None:
             return
-        how = ("pkg update (OpenIndiana)" if u.kind == "oi" else
+        how = ("the release's .p5p (about 800 MB), checked against its SHA256SUMS, with pkg update"
+               if u.p5p else "pkg update (OpenIndiana)" if u.kind == "oi" else
                "the release's .deb, checked against its SHA256SUMS, with apt")
         d = Adw.AlertDialog(heading="AMIX Installer %s" % u.version,
                             body="You have %s. The update runs through %s.\n\n%s"

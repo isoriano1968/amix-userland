@@ -1,10 +1,14 @@
 """Is a newer AMIX Installer published?  And the update itself, always
 through the system's package manager, never by copying files.
 
-OpenIndiana: the package desktop/amix-installer (`pkg list -nH` against its
-publisher's catalog); `pfexec pkg update desktop/amix-installer` updates it.
-Until it is in the OpenIndiana repository, the oi-amix GitHub release is
-the fallback source of the version and its notes.
+OpenIndiana: the newer of two sources, the publisher's catalog (`pkg list
+-nH`) and the newest oi-amix GitHub release.  The catalog always knows at
+least the installed version (a package installed with `pkg install -g` has
+no other), so its answer alone never means that nothing newer exists.  From
+the catalog, `pfexec pkg update desktop/amix-installer` updates it.  When
+only the release has the newer one, its .p5p is downloaded, checked against
+its SHA256SUMS and given to that command with -g: an origin for this one
+command, the publishers stay as they are.
 
 Debian and Ubuntu: there is no apt repository; the newest linux-amix GitHub
 release is the source.  The update downloads amix-installer_<v>_all.deb from
@@ -41,11 +45,12 @@ class UpdateError(Exception):
 
 class Update(object):
     """A newer installer: version, the release notes (markdown, may be ""),
-    kind ("oi" or "deb"), and for a .deb its download and SHA256SUMS URLs."""
+    kind ("oi" or "deb"), and what a release has to download: the .deb or the
+    .p5p (name, URL) and the SHA256SUMS URL.  Neither: the catalog has it."""
 
-    def __init__(self, version, kind, notes="", url=None, deb=None, sums=None):
+    def __init__(self, version, kind, notes="", url=None, deb=None, sums=None, p5p=None):
         self.version, self.kind, self.notes = version, kind, notes
-        self.url, self.deb, self.sums = url, deb, sums
+        self.url, self.deb, self.sums, self.p5p = url, deb, sums, p5p
 
 
 def vkey(v):
@@ -103,10 +108,24 @@ def _pkg_newest(run):
             universal_newlines=True, timeout=120)
     if r.returncode != 0:
         return None
+    found = []                          # a line for each publisher: "FMRI [(publisher)] VERSION IFO"
     for line in r.stdout.splitlines():
-        w = line.split()
-        if w and w[0] == FMRI and len(w) >= 2:
-            return w[1]
+        w = [x for x in line.split() if not x.startswith("(")]
+        if len(w) >= 2 and w[0] == FMRI:
+            found.append(w[1])
+    return max(found, key=vkey) if found else None
+
+
+def _assets(rel, pattern):
+    """(the asset whose name matches pattern, the SHA256SUMS URL), or None."""
+    found = sums = None
+    for a in rel.get("assets") or []:
+        if re.match(pattern, a.get("name", "")):
+            found = a
+        elif a.get("name") == "SHA256SUMS":
+            sums = a
+    if found and sums:
+        return (found["name"], found["browser_download_url"]), sums["browser_download_url"]
     return None
 
 
@@ -118,30 +137,28 @@ def check(how=None, current=__version__, opener=urllib.request.urlopen, run=subp
     try:
         if how == "oi":
             v = _pkg_newest(run)
-            notes, url = "", None
+            notes, url, p5p, sums = "", None, None, None
             try:
                 rel = _release(RELEASES["oi"], opener)
                 notes, url = rel.get("body") or "", rel.get("html_url")
-                if not v:
-                    v = (rel.get("tag_name") or "").lstrip("v")
+                released = (rel.get("tag_name") or "").lstrip("v")
+                got = _assets(rel, r"oi-amix-[0-9.]+\.p5p$")
+                if got and vkey(released) > vkey(v):
+                    v, (p5p, sums) = released, got
             except Exception:
-                pass
+                pass                    # no release to see: the catalog alone
             if v and vkey(v) > vkey(current):
-                return Update(v.split("-")[0], "oi", notes, url)
+                return Update(v.split("-")[0], "oi", notes, url, sums=sums, p5p=p5p)
             return None
         rel = _release(RELEASES["deb"], opener)
-        deb = sums = None
-        for a in rel.get("assets") or []:
-            if re.match(r"amix-installer_[0-9.]+-[0-9]+_all\.deb$", a.get("name", "")):
-                deb = a
-            elif a.get("name") == "SHA256SUMS":
-                sums = a
-        if not deb or not sums:
+        got = _assets(rel, r"amix-installer_[0-9.]+-[0-9]+_all\.deb$")
+        if not got:
             return None
-        v = deb["name"].split("_")[1]
+        deb, sums = got
+        v = deb[0].split("_")[1]
         if vkey(v) > vkey(current):
             return Update(v.split("-")[0], "deb", rel.get("body") or "", rel.get("html_url"),
-                          (deb["name"], deb["browser_download_url"]), sums["browser_download_url"])
+                          deb, sums)
     except Exception:
         return None
     return None
@@ -153,9 +170,9 @@ def wanted(u, st=None):
     return bool(u) and st["check"] and st.get("later") != u.version
 
 
-def fetch_deb(u, dest, opener=urllib.request.urlopen):
-    """The release's .deb in dest, checked against its SHA256SUMS; its path."""
-    name, url = u.deb
+def fetch(u, dest, opener=urllib.request.urlopen):
+    """The release's .deb or .p5p in dest, checked against SHA256SUMS; its path."""
+    name, url = u.deb or u.p5p
     with opener(u.sums, timeout=TIMEOUT) as r:
         sums = r.read().decode("utf-8", "replace")
     want = None
@@ -177,18 +194,20 @@ def fetch_deb(u, dest, opener=urllib.request.urlopen):
     return path
 
 
-def command(u, deb_path=None):
+def command(u, path=None):
     if u.kind == "oi":
-        return ["pfexec", "pkg", "update", FMRI]
-    return ["pkexec", "apt-get", "install", "-y", "--only-upgrade", deb_path]
+        return ["pfexec", "pkg", "update"] + (["-g", path] if path else []) + [FMRI]
+    return ["pkexec", "apt-get", "install", "-y", "--only-upgrade", path]
 
 
 def apply(u, opener=urllib.request.urlopen, run=subprocess.run):
     """Update to u; (True, text) or (False, why).  pkexec's 126/127: the
     authorization was cancelled or refused."""
-    tmp = tempfile.mkdtemp(prefix="amix-installer-update-")
+    # the .p5p is about 800 MB, and /tmp on OpenIndiana is swap
+    where = "/var/tmp" if u.p5p and os.path.isdir("/var/tmp") else None
+    tmp = tempfile.mkdtemp(prefix="amix-installer-update-", dir=where)
     try:
-        path = fetch_deb(u, tmp, opener) if u.kind == "deb" else None
+        path = fetch(u, tmp, opener) if u.deb or u.p5p else None
         r = run(command(u, path), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 universal_newlines=True, timeout=1800)
         if r.returncode == 0:

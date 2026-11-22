@@ -27,6 +27,14 @@ def release(version, deb=DEB, sums=None):
                        {"name": "SHA256SUMS", "browser_download_url": "https://example.invalid/SUMS"}]}
 
 
+def oi_release(version):
+    name = "oi-amix-%s.p5p" % version
+    return {"tag_name": "v" + version, "body": "notes",
+            "html_url": "https://example.invalid/releases/v" + version,
+            "assets": [{"name": name, "browser_download_url": "https://example.invalid/" + name},
+                       {"name": "SHA256SUMS", "browser_download_url": "https://example.invalid/SUMS"}]}
+
+
 class Net(object):
     """urlopen: url -> bytes; anything else is offline."""
 
@@ -45,6 +53,14 @@ def deb_net(version, deb=DEB, sum_of=DEB):
     name = rel["assets"][0]["name"]
     return Net({API_DEB: json.dumps(rel).encode(),
                 "https://example.invalid/" + name: deb,
+                "https://example.invalid/SUMS": ("%s  %s\n" % (hashlib.sha256(sum_of).hexdigest(), name)).encode()})
+
+
+def oi_net(version, p5p=b"p5p", sum_of=b"p5p"):
+    rel = oi_release(version)
+    name = rel["assets"][0]["name"]
+    return Net({API_OI: json.dumps(rel).encode(),
+                "https://example.invalid/" + name: p5p,
                 "https://example.invalid/SUMS": ("%s  %s\n" % (hashlib.sha256(sum_of).hexdigest(), name)).encode()})
 
 
@@ -85,9 +101,45 @@ class Check(unittest.TestCase):
                                            run=runner(pkg_list="0.9.1-2026.0.0.0")))
 
     def test_oi_falls_back_to_the_release(self):
-        net = Net({API_OI: json.dumps(release("0.9.2")).encode()})
-        u = selfupdate.check("oi", "0.9.0", opener=net, run=runner(pkg_list=None))
+        u = selfupdate.check("oi", "0.9.0", opener=oi_net("0.9.2"), run=runner(pkg_list=None))
         self.assertEqual(u.version, "0.9.2")
+
+    def test_oi_catalog_knows_only_the_installed(self):
+        # installed with pkg install -g: pkg list -n answers the installed version
+        u = selfupdate.check("oi", "0.9.0", opener=oi_net("0.9.1"),
+                             run=runner(pkg_list="0.9.0-2026.0.0.0"))
+        self.assertIsNotNone(u, "the newer release is not offered")
+        self.assertEqual(u.version, "0.9.1")
+
+    def test_oi_catalog_behind_the_release(self):
+        u = selfupdate.check("oi", "0.9.0", opener=oi_net("0.9.2"),
+                             run=runner(pkg_list="0.9.1-2026.0.0.0"))
+        self.assertEqual(u.version, "0.9.2")
+
+    def test_oi_newest_of_several_publishers(self):
+        # pkg list -nH has a line for each publisher, in the publishers' order
+        out = "".join("%s (%s)  %s  ---\n" % (selfupdate.FMRI, p, v) for p, v in
+                      (("oi-local", "0.6.4-2026.0.0.0"), ("amix", "0.9.1-2026.0.0.0")))
+        u = selfupdate.check("oi", "0.9.0", opener=Net({}),
+                             run=lambda argv, **kw: subprocess.CompletedProcess(argv, 0, out, ""))
+        self.assertIsNotNone(u, "the second publisher's newer version is not seen")
+        self.assertEqual(u.version, "0.9.1")
+
+    def test_oi_catalog_as_new_as_the_release(self):
+        net = oi_net("0.9.1")
+        u = selfupdate.check("oi", "0.9.0", opener=net, run=runner(pkg_list="0.9.1-2026.0.0.0"))
+        run = runner()
+        self.assertTrue(selfupdate.apply(u, opener=net, run=run)[0])
+        self.assertEqual(run.calls[-1], ["pfexec", "pkg", "update", selfupdate.FMRI])
+
+    def test_oi_nothing_newer_anywhere(self):
+        self.assertIsNone(selfupdate.check("oi", "0.9.1", opener=oi_net("0.9.1"),
+                                           run=runner(pkg_list="0.9.1-2026.0.0.0")))
+
+    def test_oi_release_without_an_archive_is_not_offered(self):
+        net = Net({API_OI: json.dumps(release("0.9.2")).encode()})
+        self.assertIsNone(selfupdate.check("oi", "0.9.0", opener=net,
+                                           run=runner(pkg_list="0.9.0-2026.0.0.0")))
 
     def test_source_tree_checks_nothing(self):
         self.assertIsNone(selfupdate.check(None, "0.9.0", opener=deb_net("1.0.0"),
@@ -142,6 +194,26 @@ class Apply(unittest.TestCase):
         ok, text = selfupdate.apply(u, opener=net, run=runner(rc=126))
         self.assertFalse(ok)
         self.assertIn("cancelled", text)
+
+    def test_oi_installs_the_checked_release_archive(self):
+        net = oi_net("0.9.2")
+        u = selfupdate.check("oi", "0.9.0", opener=net, run=runner(pkg_list=None))
+        run = runner()
+        ok, text = selfupdate.apply(u, opener=net, run=run)
+        self.assertTrue(ok, text)
+        argv = run.calls[-1]
+        self.assertEqual(argv[:4], ["pfexec", "pkg", "update", "-g"])
+        self.assertTrue(argv[4].endswith("/oi-amix-0.9.2.p5p"))
+        self.assertEqual(argv[5], selfupdate.FMRI)
+        self.assertFalse(os.path.exists(argv[4]), "the download is left behind")
+
+    def test_oi_sha256_mismatch_installs_nothing(self):
+        net = oi_net("0.9.2", p5p=b"tampered")
+        u = selfupdate.check("oi", "0.9.0", opener=net, run=runner(pkg_list=None))
+        run = runner()
+        ok, text = selfupdate.apply(u, opener=net, run=run)
+        self.assertFalse(ok)
+        self.assertEqual(run.calls, [])
 
     def test_oi_failure_is_reported(self):
         u = selfupdate.Update("0.9.1", "oi")

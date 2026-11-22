@@ -82,9 +82,10 @@ the two do not run at once.
 background, for a newer version of itself; offline it says nothing. A newer
 one shows a banner with Update, its release notes and Later (which hides
 that version until the next one). The update always goes through the
-system's package manager: on OpenIndiana `pkg update desktop/amix-installer`
-(the newest version in the publisher's catalog, or the oi-amix GitHub
-release), on Debian and Ubuntu the `.deb` of the newest linux-amix GitHub
+system's package manager. On OpenIndiana it is the newer of the publisher's
+catalog (`pkg update desktop/amix-installer`) and the oi-amix GitHub release
+(its `.p5p`, checked against its `SHA256SUMS`, then `pkg update -g` with it:
+the publishers stay as they are); on Debian and Ubuntu the `.deb` of the newest linux-amix GitHub
 release, checked against its `SHA256SUMS` (any mismatch: nothing is
 installed) and installed with `pkexec apt-get install`. It waits for a
 running build or install, and offers a restart. **Check for Updates** in the
