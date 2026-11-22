@@ -22,4 +22,14 @@ build:
 	$(CC) -m68060 -Wl,--allow-multiple-definition -o $(BUILD_DIR)/lamerintro $(BUILD_DIR)/lamerintro.o \
 		`$(PKG_CONFIG) --libs libmikmod zzgl x11` -lsocket -lnsl -L$(L060) -lm060 -lc060 -lm
 
-.PHONY: build
+# the stage: the program and its launcher in /opt/lamerintro (the music goes beside
+# them, it is not part of the package)
+stage: build
+	rm -rf $(STAGE_DIR)
+	mkdir -p $(STAGE_DIR)/opt/lamerintro
+	cp $(BUILD_DIR)/lamerintro lamerintro.sh $(STAGE_DIR)/opt/lamerintro/
+	$(AMIX_TOOLS)/m68k-elf-strip $(STAGE_DIR)/opt/lamerintro/lamerintro
+	chmod 755 $(STAGE_DIR)/opt/lamerintro/*
+	@$(manifest_files)
+
+.PHONY: build stage

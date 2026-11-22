@@ -24,4 +24,14 @@ build:
 	$(CC) -m68060 -Wl,--allow-multiple-definition -o $(BUILD_DIR)/halloween $(BUILD_DIR)/halloween.o \
 		`$(PKG_CONFIG) --libs libmikmod zzgl x11` -lsocket -lnsl -L$(L060) -lm060 -lc060 -lm
 
-.PHONY: build
+# the stage: the program and its launcher in /opt/halloween (the music goes beside
+# them, it is not part of the package)
+stage: build
+	rm -rf $(STAGE_DIR)
+	mkdir -p $(STAGE_DIR)/opt/halloween
+	cp $(BUILD_DIR)/halloween halloween.sh $(STAGE_DIR)/opt/halloween/
+	$(AMIX_TOOLS)/m68k-elf-strip $(STAGE_DIR)/opt/halloween/halloween
+	chmod 755 $(STAGE_DIR)/opt/halloween/*
+	@$(manifest_files)
+
+.PHONY: build stage

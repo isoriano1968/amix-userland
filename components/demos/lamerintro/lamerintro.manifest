@@ -5,7 +5,11 @@ summary  LamerIntro on core 1
 # runs on the Z3660's ARM core 1: pkg and the installer leave it off a
 # machine without the board (amix-hw)
 hw       z3660-core1
+# -m68060: core 1 is a Z3660 board, which has a 68060
+cpu      68060
 require  x11/x11r6.3
 require  audio/libmikmod
 require  x11/mesa-183
 require  library/lib060
+file     /opt/lamerintro/lamerintro
+file     /opt/lamerintro/lamerintro.sh
