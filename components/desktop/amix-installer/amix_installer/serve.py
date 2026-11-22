@@ -101,8 +101,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             if os.path.isfile(f):
                 with open(f, "rb") as fh:
                     data = fh.read()
-                self._reply(200, data, "application/octet-stream")
+                # logged first, as the 404 below: whoever has the answer finds it logged
                 srv.logged(self.client_address[0], rel, 200, len(data) if self.command == "GET" else 0)
+                self._reply(200, data, "application/octet-stream")
                 return
             srv.logged(self.client_address[0], rel, 404, 0)
             return self._reply(404, b"not found\n")
