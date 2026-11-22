@@ -14,7 +14,8 @@ source = Path(os.environ.get('PYTHON_SOURCE', str(Path.home() / 'src/upstream/Py
 build = Path(os.environ.get('PYTHON_BUILD', str(Path.home() / 'build/python311-amix')))
 compiler = Path(os.environ.get('CC', str(Path(os.environ.get('AMIX_TOOLS', str(Path.home() / 'opt/m68k-amix/bin'))) / 'm68k-elf-gcc')))
 sysroot = Path(os.environ.get('AMIX_SYSROOT', str(Path.home() / 'opt/m68k-amix-sysroot')))
-checker = Path(os.environ.get('CHECK_68060', str(Path.home() / 'Sources/usr-amix/upstream/gcc14-cross-amix/tools/check-68060-safe.py')))
+# the CPU gate of developer/gcc-14 in this same tree
+checker = Path(os.environ.get('CHECK_68060', str(project.parents[1] / 'developer/gcc-14/tools/check-68060-safe.py')))
 stage = Path(os.environ.get('PYTHON_STAGE', str(project / 'build/python-install')))
 if stage.exists():
     raise SystemExit('Use a fresh build/python-install staging directory')

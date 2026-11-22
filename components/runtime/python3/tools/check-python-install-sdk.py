@@ -18,6 +18,7 @@ def flags(*options):
 output = project / 'build/python-embed'
 subprocess.run([cc, *flags('--cflags'), str(project / 'probes/python-embed.c'),
                 *flags('--embed', '--ldflags'), '-o', str(output)], check=True)
-subprocess.run(['python3', str(Path.home() / 'src/gcc14-cross-amix/tools/check-68060-safe.py'),
+checker = os.environ.get('CHECK_68060', str(project.parents[1] / 'developer/gcc-14/tools/check-68060-safe.py'))
+subprocess.run(['python3', checker,
                 str(output)], check=True)
 print('STAGED_PYTHON_SDK_CROSS_LINK_PASS', output)
