@@ -7,7 +7,7 @@
  * The tree is a list: "+" and "-" in front of the folders, opened on demand.
  * ffplay keeps where a video was left in $HOME/.amixcast/pos; played again,
  * amixcast asks whether to go on from there.
- *   amixcast [host [port]]     default: $HOME/.amixcast/config, else 192.168.0.171 8092
+ *   amixcast [host [port]]     default: $HOME/.amixcast/config, else 127.0.0.1 8092
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -53,7 +53,7 @@ static XtAppContext app;
 static Widget list, status, playb;
 static struct node node[MAXNODE];
 static int nnode;
-static char host[64] = "192.168.0.171";
+static char host[64] = "127.0.0.1";
 static int port = 8092;
 static int kbit = 0;            /* 0: measured */
 static int auto_kbit;

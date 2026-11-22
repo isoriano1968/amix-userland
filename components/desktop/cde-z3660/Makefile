@@ -1,6 +1,8 @@
 # cde-z3660: CDE for the Z3660, built from desktop/cde-apps' sources
 # (cde-apps/build.sh, cde-apps/stage.sh z3660); a package of its own for
-# org.amix.hw.
+# org.amix.hw.  The revision counts the commits in this directory only: a
+# change to amixcast or ztopcde in cde-apps needs one here too, for a new
+# revision (the last: amixcast's default host, 127.0.0.1).
 COMPONENT_NAME    = cde-z3660
 
 include ../../../make-rules/shared.mk
