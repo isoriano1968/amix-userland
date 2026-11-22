@@ -4,6 +4,10 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <stddef.h>
+/* PATH_MAX (the emulator's MAX_DPATH) from newlib itself: Debian's
+   gcc-arm-none-eabi has GCC's own limits.h, which does not go on to newlib's,
+   so <limits.h> alone has no PATH_MAX there; both toolchains give 1024 here */
+#include <sys/syslimits.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
