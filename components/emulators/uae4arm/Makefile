@@ -6,7 +6,11 @@ COMPONENT_VERSION = fc1cb90
 COMPONENT_ARCHIVE = uae4arm-rpi-fc1cb90.tar.gz
 COMPONENT_URL     = https://github.com/Chips-fr/uae4arm-rpi/archive/fc1cb90afd6b5c6d9bb933d111c4c99c90f37688.tar.gz
 COMPONENT_SHA256  = e9d9626e1af3f046adb8495a3ac79f69154e77065d593463e0a1f3faf63ca9df
-CLEAN_FILES       = $(COMPONENT_ARCHIVE)
+CLEAN_FILES       = $(COMPONENT_ARCHIVE) $(COREMARK_TGZ)
+# the benchmark disk's CoreMark: the pristine 1.01 archive (files/bench/build.sh
+# checks its sha256)
+COREMARK_TGZ      = coremark-1.01.tar.gz
+COREMARK_URL      = https://github.com/eembc/coremark/archive/refs/tags/v1.01.tar.gz
 
 include ../../../make-rules/shared.mk
 include ../../../make-rules/z3660.mk
@@ -28,18 +32,21 @@ prep: $(COMPONENT_ARCHIVE)
 	mv $(BUILD_DIR)/uae4arm-rpi-fc1cb90afd6b5c6d9bb933d111c4c99c90f37688 $(SRC)
 	for p in patches/*.patch; do patch -s -p1 -d $(SRC) < $$p || exit 1; done
 
+$(COREMARK_TGZ):
+	curl -fL --retry 3 -o $@.part $(COREMARK_URL) && mv $@.part $@
+
 $(ZLIB_TGZ):
 	$(MAKE) -C ../../library/zlib zlib-1.3.1.tar.gz
 
 # the core 1 image, the PC test build, the AMIX helper, the benchmark disk
-build: $(ZLIB_TGZ) $(Z3660_TREE)
+build: $(ZLIB_TGZ) $(COREMARK_TGZ) $(Z3660_TREE)
 	test -d $(SRC) || $(MAKE) prep
 	$(C1MAKE) TARGET=core1 OUT=$(BUILD_DIR)/core1
 	$(C1MAKE) TARGET=host OUT=$(BUILD_DIR)/host
 	mkdir -p $(BUILD_DIR)/amix
 	$(AMIX_CC) -O2 $(AMIX_CPU_BASELINE) -Wall -I$(Z3660_CORE1)/cores/h264bench -Ifiles/core1 \
 	    files/amix/c1uae.c -o $(BUILD_DIR)/amix/c1uae
-	sh files/bench/build.sh $(BUILD_DIR)/bench
+	COREMARK_TGZ=$(CURDIR)/$(COREMARK_TGZ) sh files/bench/build.sh $(BUILD_DIR)/bench
 
 # on the PC: Kickstart + c1bench.adf under qemu-arm, CoreMark must validate
 #   make check KICK=<A1200 Kickstart ROM>
