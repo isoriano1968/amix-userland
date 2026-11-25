@@ -23,6 +23,7 @@ next one)."""
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -116,6 +117,22 @@ def _pkg_newest(run):
     return max(found, key=vkey) if found else None
 
 
+def machine():
+    """The OpenIndiana machine type: "sparc" or "i386" (uname -p)."""
+    p = (platform.processor() or "").lower()
+    if p.startswith("sparc") or platform.machine().lower().startswith(("sun4", "sparc")):
+        return "sparc"
+    return "i386"
+
+
+def oi_archive(mach=None):
+    """The release asset with this machine's installer: oi-amix-<v>.p5p on x86
+    (the name 0.9.0-0.9.2 look for), oi-amix-<v>-sparc.p5p on SPARC."""
+    if (mach or machine()) == "sparc":
+        return r"oi-amix-[0-9.]+-sparc\.p5p$"
+    return r"oi-amix-[0-9.]+\.p5p$"
+
+
 def _assets(rel, pattern):
     """(the asset whose name matches pattern, the SHA256SUMS URL), or None."""
     found = sums = None
@@ -129,8 +146,10 @@ def _assets(rel, pattern):
     return None
 
 
-def check(how=None, current=__version__, opener=urllib.request.urlopen, run=subprocess.run):
-    """An Update newer than current, or None (no newer one, or offline)."""
+def check(how=None, current=__version__, opener=urllib.request.urlopen, run=subprocess.run,
+          mach=None):
+    """An Update newer than current, or None (no newer one, or offline).
+    mach: the OpenIndiana machine type, machine() when not given."""
     how = how or kind(run)
     if how is None:
         return None
@@ -142,7 +161,7 @@ def check(how=None, current=__version__, opener=urllib.request.urlopen, run=subp
                 rel = _release(RELEASES["oi"], opener)
                 notes, url = rel.get("body") or "", rel.get("html_url")
                 released = (rel.get("tag_name") or "").lstrip("v")
-                got = _assets(rel, r"oi-amix-[0-9.]+\.p5p$")
+                got = _assets(rel, oi_archive(mach))
                 if got and vkey(released) > vkey(v):
                     v, (p5p, sums) = released, got
             except Exception:
@@ -203,7 +222,7 @@ def command(u, path=None):
 def apply(u, opener=urllib.request.urlopen, run=subprocess.run):
     """Update to u; (True, text) or (False, why).  pkexec's 126/127: the
     authorization was cancelled or refused."""
-    # the .p5p is about 800 MB, and /tmp on OpenIndiana is swap
+    # /tmp on OpenIndiana is swap: the .p5p goes to /var/tmp
     where = "/var/tmp" if u.p5p and os.path.isdir("/var/tmp") else None
     tmp = tempfile.mkdtemp(prefix="amix-installer-update-", dir=where)
     try:

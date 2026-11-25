@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -27,12 +28,13 @@ def release(version, deb=DEB, sums=None):
                        {"name": "SHA256SUMS", "browser_download_url": "https://example.invalid/SUMS"}]}
 
 
-def oi_release(version):
-    name = "oi-amix-%s.p5p" % version
+def oi_release(version, names=None):
+    names = names or ["oi-amix-%s.p5p" % version]
     return {"tag_name": "v" + version, "body": "notes",
             "html_url": "https://example.invalid/releases/v" + version,
-            "assets": [{"name": name, "browser_download_url": "https://example.invalid/" + name},
-                       {"name": "SHA256SUMS", "browser_download_url": "https://example.invalid/SUMS"}]}
+            "assets": [{"name": n, "browser_download_url": "https://example.invalid/" + n}
+                       for n in names] +
+                      [{"name": "SHA256SUMS", "browser_download_url": "https://example.invalid/SUMS"}]}
 
 
 class Net(object):
@@ -99,6 +101,29 @@ class Check(unittest.TestCase):
         self.assertEqual((u.version, u.kind), ("0.9.1", "oi"))
         self.assertIsNone(selfupdate.check("oi", "0.9.1", opener=Net({}),
                                            run=runner(pkg_list="0.9.1-2026.0.0.0")))
+
+    def test_oi_each_machine_takes_its_own_archive(self):
+        # a release with x86 and SPARC files, and the full sets, which are never taken
+        names = ["oi-amix-0.9.3.p5p", "oi-amix-0.9.3-sparc.p5p",
+                 "oi-amix-packages-2026.12.1.p5p", "oi-amix-packages-2026.12.1-sparc.p5p"]
+        net = Net({API_OI: json.dumps(oi_release("0.9.3", names)).encode()})
+        for mach, want in (("i386", "oi-amix-0.9.3.p5p"), ("sparc", "oi-amix-0.9.3-sparc.p5p")):
+            u = selfupdate.check("oi", "0.9.2", opener=net, run=runner(pkg_list=None), mach=mach)
+            self.assertEqual((u.version, u.p5p[0]), ("0.9.3", want), mach)
+
+    def test_oi_no_archive_for_this_machine_is_not_offered(self):
+        only_x86 = Net({API_OI: json.dumps(oi_release("0.9.3")).encode()})
+        self.assertIsNone(selfupdate.check("oi", "0.9.2", opener=only_x86,
+                                           run=runner(pkg_list=None), mach="sparc"))
+        only_sparc = Net({API_OI: json.dumps(oi_release("0.9.3", ["oi-amix-0.9.3-sparc.p5p"])).encode()})
+        self.assertIsNone(selfupdate.check("oi", "0.9.2", opener=only_sparc,
+                                           run=runner(pkg_list=None), mach="i386"))
+
+    def test_machine(self):
+        self.assertIn(selfupdate.machine(), ("i386", "sparc"))
+        self.assertTrue(re.match(selfupdate.oi_archive("i386"), "oi-amix-0.9.2.p5p"))
+        self.assertFalse(re.match(selfupdate.oi_archive("i386"), "oi-amix-0.9.2-sparc.p5p"))
+        self.assertTrue(re.match(selfupdate.oi_archive("sparc"), "oi-amix-0.9.2-sparc.p5p"))
 
     def test_oi_falls_back_to_the_release(self):
         u = selfupdate.check("oi", "0.9.0", opener=oi_net("0.9.2"), run=runner(pkg_list=None))
